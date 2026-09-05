@@ -4,7 +4,7 @@
 
 The product documentation lives in [`docs/`](docs/README.md). This file covers the code.
 
-**Status: Phase 0 complete — backend and a working web client** — phone-OTP sign-in, households and members, invitations that merge rather than duplicate, type-aware capture including the universal "record anything" type, list/detail/trash, a dashboard, and the per-record privacy model enforced by PostgreSQL row-level security. Phases 1–4 are laid out in [`docs/10`](docs/10-phases-user-stories-and-dod.md).
+**Status: Phase 1 complete — the whole balance sheet, backend and web client** — phone-OTP sign-in, households and members, type-aware capture including the universal "record anything" type, accounts with encrypted numbers, liabilities and **true net worth**, nominees, reminders and a cash-flow calendar, an encrypted document vault, global search, and the per-record privacy model enforced by PostgreSQL row-level security. Phases 2–4 are laid out in [`docs/10`](docs/10-phases-user-stories-and-dod.md).
 
 ---
 
@@ -35,6 +35,27 @@ So there are two roles:
 - `almira_app` — serves every request, owns nothing, and cannot opt out of RLS
 
 `GET /health` reports the connected role, so a regression back to the owner is visible at a glance.
+
+### Sensitive data is encrypted before it is stored
+
+Account numbers, policy numbers and document contents are encrypted with a
+**per-household data key**, itself wrapped by a key-encryption key that lives
+outside the database. A dump of Postgres yields ciphertext and a wrapped key that
+nothing in the dump can open ([`crypto/`](backend/src/main/kotlin/tech/bhrigu/almira/crypto)).
+
+Every value is bound to *where it lives* — household, table, column — so a
+ciphertext cannot be moved to another row and decrypted there. Without that,
+anyone able to write the database could copy an account number into another
+family's record and have the application decrypt it for them.
+
+By default only the **last four digits** of a number are kept. The rest is stored
+only if someone explicitly opts in, and seeing it again needs a fresh
+confirmation on that session, recorded in the audit log.
+
+`LocalKeyManagement` refuses to start outside development without a real key, and
+refuses the published development key outright — a KEK that protects nothing is
+worse than none, because it looks like protection in an audit. It is the seam a
+managed KMS plugs into, not a substitute for one.
 
 ---
 
@@ -125,7 +146,20 @@ docker exec -e PGPASSWORD=app_dev_password almira-db \
 ./scripts/e2e-phase0.sh
 ```
 
-51 checks covering the whole Phase 0 journey with two signed-in users: sign-in, invitation merge, capture, type-aware validation, privacy, totals, concurrency, offline idempotency, valuations and trash.
+65 checks covering the whole journey with two signed-in users: sign-in,
+invitation merge, capture, type-aware validation, privacy, true net worth,
+encumbrance, nominees, concurrency, offline idempotency, valuations and trash.
+
+### Something to look at
+
+```bash
+./scripts/demo-data.sh
+```
+
+Fills a fresh install with one plausible household — two adults, a child, a joint
+flat with the loan secured against it, accounts, a SIP, and one private holding
+so the privacy model is visible on screen rather than only in tests. It prints
+the phone numbers to sign in with.
 
 ---
 
@@ -142,8 +176,15 @@ almira/
 │     ├─ auth/         phone OTP, rotating refresh tokens
 │     ├─ household/    households, members, roles
 │     ├─ invitation/   invites that claim an existing member rather than duplicating them
+│     ├─ crypto/       envelope encryption — the KMS seam and per-household keys
 │     ├─ catalog/      asset taxonomy, institutions, custom types and fields
-│     ├─ investment/   capture, validation, visibility, valuations
+│     ├─ investment/   capture, validation, visibility, valuations, nominees
+│     ├─ account/      accounts, linkage, encrypted numbers, step-up reveal
+│     ├─ liability/    debts, responsibility shares, encumbrance
+│     ├─ document/     the vault: encrypted proofs, single-use download tickets
+│     ├─ reminder/     due dates, auto-generation, the notification sweep
+│     ├─ reports/      net-worth trend and the cash-flow calendar
+│     ├─ search/       one search across everything, through RLS
 │     ├─ dashboard/    totals and breakdowns, per viewer
 │     └─ audit/        append-only activity log
 ├─ db/
@@ -175,6 +216,8 @@ A household's own custom type lives in the same table with a `household_id`. Pro
 - **Writes carry a `version`.** A stale write is rejected with a `409` and the current state, never silently overwritten.
 - **Creates accept a client-supplied `id`**, so an offline capture keeps its identity and a retry is idempotent.
 - **Errors are plain and kind** — no codes, no stack traces, and nothing that reveals whether a record you may not see exists.
+- **A due date on the 31st still falls due in February.** Recurring dates clamp to the month's last day and then recover, rather than sliding to the 28th for ever.
+- **Nothing is forecast.** Trends are drawn only between recorded snapshots; the cash-flow calendar projects known EMIs and premiums and nothing else.
 
 ## Not goals
 

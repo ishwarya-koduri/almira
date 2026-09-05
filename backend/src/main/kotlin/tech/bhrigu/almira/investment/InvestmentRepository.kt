@@ -64,6 +64,8 @@ data class InvestmentFilter(
     val categoryCode: String? = null,
     val memberId: UUID? = null,
     val institutionId: UUID? = null,
+    val accountId: UUID? = null,
+    val unlinked: Boolean = false,
     val status: String? = null,
     val visibility: String? = null,
     val query: String? = null,
@@ -270,6 +272,8 @@ class InvestmentRepository(
             filter.typeIds?.takeIf { it.isNotEmpty() }?.let { append(" and i.type_id in (:typeIds)") }
             filter.categoryCode?.let { append(" and c.code = :categoryCode") }
             filter.institutionId?.let { append(" and i.institution_id = :institutionId") }
+            filter.accountId?.let { append(" and i.account_id = :accountId") }
+            if (filter.unlinked) append(" and i.account_id is null")
             filter.status?.let { append(" and i.status = :status") }
             filter.visibility?.let { append(" and i.visibility = :visibility") }
             filter.memberId?.let {
@@ -296,6 +300,7 @@ class InvestmentRepository(
             .addValue("typeIds", filter.typeIds)
             .addValue("categoryCode", filter.categoryCode)
             .addValue("institutionId", filter.institutionId)
+            .addValue("accountId", filter.accountId)
             .addValue("status", filter.status)
             .addValue("visibility", filter.visibility)
             .addValue("memberId", filter.memberId)

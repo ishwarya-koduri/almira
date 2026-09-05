@@ -3,6 +3,7 @@ package tech.bhrigu.almira.support
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.http.HttpEntity
@@ -32,6 +33,25 @@ abstract class ApiTestBase {
     @LocalServerPort protected var port: Int = 0
 
     @Autowired protected lateinit var mapper: ObjectMapper
+
+    @Autowired
+    @Qualifier("ownerDataSource")
+    private lateinit var ownerDataSource: javax.sql.DataSource
+
+    /**
+     * A connection as the SCHEMA OWNER, which bypasses row-level security.
+     *
+     * Only for assertions about what is physically stored — that a column holds
+     * ciphertext rather than digits, that an audit row was written. Those are
+     * claims about the database, not about what a user may see, and reading them
+     * through RLS would return nothing (correctly) and prove nothing.
+     *
+     * Never use it to stand in for a user's view. Every test that asks "can this
+     * person see this?" goes through the API, as a person would.
+     */
+    protected val db: org.springframework.jdbc.core.JdbcTemplate by lazy {
+        org.springframework.jdbc.core.JdbcTemplate(ownerDataSource)
+    }
 
     // JdkClientHttpRequestFactory, not the default: SimpleClientHttpRequestFactory
     // is built on HttpURLConnection, which rejects PATCH outright -- and PATCH is

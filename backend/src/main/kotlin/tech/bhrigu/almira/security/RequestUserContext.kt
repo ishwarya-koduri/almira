@@ -4,34 +4,46 @@ import org.springframework.stereotype.Component
 import java.util.UUID
 
 /**
- * The authenticated user for the current thread.
+ * Who is making this request, and on which session.
  *
- * This is the single input to [tech.bhrigu.almira.config.RlsDataSource], which
- * stamps it onto every database connection as the `app.user_id` GUC. Every
- * row-level security policy reads that GUC, so this class is effectively the
- * handle the database uses to decide what the caller may see.
+ * The user id is the single input to [tech.bhrigu.almira.config.RlsTransactionManager],
+ * which stamps it onto every transaction as `app.user_id` — so this class is
+ * effectively the handle the database uses to decide what the caller may see.
  *
- * It fails closed: when nothing is set, `app.user_id` is empty, every policy
- * predicate evaluates to NULL, and the database returns no rows at all.
+ * It fails closed: when nothing is set, no identity reaches the database, every
+ * policy predicate evaluates to NULL, and no rows come back.
+ *
+ * The session id is separate because some decisions are about the *session*
+ * rather than the person — a step-up re-authentication elevates one device for a
+ * few minutes, not the account everywhere.
  */
 @Component
 class RequestUserContext {
 
-    private val holder = ThreadLocal<UUID?>()
+    data class Principal(val userId: UUID, val sessionId: UUID?)
 
-    fun set(userId: UUID?) = holder.set(userId)
+    private val holder = ThreadLocal<Principal?>()
 
-    fun currentUserId(): UUID? = holder.get()
+    fun set(userId: UUID?, sessionId: UUID? = null) {
+        holder.set(userId?.let { Principal(it, sessionId) })
+    }
+
+    fun currentUserId(): UUID? = holder.get()?.userId
+
+    fun currentSessionId(): UUID? = holder.get()?.sessionId
 
     fun require(): UUID =
-        holder.get() ?: throw IllegalStateException("no authenticated user on this thread")
+        holder.get()?.userId ?: throw IllegalStateException("no authenticated user on this thread")
+
+    fun requireSession(): UUID =
+        holder.get()?.sessionId ?: throw IllegalStateException("no session on this thread")
 
     fun clear() = holder.remove()
 
-    /** Runs [block] as [userId], restoring the previous value afterwards. */
-    fun <T> runAs(userId: UUID?, block: () -> T): T {
+    /** Runs [block] as [userId], restoring the previous principal afterwards. */
+    fun <T> runAs(userId: UUID?, sessionId: UUID? = null, block: () -> T): T {
         val previous = holder.get()
-        holder.set(userId)
+        holder.set(userId?.let { Principal(it, sessionId) })
         try {
             return block()
         } finally {

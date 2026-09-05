@@ -35,6 +35,14 @@ data class OtpVerifyBody(
 
 data class RefreshBody(@field:NotBlank val refreshToken: String)
 
+data class StepUpVerifyBody(
+    @field:Pattern(regexp = "^[0-9]{4,8}$", message = "Enter the code we texted you")
+    val code: String,
+    val requestId: String? = null,
+)
+
+data class StepUpStatusResponse(val elevated: Boolean, val expiresInSeconds: Long)
+
 data class PreferencesBody(val fullName: String? = null, val defaultVisibility: String? = null)
 
 // --- responses --------------------------------------------------------------
@@ -78,6 +86,7 @@ data class LoginResponse(
 @Validated
 class AuthController(
     private val auth: AuthService,
+    private val stepUp: StepUpService,
     private val userContext: RequestUserContext,
 ) {
 
@@ -139,6 +148,33 @@ class AuthController(
         return ResponseEntity.noContent().build()
     }
 
+    /**
+     * Re-authentication before a full account or policy number is shown
+     * (docs/05 §5). Elevation is granted to this SESSION for a few minutes, not
+     * to the account — proving yourself on your phone does not unlock a browser
+     * someone else is sitting in front of.
+     */
+    @PostMapping("/auth/step-up/request")
+    fun requestStepUp(request: HttpServletRequest): OtpChallengeResponse {
+        val c = stepUp.request(userContext.require(), clientIp(request))
+        return OtpChallengeResponse(
+            c.requestId, c.expiresInSeconds, c.resendAfterSeconds, c.developmentCode,
+        )
+    }
+
+    @PostMapping("/auth/step-up/verify")
+    fun verifyStepUp(@RequestBody @jakarta.validation.Valid body: StepUpVerifyBody): StepUpStatusResponse {
+        val sessionId = userContext.requireSession()
+        stepUp.verify(userContext.require(), sessionId, body.code, body.requestId)
+        return StepUpStatusResponse(true, stepUp.remainingSeconds(sessionId))
+    }
+
+    @GetMapping("/auth/step-up")
+    fun stepUpStatus(): StepUpStatusResponse {
+        val remaining = stepUp.remainingSeconds(userContext.currentSessionId())
+        return StepUpStatusResponse(remaining > 0, remaining)
+    }
+
     @GetMapping("/me")
     fun me(): MeResponse = auth.me(userContext.require()).toResponse()
 
@@ -155,8 +191,7 @@ class AuthController(
     )
 
     private fun currentSessionId(request: HttpServletRequest): UUID? =
-        (org.springframework.security.core.context.SecurityContextHolder.getContext()
-            .authentication?.details as? tech.bhrigu.almira.security.AccessTokenClaims)?.sessionId
+        userContext.currentSessionId()
 
     /**
      * Behind a load balancer the socket address is the proxy, so the first hop

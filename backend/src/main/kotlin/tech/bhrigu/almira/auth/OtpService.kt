@@ -21,6 +21,14 @@ data class OtpChallenge(
 /**
  * Phone OTP, per docs/09 §9.2.
  *
+ * Challenges are namespaced by PURPOSE. Signing in and confirming yourself
+ * before a number is revealed are different flows that can be in flight at the
+ * same time on the same phone: sharing one Redis key would let a step-up code
+ * silently invalidate a login code, and sharing the 30-second cooldown would
+ * refuse a legitimate step-up moments after sign-in. The per-phone hourly cap
+ * is deliberately NOT namespaced — that one exists to stop a number being
+ * flooded with texts, and every flow's messages count toward it.
+ *
  * Redis rather than Postgres because every value here is short-lived and
  * write-heavy: a code lives five minutes, counters reset hourly, and none of it
  * belongs in a backup. Codes are stored HASHED — a Redis dump reveals nothing
@@ -35,8 +43,8 @@ class OtpService(
     private val cfg = props.otp
     private val random = SecureRandom()
 
-    fun request(phone: String, ip: String?): OtpChallenge {
-        enforceCooldown(phone)
+    fun request(phone: String, ip: String?, purpose: String = LOGIN): OtpChallenge {
+        enforceCooldown(phone, purpose)
         enforceHourlyLimit("otp:rate:phone:$phone", cfg.maxPerHour, "phone")
         ip?.let { enforceHourlyLimit("otp:rate:ip:$it", cfg.maxPerIpPerHour, "network") }
 
@@ -44,15 +52,15 @@ class OtpService(
         val requestId = UUID.randomUUID().toString()
 
         redis.opsForHash<String, String>().putAll(
-            challengeKey(phone),
+            challengeKey(phone, purpose),
             mapOf("hash" to hash(code), "requestId" to requestId, "attempts" to "0"),
         )
-        redis.expire(challengeKey(phone), cfg.ttl)
+        redis.expire(challengeKey(phone, purpose), cfg.ttl)
         // Redis rejects a zero or negative TTL outright, so a misconfigured
         // cooldown would turn every sign-in attempt into a 500 rather than
         // simply disabling the cooldown. Guard the config, not the user.
         if (!cfg.resendCooldown.isZero && !cfg.resendCooldown.isNegative) {
-            redis.opsForValue().set(cooldownKey(phone), "1", cfg.resendCooldown)
+            redis.opsForValue().set(cooldownKey(phone, purpose), "1", cfg.resendCooldown)
         }
 
         sender.send(phone, code)
@@ -71,8 +79,8 @@ class OtpService(
      * challenge is destroyed and a fresh one must be requested — this is what
      * makes a 6-digit code safe to use at all.
      */
-    fun verify(phone: String, code: String, requestId: String?) {
-        val key = challengeKey(phone)
+    fun verify(phone: String, code: String, requestId: String?, purpose: String = LOGIN) {
+        val key = challengeKey(phone, purpose)
         val stored = redis.opsForHash<String, String>().entries(key)
         if (stored.isEmpty()) {
             throw ApiException.badRequest(
@@ -103,8 +111,8 @@ class OtpService(
         redis.delete(key)
     }
 
-    private fun enforceCooldown(phone: String) {
-        val ttl = redis.getExpire(cooldownKey(phone), TimeUnit.SECONDS)
+    private fun enforceCooldown(phone: String, purpose: String) {
+        val ttl = redis.getExpire(cooldownKey(phone, purpose), TimeUnit.SECONDS)
         if (ttl > 0) {
             throw ApiException.tooManyRequests(
                 "We just sent a code. You can ask for another in $ttl seconds.", ttl,
@@ -123,12 +131,17 @@ class OtpService(
         }
     }
 
-    private fun challengeKey(phone: String) = "otp:challenge:$phone"
-    private fun cooldownKey(phone: String) = "otp:cooldown:$phone"
+    private fun challengeKey(phone: String, purpose: String) = "otp:challenge:$purpose:$phone"
+    private fun cooldownKey(phone: String, purpose: String) = "otp:cooldown:$purpose:$phone"
 
     private fun hash(code: String) =
         MessageDigest.getInstance("SHA-256").digest(code.toByteArray())
             .joinToString("") { "%02x".format(it) }
+
+    companion object {
+        const val LOGIN = "login"
+        const val STEP_UP = "step_up"
+    }
 
     /** Comparison time must not depend on how much of the code was right. */
     private fun constantTimeEquals(a: String, b: String): Boolean {

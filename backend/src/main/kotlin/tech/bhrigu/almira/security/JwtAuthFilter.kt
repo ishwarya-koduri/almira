@@ -40,7 +40,9 @@ class JwtAuthFilter(
                 ?.let(jwtService::verifyAccessToken)
                 ?.takeUnless { revocations.isRevoked(it.sessionId) }
                 ?.let { claims ->
-                    userContext.set(claims.userId)
+                    // The session id travels with the identity: some decisions
+                    // are about this device, not the account (see StepUpService).
+                    userContext.set(claims.userId, claims.sessionId)
                     SecurityContextHolder.getContext().authentication =
                         UsernamePasswordAuthenticationToken(
                             claims.userId,

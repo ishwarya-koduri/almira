@@ -29,6 +29,8 @@ private data class Slice(
     val maturityDate: LocalDate?,
     val lastVerified: LocalDate?,
     val hasInstitution: Boolean,
+    val hasAccount: Boolean,
+    val categoryExpectsAccount: Boolean,
 )
 
 data class Breakdown(
@@ -155,7 +157,8 @@ class DashboardService(
                coalesce(t.color, c.color) as color, t.label as type_label,
                o.member_id, m.display_name as member_name,
                inst.name as institution_name,
-               ov.effective_value, ov.value_basis, ov.attributed_value
+               ov.effective_value, ov.value_basis, ov.attributed_value,
+               i.account_id
         from investments i
         join investment_types t   on t.id = i.type_id
         join asset_categories c   on c.id = t.category_id
@@ -187,6 +190,8 @@ class DashboardService(
             lastVerified = rs.getTimestamp("last_verified_at")
                 ?.toInstant()?.atZone(java.time.ZoneOffset.UTC)?.toLocalDate(),
             hasInstitution = rs.getString("institution_name") != null,
+            hasAccount = rs.getObject("account_id") != null,
+            categoryExpectsAccount = rs.getString("category_code") in CATEGORIES_WITH_ACCOUNTS,
         )
     }
 
@@ -243,9 +248,19 @@ class DashboardService(
                 "no_value", "No value recorded yet", it.size, it.map { s -> s.investmentId },
             )
         }
+        // "Which bank funds which SIP" is the linkage question docs/01 §4 is
+        // about, and it only makes sense where an account exists to link to.
+        // Asking it of physical gold or a flat would be noise, and noise is how
+        // an attention list stops being read (docs/08 §5).
+        slices.filter { it.categoryExpectsAccount && !it.hasAccount }.let {
+            if (it.isNotEmpty()) items += AttentionItem(
+                "no_account", "Not linked to an account",
+                it.size, it.map { s -> s.investmentId },
+            )
+        }
         slices.filter { !it.hasInstitution }.let {
             if (it.isNotEmpty()) items += AttentionItem(
-                "no_institution", "Not linked to a bank or institution",
+                "no_institution", "No bank or fund house recorded",
                 it.size, it.map { s -> s.investmentId },
             )
         }
@@ -259,6 +274,16 @@ class DashboardService(
     }
 
     private companion object {
+        /**
+         * Categories where a holding is normally funded from, or held in, an
+         * account: a deposit, a fund folio, a demat holding. Gold in a locker
+         * and a flat in Kakinada have no account to link, so they are not
+         * flagged for lacking one.
+         */
+        val CATEGORIES_WITH_ACCOUNTS = setOf(
+            "deposits", "mutual_funds", "equity", "ipo", "bonds", "retirement",
+        )
+
         const val DISCLAIMER =
             "These figures reflect what you've recorded and what you're permitted to see. " +
                 "Informational only — not financial advice."

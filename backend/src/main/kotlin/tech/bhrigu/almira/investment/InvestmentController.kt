@@ -145,6 +145,8 @@ class InvestmentController(private val service: InvestmentService) {
         @RequestParam(required = false) category: String?,
         @RequestParam(required = false) member: UUID?,
         @RequestParam(required = false) institution: UUID?,
+        @RequestParam(required = false) account: UUID?,
+        @RequestParam(defaultValue = "false") unlinked: Boolean,
         @RequestParam(required = false) status: String?,
         @RequestParam(required = false) visibility: String?,
         @RequestParam(required = false) q: String?,
@@ -154,7 +156,8 @@ class InvestmentController(private val service: InvestmentService) {
         householdId,
         InvestmentFilter(
             typeIds = type, categoryCode = category, memberId = member,
-            institutionId = institution, status = status, visibility = visibility,
+            institutionId = institution, accountId = account, unlinked = unlinked,
+            status = status, visibility = visibility,
             query = q?.trim()?.ifEmpty { null },
             limit = limit.coerceIn(1, 500), offset = offset.coerceAtLeast(0),
         ),

@@ -44,7 +44,18 @@ class EnvelopeCipher(
      * [field] is the position this value occupies, as "table.column". It is
      * authenticated, not encrypted, so it must be identical on the way back out.
      */
-    fun encrypt(householdId: UUID, field: String, plaintext: String): ByteArray {
+    fun encrypt(householdId: UUID, field: String, plaintext: String): ByteArray =
+        encryptBytes(householdId, field, plaintext.toByteArray(Charsets.UTF_8))
+
+    fun decrypt(householdId: UUID, field: String, blob: ByteArray): String =
+        String(decryptBytes(householdId, field, blob), Charsets.UTF_8)
+
+    /**
+     * The byte-oriented form, for document contents. Same key, same binding —
+     * a file's ciphertext is tied to its household and to the fact that it is a
+     * document, so it cannot be swapped in as some other encrypted field.
+     */
+    fun encryptBytes(householdId: UUID, field: String, plaintext: ByteArray): ByteArray {
         val active = keys.activeKey(householdId) { kms.wrap(newDataKey()) to kms.kekId }
         val dek = dataKey(householdId, active.keyVersion, active.wrappedDek)
 
@@ -53,7 +64,7 @@ class EnvelopeCipher(
             init(Cipher.ENCRYPT_MODE, dek, GCMParameterSpec(TAG_BITS, iv))
             updateAAD(aad(householdId, field))
         }
-        val body = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
+        val body = cipher.doFinal(plaintext)
 
         return ByteBuffer.allocate(1 + 4 + IV_BYTES + body.size)
             .put(FORMAT_VERSION)
@@ -63,7 +74,7 @@ class EnvelopeCipher(
             .array()
     }
 
-    fun decrypt(householdId: UUID, field: String, blob: ByteArray): String {
+    fun decryptBytes(householdId: UUID, field: String, blob: ByteArray): ByteArray {
         require(blob.size > 1 + 4 + IV_BYTES) { "ciphertext is malformed" }
         val buffer = ByteBuffer.wrap(blob)
 
@@ -85,7 +96,7 @@ class EnvelopeCipher(
                 init(Cipher.DECRYPT_MODE, dek, GCMParameterSpec(TAG_BITS, iv))
                 updateAAD(aad(householdId, field))
             }
-            String(cipher.doFinal(body), Charsets.UTF_8)
+            cipher.doFinal(body)
         } catch (e: AEADBadTagException) {
             // Tampering, a moved ciphertext, or the wrong field name. All three
             // are failures, and none should reveal which.

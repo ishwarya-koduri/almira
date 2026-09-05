@@ -39,6 +39,11 @@ class SecurityConfig(
                 "/actuator/health", "/health",
                 "/docs/**", "/swagger-ui/**", "/v3/api-docs/**",
             ).permitAll()
+            // Redeeming a document ticket is unauthenticated ON PURPOSE: the
+            // ticket itself is the authority, minted only after a visibility
+            // check and a step-up, valid for two minutes and single-use. That
+            // is what lets an <img> or <iframe> load a document directly.
+            auth.requestMatchers("/api/documents/download").permitAll()
             // The web client is static and holds no secrets — everything it
             // shows is fetched from /api with a bearer token, which is where
             // the real gate is.

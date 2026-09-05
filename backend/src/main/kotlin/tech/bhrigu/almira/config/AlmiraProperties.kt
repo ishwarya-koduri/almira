@@ -9,6 +9,7 @@ data class AlmiraProperties(
     val jwt: Jwt,
     val otp: Otp,
     val encryption: Encryption = Encryption(),
+    val storage: Storage = Storage(),
     /**
      * Gates the checks that must not be bypassable by forgetting a flag:
      * anything other than "development" requires a real key-encryption key.
@@ -46,6 +47,14 @@ data class AlmiraProperties(
         val masterKey: String = "",
         /** Key identifier for a managed KMS provider. */
         val kmsKeyId: String = "",
+    )
+
+    data class Storage(
+        /** filesystem | s3 — the DocumentStorage implementation. */
+        val provider: String = "filesystem",
+        /** Where the filesystem provider writes. Encrypted bytes only. */
+        val root: String = "./var/documents",
+        val maxFileBytes: Long = 20L * 1024 * 1024,
     )
 
     data class Otp(

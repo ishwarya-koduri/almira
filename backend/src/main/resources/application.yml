@@ -19,6 +19,11 @@ spring:
   threads:
     virtual:
       enabled: true
+  servlet:
+    multipart:
+      # Documents are scans and photos; the 1MB default rejects most of them.
+      max-file-size: 20MB
+      max-request-size: 24MB
 
 server:
   port: ${ALMIRA_PORT:8080}
@@ -37,6 +42,12 @@ almira:
     # Base64, 32 bytes: openssl rand -base64 32
     master-key: ${ALMIRA_KMS_MASTER_KEY:}
     kms-key-id: ${ALMIRA_KMS_KEY_ID:}
+  storage:
+    provider: ${ALMIRA_STORAGE_PROVIDER:filesystem}
+    root: ${ALMIRA_STORAGE_ROOT:./var/documents}
+    max-file-bytes: 20971520
+  notifications:
+    provider: ${ALMIRA_NOTIFY_PROVIDER:log}
   db:
     url: ${ALMIRA_DB_URL:jdbc:postgresql://localhost:55432/almira}
     owner-user: ${ALMIRA_DB_OWNER_USER:almira}

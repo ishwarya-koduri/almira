@@ -25,6 +25,7 @@ data class SearchResults(
     val liabilities: List<SearchHit>,
     val accounts: List<SearchHit>,
     val people: List<SearchHit>,
+    val documents: List<SearchHit>,
     val total: Int,
 )
 
@@ -53,7 +54,9 @@ class SearchService(
         households.get(householdId)
         val trimmed = query.trim()
         if (trimmed.length < 2) {
-            return SearchResults(trimmed, emptyList(), emptyList(), emptyList(), emptyList(), 0)
+            return SearchResults(
+                trimmed, emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), 0,
+            )
         }
 
         val params = MapSqlParameterSource()
@@ -164,13 +167,36 @@ class SearchService(
             )
         }
 
+        val documents = jdbc.query(
+            """
+            select d.id, d.file_name, d.doc_type, d.created_at
+            from documents d
+            where d.household_id = :hid and d.deleted_at is null
+              and ( d.file_name ilike '%' || :q || '%'
+                 or d.doc_type ilike '%' || :q || '%'
+                 or coalesce(d.notes, '') ilike '%' || :q || '%' )
+            order by d.created_at desc
+            limit :limit
+            """.trimIndent(),
+            params,
+        ) { rs, _ ->
+            SearchHit(
+                id = rs.getObject("id", UUID::class.java),
+                title = rs.getString("file_name"),
+                subtitle = rs.getString("doc_type"),
+                amount = null, amountFormatted = null, route = "documents",
+            )
+        }
+
         return SearchResults(
             query = trimmed,
             investments = investments,
             liabilities = liabilities,
             accounts = accounts,
             people = people,
-            total = investments.size + liabilities.size + accounts.size + people.size,
+            documents = documents,
+            total = investments.size + liabilities.size + accounts.size +
+                people.size + documents.size,
         )
     }
 }

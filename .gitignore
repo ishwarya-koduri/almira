@@ -30,3 +30,7 @@ target/
 # Local data
 *.log
 /tmp/
+
+# Encrypted document blobs written by the filesystem storage provider.
+# Local only; production writes to object storage.
+var/

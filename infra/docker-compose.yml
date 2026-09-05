@@ -1,0 +1,49 @@
+# Almira local infrastructure — mirrors production (Postgres + Redis).
+# Ports are offset (55432 / 56379) so Almira never collides with another
+# Postgres/Redis already running on this machine.
+name: almira
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: almira-db
+    environment:
+      POSTGRES_DB: almira
+      POSTGRES_USER: almira
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev}
+      # Deterministic collation so index/ordering behaviour matches prod.
+      LANG: C.UTF-8
+    command: >
+      postgres
+      -c log_statement=none
+      -c max_connections=100
+      -c shared_preload_libraries=pg_stat_statements
+    ports:
+      - "55432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      # Creates the non-owner `almira_app` runtime role that RLS is enforced against.
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U almira -d almira"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: almira-redis
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "56379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  dbdata:
+  redisdata:

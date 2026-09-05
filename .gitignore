@@ -1,0 +1,32 @@
+# Build output
+build/
+out/
+bin/
+target/
+.gradle/
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Secrets — never commit. Copy .env.example -> .env locally.
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*.p12
+*.keystore
+*.jks
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Local data
+*.log
+/tmp/

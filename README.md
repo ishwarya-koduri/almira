@@ -43,6 +43,13 @@ So there are two roles:
 **You need:** JDK 21, Docker.
 
 ```bash
+./scripts/dev.sh
+```
+
+That starts the database and cache, waits for both, and runs the backend. The
+rest of this section is what it does, in case you want the pieces separately.
+
+```bash
 docker compose -f infra/docker-compose.yml up -d
 ```
 

@@ -28,6 +28,17 @@ data class CustomFieldInput(
     val countsTowardValue: Boolean = false,
 )
 
+/**
+ * A nominee is either a household member or a plain name — an aunt who will
+ * never use this app is still a nominee, and the record has to hold her.
+ */
+data class NomineeInput(
+    val memberId: UUID? = null,
+    val name: String? = null,
+    val relationship: String? = null,
+    val sharePct: BigDecimal? = null,
+)
+
 data class ValuationInput(
     val value: BigDecimal,
     val asOfDate: LocalDate? = null,
@@ -283,6 +294,65 @@ class InvestmentService(
     fun valuations(householdId: UUID, id: UUID): List<ValuationRow> {
         get(householdId, id)
         return repo.valuations(id)
+    }
+
+    /**
+     * Records who is nominated, and for how much.
+     *
+     * A nominee is NOT an heir. In India a nominee receives an asset as a
+     * custodian; who ends up owning it is decided by a will or by succession law
+     * (docs/01 §10). Almira records both so the mismatch can be surfaced later,
+     * which is precisely the thing families discover too late.
+     */
+    @Transactional
+    fun replaceNominees(householdId: UUID, id: UUID, nominees: List<NomineeInput>): InvestmentRow {
+        val userId = userContext.require()
+        households.get(householdId)
+        get(householdId, id)
+
+        if (nominees.isEmpty()) {
+            repo.replaceNominees(id, emptyList())
+            audit.record(
+                householdId = householdId, actorUserId = userId, action = "investment.nominees_cleared",
+                entityType = "investment", entityId = id,
+            )
+            return get(householdId, id)
+        }
+
+        val known = households.members(householdId).associateBy { it.id }
+        val resolved = nominees.map { nominee ->
+            val name = when {
+                nominee.memberId != null ->
+                    known[nominee.memberId]?.displayName ?: throw ApiException.badRequest(
+                        "nominee_unknown", "One of those people isn't part of this household.",
+                    )
+                !nominee.name.isNullOrBlank() -> nominee.name.trim()
+                else -> throw ApiException.badRequest(
+                    "nominee_required", "Give each nominee a name, or pick someone in the household.",
+                )
+            }
+            Triple(
+                nominee.memberId,
+                if (nominee.memberId == null) name else null,
+                (nominee.relationship to (nominee.sharePct ?: BigDecimal(100))),
+            )
+        }
+
+        val total = resolved.fold(BigDecimal.ZERO) { acc, it -> acc + it.third.second }
+        if (total.compareTo(BigDecimal(100)) != 0) {
+            throw ApiException.badRequest(
+                "nominee_shares_must_total_100",
+                "Nominee shares add up to $total% — they need to total 100%.",
+                mapOf("total" to total),
+            )
+        }
+
+        repo.replaceNominees(id, resolved)
+        audit.record(
+            householdId = householdId, actorUserId = userId, action = "investment.nominees_set",
+            entityType = "investment", entityId = id, diff = mapOf("count" to resolved.size),
+        )
+        return get(householdId, id)
     }
 
     /** Soft delete: the record moves to Trash and can be restored (docs/01 §11). */

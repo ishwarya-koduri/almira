@@ -35,6 +35,11 @@ except Exception:
     print('')
 " 2>/dev/null; }
 
+minus() { python3 -c "
+import decimal, sys
+print(decimal.Decimal('$1') - decimal.Decimal('$2'))
+" 2>/dev/null; }
+
 count() { python3 -c "
 import sys, json
 d = json.load(sys.stdin)
@@ -267,8 +272,12 @@ RAVI_TOTAL=$(echo "$RAVI_DASH" | money "['totalAssets']")
 #           + bakery 250,000 + his SIP 300,000                      = 4,850,000
 is "the owner's total includes her private FD" "$ISH_TOTAL" "5050000.00"
 is "the admin's total excludes it entirely"    "$RAVI_TOTAL" "4850000.00"
+# No debts recorded yet, so net worth and total assets are the same figure —
+# which is itself worth asserting: the subtraction must be a no-op at zero.
+is "net worth equals total assets when nothing is owed" \
+   "$(echo "$ISH_DASH" | money "['netWorth']")" "$ISH_TOTAL"
 is "amount-in-words is rendered server-side" \
-   "$(echo "$ISH_DASH" | jq_ "['totalAssetsInWords']")" "Fifty Lakh Fifty Thousand"
+   "$(echo "$ISH_DASH" | jq_ "['netWorthInWords']")" "Fifty Lakh Fifty Thousand"
 is "Indian grouping is applied" \
    "$(echo "$ISH_DASH" | jq_ "['totalAssetsFormatted']")" "₹50,50,000"
 
@@ -315,6 +324,62 @@ is "and lands in the trash" \
 api "$ISH" POST "/api/households/$HID/trash/investments/$OFFLINE_ID/restore" >/dev/null
 is "restore brings it back" \
    "$(api "$ISH" GET "/api/households/$HID/investments?q=Captured%20offline" | count)" "1"
+
+section "Liabilities and true net worth"
+LOAN=$(api "$ISH" POST "/api/households/$HID/liabilities" "{
+  \"title\":\"HDFC home loan\",\"kind\":\"home\",\"outstanding\":4000000,
+  \"emiAmount\":22000,\"emiDay\":5,\"visibility\":\"household\",
+  \"securedByInvestmentId\":\"$JOINT_ID\",
+  \"holders\":[{\"memberId\":\"$ISH_MEM\",\"responsibilityPct\":50},
+              {\"memberId\":\"$RAVI_MEM\",\"responsibilityPct\":50}]}")
+LOAN_ID=$(echo "$LOAN" | jq_ "['id']")
+isnt "a home loan is recorded" "$LOAN_ID" ""
+is   "outstanding renders with Indian grouping" \
+     "$(echo "$LOAN" | jq_ "['outstandingFormatted']")" "₹40,00,000"
+
+# Asserted as a relationship, not a constant: earlier sections revalue holdings,
+# and a hard-coded total would be a test that breaks whenever anything above it
+# changes — without ever telling you whether the subtraction is right.
+D=$(api "$ISH" GET "/api/households/$HID/dashboard?scope=household")
+A=$(echo "$D" | money "['totalAssets']"); L=$(echo "$D" | money "['totalLiabilities']")
+is "the whole loan is counted, once" "$L" "4000000.00"
+is "net worth is exactly assets minus what is owed" \
+   "$(echo "$D" | money "['netWorth']")" "$(minus "$A" "$L")"
+
+is "the asset it secures shows as encumbered" \
+   "$(api "$ISH" GET "/api/households/$HID/investments/$JOINT_ID" | money "['encumbrance']")" \
+   "4000000.00"
+is "and its net equity is what's actually yours" \
+   "$(api "$ISH" GET "/api/households/$HID/investments/$JOINT_ID" | money "['netEquity']")" \
+   "0.00"
+
+PRIVATE_DEBT=$(api "$ISH" POST "/api/households/$HID/liabilities" \
+  '{"title":"Private personal loan","kind":"personal","outstanding":300000,"visibility":"private"}')
+isnt "a private debt is recorded" "$(echo "$PRIVATE_DEBT" | jq_ "['id']")" ""
+
+DI=$(api "$ISH"  GET "/api/households/$HID/dashboard?scope=household")
+DR=$(api "$RAVI" GET "/api/households/$HID/dashboard?scope=household")
+is "the owner's debts include her private loan" \
+   "$(echo "$DI" | money "['totalLiabilities']")" "4300000.00"
+is "the admin's debts do NOT — her 3,00,000 is invisible" \
+   "$(echo "$DR" | money "['totalLiabilities']")" "4000000.00"
+is "so her net worth is her own assets minus her own debts" \
+   "$(echo "$DI" | money "['netWorth']")" \
+   "$(minus "$(echo "$DI" | money "['totalAssets']")" "$(echo "$DI" | money "['totalLiabilities']")")"
+is "and a private debt never shrinks another member's net worth" \
+   "$(echo "$DR" | money "['netWorth']")" \
+   "$(minus "$(echo "$DR" | money "['totalAssets']")" "4000000.00")"
+
+section "Nominees"
+N=$(api "$ISH" PUT "/api/households/$HID/investments/$GOLD_ID/nominees" \
+  "{\"nominees\":[{\"memberId\":\"$RAVI_MEM\",\"sharePct\":60},
+                 {\"name\":\"Aarav Koduri\",\"relationship\":\"son\",\"sharePct\":40}]}")
+is "nominees can be a member or a plain name" \
+   "$(echo "$N" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["nominees"]))')" "2"
+is "nominee shares that don't total 100% are refused" \
+   "$(api "$ISH" PUT "/api/households/$HID/investments/$GOLD_ID/nominees" \
+      "{\"nominees\":[{\"memberId\":\"$RAVI_MEM\",\"sharePct\":70}]}" | jq_ "['error']['code']")" \
+   "nominee_shares_must_total_100"
 
 echo
 if [ "$FAIL" -eq 0 ]; then

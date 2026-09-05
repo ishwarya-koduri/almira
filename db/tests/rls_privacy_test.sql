@@ -314,5 +314,94 @@ begin
   perform pg_temp.assert(v_total = 100, 'a legitimate 60/40 re-split is accepted');
 end $$;
 
+-- ---------------------------------------------------------------- debts ----
+do $$ begin raise notice '--- debts are exactly as private as assets ---'; end $$;
+
+create or replace function pg_temp.mk_debt(
+    p_hh uuid, p_kind text, p_title text, p_amount numeric,
+    p_visibility text, p_holder uuid) returns uuid
+  language plpgsql as $$
+declare v_id uuid := gen_random_uuid();
+begin
+  insert into liabilities (id, household_id, kind, title, outstanding, visibility, created_by)
+    values (v_id, p_hh, p_kind, p_title, p_amount, p_visibility, app.current_user_id());
+  insert into liability_holders (liability_id, member_id, responsibility_pct)
+    values (v_id, p_holder, 100);
+  return v_id;
+end $$;
+
+select pg_temp.as_user('ish');
+select pg_temp.mk_debt((select v from t where k='hh'), 'personal', 'Her personal loan',
+                       300000, 'private', (select v from t where k='m_ish')) as id \gset d_hers_
+select pg_temp.mk_debt((select v from t where k='hh'), 'car', 'Household car loan',
+                       600000, 'household', (select v from t where k='m_ish')) as id \gset d_shared_
+
+select pg_temp.as_user('ravi');
+select pg_temp.mk_debt((select v from t where k='hh'), 'credit_card', 'His card',
+                       50000, 'private', (select v from t where k='m_ravi')) as id \gset d_his_
+
+insert into t values ('d_hers', :'d_hers_id'), ('d_shared', :'d_shared_id'), ('d_his', :'d_his_id');
+
+create or replace function pg_temp.sees_debt(p_key text) returns boolean
+  language plpgsql as $$
+declare v uuid;
+begin
+  select t.v into v from t where t.k = p_key;
+  return exists (select 1 from liabilities where id = v);
+end $$;
+
+select pg_temp.assert(not pg_temp.sees_debt('d_hers'),
+       'an admin CANNOT see another member''s private debt');
+select pg_temp.assert(pg_temp.sees_debt('d_shared'), 'the admin sees the shared car loan');
+select pg_temp.assert(pg_temp.sees_debt('d_his'),    'the admin sees his own private card');
+
+-- The subtractive leak: a debt nobody can see must not shrink anyone else's
+-- net worth. Ravi's visible debt is the shared 600,000 plus his own 50,000.
+select pg_temp.assert(
+  (select coalesce(sum(attributed_outstanding),0) from liability_holder_value
+     where household_id = (select v from t where k='hh')) = 650000,
+  'a private debt contributes zero to another member''s total (no subtractive leak)');
+
+select pg_temp.as_user('ish');
+-- Hers: her own 300,000 plus the shared 600,000. His 50,000 is invisible to her.
+select pg_temp.assert(
+  (select coalesce(sum(attributed_outstanding),0) from liability_holder_value
+     where household_id = (select v from t where k='hh')) = 900000,
+  'the owner still sees her own true debt total');
+
+select pg_temp.assert(
+  not exists (select 1 from liability_holders
+              where liability_id = (select v from t where k='d_his')),
+  'holder rows of an invisible debt are invisible too');
+
+do $$ begin raise notice '--- an encumbrance must not betray a hidden debt ---'; end $$;
+insert into asset_liability_links (liability_id, investment_id)
+  values ((select v from t where k='d_hers'), (select v from t where k='i_shared'));
+
+select pg_temp.assert(
+  (select count(*) from asset_liability_links
+    where investment_id = (select v from t where k='i_shared')) = 1,
+  'the owner sees the loan secured against her shared gold');
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert(
+  (select count(*) from asset_liability_links
+    where investment_id = (select v from t where k='i_shared')) = 0,
+  'the admin sees the gold but not that a private loan is secured against it');
+
+do $$ begin raise notice '--- responsibility sums are a database invariant ---'; end $$;
+select pg_temp.as_user('ish');
+do $$
+declare v_ok boolean := false;
+begin
+  begin
+    insert into liability_holders (liability_id, member_id, responsibility_pct)
+      values ((select v from t where k='d_shared'), (select v from t where k='m_ravi'), 40);
+    set constraints all immediate;
+  exception when others then v_ok := true;
+  end;
+  perform pg_temp.assert(v_ok, 'responsibility totalling 140% is rejected');
+end $$;
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

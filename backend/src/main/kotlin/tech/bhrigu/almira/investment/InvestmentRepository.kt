@@ -13,6 +13,14 @@ import java.util.UUID
 
 data class OwnerShare(val memberId: UUID, val memberName: String?, val sharePct: BigDecimal, val holderType: String)
 
+data class NomineeShare(
+    val id: UUID,
+    val memberId: UUID?,
+    val name: String,
+    val relationship: String?,
+    val sharePct: BigDecimal,
+)
+
 data class InvestmentRow(
     val id: UUID,
     val householdId: UUID,
@@ -47,7 +55,13 @@ data class InvestmentRow(
     val version: Int,
     val createdAt: Instant,
     val owners: List<OwnerShare> = emptyList(),
+    val nominees: List<NomineeShare> = emptyList(),
     val visibleToMemberIds: List<UUID> = emptyList(),
+    /**
+     * What is owed against this asset. You own the flat; not all of its value is
+     * yours yet. Null when nothing is secured against it.
+     */
+    val encumbrance: BigDecimal? = null,
 )
 
 data class ValuationRow(
@@ -238,6 +252,37 @@ class InvestmentRepository(
             .addValue("continuity", isInContinuity),
     )
 
+    /**
+     * Nominees are replaced wholesale rather than patched. A nominee list is a
+     * legal instruction; "add one and hope the rest are still right" is how
+     * shares end up totalling 130%.
+     */
+    fun replaceNominees(
+        investmentId: UUID,
+        nominees: List<Triple<UUID?, String?, Pair<String?, BigDecimal>>>,
+    ) {
+        jdbc.update(
+            "delete from investment_nominees where investment_id = :id",
+            mapOf("id" to investmentId),
+        )
+        nominees.forEach { (memberId, name, rest) ->
+            val (relationship, share) = rest
+            jdbc.update(
+                """
+                insert into investment_nominees
+                  (investment_id, member_id, nominee_name, relationship, share_pct)
+                values (:id, :memberId, :name, :relationship, :share)
+                """.trimIndent(),
+                MapSqlParameterSource()
+                    .addValue("id", investmentId)
+                    .addValue("memberId", memberId)
+                    .addValue("name", name)
+                    .addValue("relationship", relationship)
+                    .addValue("share", share),
+            )
+        }
+    }
+
     fun updateVisibility(id: UUID, visibility: String): Int = jdbc.update(
         "update investments set visibility = :visibility where id = :id and deleted_at is null",
         mapOf("id" to id, "visibility" to visibility),
@@ -390,6 +435,26 @@ class InvestmentRepository(
             )
         }.groupBy({ it.first }, { it.second })
 
+        val nominees = jdbc.query(
+            """
+            select n.id, n.investment_id, n.member_id, n.relationship, n.share_pct,
+                   coalesce(m.display_name, n.nominee_name) as name
+            from investment_nominees n
+            left join members m on m.id = n.member_id
+            where n.investment_id in (:ids)
+            order by n.share_pct desc
+            """.trimIndent(),
+            mapOf("ids" to ids),
+        ) { rs, _ ->
+            rs.getObject("investment_id", UUID::class.java) to NomineeShare(
+                id = rs.getObject("id", UUID::class.java),
+                memberId = rs.getObject("member_id", UUID::class.java),
+                name = rs.getString("name"),
+                relationship = rs.getString("relationship"),
+                sharePct = rs.getBigDecimal("share_pct"),
+            )
+        }.groupBy({ it.first }, { it.second })
+
         val grants = jdbc.query(
             """
             select record_id, member_id from record_visibility_grants
@@ -400,10 +465,28 @@ class InvestmentRepository(
             rs.getObject("record_id", UUID::class.java) to rs.getObject("member_id", UUID::class.java)
         }.groupBy({ it.first }, { it.second })
 
+        // Both ends are RLS-scoped, so a loan the viewer cannot see adds nothing
+        // here — an encumbrance figure must not become a way to infer that a
+        // private debt exists, or roughly how large it is.
+        val encumbrances = jdbc.query(
+            """
+            select k.investment_id, sum(lc.outstanding) as owed
+            from asset_liability_links k
+            join liability_current lc on lc.liability_id = k.liability_id
+            where k.investment_id in (:ids) and lc.status = 'active'
+            group by k.investment_id
+            """.trimIndent(),
+            mapOf("ids" to ids),
+        ) { rs, _ ->
+            rs.getObject("investment_id", UUID::class.java) to rs.getBigDecimal("owed")
+        }.toMap()
+
         return rows.map {
             it.copy(
                 owners = owners[it.id].orEmpty(),
+                nominees = nominees[it.id].orEmpty(),
                 visibleToMemberIds = grants[it.id].orEmpty(),
+                encumbrance = encumbrances[it.id],
             )
         }
     }

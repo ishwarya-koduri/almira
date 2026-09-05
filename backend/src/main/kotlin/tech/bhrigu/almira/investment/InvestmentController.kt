@@ -50,6 +50,16 @@ data class ChangeVisibilityBody(
     val visibleToMemberIds: List<UUID> = emptyList(),
 )
 
+data class SetNomineesBody(val nominees: List<NomineeInput> = emptyList())
+
+data class NomineeResponse(
+    val id: UUID,
+    val memberId: UUID?,
+    val name: String,
+    val relationship: String?,
+    val sharePct: BigDecimal,
+)
+
 data class OwnerResponse(
     val memberId: UUID,
     val name: String?,
@@ -94,6 +104,12 @@ data class InvestmentResponse(
     val visibleToMemberIds: List<UUID>,
     val isInContinuity: Boolean,
     val owners: List<OwnerResponse>,
+    val nominees: List<NomineeResponse>,
+    /** Outstanding debt secured against this asset, if any. */
+    val encumbrance: BigDecimal?,
+    val encumbranceFormatted: String?,
+    /** Value minus what is owed against it — what is actually yours today. */
+    val netEquity: BigDecimal?,
     val lastVerifiedAt: Instant?,
     val version: Int,
     val createdAt: Instant,
@@ -183,6 +199,17 @@ class InvestmentController(private val service: InvestmentService) {
         service.changeVisibility(householdId, id, body.visibility, body.visibleToMemberIds)
             .toResponse()
 
+    /**
+     * Replaces the whole nominee list. A nominee list is a legal instruction, so
+     * it is set as a unit rather than patched a name at a time.
+     */
+    @org.springframework.web.bind.annotation.PutMapping("/{id}/nominees")
+    fun setNominees(
+        @PathVariable householdId: UUID,
+        @PathVariable id: UUID,
+        @RequestBody @Valid body: SetNomineesBody,
+    ): InvestmentResponse = service.replaceNominees(householdId, id, body.nominees).toResponse()
+
     @PostMapping("/{id}/valuations")
     @ResponseStatus(HttpStatus.CREATED)
     fun addValuation(
@@ -234,5 +261,15 @@ internal fun InvestmentRow.toResponse() = InvestmentResponse(
     visibility = visibility, visibleToMemberIds = visibleToMemberIds,
     isInContinuity = isInContinuity,
     owners = owners.map { OwnerResponse(it.memberId, it.memberName, it.sharePct, it.holderType) },
+    nominees = nominees.map {
+        NomineeResponse(it.id, it.memberId, it.name, it.relationship, it.sharePct)
+    },
+    encumbrance = encumbrance,
+    encumbranceFormatted = encumbrance?.let { IndianNumbers.rupees(it) },
+    netEquity = if (encumbrance != null && effectiveValue != null) {
+        effectiveValue - encumbrance
+    } else {
+        null
+    },
     lastVerifiedAt = lastVerifiedAt, version = version, createdAt = createdAt,
 )

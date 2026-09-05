@@ -33,6 +33,20 @@ private data class Slice(
     val categoryExpectsAccount: Boolean,
 )
 
+/** One holder's share of one debt — the mirror of [Slice]. */
+private data class DebtSlice(
+    val liabilityId: UUID,
+    val title: String,
+    val kind: String,
+    val kindLabel: String,
+    val memberId: UUID,
+    val memberName: String?,
+    val outstanding: BigDecimal,
+    val attributedOutstanding: BigDecimal,
+    val emiAmount: BigDecimal?,
+    val emiDay: Int?,
+)
+
 data class Breakdown(
     val key: String,
     val label: String,
@@ -69,16 +83,27 @@ data class ValueConfidence(
 data class Dashboard(
     val scope: String,
     val scopeLabel: String,
-    /** Phase 0 reports assets only; liabilities and true net worth land in Phase 1. */
+    /**
+     * assets − liabilities. This is the headline: a figure called "net worth"
+     * that quietly ignored a home loan would be worse than no figure at all
+     * (docs/01 §6). Assets and liabilities are reported alongside it so the
+     * number is never a black box.
+     */
+    val netWorth: BigDecimal,
+    val netWorthFormatted: String,
+    val netWorthInWords: String,
     val totalAssets: BigDecimal,
     val totalAssetsFormatted: String,
-    val totalAssetsInWords: String,
+    val totalLiabilities: BigDecimal,
+    val totalLiabilitiesFormatted: String,
     val currency: String,
     val holdingCount: Int,
+    val liabilityCount: Int,
     val valueConfidence: ValueConfidence,
     val byCategory: List<Breakdown>,
     val byMember: List<Breakdown>,
     val byInstitution: List<Breakdown>,
+    val byLiabilityKind: List<Breakdown>,
     val upcoming: List<UpcomingItem>,
     val attention: List<AttentionItem>,
     val disclaimer: String,
@@ -103,17 +128,30 @@ class DashboardService(
         val myMemberIds = members.filter { it.isMe }.map { it.id }.toSet()
 
         val slices = loadSlices(householdId)
+        val debts = loadDebtSlices(householdId)
 
-        val (selected, scopeLabel) = when (scope) {
-            "household" -> slices to household.name
-            "me" -> slices.filter { it.memberId in myMemberIds } to "Me"
+        // Both sides are filtered by the same scope, so a member lens shows what
+        // that person owns AND what they are responsible for. Netting one
+        // against a differently-scoped other would produce a number that means
+        // nothing.
+        val (selected, selectedDebts, scopeLabel) = when (scope) {
+            "household" -> Triple(slices, debts, household.name)
+            "me" -> Triple(
+                slices.filter { it.memberId in myMemberIds },
+                debts.filter { it.memberId in myMemberIds },
+                "Me",
+            )
             "member" -> {
                 val target = memberId ?: throw ApiException.badRequest(
                     "member_required", "Choose whose holdings to show.",
                 )
                 val member = members.firstOrNull { it.id == target }
                     ?: throw ApiException.notFound("We couldn't find that person.")
-                slices.filter { it.memberId == target } to member.displayName
+                Triple(
+                    slices.filter { it.memberId == target },
+                    debts.filter { it.memberId == target },
+                    member.displayName,
+                )
             }
             else -> throw ApiException.badRequest(
                 "scope_invalid", "Scope must be me, household or member.",
@@ -121,16 +159,23 @@ class DashboardService(
         }
 
         val total = selected.fold(BigDecimal.ZERO) { acc, s -> acc + s.attributedValue }
+        val owed = selectedDebts.fold(BigDecimal.ZERO) { acc, d -> acc + d.attributedOutstanding }
+        val netWorth = total - owed
         val distinct = selected.distinctBy { it.investmentId }
 
         return Dashboard(
             scope = scope,
             scopeLabel = scopeLabel,
+            netWorth = netWorth.setScale(2, RoundingMode.HALF_UP),
+            netWorthFormatted = IndianNumbers.rupees(netWorth),
+            netWorthInWords = IndianNumbers.words(netWorth),
             totalAssets = total.setScale(2, RoundingMode.HALF_UP),
             totalAssetsFormatted = IndianNumbers.rupees(total),
-            totalAssetsInWords = IndianNumbers.words(total),
+            totalLiabilities = owed.setScale(2, RoundingMode.HALF_UP),
+            totalLiabilitiesFormatted = IndianNumbers.rupees(owed),
             currency = household.baseCurrency,
             holdingCount = distinct.size,
+            liabilityCount = selectedDebts.distinctBy { it.liabilityId }.size,
             valueConfidence = ValueConfidence(
                 valued = distinct.count { it.valueBasis == "valued" },
                 atCost = distinct.count { it.valueBasis == "at_cost" },
@@ -144,7 +189,8 @@ class DashboardService(
             byInstitution = group(selected.filter { it.hasInstitution }, total) {
                 Triple(it.institutionName!!, it.institutionName, null)
             },
-            upcoming = upcoming(distinct),
+            byLiabilityKind = groupDebts(selectedDebts, owed),
+            upcoming = upcoming(distinct, selectedDebts.distinctBy { it.liabilityId }),
             attention = attention(distinct),
             disclaimer = DISCLAIMER,
         )
@@ -195,6 +241,61 @@ class DashboardService(
         )
     }
 
+    /**
+     * Read through the caller's own RLS, exactly like assets. A private debt
+     * therefore contributes nothing to anyone else's net worth — not its
+     * amount, not its existence — because the rows are never returned.
+     */
+    private fun loadDebtSlices(householdId: UUID): List<DebtSlice> = jdbc.query(
+        """
+        select l.id, l.title, l.kind, l.emi_amount, l.emi_day,
+               h.member_id, m.display_name as member_name,
+               hv.outstanding, hv.attributed_outstanding
+        from liabilities l
+        join liability_holder_value hv on hv.liability_id = l.id
+        join liability_holders h
+          on h.liability_id = l.id and h.member_id = hv.member_id
+        left join members m on m.id = h.member_id
+        where l.household_id = :hid
+          and l.deleted_at is null
+          and l.status = 'active'
+        """.trimIndent(),
+        mapOf("hid" to householdId),
+    ) { rs, _ ->
+        val kind = rs.getString("kind")
+        DebtSlice(
+            liabilityId = rs.getObject("id", UUID::class.java),
+            title = rs.getString("title"),
+            kind = kind,
+            kindLabel = LIABILITY_LABELS[kind] ?: kind.replace('_', ' ').replaceFirstChar { it.uppercase() },
+            memberId = rs.getObject("member_id", UUID::class.java),
+            memberName = rs.getString("member_name"),
+            outstanding = rs.getBigDecimal("outstanding") ?: BigDecimal.ZERO,
+            attributedOutstanding = rs.getBigDecimal("attributed_outstanding") ?: BigDecimal.ZERO,
+            emiAmount = rs.getBigDecimal("emi_amount"),
+            emiDay = rs.getObject("emi_day")?.let { rs.getInt("emi_day") },
+        )
+    }
+
+    private fun groupDebts(debts: List<DebtSlice>, total: BigDecimal): List<Breakdown> = debts
+        .groupBy { it.kind to it.kindLabel }
+        .map { (key, group) ->
+            val value = group.fold(BigDecimal.ZERO) { acc, d -> acc + d.attributedOutstanding }
+            Breakdown(
+                key = key.first,
+                label = key.second,
+                // Debt uses the caution family throughout, so owe and own never
+                // read as the same thing at a glance (docs/02 §2.4).
+                color = "var(--caution)",
+                value = value.setScale(2, RoundingMode.HALF_UP),
+                valueFormatted = IndianNumbers.rupees(value),
+                percentage = if (total.signum() == 0) BigDecimal.ZERO
+                else value.multiply(BigDecimal(100)).divide(total, 1, RoundingMode.HALF_UP),
+                count = group.distinctBy { it.liabilityId }.size,
+            )
+        }
+        .sortedByDescending { it.value }
+
     private fun group(
         slices: List<Slice>,
         total: BigDecimal,
@@ -216,22 +317,49 @@ class DashboardService(
         }
         .sortedByDescending { it.value }
 
-    private fun upcoming(slices: List<Slice>): List<UpcomingItem> {
+    private fun upcoming(slices: List<Slice>, debts: List<DebtSlice>): List<UpcomingItem> {
         val today = LocalDate.now()
         val horizon = today.plusDays(90)
-        return slices
-            .mapNotNull { s ->
-                s.maturityDate
-                    ?.takeIf { !it.isBefore(today) && !it.isAfter(horizon) }
-                    ?.let {
-                        UpcomingItem(
-                            investmentId = s.investmentId, title = s.title, kind = "maturity",
-                            date = it, daysAway = ChronoUnit.DAYS.between(today, it),
-                            value = s.effectiveValue,
-                        )
-                    }
+
+        val maturities = slices.mapNotNull { s ->
+            s.maturityDate
+                ?.takeIf { !it.isBefore(today) && !it.isAfter(horizon) }
+                ?.let {
+                    UpcomingItem(
+                        investmentId = s.investmentId, title = s.title, kind = "maturity",
+                        date = it, daysAway = ChronoUnit.DAYS.between(today, it),
+                        value = s.effectiveValue,
+                    )
+                }
+        }
+
+        // Money going out belongs in the same list as money coming in — that is
+        // what makes it a cash-flow view rather than two half-views.
+        val emis = debts.mapNotNull { debt ->
+            debt.emiDay?.let { day ->
+                UpcomingItem(
+                    investmentId = debt.liabilityId, title = debt.title, kind = "emi",
+                    date = nextOccurrence(day, today), value = debt.emiAmount,
+                    daysAway = ChronoUnit.DAYS.between(today, nextOccurrence(day, today)),
+                )
             }
-            .sortedBy { it.date }
+        }
+
+        return (maturities + emis).sortedBy { it.date }
+    }
+
+    /**
+     * The next time a monthly due date falls.
+     *
+     * A loan due on the 31st still has to be due in February. Clamping to the
+     * month's last day is what people's banks actually do, and getting it wrong
+     * means a reminder that silently never fires (docs/07 §1).
+     */
+    private fun nextOccurrence(dayOfMonth: Int, from: LocalDate): LocalDate {
+        val thisMonth = from.withDayOfMonth(minOf(dayOfMonth, from.lengthOfMonth()))
+        if (!thisMonth.isBefore(from)) return thisMonth
+        val next = from.plusMonths(1)
+        return next.withDayOfMonth(minOf(dayOfMonth, next.lengthOfMonth()))
     }
 
     /**
@@ -282,6 +410,15 @@ class DashboardService(
          */
         val CATEGORIES_WITH_ACCOUNTS = setOf(
             "deposits", "mutual_funds", "equity", "ipo", "bonds", "retirement",
+        )
+
+        val LIABILITY_LABELS = mapOf(
+            "home" to "Home loan", "car" to "Car loan", "personal" to "Personal loan",
+            "education" to "Education loan", "gold" to "Gold loan",
+            "credit_card" to "Credit card", "lap" to "Loan against property",
+            "las" to "Loan against securities",
+            "loan_against_insurance" to "Loan against insurance",
+            "family" to "Family loan", "other" to "Other",
         )
 
         const val DISCLAIMER =

@@ -19,3 +19,11 @@ end $$;
 
 grant connect on database almira to almira_app;
 grant usage on schema public to almira_app;
+
+-- A separate database for the automated test suite.
+--
+-- Tests create households, sign up users and delete records; pointing them at
+-- the development database would quietly destroy whatever you were working on.
+-- Flyway migrates this one on test startup exactly as it does the real one.
+create database almira_test owner almira;
+grant connect on database almira_test to almira_app;

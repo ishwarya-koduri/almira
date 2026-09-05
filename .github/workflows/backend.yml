@@ -1,0 +1,87 @@
+name: backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: build & test
+    runs-on: ubuntu-latest
+
+    # Service containers rather than Testcontainers: faster, and it keeps CI
+    # working in environments that restrict direct access to the Docker API.
+    # TestInfra picks these up from ALMIRA_TEST_* and skips Testcontainers.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: almira_test
+          POSTGRES_USER: almira
+          POSTGRES_PASSWORD: dev
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U almira"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+
+    env:
+      PGPASSWORD: dev
+      ALMIRA_TEST_DB_URL: jdbc:postgresql://localhost:5432/almira_test
+      ALMIRA_TEST_DB_OWNER_USER: almira
+      ALMIRA_TEST_DB_OWNER_PASSWORD: dev
+      ALMIRA_TEST_DB_APP_USER: almira_app
+      ALMIRA_TEST_DB_APP_PASSWORD: app_dev_password
+      ALMIRA_TEST_REDIS_HOST: localhost
+      ALMIRA_TEST_REDIS_PORT: 6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The application must NOT run as the schema owner: PostgreSQL lets an
+      # owner bypass its own RLS policies, so tests running as the owner would
+      # pass while production leaked. Same split as infra/postgres-init.
+      - name: Create the non-owner application role
+        run: |
+          psql -h localhost -U almira -d almira_test -v ON_ERROR_STOP=1 <<'SQL'
+          create role almira_app login password 'app_dev_password';
+          grant connect on database almira_test to almira_app;
+          grant usage on schema public to almira_app;
+          SQL
+
+      - name: Build and test
+        working-directory: backend
+        run: ./gradlew build --no-daemon
+
+      # The JUnit suite proves the privacy model holds through the whole stack.
+      # This one proves it holds in SQL, independently of any application code —
+      # if a future refactor bypasses a service, the policies still have to hold.
+      - name: Row-level security assertions (SQL)
+        run: |
+          PGPASSWORD=app_dev_password psql -h localhost -U almira_app -d almira_test \
+            -v ON_ERROR_STOP=1 -q -f db/tests/rls_privacy_test.sql
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: backend/build/reports/tests/test
+          retention-days: 7

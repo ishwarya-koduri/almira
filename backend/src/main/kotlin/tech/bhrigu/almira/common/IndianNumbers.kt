@@ -30,7 +30,14 @@ object IndianNumbers {
 
         val last3 = whole.takeLast(3)
         val rest = whole.dropLast(3)
-        val pairs = rest.reversed().chunked(2).joinToString(",") { it.reversed() }.reversed()
+        // Chunk from the RIGHT: 5050000 -> "5050" -> ["50","50"] -> "50,50,000".
+        // Reversing the joined string instead of the chunk list is the subtle
+        // way to get this wrong -- it yields "05,05,000", which reads as a
+        // plausible number and so survives a casual glance.
+        val pairs = rest.reversed()
+            .chunked(2) { it.reversed() }
+            .reversed()
+            .joinToString(",")
         return "$sign$pairs,$last3"
     }
 

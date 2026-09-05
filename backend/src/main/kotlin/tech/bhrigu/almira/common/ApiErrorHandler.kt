@@ -65,6 +65,27 @@ class ApiErrorHandler {
         return ResponseEntity.status(status).body(ApiErrorEnvelope(ApiErrorBody(code, message)))
     }
 
+    /**
+     * A URL that matches no handler is a 404, not a 500. Without this it falls
+     * through to the catch-all below and reports an internal error, which sends
+     * a client hunting for a server fault that does not exist.
+     */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException::class)
+    fun handleNoRoute(
+        e: org.springframework.web.servlet.resource.NoResourceFoundException,
+    ): ResponseEntity<ApiErrorEnvelope> =
+        ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+            ApiErrorEnvelope(ApiErrorBody("not_found", "We couldn't find that.")),
+        )
+
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException::class)
+    fun handleWrongMethod(
+        e: org.springframework.web.HttpRequestMethodNotSupportedException,
+    ): ResponseEntity<ApiErrorEnvelope> =
+        ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(
+            ApiErrorEnvelope(ApiErrorBody("method_not_allowed", "That isn't something you can do here.")),
+        )
+
     @ExceptionHandler(Exception::class)
     fun handleUnexpected(e: Exception, request: HttpServletRequest): ResponseEntity<ApiErrorEnvelope> {
         log.error("unhandled error on {} {}", request.method, request.requestURI, e)

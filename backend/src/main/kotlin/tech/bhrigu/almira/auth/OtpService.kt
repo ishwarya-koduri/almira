@@ -48,7 +48,12 @@ class OtpService(
             mapOf("hash" to hash(code), "requestId" to requestId, "attempts" to "0"),
         )
         redis.expire(challengeKey(phone), cfg.ttl)
-        redis.opsForValue().set(cooldownKey(phone), "1", cfg.resendCooldown)
+        // Redis rejects a zero or negative TTL outright, so a misconfigured
+        // cooldown would turn every sign-in attempt into a 500 rather than
+        // simply disabling the cooldown. Guard the config, not the user.
+        if (!cfg.resendCooldown.isZero && !cfg.resendCooldown.isNegative) {
+            redis.opsForValue().set(cooldownKey(phone), "1", cfg.resendCooldown)
+        }
 
         sender.send(phone, code)
 

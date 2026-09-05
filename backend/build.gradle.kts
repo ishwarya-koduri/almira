@@ -42,7 +42,6 @@ dependencies {
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:junit-jupiter:1.20.6")
     testImplementation("org.testcontainers:postgresql:1.20.6")
-    testImplementation("com.redis:testcontainers-redis:2.2.4")
 }
 
 // The migrations live at db/migrations in the repo root -- one source of truth
@@ -58,6 +57,24 @@ tasks.named("processResources") { dependsOn(syncMigrations) }
 
 tasks.withType<Test> {
     useJUnitPlatform()
+
+    // Integration tests need Postgres and Redis. TestInfra prefers an external
+    // pair when ALMIRA_TEST_* is set (CI service containers, or the local
+    // docker-compose stack) and falls back to Testcontainers otherwise. Pass the
+    // variables through, and help Testcontainers find Docker Desktop's socket on
+    // macOS, where it lives under the user's home rather than /var/run.
+    listOf(
+        "ALMIRA_TEST_DB_URL", "ALMIRA_TEST_DB_OWNER_USER", "ALMIRA_TEST_DB_OWNER_PASSWORD",
+        "ALMIRA_TEST_DB_APP_USER", "ALMIRA_TEST_DB_APP_PASSWORD",
+        "ALMIRA_TEST_REDIS_HOST", "ALMIRA_TEST_REDIS_PORT",
+    ).forEach { name -> System.getenv(name)?.let { environment(name, it) } }
+
+    if (System.getenv("DOCKER_HOST") == null) {
+        val desktopSocket = File(System.getProperty("user.home"), ".docker/run/docker.sock")
+        if (desktopSocket.exists()) {
+            environment("DOCKER_HOST", "unix://" + desktopSocket.absolutePath)
+        }
+    }
     testLogging {
         events("passed", "failed", "skipped")
         showStandardStreams = false

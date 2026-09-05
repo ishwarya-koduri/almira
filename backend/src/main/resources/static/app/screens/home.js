@@ -41,17 +41,29 @@ export async function homeScreen(host) {
     ),
 
     // The hero. Gold appears exactly once per screen, and this is it.
+    //
+    // The headline is TRUE net worth. Assets and liabilities sit beside it as
+    // sub-figures rather than being hidden: a single number people are asked to
+    // trust should show its own arithmetic.
     el("div.hero", {},
       el("div.row-between.wrap", { style: { alignItems: "flex-start", gap: "24px" } },
         el("div", {},
-          el("div.overline", {}, "Total assets"),
-          el("div.hero-amount", {}, data.totalAssetsFormatted),
-          el("div.hero-words", {}, data.totalAssetsInWords),
+          el("div.overline", {}, "True net worth"),
+          el("div.hero-amount", {}, data.netWorthFormatted),
+          el("div.hero-words", {}, data.netWorthInWords),
         ),
         el("div.hero-side", {},
-          el("div.hero-side-row", {}, el("span.muted", {}, "Holdings"), el("b", {}, String(data.holdingCount))),
-          el("div.hero-side-row", {}, el("span.muted", {}, "Valued"), el("b", {}, String(data.valueConfidence.valued))),
-          el("div.hero-side-row", {}, el("span.muted", {}, "At cost"), el("b", {}, String(data.valueConfidence.atCost))),
+          el("div.hero-side-row", {},
+            el("span.muted", {}, "Assets"), el("b", {}, data.totalAssetsFormatted)),
+          el("div.hero-side-row", {},
+            el("span.muted", {}, "Owed"),
+            el("b", { style: { color: "var(--caution)" } },
+              Number(data.totalLiabilities) > 0 ? `− ${data.totalLiabilitiesFormatted}` : "—")),
+          el("div", { style: { height: "1px", background: "var(--hairline)", margin: "4px 0" } }),
+          el("div.hero-side-row", {},
+            el("span.muted", {}, "Holdings"), el("b", {}, String(data.holdingCount))),
+          el("div.hero-side-row", {},
+            el("span.muted", {}, "Loans"), el("b", {}, String(data.liabilityCount))),
           data.valueConfidence.unknown > 0 && el("div.hero-side-row", {},
             el("span.muted", {}, "No value yet"), el("b", {}, String(data.valueConfidence.unknown))),
         ),
@@ -67,14 +79,38 @@ export async function homeScreen(host) {
         }))
       : el("div.grid.grid-2", {},
           breakdownCard("Where it sits", data.byCategory, true),
-          breakdownCard("Whose it is", data.byMember, false),
+          data.byLiabilityKind.length > 0
+            ? breakdownCard("What's owed", data.byLiabilityKind, false)
+            : breakdownCard("Whose it is", data.byMember, false),
         ),
+
+    data.byLiabilityKind.length > 0 && el("div.grid.grid-2", {},
+      breakdownCard("Whose it is", data.byMember, false),
+      el("div.card", {},
+        el("div.section-title", {}, el("h4", {}, "Owned against owed")),
+        el("div.alloc", {},
+          barRow("Assets", data.totalAssets, data.totalAssetsFormatted,
+                 data.totalAssets, "var(--positive)"),
+          barRow("Owed", data.totalLiabilities, data.totalLiabilitiesFormatted,
+                 data.totalAssets, "var(--caution)"),
+        ),
+        el("p.caption.muted", { style: { marginTop: "16px", marginBottom: 0 } },
+          `What's left is yours: ${data.netWorthFormatted}.`),
+      ),
+    ),
 
     upcoming.length > 0 && el("div.card", {},
       el("div.section-title", {}, el("h4", {}, "Coming up"), el("span.caption.muted", {}, "Next 90 days")),
       el("div.list", {}, ...upcoming.map((item) =>
-        el("button.list-row", { type: "button", onclick: () => openDetail(item.investmentId) },
-          el("span.pill", {}, item.kind === "maturity" ? "Matures" : item.kind),
+        el("button.list-row", {
+          type: "button",
+          // An EMI points at a liability, not a holding, so only maturities open
+          // a holding's detail sheet.
+          onclick: () => { if (item.kind === "maturity") openDetail(item.investmentId); },
+          style: item.kind === "emi" ? { cursor: "default" } : null,
+        },
+          el(`span.pill${item.kind === "emi" ? ".pill-caution" : ""}`, {},
+            item.kind === "maturity" ? "Matures" : "EMI due"),
           el("div.grow", {},
             el("div.title", {}, item.title),
             el("div.meta", {}, relativeDays(item.date)),
@@ -94,6 +130,19 @@ export async function homeScreen(host) {
       )),
     ),
   ));
+}
+
+function barRow(label, value, formatted, scale, colour) {
+  const pct = Number(scale) > 0 ? Math.max(2, (Number(value) / Number(scale)) * 100) : 0;
+  return el("div.alloc-row", {},
+    el("span.dot", { style: { background: colour }, "aria-hidden": "true" }),
+    el("div", {},
+      el("div.alloc-label", {}, label),
+      el("div.alloc-bar", {},
+        el("i", { style: { width: `${Math.min(100, pct)}%`, background: colour } })),
+    ),
+    el("div.alloc-value", {}, formatted),
+  );
 }
 
 function breakdownCard(title, rows, useCategoryColour) {

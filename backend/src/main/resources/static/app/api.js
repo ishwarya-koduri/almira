@@ -102,6 +102,7 @@ export const api = {
   get:    (path)       => request("GET", path),
   post:   (path, body) => request("POST", path, body),
   patch:  (path, body) => request("PATCH", path, body),
+  put:    (path, body) => request("PUT", path, body),
   del:    (path)       => request("DELETE", path),
 
   // --- auth -----------------------------------------------------------------
@@ -151,6 +152,35 @@ export const api = {
   dashboard:     (hid, scope, m)  => api.get(
     `/api/households/${hid}/dashboard?scope=${scope}${m ? `&member=${m}` : ""}`),
   invite:        (hid, body)      => api.post(`/api/households/${hid}/invitations`, body),
+
+  // --- accounts -------------------------------------------------------------
+  accounts:      (hid)            => api.get(`/api/households/${hid}/accounts`),
+  account:       (hid, id)        => api.get(`/api/households/${hid}/accounts/${id}`),
+  createAccount: (hid, body)      => api.post(`/api/households/${hid}/accounts`, body),
+  updateAccount: (hid, id, body)  => api.patch(`/api/households/${hid}/accounts/${id}`, body),
+  deleteAccount: (hid, id)        => api.del(`/api/households/${hid}/accounts/${id}`),
+  revealNumber:  (hid, id)        => api.post(`/api/households/${hid}/accounts/${id}/reveal-number`),
+
+  // --- step-up --------------------------------------------------------------
+  stepUpStatus:  ()               => api.get("/api/auth/step-up"),
+  stepUpRequest: ()               => api.post("/api/auth/step-up/request"),
+  stepUpVerify:  (body)           => api.post("/api/auth/step-up/verify", body),
+
+  // --- liabilities ----------------------------------------------------------
+  liabilities:   (hid)            => api.get(`/api/households/${hid}/liabilities`),
+  liability:     (hid, id)        => api.get(`/api/households/${hid}/liabilities/${id}`),
+  createLiability: (hid, body)    => api.post(`/api/households/${hid}/liabilities`, body),
+  updateLiability: (hid, id, b)   => api.patch(`/api/households/${hid}/liabilities/${id}`, b),
+  recordBalance: (hid, id, body)  => api.post(`/api/households/${hid}/liabilities/${id}/balances`, body),
+  setLiabilityVisibility: (hid, id, b) =>
+    api.patch(`/api/households/${hid}/liabilities/${id}/visibility`, b),
+  linkSecuredAsset: (hid, id, b)  => api.post(`/api/households/${hid}/liabilities/${id}/secured-by`, b),
+  deleteLiability: (hid, id)      => api.del(`/api/households/${hid}/liabilities/${id}`),
+
+  // --- nominees -------------------------------------------------------------
+  // PUT, not PATCH: the nominee list is replaced as a unit.
+  setNominees:   (hid, id, body)  =>
+    api.put(`/api/households/${hid}/investments/${id}/nominees`, body),
   acceptInvite:  (token)          => api.post("/api/invitations/accept", { token }),
 };
 

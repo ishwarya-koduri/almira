@@ -533,13 +533,18 @@ class InvestmentRepository(
             select i.*, t.code as type_code, t.label as type_label, t.icon as type_icon,
                    c.code as category_code, c.label as category_label,
                    coalesce(t.color, c.color) as category_color,
-                   inst.name as institution_name, acc.label as account_label,
+                   -- Falls back to the linked account's institution: a folio at
+                   -- Zerodha is held at Zerodha whether or not the holding
+                   -- names it directly.
+                   coalesce(inst.name, acc_inst.name) as institution_name,
+                   acc.label as account_label,
                    v.effective_value, v.value_basis, v.valued_on
             from investments i
             join investment_types t on t.id = i.type_id
             join asset_categories c on c.id = t.category_id
             left join institutions inst on inst.id = i.institution_id
             left join accounts acc on acc.id = i.account_id
+            left join institutions acc_inst on acc_inst.id = acc.institution_id
             left join investment_value v on v.investment_id = i.id
         """
         const val SELECT = "$SELECT_BASE where i.household_id = :hid and i.deleted_at is null"

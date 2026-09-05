@@ -9,6 +9,8 @@ import { authScreen } from "./screens/auth.js";
 import { onboardingScreen } from "./screens/onboarding.js";
 import { homeScreen } from "./screens/home.js";
 import { investmentsScreen } from "./screens/investments.js";
+import { liabilitiesScreen } from "./screens/liabilities.js";
+import { accountsScreen } from "./screens/accounts.js";
 import { familyScreen } from "./screens/family.js";
 import { settingsScreen } from "./screens/settings.js";
 import { openCapture } from "./screens/capture.js";
@@ -16,6 +18,8 @@ import { openCapture } from "./screens/capture.js";
 const routes = {
   home: { label: "Home", render: homeScreen },
   investments: { label: "Investments", render: investmentsScreen },
+  liabilities: { label: "Owed", render: liabilitiesScreen },
+  accounts: { label: "Accounts", render: accountsScreen },
   family: { label: "Family", render: familyScreen },
   settings: { label: "Settings", render: settingsScreen },
 };

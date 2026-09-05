@@ -202,9 +202,10 @@ class DashboardService(
                c.code as category_code, c.label as category_label,
                coalesce(t.color, c.color) as color, t.label as type_label,
                o.member_id, m.display_name as member_name,
-               inst.name as institution_name,
+               coalesce(inst.name, acct_inst.name) as institution_name,
                ov.effective_value, ov.value_basis, ov.attributed_value,
-               i.account_id
+               i.account_id,
+               coalesce(i.last_verified_at, i.created_at) as freshness
         from investments i
         join investment_types t   on t.id = i.type_id
         join asset_categories c   on c.id = t.category_id
@@ -213,6 +214,8 @@ class DashboardService(
           on o.investment_id = i.id and o.member_id = ov.member_id
         left join members m       on m.id = o.member_id
         left join institutions inst on inst.id = i.institution_id
+        left join accounts acct on acct.id = i.account_id
+        left join institutions acct_inst on acct_inst.id = acct.institution_id
         where i.household_id = :hid
           and i.deleted_at is null
           and i.status in ('active','matured')
@@ -233,7 +236,7 @@ class DashboardService(
             valueBasis = rs.getString("value_basis") ?: "unknown",
             attributedValue = rs.getBigDecimal("attributed_value") ?: BigDecimal.ZERO,
             maturityDate = rs.getDate("maturity_date")?.toLocalDate(),
-            lastVerified = rs.getTimestamp("last_verified_at")
+            lastVerified = rs.getTimestamp("freshness")
                 ?.toInstant()?.atZone(java.time.ZoneOffset.UTC)?.toLocalDate(),
             hasInstitution = rs.getString("institution_name") != null,
             hasAccount = rs.getObject("account_id") != null,
@@ -392,7 +395,11 @@ class DashboardService(
                 it.size, it.map { s -> s.investmentId },
             )
         }
-        slices.filter { it.lastVerified == null || it.lastVerified.isBefore(staleBefore) }.let {
+        // A record entered today is not stale. Treating an unconfirmed-but-new
+        // record as overdue would greet every new user with a list of problems
+        // they have not had time to have — which is how an attention list
+        // teaches people to ignore it (docs/08 §5).
+        slices.filter { it.lastVerified != null && it.lastVerified.isBefore(staleBefore) }.let {
             if (it.isNotEmpty()) items += AttentionItem(
                 "not_verified", "Not confirmed in over six months",
                 it.size, it.map { s -> s.investmentId },

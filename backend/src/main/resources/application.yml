@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: almira
+  # The DataSource beans are declared explicitly in DatabaseConfig (two roles:
+  # owner for migrations, non-owner for requests), so auto-configuration is off.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+  data:
+    redis:
+      host: ${ALMIRA_REDIS_HOST:localhost}
+      port: ${ALMIRA_REDIS_PORT:56379}
+      timeout: 2s
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: ${ALMIRA_PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+  shutdown: graceful
+
+almira:
+  db:
+    url: ${ALMIRA_DB_URL:jdbc:postgresql://localhost:55432/almira}
+    owner-user: ${ALMIRA_DB_OWNER_USER:almira}
+    owner-password: ${ALMIRA_DB_OWNER_PASSWORD:dev}
+    app-user: ${ALMIRA_DB_APP_USER:almira_app}
+    app-password: ${ALMIRA_DB_APP_PASSWORD:app_dev_password}
+  jwt:
+    secret: ${ALMIRA_JWT_SECRET:development-only-secret-please-override-in-every-real-environment}
+    issuer: almira
+    access-ttl: ${ALMIRA_JWT_ACCESS_TTL:15m}
+    refresh-ttl: ${ALMIRA_JWT_REFRESH_TTL:30d}
+  otp:
+    provider: ${ALMIRA_OTP_PROVIDER:log}
+    ttl: 5m
+    max-attempts: 5
+    resend-cooldown: 30s
+    max-per-hour: 5
+
+springdoc:
+  swagger-ui:
+    path: /docs
+
+logging:
+  level:
+    root: INFO
+    tech.bhrigu.almira: DEBUG
+    org.flywaydb: INFO

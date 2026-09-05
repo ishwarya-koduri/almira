@@ -47,6 +47,35 @@ class ApiErrorHandler {
         )
     }
 
+    /**
+     * A write refused by row-level security arrives as SQLSTATE 42501, which
+     * Spring translates to BadSqlGrammarException — nothing to do with grammar.
+     * Left unhandled it becomes a 500, telling the caller we are broken when in
+     * fact we correctly declined. Anything else in that class really is a bug on
+     * our side and stays a 500.
+     */
+    @ExceptionHandler(org.springframework.jdbc.BadSqlGrammarException::class)
+    fun handleSqlRefusal(
+        e: org.springframework.jdbc.BadSqlGrammarException,
+    ): ResponseEntity<ApiErrorEnvelope> {
+        val text = (e.mostSpecificCause.message ?: "").lowercase()
+        if ("row-level security" in text || "permission denied" in text) {
+            log.warn("write refused by database policy: {}", text)
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                ApiErrorEnvelope(ApiErrorBody("forbidden", "You don't have access to do that.")),
+            )
+        }
+        log.error("bad SQL", e)
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+            ApiErrorEnvelope(
+                ApiErrorBody(
+                    "internal_error",
+                    "Something went wrong on our side. Your data is safe — please try again.",
+                ),
+            ),
+        )
+    }
+
     @ExceptionHandler(DataIntegrityViolationException::class)
     fun handleIntegrity(e: DataIntegrityViolationException): ResponseEntity<ApiErrorEnvelope> {
         val text = (e.mostSpecificCause.message ?: "").lowercase()

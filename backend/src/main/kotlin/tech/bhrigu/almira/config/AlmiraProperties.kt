@@ -8,6 +8,12 @@ data class AlmiraProperties(
     val db: Db,
     val jwt: Jwt,
     val otp: Otp,
+    val encryption: Encryption = Encryption(),
+    /**
+     * Gates the checks that must not be bypassable by forgetting a flag:
+     * anything other than "development" requires a real key-encryption key.
+     */
+    val environment: String = "development",
 ) {
     /**
      * Two sets of credentials against the same database, on purpose.
@@ -31,6 +37,15 @@ data class AlmiraProperties(
         val issuer: String = "almira",
         val accessTtl: Duration = Duration.ofMinutes(15),
         val refreshTtl: Duration = Duration.ofDays(30),
+    )
+
+    data class Encryption(
+        /** local | aws-kms | gcp-kms — the KeyManagementService implementation. */
+        val provider: String = "local",
+        /** Base64, 32 bytes. Required outside development; see LocalKeyManagement. */
+        val masterKey: String = "",
+        /** Key identifier for a managed KMS provider. */
+        val kmsKeyId: String = "",
     )
 
     data class Otp(

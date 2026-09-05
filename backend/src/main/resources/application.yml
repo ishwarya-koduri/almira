@@ -28,6 +28,15 @@ server:
   shutdown: graceful
 
 almira:
+  # Anything other than "development" makes the encryption checks strict: a real
+  # key-encryption key becomes mandatory and the published development key is
+  # refused. Set ALMIRA_ENV=production in every deployed environment.
+  environment: ${ALMIRA_ENV:development}
+  encryption:
+    provider: ${ALMIRA_KMS_PROVIDER:local}
+    # Base64, 32 bytes: openssl rand -base64 32
+    master-key: ${ALMIRA_KMS_MASTER_KEY:}
+    kms-key-id: ${ALMIRA_KMS_KEY_ID:}
   db:
     url: ${ALMIRA_DB_URL:jdbc:postgresql://localhost:55432/almira}
     owner-user: ${ALMIRA_DB_OWNER_USER:almira}

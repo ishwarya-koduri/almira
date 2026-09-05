@@ -39,6 +39,13 @@ class SecurityConfig(
                 "/actuator/health", "/health",
                 "/docs/**", "/swagger-ui/**", "/v3/api-docs/**",
             ).permitAll()
+            // The web client is static and holds no secrets — everything it
+            // shows is fetched from /api with a bearer token, which is where
+            // the real gate is.
+            auth.requestMatchers(
+                "/", "/index.html", "/app/**", "/assets/**",
+                "/favicon.ico", "/manifest.webmanifest",
+            ).permitAll()
             auth.anyRequest().authenticated()
         }
         .exceptionHandling { handling ->

@@ -1,0 +1,134 @@
+/* =============================================================================
+   Design tokens — docs/02 §2-§5.
+   The single source of truth for how Almira looks. These same values become a
+   Compose theme in the mobile app, so anything added here should be a token
+   rather than a one-off value in a rule.
+
+   The palette is deliberately small: neutrals carry the design, one accent, two
+   semantic hues, a gold used exactly once per screen, and a muted category set
+   that only ever appears as 8px dots. Fewer colours read as premium and, more
+   practically, mean nothing on screen competes with the number you came to see.
+   ============================================================================= */
+
+:root {
+  /* --- Light. The canvas is warm off-white "paper", not clinical white. --- */
+  --canvas:         #FBF9F5;
+  --surface:        #FFFFFF;
+  --surface-sunken: #F4F1EA;
+  --ink:            #1C1A17;
+  --ink-muted:      #6B6558;
+  --ink-faint:      #9A9384;
+  --hairline:       #E7E2D8;
+  --accent:         #0F5A57;
+  --accent-soft:    #DCEBE9;
+  --accent-ink:     #FFFFFF;
+  --positive:       #1B7A43;
+  --caution:        #B4520A;
+  --caution-soft:   #FBEFE4;
+  --gold:           #C9A227;
+
+  /* --- Category identifiers. Dots and thin chips only, never large fills.
+         Meaning never rides on colour alone — every one is paired with an
+         icon and a label, which is also what makes it work for the ~8% of
+         men with colour-vision deficiency. --- */
+  --cat-gold:         #C9A227;
+  --cat-deposits:     #4E7C59;
+  --cat-mutual_funds: #3E6B99;
+  --cat-equity:       #6A5A99;
+  --cat-ipo:          #A6555A;
+  --cat-bonds:        #7A6A55;
+  --cat-retirement:   #3F8A8A;
+  --cat-insurance:    #2F7F76;
+  --cat-real_estate:  #B06B3A;
+  --cat-alternatives: #8A7F6A;
+  --cat-cash:         #7C8A6A;
+  --cat-universal:    #6B6558;
+
+  /* --- Type. A humanist serif for numbers and headlines, a grotesk for UI.
+         Numbers are the hero, so they get the serif and tabular figures. --- */
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* 1.2 modular scale on a 16px base. Body never goes below 14px. */
+  --text-display: 2.98rem;
+  --text-h1:      2.07rem;
+  --text-h2:      1.73rem;
+  --text-h3:      1.44rem;
+  --text-h4:      1.2rem;
+  --text-lg:      1.13rem;
+  --text-base:    1rem;
+  --text-sm:      0.875rem;
+  --text-caption: 0.78rem;
+  --text-overline: 0.72rem;
+
+  /* --- Space. Base unit 4px; use the tokens, not raw numbers. --- */
+  --space-1: 4px;   --space-2: 8px;   --space-3: 12px;  --space-4: 16px;
+  --space-5: 20px;  --space-6: 24px;  --space-8: 32px;  --space-10: 40px;
+  --space-12: 48px; --space-16: 64px; --space-24: 96px;
+
+  --radius-sm: 8px;   /* inputs, chips */
+  --radius-md: 12px;  /* buttons */
+  --radius-lg: 16px;  /* cards, sheets */
+  --radius-xl: 24px;  /* hero */
+  --radius-full: 999px;
+
+  /* Hairlines over shadows, for calm. Only two shadows exist. */
+  --e1: 0 1px 2px rgba(28,26,23,.05), 0 1px 3px rgba(28,26,23,.04);
+  --e2: 0 8px 30px rgba(28,26,23,.10);
+
+  --fast: 120ms;
+  --base: 200ms;
+  --slow: 320ms;
+  --ease: cubic-bezier(.2,.0,.0,1);
+  --spring: cubic-bezier(.2,.8,.2,1);
+
+  --content-max: 1120px;
+  --reading-max: 720px;
+
+  color-scheme: light;
+}
+
+/* --- Dark. Full parity, not an afterthought: the accent is lifted because
+       #0F5A57 on a dark ground fails contrast. --- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas:         #14130F;
+    --surface:        #1D1B16;
+    --surface-sunken: #242019;
+    --ink:            #F2EEE4;
+    --ink-muted:      #B4AD9C;
+    --ink-faint:      #8A8474;
+    --hairline:       #332F27;
+    --accent:         #3E9E99;
+    --accent-soft:    #1E3B39;
+    --accent-ink:     #0B1C1B;
+    --positive:       #4FB477;
+    --caution:        #E0873F;
+    --caution-soft:   #33251A;
+    --gold:           #D8B95A;
+    --e1: 0 1px 2px rgba(0,0,0,.30), 0 1px 3px rgba(0,0,0,.20);
+    --e2: 0 8px 30px rgba(0,0,0,.45);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --canvas:         #14130F;
+  --surface:        #1D1B16;
+  --surface-sunken: #242019;
+  --ink:            #F2EEE4;
+  --ink-muted:      #B4AD9C;
+  --ink-faint:      #8A8474;
+  --hairline:       #332F27;
+  --accent:         #3E9E99;
+  --accent-soft:    #1E3B39;
+  --accent-ink:     #0B1C1B;
+  --positive:       #4FB477;
+  --caution:        #E0873F;
+  --caution-soft:   #33251A;
+  --gold:           #D8B95A;
+  --e1: 0 1px 2px rgba(0,0,0,.30), 0 1px 3px rgba(0,0,0,.20);
+  --e2: 0 8px 30px rgba(0,0,0,.45);
+  color-scheme: dark;
+}

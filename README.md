@@ -4,7 +4,7 @@
 
 The product documentation lives in [`docs/`](docs/README.md). This file covers the code.
 
-**Status: Phase 0 backend complete** — phone-OTP sign-in, households and members, invitations that merge rather than duplicate, type-aware capture including the universal "record anything" type, list/detail/trash, a dashboard, and the per-record privacy model enforced by PostgreSQL row-level security. Phases 1–4 are laid out in [`docs/10`](docs/10-phases-user-stories-and-dod.md).
+**Status: Phase 0 complete — backend and a working web client** — phone-OTP sign-in, households and members, invitations that merge rather than duplicate, type-aware capture including the universal "record anything" type, list/detail/trash, a dashboard, and the per-record privacy model enforced by PostgreSQL row-level security. Phases 1–4 are laid out in [`docs/10`](docs/10-phases-user-stories-and-dod.md).
 
 ---
 
@@ -54,15 +54,28 @@ cd backend && ./gradlew bootRun
 
 Flyway migrates on startup. Then:
 
-```bash
-curl -s localhost:8080/health
-```
+Then open <http://localhost:8080> — the web client is served by the backend as
+part of the same artifact. API documentation is at <http://localhost:8080/docs>,
+and `GET /health` reports the connected database role:
 
 ```json
 { "status": "ok", "database": "up", "dbRole": "almira_app", "rlsEnforced": true }
 ```
 
-API documentation is at <http://localhost:8080/docs>.
+### About the web client
+
+The launch client is **Kotlin Multiplatform + Compose** for Android and iOS, as
+decided in [docs/09](docs/09-build-and-launch-plan.md) — capture is a phone
+activity. This web client is the companion the same document plans for, and it
+does two jobs now: it makes Phase 0 usable today, and it renders the
+[docs/02](docs/02-ux-and-design-system.md) design system in full — palette, type
+scale, spacing, motion, dark mode — so the Compose theme is validated against a
+real screen before it is written. Every token in `app/tokens.css` maps to one in
+that theme.
+
+It is deliberately framework-free: no Node, no build step, one deployable. That
+suits a companion surface. If this ever becomes the primary surface, revisit
+both that choice and the token storage noted in `app/api.js`.
 
 ### Signing in without an SMS bill
 
@@ -113,7 +126,9 @@ docker exec -e PGPASSWORD=app_dev_password almira-db \
 
 ```
 almira/
-├─ backend/            Spring Boot (Kotlin, Gradle) — the API
+├─ backend/            Spring Boot (Kotlin, Gradle) — the API and the web client
+│  ├─ src/main/resources/static/
+│  │  └─ app/           the web client: design tokens, components, screens
 │  └─ src/main/kotlin/tech/bhrigu/almira/
 │     ├─ config/       datasources, and RlsDataSource — where identity meets the database
 │     ├─ security/     JWT, request identity, session revocation

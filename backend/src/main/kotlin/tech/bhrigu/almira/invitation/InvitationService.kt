@@ -116,6 +116,7 @@ class InvitationService(
         )
     }
 
+    @Transactional(readOnly = true)
     fun list(householdId: UUID): List<InvitationRow> {
         households.get(householdId)
         return jdbc.query(

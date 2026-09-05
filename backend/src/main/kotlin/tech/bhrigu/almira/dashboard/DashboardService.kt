@@ -2,6 +2,7 @@ package tech.bhrigu.almira.dashboard
 
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.common.ApiException
 import tech.bhrigu.almira.common.IndianNumbers
 import tech.bhrigu.almira.household.HouseholdService
@@ -93,6 +94,7 @@ class DashboardService(
      * "filter the totals" step to forget — a private record contributes nothing,
      * not even its amount, because the rows were never returned (docs/05 §3.3).
      */
+    @Transactional(readOnly = true)
     fun build(householdId: UUID, scope: String, memberId: UUID?): Dashboard {
         val household = households.get(householdId)
         val members = households.members(householdId)

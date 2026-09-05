@@ -223,7 +223,42 @@ begin
     'after both attempts, the private FD is still invisible to the admin');
 end $$;
 
+do $$ begin raise notice '--- only a HOLDER may share a record (V8) ---'; end $$;
+do $$
+declare blocked boolean;
+begin
+  -- Ravi can READ the household gold, and he is an admin. Neither fact makes it
+  -- his to share. Sharing what is not yours is not a capability anyone has.
+  blocked := false;
+  begin
+    insert into record_visibility_grants (household_id, record_type, record_id, member_id)
+      values ((select v from t where k='hh'), 'investment',
+              (select v from t where k='i_shared'), (select v from t where k='m_aarav'));
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked,
+    'an admin cannot share a household record they do not hold');
+
+  -- The joint flat, though, IS his -- he is a co-owner, so he may share it.
+  perform pg_temp.as_user('ravi');
+  insert into record_visibility_grants (household_id, record_type, record_id, member_id)
+    values ((select v from t where k='hh'), 'investment',
+            (select v from t where k='i_joint'), (select v from t where k='m_aarav'));
+  perform pg_temp.assert(true, 'a co-owner CAN share a record they hold');
+
+  -- And a type nobody has written a holder rule for fails loudly rather than
+  -- defaulting open -- the point of routing every type through one function.
+  blocked := false;
+  begin
+    perform app.can_grant_visibility('goal', gen_random_uuid());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked,
+    'a grantable type with no holder rule raises instead of defaulting open');
+end $$;
+
 do $$ begin raise notice '--- revoking a scoped grant takes effect at once ---'; end $$;
+select pg_temp.as_user('ish');
 select pg_temp.as_user('ish');
 delete from record_visibility_grants
   where record_id = (select v from t where k='i_scoped');

@@ -23,6 +23,7 @@ class CatalogService(
     )
 
     /** Powers the type picker: category grid, then types within (docs/02 §6.9). */
+    @Transactional(readOnly = true)
     fun taxonomy(householdId: UUID): List<CategoryWithTypes> {
         households.get(householdId)
         val types = repo.types(householdId).groupBy { it.categoryId }
@@ -31,6 +32,7 @@ class CatalogService(
             .filter { it.types.isNotEmpty() }
     }
 
+    @Transactional(readOnly = true)
     fun type(householdId: UUID, typeId: UUID): InvestmentTypeRow =
         repo.type(typeId, householdId)
             ?: throw ApiException.badRequest("type_unknown", "We don't recognise that type.")
@@ -83,6 +85,7 @@ class CatalogService(
         return repo.type(id, householdId)!!
     }
 
+    @Transactional(readOnly = true)
     fun institutions(householdId: UUID, query: String?, kind: String?): List<InstitutionRow> {
         households.get(householdId)
         return repo.institutions(householdId, query, kind)

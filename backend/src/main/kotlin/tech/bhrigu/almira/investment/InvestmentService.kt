@@ -165,11 +165,13 @@ class InvestmentService(
         return CreatedInvestment(id, visibleToYou = readBack != null, record = readBack)
     }
 
+    @Transactional(readOnly = true)
     fun list(householdId: UUID, filter: InvestmentFilter): List<InvestmentRow> {
         households.get(householdId)
         return repo.list(householdId, filter)
     }
 
+    @Transactional(readOnly = true)
     fun get(householdId: UUID, id: UUID): InvestmentRow {
         households.get(householdId)
         return repo.find(householdId, id) ?: throw ApiException.notFound()
@@ -277,6 +279,7 @@ class InvestmentService(
         return get(householdId, id)
     }
 
+    @Transactional(readOnly = true)
     fun valuations(householdId: UUID, id: UUID): List<ValuationRow> {
         get(householdId, id)
         return repo.valuations(id)
@@ -295,6 +298,7 @@ class InvestmentService(
         )
     }
 
+    @Transactional(readOnly = true)
     fun trash(householdId: UUID): List<InvestmentRow> {
         households.get(householdId)
         return repo.listTrash(householdId)

@@ -34,12 +34,14 @@ class HouseholdService(
             ?: throw IllegalStateException("household vanished immediately after creation")
     }
 
+    @Transactional(readOnly = true)
     fun listMine(): List<HouseholdRow> = repo.listMine(userContext.require())
 
     /**
      * Not found rather than forbidden when the caller is not a member. A 403
      * would confirm the household exists, which is a leak in itself.
      */
+    @Transactional(readOnly = true)
     fun get(householdId: UUID): HouseholdRow =
         repo.find(householdId, userContext.require())
             ?: throw ApiException.notFound("We couldn't find that household.")
@@ -69,6 +71,7 @@ class HouseholdService(
 
     // --- members -------------------------------------------------------------
 
+    @Transactional(readOnly = true)
     fun members(householdId: UUID): List<MemberRow> {
         val userId = userContext.require()
         get(householdId) // membership check

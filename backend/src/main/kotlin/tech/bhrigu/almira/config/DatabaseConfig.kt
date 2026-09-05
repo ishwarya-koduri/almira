@@ -29,29 +29,33 @@ class DatabaseConfig(private val props: AlmiraProperties) {
     )
 
     /**
-     * The runtime datasource: a non-owner role, wrapped so every connection
-     * carries the caller's identity for RLS. This is the @Primary bean, so
-     * anything injecting a DataSource gets the safe one by default.
+     * The runtime datasource: a non-owner role, so row-level security applies
+     * and cannot be opted out of. @Primary, so anything injecting a DataSource
+     * gets the safe one by default — the owner pool has to be asked for by name.
      */
     @Bean
     @Primary
-    fun dataSource(userContext: RequestUserContext): DataSource =
-        RlsDataSource(
-            delegate = hikari(
-                user = props.db.appUser,
-                password = props.db.appPassword,
-                poolName = "almira-app",
-                maxPoolSize = props.db.maxPoolSize,
-            ),
-            userContext = userContext,
-        )
+    fun dataSource(): DataSource = hikari(
+        user = props.db.appUser,
+        password = props.db.appPassword,
+        poolName = "almira-app",
+        maxPoolSize = props.db.maxPoolSize,
+    )
 
     @Bean
     fun jdbc(dataSource: DataSource) = NamedParameterJdbcTemplate(dataSource)
 
+    /**
+     * Stamps the caller's identity onto each transaction for RLS. See
+     * [RlsTransactionManager] — the identity is transaction-scoped, so
+     * PostgreSQL clears it at commit or rollback and no connection can carry
+     * one borrower's identity to the next.
+     */
     @Bean
-    fun transactionManager(dataSource: DataSource): PlatformTransactionManager =
-        DataSourceTransactionManager(dataSource)
+    fun transactionManager(
+        dataSource: DataSource,
+        userContext: RequestUserContext,
+    ): PlatformTransactionManager = RlsTransactionManager(dataSource, userContext)
 
     /**
      * Migrations run as the owner before the app serves anything. The repeatable

@@ -60,6 +60,7 @@ class LiabilityService(
     private val repo: LiabilityRepository,
     private val households: HouseholdService,
     private val audit: AuditService,
+    private val reminders: tech.bhrigu.almira.reminder.ReminderService,
     private val userContext: RequestUserContext,
 ) {
     private val kinds = setOf(
@@ -117,8 +118,9 @@ class LiabilityService(
             entityType = "liability", entityId = id,
             diff = mapOf("title" to input.title, "kind" to input.kind, "visibility" to visibility),
         )
-        return repo.find(householdId, id)
-            ?: throw ApiException.forbidden("Saved, but it's private to whoever owes it.")
+        return (repo.find(householdId, id)
+            ?: throw ApiException.forbidden("Saved, but it's private to whoever owes it."))
+            .also(reminders::syncForLiability)
     }
 
     @Transactional(readOnly = true)
@@ -165,7 +167,7 @@ class LiabilityService(
             householdId = householdId, actorUserId = userId, action = "liability.update",
             entityType = "liability", entityId = id,
         )
-        return get(householdId, id)
+        return get(householdId, id).also(reminders::syncForLiability)
     }
 
     /**

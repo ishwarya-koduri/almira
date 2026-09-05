@@ -100,6 +100,7 @@ class InvestmentService(
     private val validator: AttributeValidator,
     private val auth: AuthService,
     private val audit: AuditService,
+    private val reminders: tech.bhrigu.almira.reminder.ReminderService,
     private val userContext: RequestUserContext,
 ) {
     private val visibilities = setOf("private", "household", "scoped")
@@ -173,6 +174,10 @@ class InvestmentService(
         )
 
         val readBack = repo.find(householdId, id)
+        // A maturity date, a premium or a SIP implies a reminder. Creating it
+        // automatically is the difference between a registry that tells you
+        // things and one you have to remember to interrogate.
+        readBack?.let(reminders::syncForInvestment)
         return CreatedInvestment(id, visibleToYou = readBack != null, record = readBack)
     }
 
@@ -225,7 +230,7 @@ class InvestmentService(
             householdId = householdId, actorUserId = userId, action = "investment.update",
             entityType = "investment", entityId = id,
         )
-        return get(householdId, id)
+        return get(householdId, id).also(reminders::syncForInvestment)
     }
 
     /**

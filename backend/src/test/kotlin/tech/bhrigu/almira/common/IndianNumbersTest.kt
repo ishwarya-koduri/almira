@@ -71,4 +71,18 @@ class IndianNumbersTest {
     fun `renders with the rupee sign`() {
         assertThat(IndianNumbers.rupees(BigDecimal(1_493_750))).isEqualTo("₹14,93,750")
     }
+
+    @Test
+    fun `a negative amount puts the sign before the symbol, not after`() {
+        // "₹-53,400" reads as a currency called "₹-" for a moment. A figure
+        // someone is reading to find out whether they are ahead or behind
+        // should not need resolving.
+        assertThat(IndianNumbers.rupees(BigDecimal(-53_400))).isEqualTo("\u2212₹53,400")
+        assertThat(IndianNumbers.rupees(BigDecimal(-53_400))).doesNotContain("₹-")
+    }
+
+    @Test
+    fun `zero has no sign`() {
+        assertThat(IndianNumbers.rupees(BigDecimal.ZERO)).isEqualTo("₹0")
+    }
 }

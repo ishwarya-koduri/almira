@@ -46,6 +46,21 @@ class DatabaseConfig(private val props: AlmiraProperties) {
     fun jdbc(dataSource: DataSource) = NamedParameterJdbcTemplate(dataSource)
 
     /**
+     * A template on the OWNER connection, which bypasses row-level security.
+     *
+     * Background jobs have no user, so they have no visibility — and that is
+     * correct, not a limitation: a scheduled sweep for due reminders genuinely
+     * operates outside anyone's view of the data. It needs a way in that does
+     * not involve pretending to be someone.
+     *
+     * The name is deliberately unpleasant. Anything injecting this is opting out
+     * of the privacy model and has to justify itself; request-handling code must
+     * never use it. Today its only consumer is ReminderWorker.
+     */
+    @Bean("systemJdbcBypassingRls")
+    fun systemJdbc(ownerDataSource: HikariDataSource) = NamedParameterJdbcTemplate(ownerDataSource)
+
+    /**
      * Stamps the caller's identity onto each transaction for RLS. See
      * [RlsTransactionManager] — the identity is transaction-scoped, so
      * PostgreSQL clears it at commit or rollback and no connection can carry

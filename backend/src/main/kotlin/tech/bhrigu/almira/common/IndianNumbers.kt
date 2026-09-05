@@ -73,6 +73,14 @@ object IndianNumbers {
         else -> (TENS[n / 10] + if (n % 10 != 0) " ${ONES[n % 10]}" else "")
     }
 
-    /** "₹1,76,875" — the form used everywhere a figure is shown. */
-    fun rupees(amount: BigDecimal): String = "₹${group(amount)}"
+    /**
+     * "₹1,76,875", and "−₹53,400" when negative.
+     *
+     * The sign goes OUTSIDE the symbol. "₹-53,400" reads as a currency called
+     * "₹-" for a moment before it resolves, and a figure people are reading to
+     * find out whether they are ahead or behind should not need resolving. The
+     * minus is U+2212, which aligns with digits; a hyphen does not.
+     */
+    fun rupees(amount: BigDecimal): String =
+        if (amount.signum() < 0) "\u2212₹${group(amount.abs())}" else "₹${group(amount)}"
 }

@@ -48,6 +48,13 @@ data class ShareRow(
     val maxViews: Int?,
     val viewCount: Int,
     val itemCount: Int,
+    /**
+     * What is actually inside, in a sentence. The family handbook deliberately
+     * includes records that are private to their owner — privacy is for life,
+     * continuity is for after — and someone sending that link to their CA
+     * should be told so before they send it, not after.
+     */
+    val scopeNote: String? = null,
     val createdAt: Instant,
     /** Returned exactly once, when the link is made. Never stored. */
     val url: String? = null,
@@ -180,7 +187,43 @@ class ShareService(
             diff = mapOf("scope" to input.scope, "items" to items.size, "days" to input.expiresInDays),
         )
 
-        return get(householdId, id).copy(url = "$baseUrl/share/$token")
+        return get(householdId, id).copy(
+            url = "$baseUrl/share/$token",
+            scopeNote = describe(householdId, items),
+        )
+    }
+
+    /**
+     * Counts what is in the link, and says plainly when some of it is private —
+     * so the decision to send it is an informed one.
+     */
+    private fun describe(householdId: UUID, items: List<Pair<String, UUID>>): String {
+        val investmentIds = items.filter { it.first == "investment" }.map { it.second }
+        if (investmentIds.isEmpty()) return "${items.size} records."
+
+        val private = jdbc.queryForObject(
+            """
+            select count(*) from investments
+            where household_id = :hid and id in (:ids) and visibility <> 'household'
+            """.trimIndent(),
+            mapOf("hid" to householdId, "ids" to investmentIds),
+            Int::class.javaObjectType,
+        ) ?: 0
+
+        val documents = items.count { it.first == "document" }
+        return buildString {
+            append("${investmentIds.size} ${if (investmentIds.size == 1) "record" else "records"}")
+            if (documents > 0) append(" and $documents ${if (documents == 1) "document" else "documents"}")
+            append(". ")
+            if (private > 0) {
+                append(
+                    "$private of ${if (private == 1) "them is" else "them are"} private to you — " +
+                        "whoever opens this link will see ${if (private == 1) "it" else "them"}.",
+                )
+            } else {
+                append("Nothing private to you is included.")
+            }
+        }
     }
 
     /**

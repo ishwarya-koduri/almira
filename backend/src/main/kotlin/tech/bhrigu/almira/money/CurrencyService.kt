@@ -51,6 +51,15 @@ class CurrencyService(
     private val userContext: RequestUserContext,
 ) {
 
+    /**
+     * Transactional even though it only reads, and that is not decoration: the
+     * caller's identity is set per transaction, so a rate lookup outside one
+     * sees only the rates shared with everybody and silently misses the
+     * household's own — which is exactly the quiet failure the identity model
+     * warns about. It showed up as a manual rate being ignored in favour of the
+     * one that shipped with the app.
+     */
+    @Transactional(readOnly = true)
     fun convert(
         amount: BigDecimal?,
         from: String,
@@ -94,6 +103,7 @@ class CurrencyService(
      * household recording every pair twice; it keeps the original's date and
      * says where it came from.
      */
+    @Transactional(readOnly = true)
     fun quoteFor(from: String, to: String, on: LocalDate, householdId: UUID?): RateQuote? {
         sources.firstNotNullOfOrNull { it.rate(from, to, on, householdId) }?.let { return it }
 

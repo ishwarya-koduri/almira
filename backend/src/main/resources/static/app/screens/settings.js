@@ -257,6 +257,9 @@ function newShare(host) {
       // Shown once, and only here: the server keeps a hash, so this link cannot
       // be recovered later — it can only be withdrawn and replaced.
       mount(result,
+        // What is actually inside, before it is sent: the family handbook
+        // deliberately includes what is private to its owner.
+        share.scopeNote && el("div.banner", {}, share.scopeNote),
         el("div.banner", {}, "Copy this now — it isn't shown again."),
         el("code", { style: { wordBreak: "break-all", fontSize: "var(--text-caption)" } }, share.url),
         el("button.btn.btn-sm", {

@@ -96,6 +96,29 @@ class ShareApiTest : ApiTestBase() {
             .containsExactly("Shared gold")
     }
 
+    /**
+     * The family handbook deliberately includes records that are private to
+     * their owner — privacy is for life, continuity is for after. Somebody
+     * sending that link to their accountant should be told so before they send
+     * it, not after.
+     */
+    @Test
+    fun `a link says what is inside it before it is sent`() {
+        capture(
+            owner, householdId, "gold_physical", "Her private gold", BigDecimal("500000"),
+            visibility = "private",
+        )
+        capture(
+            owner, householdId, "gold_physical", "Household gold", BigDecimal("100000"),
+            visibility = "household",
+        )
+
+        val share = share(owner, mapOf("label" to "Handbook", "scope" to "handbook")).json()
+        assertThat(share.path("scopeNote").asText())
+            .contains("2 records")
+            .contains("1 of them is private to you")
+    }
+
     @Test
     fun `a link cannot be made to contain what the sharer cannot see`() {
         val theirs = capture(

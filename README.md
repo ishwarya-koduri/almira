@@ -34,11 +34,19 @@ it is given. DigiLocker, the Account Aggregator network, WhatsApp, SMS, email an
 push are built as adapters with working sandboxes and a list of exactly what
 flips each one live ([docs/13](docs/13-providers-and-going-live.md)).
 
+The web client is an **installable PWA** whose shell opens without a network,
+and [`deploy/`](deploy/) holds everything needed to run this on a host
+([docs/17](docs/17-deploying.md)).
+
 The security whitepaper is [docs/15](docs/15-security-whitepaper.md) and the
 controls and threat model are [docs/16](docs/16-controls-and-threat-model.md).
 An external penetration test is **to be scheduled** — it needs a deployed
-environment, not a laptop. The native app is the remaining work, built against
-the frozen v1 contract below.
+environment, not a laptop.
+
+**The native app is the remaining work**, built against the frozen v1 contract
+below. [docs/18](docs/18-handover.md) is the handover: what exists, what is
+deliberately not built and why, the order to do the rest in, and — worth reading
+before trusting any of the above — the list of what has never been verified.
 
 The phases themselves are laid out in [`docs/10`](docs/10-phases-user-stories-and-dod.md).
 
@@ -249,7 +257,7 @@ Switch `ALMIRA_OTP_PROVIDER` to `twilio` or `msg91` and the field disappears. **
 Three suites, each proving something the others cannot.
 
 ```bash
-# 1. Unit + full-stack integration (371 tests)
+# 1. Unit + full-stack integration (375 tests)
 cd backend
 ALMIRA_TEST_DB_URL=jdbc:postgresql://localhost:55432/almira_test \
 ALMIRA_TEST_REDIS_HOST=localhost ALMIRA_TEST_REDIS_PORT=56379 \

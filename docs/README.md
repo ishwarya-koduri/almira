@@ -30,6 +30,7 @@ This is the **build-ready documentation set**, split into interlinked docs for c
 | 15 | [Security whitepaper](15-security-whitepaper.md) | The public document: how the privacy model is enforced, what is encrypted and how, and a plain section on what none of it defends against. |
 | 16 | [Controls & threat model](16-controls-and-threat-model.md) | The auditor's companion: trust boundaries, assets against adversaries, STRIDE, a control catalogue naming the file to read, and the known gaps. |
 | 17 | [Deploying](17-deploying.md) | Bare host to running instance: the compose stack, the runtime role, the key and what losing it means, backups, the installable web client — and why your first testers cannot sign in by email yet. |
+| 18 | [Handover](18-handover.md) | What exists, what is deliberately not built, the order to do the rest in, what has never been verified, and how to pick the repository up on another machine. |
 
 ## How the docs interlink
 Each doc has a top nav bar (**‹ Index · Prev · Next ›**) and cross-links inline. The dependency order for building: **01 → 04 → 05 → 06 → 02/03 → 07 → 08 → 09**.

@@ -16,18 +16,23 @@ import { settingsScreen } from "./screens/settings.js";
 import { goalsScreen } from "./screens/goals.js";
 import { taxScreen } from "./screens/tax.js";
 import { reportsScreen } from "./screens/reports.js";
+import { continuityScreen } from "./screens/continuity.js";
+import { t, language } from "./i18n.js";
 import { openCapture } from "./screens/capture.js";
 
+// Labels are resolved at render time rather than here, so switching language
+// redraws the navigation without a reload.
 const routes = {
-  home: { label: "Home", render: homeScreen },
-  investments: { label: "Investments", render: investmentsScreen },
-  liabilities: { label: "Owed", render: liabilitiesScreen },
-  accounts: { label: "Accounts", render: accountsScreen },
-  goals: { label: "Goals", render: goalsScreen },
-  tax: { label: "Tax", render: taxScreen },
-  reports: { label: "Reports", render: reportsScreen },
-  family: { label: "Family", render: familyScreen },
-  settings: { label: "Settings", render: settingsScreen },
+  home: { label: "nav.home", render: homeScreen },
+  investments: { label: "nav.investments", render: investmentsScreen },
+  liabilities: { label: "nav.liabilities", render: liabilitiesScreen },
+  accounts: { label: "nav.accounts", render: accountsScreen },
+  goals: { label: "nav.goals", render: goalsScreen },
+  tax: { label: "nav.tax", render: taxScreen },
+  reports: { label: "nav.reports", render: reportsScreen },
+  continuity: { label: "nav.continuity", render: continuityScreen },
+  family: { label: "nav.family", render: familyScreen },
+  settings: { label: "nav.settings", render: settingsScreen },
 };
 
 const root = document.getElementById("root");
@@ -50,7 +55,7 @@ function topbar(active) {
   return el("header.topbar", {},
     el("div.brand", {},
       el("span.brand-mark", { "aria-hidden": "true" }, "A"),
-      "Almira",
+      t("app.name"),
     ),
     el("nav.segmented", { "aria-label": "Sections" },
       ...Object.entries(routes).map(([name, route]) =>
@@ -59,13 +64,13 @@ function topbar(active) {
           "aria-pressed": name === active,
           "aria-current": name === active ? "page" : null,
           onclick: () => navigate(name),
-        }, route.label)),
+        }, t(route.label))),
     ),
     el("button.btn.btn-primary.btn-sm", {
       type: "button",
       onclick: () => openCapture(),
       title: "Add something",
-    }, "＋ Add"),
+    }, t("app.add")),
   );
 }
 
@@ -124,11 +129,21 @@ export async function reload() {
   render();
 }
 
+/**
+ * Redraw the shell without refetching anything. Changing language has to reach
+ * the navigation and the header, not only the screen that offered the switch.
+ */
+export function redraw() { render(); }
+
 /* -----------------------------------------------------------------------------
    Bootstrap
    ----------------------------------------------------------------------------- */
 
 window.addEventListener("hashchange", render);
+
+// The document says which language it is in, for screen readers and for the
+// browser's own text handling.
+document.documentElement.lang = language.code;
 
 window.addEventListener("unhandledrejection", (event) => {
   const error = event.reason;

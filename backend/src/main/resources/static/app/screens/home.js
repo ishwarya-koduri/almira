@@ -10,12 +10,13 @@ import { state, update } from "../state.js";
 import { openCapture } from "./capture.js";
 import { openDetail } from "./detail.js";
 import { navigate } from "../app.js";
+import { t } from "../i18n.js";
 
 export async function homeScreen(host) {
   mount(host, el("div.stack", {}, el("div.skeleton", { style: { height: "180px", borderRadius: "24px" } }), skeletonRows(3)));
 
   const scopes = [
-    { value: "me", label: "Me" },
+    { value: "me", label: t("home.scope.me") },
     { value: "household", label: state.household.name },
     ...state.members.filter((m) => !m.isMe).map((m) => ({ value: `member:${m.id}`, label: m.displayName })),
   ];
@@ -48,15 +49,15 @@ export async function homeScreen(host) {
     el("div.hero", {},
       el("div.row-between.wrap", { style: { alignItems: "flex-start", gap: "24px" } },
         el("div", {},
-          el("div.overline", {}, "True net worth"),
+          el("div.overline", {}, t("home.netWorth")),
           el("div.hero-amount", {}, data.netWorthFormatted),
           el("div.hero-words", {}, data.netWorthInWords),
         ),
         el("div.hero-side", {},
           el("div.hero-side-row", {},
-            el("span.muted", {}, "Assets"), el("b", {}, data.totalAssetsFormatted)),
+            el("span.muted", {}, t("home.assets")), el("b", {}, data.totalAssetsFormatted)),
           el("div.hero-side-row", {},
-            el("span.muted", {}, "Owed"),
+            el("span.muted", {}, t("home.owed")),
             el("b", { style: { color: "var(--caution)" } },
               Number(data.totalLiabilities) > 0 ? `− ${data.totalLiabilitiesFormatted}` : "—")),
           el("div", { style: { height: "1px", background: "var(--hairline)", margin: "4px 0" } }),
@@ -73,19 +74,19 @@ export async function homeScreen(host) {
 
     data.holdingCount === 0
       ? el("div.card", {}, empty({
-          title: "Nothing recorded yet",
-          body: "Add your first holding — a fixed deposit or some gold takes about twenty seconds.",
-          action: el("button.btn.btn-primary", { onclick: () => openCapture() }, "＋ Add your first thing"),
+          title: t("home.empty.title"),
+          body: t("home.empty.body"),
+          action: el("button.btn.btn-primary", { onclick: () => openCapture() }, t("home.empty.action")),
         }))
       : el("div.grid.grid-2", {},
-          breakdownCard("Where it sits", data.byCategory, true),
+          breakdownCard(t("home.whereItSits"), data.byCategory, true),
           data.byLiabilityKind.length > 0
             ? breakdownCard("What's owed", data.byLiabilityKind, false)
-            : breakdownCard("Whose it is", data.byMember, false),
+            : breakdownCard(t("home.whoseItIs"), data.byMember, false),
         ),
 
     data.byLiabilityKind.length > 0 && el("div.grid.grid-2", {},
-      breakdownCard("Whose it is", data.byMember, false),
+      breakdownCard(t("home.whoseItIs"), data.byMember, false),
       el("div.card", {},
         el("div.section-title", {}, el("h4", {}, "Owned against owed")),
         el("div.alloc", {},
@@ -120,7 +121,7 @@ export async function homeScreen(host) {
     ),
 
     data.attention.length > 0 && el("div.stack-3", {},
-      el("h4", {}, "Worth a look"),
+      el("h4", {}, t("home.attention")),
       ...data.attention.map((item) => el("div.banner", {},
         el("div.grow", {},
           el("b", {}, item.label),

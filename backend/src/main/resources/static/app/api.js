@@ -228,6 +228,11 @@ export const api = {
   runImport:     (hid, file, options) =>
     upload(`/api/v1/households/${hid}/import`, file, options),
 
+  // --- currencies and providers ---------------------------------------------
+  rates:         (hid, quote)     => api.get(`/api/v1/households/${hid}/rates?quote=${quote || "INR"}`),
+  recordRate:    (hid, body)      => api.post(`/api/v1/households/${hid}/rates`, body),
+  providers:     (hid)            => api.get(`/api/v1/households/${hid}/connect/providers`),
+
   // --- zero-knowledge mode --------------------------------------------------
   e2eStatus:     (hid)            => api.get(`/api/v1/households/${hid}/e2e`),
   putE2eKey:     (hid, body)      => api.put(`/api/v1/households/${hid}/e2e/key`, body),

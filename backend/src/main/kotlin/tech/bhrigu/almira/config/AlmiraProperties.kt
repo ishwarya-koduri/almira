@@ -47,6 +47,12 @@ data class AlmiraProperties(
         val masterKey: String = "",
         /** Key identifier for a managed KMS provider. */
         val kmsKeyId: String = "",
+        /**
+         * Where the local provider keeps this install's development key when no
+         * master key is configured. Gitignored, generated on first run, unique
+         * per machine. Delete it to rotate.
+         */
+        val devKeyFile: String = "./var/dev-kek",
     )
 
     data class Storage(

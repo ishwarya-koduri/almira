@@ -15,6 +15,13 @@ data class FundingSource(
     val contribution: BigDecimal,
 )
 
+data class UnallocatedRow(
+    val investmentId: UUID,
+    val title: String,
+    val value: BigDecimal?,
+    val unallocatedPct: BigDecimal,
+)
+
 data class GoalRow(
     val id: UUID,
     val householdId: UUID,
@@ -179,18 +186,39 @@ class GoalRepository(private val jdbc: NamedParameterJdbcTemplate) {
      * goal reads as unallocated here, which is correct — telling them otherwise
      * would reveal that the private goal exists.
      */
-    fun unallocated(householdId: UUID): List<Pair<UUID, String>> = jdbc.query(
+    /**
+     * Holdings with room left, not only holdings with nothing pointed at them.
+     *
+     * A SIP that is 60% of a house deposit can still be 40% of a retirement —
+     * that is the whole point of allocating by share. Listing only the
+     * completely unallocated ones made the other 40% unreachable from the UI.
+     */
+    fun unallocated(householdId: UUID): List<UnallocatedRow> = jdbc.query(
         """
-        select i.id, i.title
+        select i.id, i.title,
+               v.effective_value,
+               100 - coalesce(a.allocated, 0) as unallocated_pct
         from investments i
+        left join investment_value v on v.investment_id = i.id
+        left join lateral (
+          select sum(ig.allocation_pct) as allocated
+          from investment_goals ig where ig.investment_id = i.id
+        ) a on true
         where i.household_id = :hid and i.deleted_at is null and i.status = 'active'
-          and not exists (
-            select 1 from investment_goals ig where ig.investment_id = i.id
-          )
+          and coalesce(a.allocated, 0) < 100
+          and not exists (select 1 from investments s
+                          where s.rolled_from_id = i.id and s.deleted_at is null)
         order by i.title
         """.trimIndent(),
         mapOf("hid" to householdId),
-    ) { rs, _ -> rs.getObject("id", UUID::class.java) to rs.getString("title") }
+    ) { rs, _ ->
+        UnallocatedRow(
+            investmentId = rs.getObject("id", UUID::class.java),
+            title = rs.getString("title"),
+            value = rs.getBigDecimal("effective_value"),
+            unallocatedPct = rs.getBigDecimal("unallocated_pct"),
+        )
+    }
 
     private fun withRelations(rows: List<GoalRow>): List<GoalRow> {
         if (rows.isEmpty()) return rows

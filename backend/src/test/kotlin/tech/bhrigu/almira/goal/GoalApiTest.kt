@@ -126,6 +126,26 @@ class GoalApiTest : ApiTestBase() {
         assertThat(unallocated).containsExactly("Nothing points at this")
     }
 
+    /**
+     * A SIP that is 60% of a house deposit can still be 40% of a retirement —
+     * that is what allocating by share is for. Listing only the completely
+     * unallocated ones put the other 40% out of reach.
+     */
+    @Test
+    fun `a partly allocated holding is still offered, with what is left of it`() {
+        val goalId = goal().json().path("id").asText()
+        val partly = holding("Flexi cap SIP", 100_000)
+        map(goalId, partly, 60)
+
+        val row = get("/api/v1/households/$householdId/goals-unallocated", owner).json()
+            .first { it.path("title").asText() == "Flexi cap SIP" }
+        assertThat(row.path("unallocatedPct").decimalValue())
+            .isEqualByComparingTo(java.math.BigDecimal("40"))
+        assertThat(row.path("valueFormatted").asText())
+            .describedAs("choosing needs the value, not just the name")
+            .isEqualTo("₹1,00,000")
+    }
+
     @Test
     fun `a fully funded goal says so and stops asking for more`() {
         val goalId = goal(target = 100_000).json().path("id").asText()

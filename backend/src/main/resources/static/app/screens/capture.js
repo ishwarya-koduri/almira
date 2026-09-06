@@ -19,9 +19,197 @@ import {
 } from "../ui.js";
 import { state, myMember, findType } from "../state.js";
 import { reload } from "../app.js";
+import { openImport } from "./import.js";
 
 export function openCapture(onSaved) {
-  pickType((type) => captureForm(type, onSaved));
+  chooseHowToAdd(onSaved);
+}
+
+/* -----------------------------------------------------------------------------
+   Step 0 — how would you like to add it?
+
+   Five input modes converge on the same form (docs/03 §3): type it in words,
+   start from something you've saved before, pick a type, read a document, or
+   bring a spreadsheet. Whatever the route, the form is the last step and
+   nothing is saved until someone has looked at it — a parse is a proposal.
+   ----------------------------------------------------------------------------- */
+
+function chooseHowToAdd(onSaved) {
+  const quick = textInput({
+    placeholder: "1L gold 6.3g at ICICI 3 Aug",
+    "aria-label": "Describe what you're adding",
+    autocomplete: "off",
+  });
+  const chipHost = el("div.stack-2", {});
+  const parseButton = el("button.btn.btn-primary", { type: "button" }, "Read it");
+  let parsed = null;
+
+  const showParse = (result) => {
+    parsed = result;
+    const type = result.fields.find((f) => f.key === "typeId");
+    mount(chipHost,
+      el("div.row.wrap", { style: { gap: "8px" } },
+        ...result.fields.map((f) => el("span.chip", {},
+          el("span.caption.muted", {}, `${f.label}: `), f.display)),
+      ),
+      result.unparsed && el("p.caption.muted", {},
+        `We couldn't place “${result.unparsed}” — it'll become the name.`),
+      result.note && el("p.caption.muted", {}, result.note),
+      type
+        ? el("button.btn.btn-primary", {
+            type: "button",
+            onclick: () => {
+              modal.close();
+              const found = findType(type.value);
+              if (found) captureForm(found, onSaved, prefillFrom(result));
+            },
+          }, "Check the details")
+        : el("p.caption.muted", {}, "Pick a type below and we'll carry the rest across."),
+    );
+  };
+
+  parseButton.onclick = () => withBusy(parseButton, async () => {
+    const text = quick.value.trim();
+    if (!text) { quick.focus(); return; }
+    showParse(await api.parseText(state.household.id, text));
+  });
+  quick.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); parseButton.click(); }
+  });
+
+  const documentInput = el("input", {
+    type: "file", accept: "application/pdf,image/*", hidden: true,
+    onchange: async () => {
+      const file = documentInput.files?.[0];
+      if (!file) return;
+      const result = await api.parseDocument(state.household.id, file);
+      toast(result.note || "Saved the document.");
+      const type = result.fields.find((f) => f.key === "typeId");
+      if (type && findType(type.value)) {
+        modal.close();
+        captureForm(findType(type.value), onSaved, prefillFrom(result));
+      } else {
+        showParse({ ...result, unparsed: "" });
+      }
+    },
+  });
+
+  const templateHost = el("div.stack-2", {});
+  loadTemplates(templateHost, onSaved, () => modal.close());
+
+  const modal = sheet({
+    title: "Add something",
+    body: el("div.stack-3", {},
+      field({
+        label: "Say it in your own words",
+        control: el("div.row", {}, quick, parseButton),
+        help: "Lakhs and crores are fine — “2.5Cr flat”, “50k SIP”.",
+      }),
+      chipHost,
+      templateHost,
+      el("div.stack-2", {},
+        el("span.overline", {}, "Or"),
+        el("div.row.wrap", { style: { gap: "8px" } },
+          el("button.btn", {
+            type: "button",
+            onclick: () => { modal.close(); pickType((type) => captureForm(type, onSaved)); },
+          }, "Pick a type"),
+          el("button.btn", { type: "button", onclick: () => documentInput.click() },
+            "Read a document"),
+          el("button.btn", {
+            type: "button",
+            onclick: () => { modal.close(); openImport(onSaved); },
+          }, "Import a spreadsheet"),
+          documentInput,
+        ),
+      ),
+    ),
+  });
+}
+
+/** Chips in, form fields out. Only what the parser was confident enough to name. */
+function prefillFrom(parsed) {
+  const prefill = { attributes: {} };
+  for (const parsedField of parsed.fields || []) {
+    const key = parsedField.key;
+    if (key === "typeId") continue;
+    if (key.startsWith("attributes.")) prefill.attributes[key.slice(11)] = parsedField.value;
+    else prefill[key] = parsedField.value;
+  }
+  if (!prefill.title && parsed.unparsed) prefill.title = parsed.unparsed;
+  return prefill;
+}
+
+async function loadTemplates(host, onSaved, closeParent) {
+  try {
+    const templates = await api.templates(state.household.id);
+    if (!templates.length) return;
+    mount(host,
+      el("span.overline", {}, "Saved shapes"),
+      el("div.row.wrap", { style: { gap: "8px" } },
+        ...templates.slice(0, 8).map((template) => el("button.chip", {
+          type: "button",
+          onclick: () => { closeParent(); useTemplate(template, onSaved); },
+        }, template.name)),
+      ),
+    );
+  } catch { /* templates are a convenience; never block capture on them */ }
+}
+
+/**
+ * A template supplies the shape; this asks only for what is different this
+ * time, which is the whole saving.
+ */
+function useTemplate(template, onSaved) {
+  const title = textInput({ value: template.title || template.name, "aria-label": "Name" });
+  const amount = moneyInput({ placeholder: "0" });
+  if (template.investedAmount) {
+    amount.input.value = String(template.investedAmount);
+    amount.input.dispatchEvent(new Event("input"));
+  }
+  const startDate = textInput({ type: "date" });
+  const owner = select({
+    options: state.members.map((m) => ({ value: m.id, label: m.isMe ? `${m.displayName} (me)` : m.displayName })),
+    value: myMember()?.id, "aria-label": "Owner",
+  });
+  const save = el("button.btn.btn-primary.grow", { type: "button" }, "Save");
+  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+
+  save.onclick = () => withBusy(save, async () => {
+    error.textContent = "";
+    try {
+      const created = await api.applyTemplate(state.household.id, template.id, {
+        title: title.value.trim() || null,
+        investedAmount: amount.value(),
+        startDate: startDate.value || null,
+        owners: [{ memberId: owner.value, sharePct: 100 }],
+      });
+      modal.close();
+      toast(created.visibleToYou ? "Saved." : "Saved. It's private to its owner.");
+      await (onSaved ? onSaved() : reload());
+    } catch (apiError) {
+      // A template can be missing something its type requires — an FD without
+      // its interest rate. Say which field, and offer the full form.
+      const fields = apiError.details?.fields;
+      error.textContent = fields
+        ? `${Object.values(fields).join(". ")}. Open the full form to fill it in.`
+        : apiError.message;
+    }
+  });
+
+  const modal = sheet({
+    title: template.name,
+    body: el("div.stack-3", {},
+      el("p.caption.muted", {},
+        `${template.typeLabel}${template.institutionName ? ` at ${template.institutionName}` : ""}.`),
+      field({ label: "Name", control: title }),
+      field({ label: "Amount", control: amount }),
+      field({ label: "Date", control: startDate }),
+      field({ label: "Whose is it?", control: owner }),
+      error,
+    ),
+    footer: [save],
+  });
 }
 
 /* -----------------------------------------------------------------------------
@@ -68,7 +256,7 @@ function pickType(onPick) {
    Step 2 — the form, generated from the type's schema
    ----------------------------------------------------------------------------- */
 
-function captureForm(type, onSaved) {
+export function captureForm(type, onSaved, prefill = null) {
   const schema = type.schema || { common: {}, fields: [] };
   const controls = new Map();   // key -> { field, read }
   const customFields = [];
@@ -208,6 +396,25 @@ function captureForm(type, onSaved) {
     formError,
   );
 
+  // Whatever a parse or a template proposed arrives here as ordinary field
+  // values, so it can be edited or deleted like anything typed by hand.
+  if (prefill) {
+    if (prefill.title) titleInput.value = prefill.title;
+    if (prefill.institutionId) {
+      institutionSelect.dataset.pending = prefill.institutionId;
+    }
+    const columns = {
+      investedAmount: "invested_amount", quantity: "quantity",
+      startDate: "start_date", maturityDate: "maturity_date",
+    };
+    for (const [key, column] of Object.entries(columns)) {
+      if (prefill[key] !== undefined) controls.get(column)?.set?.(prefill[key]);
+    }
+    for (const [key, value] of Object.entries(prefill.attributes || {})) {
+      controls.get(`attr:${key}`)?.set?.(value);
+    }
+  }
+
   const modal = sheet({
     title: `Add ${type.label.toLowerCase()}`,
     body: form,
@@ -313,7 +520,10 @@ function buildColumnControl(key, def) {
       if (def.required && value === null) wrapper.setError(`${def.label} is needed`);
       else if (value !== null) wrapper.querySelector(".help").textContent = `${rupees(value)}`;
     });
-    return { field: wrapper, read: () => control.value() };
+    return {
+      field: wrapper, read: () => control.value(),
+      set: (value) => { control.input.value = String(value); control.input.dispatchEvent(new Event("input")); },
+    };
   }
 
   if (key === "quantity") {
@@ -322,13 +532,16 @@ function buildColumnControl(key, def) {
       ? el("div.unit-wrap", {}, input, el("span.unit", {}, def.unit))
       : input;
     const wrapper = field({ label: def.label, required: def.required, control, help: def.help });
-    return { field: wrapper, read: () => (input.value.trim() ? Number(input.value) : null) };
+    return {
+      field: wrapper, read: () => (input.value.trim() ? Number(input.value) : null),
+      set: (value) => { input.value = String(value); },
+    };
   }
 
   if (key.endsWith("_date")) {
     const input = textInput({ type: "date" });
     const wrapper = field({ label: def.label, required: def.required, control: input, help: def.help });
-    return { field: wrapper, read: () => input.value || null };
+    return { field: wrapper, read: () => input.value || null, set: (value) => { input.value = value; } };
   }
 
   // The schema's help for a plain text column reads as an example ("Home locker,
@@ -337,18 +550,23 @@ function buildColumnControl(key, def) {
   // error message needs.
   const input = textInput({ placeholder: def.help || "" });
   const wrapper = field({ label: def.label, required: def.required, control: input });
-  return { field: wrapper, read: () => input.value.trim() || null };
+  return {
+    field: wrapper, read: () => input.value.trim() || null,
+    set: (value) => { input.value = String(value); },
+  };
 }
 
 function buildAttributeControl(def) {
   let control;
   let read;
+  let write;
 
   switch (def.dataType) {
     case "money": {
       const money = moneyInput({ placeholder: "0" });
       control = money;
       read = () => money.value();
+      write = (value) => { money.input.value = String(value); money.input.dispatchEvent(new Event("input")); };
       break;
     }
     case "number":
@@ -356,18 +574,21 @@ function buildAttributeControl(def) {
       const input = textInput({ inputMode: "decimal", placeholder: def.placeholder || "" });
       control = def.unit ? el("div.unit-wrap", {}, input, el("span.unit", {}, def.unit)) : input;
       read = () => input.value.trim() || null;
+      write = (value) => { input.value = String(value); };
       break;
     }
     case "date": {
       const input = textInput({ type: "date" });
       control = input;
       read = () => input.value || null;
+      write = (value) => { input.value = String(value); };
       break;
     }
     case "bool": {
       const input = el("input", { type: "checkbox" });
       control = el("label.row", {}, input, el("span.caption.muted", {}, "Yes"));
       read = () => (input.checked ? true : null);
+      write = (value) => { input.checked = value === true || value === "true"; };
       break;
     }
     case "select": {
@@ -377,17 +598,19 @@ function buildAttributeControl(def) {
       });
       control = input;
       read = () => input.value || null;
+      write = (value) => { input.value = String(value); };
       break;
     }
     default: {
       const input = textInput({ placeholder: def.placeholder || "" });
       control = input;
       read = () => input.value.trim() || null;
+      write = (value) => { input.value = String(value); };
     }
   }
 
   const wrapper = field({ label: def.label, required: def.required, control, help: def.help });
-  return { field: wrapper, read };
+  return { field: wrapper, read, set: write };
 }
 
 /* -----------------------------------------------------------------------------
@@ -400,6 +623,11 @@ async function loadInstitutions(selectNode) {
     institutions.forEach((institution) => {
       selectNode.append(el("option", { value: institution.id }, institution.name));
     });
+    // A prefilled institution can only be selected once the options exist.
+    if (selectNode.dataset.pending) {
+      selectNode.value = selectNode.dataset.pending;
+      delete selectNode.dataset.pending;
+    }
   } catch { /* the field stays optional; capture must never dead-end */ }
 }
 

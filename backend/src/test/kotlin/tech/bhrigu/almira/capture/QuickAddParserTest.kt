@@ -23,6 +23,7 @@ class QuickAddParserTest {
     private val propertyId = UUID.randomUUID()
     private val angelTypeId = UUID.randomUUID()
     private val iciciId = UUID.randomUUID()
+    private val iciciAmcId = UUID.randomUUID()
     private val sbiId = UUID.randomUUID()
     private val angelOneId = UUID.randomUUID()
     private val hoablId = UUID.randomUUID()
@@ -38,6 +39,7 @@ class QuickAddParserTest {
         ),
         institutions = listOf(
             InstitutionVocabulary(iciciId, "ICICI Bank"),
+            InstitutionVocabulary(iciciAmcId, "ICICI Prudential Mutual Fund"),
             InstitutionVocabulary(sbiId, "State Bank of India"),
             InstitutionVocabulary(angelOneId, "Angel One"),
             InstitutionVocabulary(hoablId, "House of Abhinandan Lodha"),
@@ -146,6 +148,23 @@ class QuickAddParserTest {
     fun `matches an institution by its first word`() {
         assertThat(parse("1L gold at ICICI").field("institutionId")?.value)
             .isEqualTo(iciciId.toString())
+    }
+
+    /**
+     * A household with both "ICICI Bank" and "ICICI Prudential Mutual Fund"
+     * means the bank when they say ICICI. Ranking first-word matches by length
+     * — as full-name matches rightly are — filed gold purchases at a fund house.
+     */
+    @Test
+    fun `a bare first word means the plainest institution that starts with it`() {
+        assertThat(parse("1L gold at ICICI").field("institutionId")?.display)
+            .isEqualTo("ICICI Bank")
+    }
+
+    @Test
+    fun `but a full name still wins wherever it appears in the text`() {
+        assertThat(parse("2L SIP in ICICI Prudential Mutual Fund").field("institutionId")?.display)
+            .isEqualTo("ICICI Prudential Mutual Fund")
     }
 
     @Test

@@ -63,6 +63,12 @@ data class ImportReport(
     val dryRun: Boolean,
     val total: Int,
     val imported: Int,
+    /**
+     * On a dry run, how many rows would land. Zero on a real run, where
+     * [imported] is the count that matters — reporting the would-be number as
+     * "imported" would have a preview claim it had saved things.
+     */
+    val wouldImport: Int,
     val duplicates: Int,
     val failed: Int,
     val rows: List<RowOutcome>,
@@ -178,7 +184,18 @@ class ImportService(
                 return@forEachIndexed
             }
 
-            val amount = cell(request.mapping.investedAmount)?.let { Coerce.money(it) }
+            // A cell that is present but unreadable is not a failure — the row
+            // still belongs in the registry — but it must not vanish silently
+            // either. "not a number" leaves the amount empty and says so, here
+            // and in the preview, rather than being discovered months later as a
+            // holding worth nothing.
+            val unreadable = mutableListOf<String>()
+            fun <T> read(column: String?, label: String, parse: (String) -> T?): T? {
+                val raw = cell(column) ?: return null
+                return parse(raw) ?: null.also { unreadable += "$label “$raw”" }
+            }
+
+            val amount = read(request.mapping.investedAmount, "Amount", Coerce::money)
             val reference = cell(request.mapping.reference)
 
             val duplicate = existing.firstOrNull { candidate ->
@@ -198,10 +215,18 @@ class ImportService(
                 return@forEachIndexed
             }
 
+            val quantity = read(request.mapping.quantity, "Quantity", Coerce::number)
+            val startDate = read(request.mapping.startDate, "Start date", Coerce::date)
+            val maturityDate = read(request.mapping.maturityDate, "Maturity date", Coerce::date)
+
+            val warning = unreadable.takeIf { it.isNotEmpty() }
+                ?.joinToString(", ", prefix = "Couldn't read ", postfix = " — left empty.")
+
             if (request.dryRun) {
                 outcomes += RowOutcome(
                     rowNumber, "would-import", title, null,
-                    amount?.let { "as ${IndianNumbers.rupees(it)}" },
+                    listOfNotNull(amount?.let { "as ${IndianNumbers.rupees(it)}" }, warning)
+                        .joinToString(". ").ifEmpty { null },
                 )
                 return@forEachIndexed
             }
@@ -209,10 +234,10 @@ class ImportService(
             try {
                 val created = importRow(
                     householdId, type.id, title, amount,
-                    quantity = cell(request.mapping.quantity)?.let { Coerce.number(it) },
+                    quantity = quantity,
                     unit = cell(request.mapping.unit),
-                    startDate = cell(request.mapping.startDate)?.let { Coerce.date(it) },
-                    maturityDate = cell(request.mapping.maturityDate)?.let { Coerce.date(it) },
+                    startDate = startDate,
+                    maturityDate = maturityDate,
                     institutionId = cell(request.mapping.institution)?.let { name ->
                         institutions.firstOrNull { it.name.equals(name, true) }?.id
                             ?: institutions.firstOrNull { it.name.startsWith(name, true) }?.id
@@ -220,7 +245,7 @@ class ImportService(
                     notes = cell(request.mapping.notes),
                     visibility = request.visibility,
                 )
-                outcomes += RowOutcome(rowNumber, "imported", title, created, null)
+                outcomes += RowOutcome(rowNumber, "imported", title, created, warning)
             } catch (e: ApiException) {
                 outcomes += RowOutcome(rowNumber, "failed", title, null, e.message)
             } catch (e: Exception) {
@@ -248,15 +273,19 @@ class ImportService(
             dryRun = request.dryRun,
             total = sheet.rows.size,
             imported = imported,
+            wouldImport = outcomes.count { it.outcome == "would-import" },
             duplicates = duplicates,
             failed = failed,
             rows = outcomes,
             note = when {
-                request.dryRun ->
+                request.dryRun -> {
+                    val warned = outcomes.count { it.outcome == "would-import" && it.message?.contains("Couldn't read") == true }
                     "Nothing saved yet. ${outcomes.count { it.outcome == "would-import" }} rows " +
                         "would be added" +
                         (if (duplicates > 0) ", $duplicates are already here" else "") +
-                        (if (failed > 0) ", $failed need a look" else "") + "."
+                        (if (failed > 0) ", $failed need a look" else "") + "." +
+                        (if (warned > 0) " $warned ${if (warned == 1) "row has a cell" else "rows have cells"} we couldn't read." else "")
+                }
                 failed == 0 && duplicates == 0 -> "Imported all $imported."
                 else ->
                     "Imported $imported." +
@@ -293,6 +322,10 @@ class ImportService(
             institutionId = institutionId,
             notes = notes,
             visibility = visibility,
+            // A migration is capture. Twenty FDs without their interest rate
+            // should become twenty records that say so, not nothing at all —
+            // the completeness report is where a gap belongs, not the door.
+            allowMissingRequired = true,
         ),
     ).id
 

@@ -270,13 +270,23 @@ object QuickAddParser {
 
     // --- institution and type -------------------------------------------------
 
+    /**
+     * Two different matches, deliberately ranked differently.
+     *
+     * A full name that appears in the text wins on length, so "State Bank of
+     * India" beats "India". But when only the first word matched — someone typed
+     * "at ICICI" — the *shortest* full name wins, because a household with both
+     * "ICICI Bank" and "ICICI Prudential Mutual Fund" means the bank when they
+     * say ICICI. Ranking those by length too silently filed gold purchases at a
+     * fund house.
+     */
     private fun parseInstitution(
         text: String,
         vocabulary: Vocabulary,
         consumed: List<IntRange>,
     ): Pair<Field, IntRange>? {
         val lower = text.lowercase()
-        // Longest name first, so "State Bank of India" wins over "India".
+
         vocabulary.institutions
             .sortedByDescending { it.name.length }
             .forEach { institution ->
@@ -285,29 +295,32 @@ object QuickAddParser {
                 if (at >= 0) {
                     val range = at until (at + needle.length)
                     if (!overlaps(range, consumed)) {
-                        return Field(
-                            key = "institutionId", label = "Where",
-                            value = institution.id.toString(), display = institution.name,
-                            sourceText = text.substring(range), confidence = "high",
-                        ) to range
+                        return institutionField(institution, text, range, "high")
                     }
                 }
-                // A short first word, so "ICICI" finds "ICICI Bank".
-                val firstWord = needle.substringBefore(' ')
-                if (firstWord.length >= 4) {
-                    Regex("""\b${Regex.escape(firstWord)}\b""").find(lower)
-                        ?.takeIf { !overlaps(it.range, consumed) }
-                        ?.let { match ->
-                            return Field(
-                                key = "institutionId", label = "Where",
-                                value = institution.id.toString(), display = institution.name,
-                                sourceText = text.substring(match.range), confidence = "medium",
-                            ) to match.range
-                        }
-                }
             }
-        return null
+
+        return vocabulary.institutions
+            .sortedBy { it.name.length }
+            .firstNotNullOfOrNull { institution ->
+                val firstWord = institution.name.lowercase().substringBefore(' ')
+                if (firstWord.length < 4) return@firstNotNullOfOrNull null
+                Regex("""\b${Regex.escape(firstWord)}\b""").find(lower)
+                    ?.takeIf { !overlaps(it.range, consumed) }
+                    ?.let { institutionField(institution, text, it.range, "medium") }
+            }
     }
+
+    private fun institutionField(
+        institution: InstitutionVocabulary,
+        text: String,
+        range: IntRange,
+        confidence: String,
+    ) = Field(
+        key = "institutionId", label = "Where",
+        value = institution.id.toString(), display = institution.name,
+        sourceText = text.substring(range), confidence = confidence,
+    ) to range
 
     /**
      * Returns every range that pointed at the chosen type, not just the first.

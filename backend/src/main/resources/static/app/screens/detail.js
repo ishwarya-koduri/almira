@@ -8,7 +8,7 @@ import {
 import { state, findType } from "../state.js";
 import { reload } from "../app.js";
 
-export async function openDetail(id) {
+export async function openDetail(id, onChanged) {
   const body = el("div.stack-3", {}, el("div.skeleton", { style: { height: "200px" } }));
   const modal = sheet({ title: "Holding", body });
 
@@ -69,10 +69,213 @@ export async function openDetail(id) {
       row("Last confirmed", record.lastVerifiedAt ? formatDate(record.lastVerifiedAt) : "Never"),
     ),
 
-    el("div.row", {},
+    returnsCard(),
+    nomineeCard(),
+
+    el("div.row.wrap", { style: { gap: "8px" } },
+      el("button.btn", { type: "button", onclick: () => duplicate() }, "Duplicate"),
+      record.maturityDate && el("button.btn", { type: "button", onclick: () => renew() },
+        "Renew this"),
       el("button.btn.btn-danger", { type: "button", onclick: () => archive() }, "Move to trash"),
     ),
+
+    record.rolledFromId && el("p.caption.muted", {},
+      "This renewed an earlier record, which is kept as history."),
   ));
+
+  /* --- returns ------------------------------------------------------------- */
+
+  function returnsCard() {
+    const host = el("div.card.card-tight.stack-2", {},
+      el("div.overline", {}, "Return"),
+      el("div.skeleton", { style: { height: "40px" } }),
+    );
+
+    (async () => {
+      try {
+        const performance = await api.investmentReturns(state.household.id, id);
+        // Every figure here is allowed to be missing, and a missing one is
+        // explained rather than shown as a zero — a fabricated return is worse
+        // than no return (docs/01 §8).
+        const figures = [
+          ["Gain, realised", performance.realizedGainFormatted],
+          ["Gain, on paper", performance.unrealizedGainFormatted],
+          ["Absolute", performance.absoluteReturn !== null && performance.absoluteReturn !== undefined
+            ? `${performance.absoluteReturn}%` : null],
+          ["CAGR", performance.cagr !== null && performance.cagr !== undefined
+            ? `${performance.cagr}%` : null],
+          ["XIRR", performance.xirr !== null && performance.xirr !== undefined
+            ? `${performance.xirr}%` : null],
+        ].filter(([, value]) => value !== null && value !== undefined);
+
+        mount(host,
+          el("div.overline", {}, "Return"),
+          ...(figures.length
+            ? figures.map(([label, value]) => row(label, value))
+            : []),
+          performance.note && el("p.caption.muted", {}, performance.note),
+        );
+      } catch {
+        mount(host, el("div.overline", {}, "Return"),
+          el("p.caption.muted", {}, "We couldn't work this out just now."));
+      }
+    })();
+
+    return host;
+  }
+
+  /* --- nominees ------------------------------------------------------------ */
+
+  function nomineeCard() {
+    return el("div.card.card-tight.stack-2", {},
+      el("div.overline", {}, "Nominees"),
+      record.nominees.length
+        ? el("div.stack-2", {}, ...record.nominees.map((nominee) => row(
+            nominee.name, `${nominee.relationship || "nominee"} · ${nominee.sharePct}%`)))
+        : el("p.caption.muted", {},
+            "Nobody recorded. A nominee is who the institution pays — not who inherits it."),
+      el("div.row", {},
+        el("button.btn.btn-sm", { type: "button", onclick: () => editNominees() },
+          record.nominees.length ? "Change nominees" : "Add a nominee"),
+      ),
+    );
+  }
+
+  function editNominees() {
+    const rows = [];
+    const host = el("div.stack-2", {});
+    const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+
+    const addRow = (existing) => {
+      const who = select({
+        options: [
+          { value: "", label: "Someone outside the household" },
+          ...state.members.map((m) => ({ value: m.id, label: m.displayName })),
+        ],
+        value: existing?.memberId || "",
+        "aria-label": "Nominee",
+      });
+      const name = el("input.input", {
+        type: "text", placeholder: "Their name", value: existing?.name || "",
+        "aria-label": "Nominee name",
+      });
+      const share = el("input.input", {
+        type: "number", min: "1", max: "100", value: String(existing?.sharePct ?? 100),
+        "aria-label": "Share", style: { width: "88px" },
+      });
+      const entry = { who, name, share };
+      rows.push(entry);
+      const node = el("div.card.card-tight.stack-2", {},
+        el("div.row", {}, who, share, el("span.caption.muted", {}, "%")),
+        name,
+        el("button.btn.btn-sm.btn-danger", {
+          type: "button",
+          onclick: () => { node.remove(); rows.splice(rows.indexOf(entry), 1); },
+        }, "Remove"),
+      );
+      // A member and a written name are alternatives, not both.
+      who.addEventListener("change", () => { name.hidden = Boolean(who.value); });
+      name.hidden = Boolean(who.value);
+      host.append(node);
+    };
+
+    (record.nominees.length ? record.nominees : [null]).forEach(addRow);
+
+    const save = el("button.btn.btn-primary.grow", { type: "button" }, "Save nominees");
+    save.onclick = () => withBusy(save, async () => {
+      error.textContent = "";
+      try {
+        await api.setNominees(state.household.id, id, {
+          nominees: rows.map((entry) => ({
+            memberId: entry.who.value || null,
+            name: entry.who.value ? null : entry.name.value.trim(),
+            sharePct: Number(entry.share.value),
+          })).filter((nominee) => nominee.memberId || nominee.name),
+        });
+        nomineeModal.close();
+        toast("Nominees saved.");
+        record = await api.investment(state.household.id, id);
+        draw();
+        await (onChanged ? onChanged() : reload());
+      } catch (apiError) {
+        error.textContent = apiError.message;
+      }
+    });
+
+    const nomineeModal = sheet({
+      title: "Who should receive this?",
+      body: el("div.stack-3", {},
+        el("p.caption.muted", {},
+          "A nominee receives the money from the institution. Who inherits it is " +
+          "decided by a will — Almira records both so a mismatch can be spotted."),
+        host,
+        el("button.btn.btn-sm", { type: "button", onclick: () => addRow(null) }, "＋ Add another"),
+        error,
+      ),
+      footer: [save],
+    });
+  }
+
+  /* --- duplicate and renew -------------------------------------------------- */
+
+  function duplicate() {
+    const button = el("button.btn.btn-primary.grow", { type: "button" }, "Make a copy");
+    const title = el("input.input", { type: "text", value: `${record.title} (copy)`, "aria-label": "Name" });
+    button.onclick = () => withBusy(button, async () => {
+      const created = await api.duplicate(state.household.id, id, { title: title.value.trim() || null });
+      duplicateModal.close();
+      modal.close();
+      toast("Copied. The history stays with the original.");
+      await (onChanged ? onChanged() : reload());
+      if (created.investment) openDetail(created.id, onChanged);
+    });
+
+    const duplicateModal = sheet({
+      title: "Duplicate",
+      body: el("div.stack-3", {},
+        el("p.caption.muted", {},
+          "Same shape — type, institution, owners, nominees. The valuations and " +
+          "transactions stay with the original, because they happened to it."),
+        field({ label: "Name", control: title }),
+      ),
+      footer: [button],
+    });
+  }
+
+  function renew() {
+    const amount = moneyInput({ placeholder: "0" });
+    if (record.value) {
+      amount.input.value = String(record.value);
+      amount.input.dispatchEvent(new Event("input"));
+    }
+    const maturity = el("input.input", { type: "date", "aria-label": "New maturity date" });
+    const button = el("button.btn.btn-primary.grow", { type: "button" }, "Renew it");
+
+    button.onclick = () => withBusy(button, async () => {
+      await api.rollover(state.household.id, id, {
+        investedAmount: amount.value(),
+        maturityDate: maturity.value || null,
+      });
+      renewModal.close();
+      modal.close();
+      toast("Renewed. The old record is kept, marked matured.");
+      await (onChanged ? onChanged() : reload());
+    });
+
+    const renewModal = sheet({
+      title: `Renew ${record.title}`,
+      body: el("div.stack-3", {},
+        el("p.caption.muted", {},
+          `The old record is kept and marked matured, and the new one starts where ` +
+          `it ended${record.maturityDate ? ` — ${formatDate(record.maturityDate)}` : ""}. ` +
+          `Anything it funds carries across.`),
+        field({ label: "Amount", control: amount, help: "Principal plus whatever it earned." }),
+        field({ label: "New maturity date", control: maturity,
+          help: "We don't guess this one — the old date has already passed." }),
+      ),
+      footer: [button],
+    });
+  }
 
   function row(label, value) {
     if (!value) return null;

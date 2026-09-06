@@ -182,7 +182,114 @@ export const api = {
   setNominees:   (hid, id, body)  =>
     api.put(`/api/v1/households/${hid}/investments/${id}/nominees`, body),
   acceptInvite:  (token)          => api.post("/api/v1/invitations/accept", { token }),
+
+  // --- goals ----------------------------------------------------------------
+  goals:         (hid)            => api.get(`/api/v1/households/${hid}/goals`),
+  goal:          (hid, id)        => api.get(`/api/v1/households/${hid}/goals/${id}`),
+  createGoal:    (hid, body)      => api.post(`/api/v1/households/${hid}/goals`, body),
+  updateGoal:    (hid, id, body)  => api.patch(`/api/v1/households/${hid}/goals/${id}`, body),
+  mapToGoal:     (hid, id, body)  => api.post(`/api/v1/households/${hid}/goals/${id}/investments`, body),
+  unmapFromGoal: (hid, id, iid)   => api.del(`/api/v1/households/${hid}/goals/${id}/investments/${iid}`),
+  archiveGoal:   (hid, id)        => api.del(`/api/v1/households/${hid}/goals/${id}`),
+  unallocated:   (hid)            => api.get(`/api/v1/households/${hid}/goals-unallocated`),
+
+  // --- returns --------------------------------------------------------------
+  returns:       (hid, groupBy)   => api.get(`/api/v1/households/${hid}/returns?groupBy=${groupBy || "total"}`),
+  investmentReturns: (hid, id)    => api.get(`/api/v1/households/${hid}/investments/${id}/returns`),
+  transactions:  (hid, id)        => api.get(`/api/v1/households/${hid}/investments/${id}/transactions`),
+  recordTransaction: (hid, id, b) => api.post(`/api/v1/households/${hid}/investments/${id}/transactions`, b),
+  taxLots:       (hid, id)        => api.get(`/api/v1/households/${hid}/investments/${id}/tax-lots`),
+
+  // --- tax ------------------------------------------------------------------
+  taxPack:       (hid, fy, member) => api.get(
+    `/api/v1/households/${hid}/tax/pack?${new URLSearchParams({
+      ...(fy ? { fy } : {}), ...(member ? { member } : {}),
+    })}`),
+
+  // --- templates ------------------------------------------------------------
+  templates:     (hid)            => api.get(`/api/v1/households/${hid}/templates`),
+  createTemplate: (hid, body)     => api.post(`/api/v1/households/${hid}/templates`, body),
+  applyTemplate: (hid, id, body)  => api.post(`/api/v1/households/${hid}/templates/${id}/apply`, body),
+  deleteTemplate: (hid, id)       => api.del(`/api/v1/households/${hid}/templates/${id}`),
+
+  // --- duplicate and renew --------------------------------------------------
+  duplicate:     (hid, id, body)  => api.post(`/api/v1/households/${hid}/investments/${id}/duplicate`, body || {}),
+  rollover:      (hid, id, body)  => api.post(`/api/v1/households/${hid}/investments/${id}/rollover`, body || {}),
+
+  // --- reports --------------------------------------------------------------
+  completeness:  (hid)            => api.get(`/api/v1/households/${hid}/reports/completeness`),
+  insights:      (hid)            => api.get(`/api/v1/households/${hid}/reports/insights`),
+  exportUrl:     (hid, format)    => `/api/v1/households/${hid}/reports/export?format=${format}`,
+
+  // --- capture and import ---------------------------------------------------
+  parseText:     (hid, text)      => api.post(`/api/v1/households/${hid}/capture/parse-text`, { text }),
+  parseDocument: (hid, file)      => upload(`/api/v1/households/${hid}/capture/parse-document`, file),
+  importPreview: (hid, file)      => upload(`/api/v1/households/${hid}/import/preview`, file),
+  runImport:     (hid, file, options) =>
+    upload(`/api/v1/households/${hid}/import`, file, options),
+
+  // --- documents ------------------------------------------------------------
+  documents:     (hid)            => api.get(`/api/v1/households/${hid}/documents`),
+  documentAccess: (hid, id)       => api.post(`/api/v1/households/${hid}/documents/${id}/access`),
 };
+
+/**
+ * Multipart, not JSON — and deliberately not going through `request`, which
+ * sets a JSON content type. The browser must set its own multipart boundary,
+ * so the Content-Type header is left alone here.
+ */
+async function upload(path, file, fields = {}) {
+  const send = async (token) => {
+    const form = new FormData();
+    form.append("file", file);
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== null && value !== undefined) {
+        form.append(key, typeof value === "object" ? JSON.stringify(value) : String(value));
+      }
+    }
+    const response = await fetch(path, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    const text = await response.text();
+    return { response, payload: text ? JSON.parse(text) : null };
+  };
+
+  if (!accessToken && auth.refreshToken) await refreshTokens();
+  let { response, payload } = await send(accessToken);
+  if (response.status === 401 && auth.refreshToken) {
+    const fresh = await refreshTokens();
+    if (fresh) ({ response, payload } = await send(fresh));
+  }
+  if (!response.ok) {
+    const error = payload?.error || {};
+    throw new ApiError(response.status, error.code || "unknown",
+      error.message || "Something went wrong.", error.details);
+  }
+  return payload;
+}
+
+/**
+ * A download that carries the Authorization header — an ordinary link cannot,
+ * and the export endpoint is authenticated like everything else.
+ */
+export async function downloadAuthenticated(path, fallbackName) {
+  if (!accessToken && auth.refreshToken) await refreshTokens();
+  const response = await fetch(path, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new ApiError(response.status, "download_failed", "That download didn't work.");
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const named = disposition.match(/filename="?([^"]+)"?/);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = named ? named[1] : fallbackName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 function deviceName() {
   const ua = navigator.userAgent;

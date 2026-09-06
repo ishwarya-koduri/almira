@@ -13,6 +13,9 @@ import { liabilitiesScreen } from "./screens/liabilities.js";
 import { accountsScreen } from "./screens/accounts.js";
 import { familyScreen } from "./screens/family.js";
 import { settingsScreen } from "./screens/settings.js";
+import { goalsScreen } from "./screens/goals.js";
+import { taxScreen } from "./screens/tax.js";
+import { reportsScreen } from "./screens/reports.js";
 import { openCapture } from "./screens/capture.js";
 
 const routes = {
@@ -20,6 +23,9 @@ const routes = {
   investments: { label: "Investments", render: investmentsScreen },
   liabilities: { label: "Owed", render: liabilitiesScreen },
   accounts: { label: "Accounts", render: accountsScreen },
+  goals: { label: "Goals", render: goalsScreen },
+  tax: { label: "Tax", render: taxScreen },
+  reports: { label: "Reports", render: reportsScreen },
   family: { label: "Family", render: familyScreen },
   settings: { label: "Settings", render: settingsScreen },
 };

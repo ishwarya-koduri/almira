@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.common.IndianNumbers
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.investment.InvestmentService
 import tech.bhrigu.almira.security.RequestUserContext
@@ -13,7 +14,14 @@ import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
-data class UnallocatedHolding(val investmentId: UUID, val title: String)
+data class UnallocatedHolding(
+    val investmentId: UUID,
+    val title: String,
+    val value: BigDecimal?,
+    val valueFormatted: String?,
+    /** How much of it is still free to point at a goal. */
+    val unallocatedPct: BigDecimal,
+)
 
 /**
  * Progress towards a goal, with the honesty rules from docs/01 §7 attached.
@@ -260,7 +268,13 @@ class GoalService(
     @Transactional(readOnly = true)
     fun unallocated(householdId: UUID): List<UnallocatedHolding> {
         households.get(householdId)
-        return repo.unallocated(householdId).map { UnallocatedHolding(it.first, it.second) }
+        return repo.unallocated(householdId).map {
+            UnallocatedHolding(
+                investmentId = it.investmentId, title = it.title, value = it.value,
+                valueFormatted = it.value?.let(IndianNumbers::rupees),
+                unallocatedPct = it.unallocatedPct,
+            )
+        }
     }
 
     /**

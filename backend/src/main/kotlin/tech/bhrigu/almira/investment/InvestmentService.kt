@@ -68,6 +68,12 @@ data class CreateInvestment(
     val notes: String? = null,
     val customFields: List<CustomFieldInput> = emptyList(),
     val initialValuation: ValuationInput? = null,
+    /**
+     * Set only by the spreadsheet import: save what the sheet had, and let the
+     * completeness report ask for the rest. Not reachable from the API body —
+     * the controller builds this object field by field.
+     */
+    val allowMissingRequired: Boolean = false,
 )
 
 /**
@@ -165,7 +171,10 @@ class InvestmentService(
         val customDefs = if (recordFields.isEmpty()) emptyList()
         else catalogRepo.customFields("record", listOf(id))
 
-        val attributes = validator.validate(type.schema, customDefs, input.attributes)
+        val attributes = validator.validate(
+            type.schema, customDefs, input.attributes,
+            requireEssentials = !input.allowMissingRequired,
+        )
 
         try {
             repo.insert(

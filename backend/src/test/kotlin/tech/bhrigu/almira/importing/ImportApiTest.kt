@@ -110,9 +110,42 @@ class ImportApiTest : ApiTestBase() {
         val report = mapper.readTree(upload("", csv, request(dryRun = true)).body)
 
         assertThat(report.path("dryRun").asBoolean()).isTrue()
-        assertThat(report.path("imported").asInt()).isZero()
+        assertThat(report.path("imported").asInt())
+            .describedAs("a preview has imported nothing, and must not claim to have")
+            .isZero()
+        assertThat(report.path("wouldImport").asInt()).isEqualTo(3)
         assertThat(report.path("note").asText()).contains("Nothing saved yet")
         assertThat(get("/api/v1/households/$householdId/investments", owner).json()).isEmpty()
+    }
+
+    /**
+     * A cell that is present but unreadable is not a failed row — the holding
+     * still belongs in the registry — but the amount must not vanish quietly.
+     * Left unsaid, "not a number" becomes a holding worth nothing, discovered
+     * months later.
+     */
+    @Test
+    fun `the preview names the cells it could not read, before anything is saved`() {
+        val report = mapper.readTree(upload("", csv, request(dryRun = true)).body)
+
+        val broken = report.path("rows").first { it.path("title").asText() == "Broken row" }
+        assertThat(broken.path("outcome").asText()).isEqualTo("would-import")
+        assertThat(broken.path("message").asText())
+            .contains("Amount “not a number”")
+            .contains("Start date “31/02/2024”")
+        assertThat(report.path("note").asText()).contains("we couldn't read")
+    }
+
+    @Test
+    fun `and the same warning travels with the row that was actually imported`() {
+        val report = mapper.readTree(upload("", csv, request(dryRun = false)).body)
+
+        val broken = report.path("rows").first { it.path("title").asText() == "Broken row" }
+        assertThat(broken.path("outcome").asText()).isEqualTo("imported")
+        assertThat(broken.path("message").asText()).contains("left empty")
+        assertThat(report.path("wouldImport").asInt())
+            .describedAs("nothing is hypothetical on a real run")
+            .isZero()
     }
 
     /**
@@ -154,6 +187,39 @@ class ImportApiTest : ApiTestBase() {
      * People re-run imports — the first looked wrong, or they added rows. The
      * second run must be a no-op, not a doubled net worth.
      */
+    /**
+     * A sheet of FDs almost never carries the interest rate, and a type that
+     * insists on one would make the whole file unimportable. The preview said
+     * "3 rows would be added" and then every row failed at the door — a preview
+     * that lies is worse than no preview.
+     */
+    @Test
+    fun `a type's required field does not block a migration, and the preview agrees`() {
+        val fdCsv = """
+            Name,Amount,Opened
+            Axis FD,100000,01/04/2025
+            SBI FD,250000,01/04/2025
+        """.trimIndent()
+        val fdRequest = """
+            {"typeId":"${typeId(owner, householdId, "fd")}",
+             "mapping":{"title":"Name","investedAmount":"Amount","startDate":"Opened"},
+             "dryRun":%s}
+        """.trimIndent()
+
+        val preview = mapper.readTree(upload("", fdCsv, fdRequest.format("true")).body)
+        assertThat(preview.path("wouldImport").asInt()).isEqualTo(2)
+
+        val report = mapper.readTree(upload("", fdCsv, fdRequest.format("false")).body)
+        assertThat(report.path("imported").asInt())
+            .describedAs("what the preview promised is what happens")
+            .isEqualTo(2)
+        assertThat(report.path("failed").asInt()).isZero()
+
+        // And the gap is surfaced where gaps belong, rather than at the door.
+        val completeness = get("/api/v1/households/$householdId/reports/completeness", owner).json()
+        assertThat(completeness.path("score").asInt()).isLessThan(100)
+    }
+
     @Test
     fun `running the same import twice does not duplicate anything`() {
         upload("", csv, request(dryRun = false))

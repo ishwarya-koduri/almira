@@ -27,10 +27,21 @@ import java.time.format.DateTimeParseException
 @Component
 class AttributeValidator {
 
+    /**
+     * [requireEssentials] is false for a spreadsheet import, and only there.
+     *
+     * A migration is capture: a sheet of twenty FDs that omits the interest rate
+     * should become twenty records with the rate missing, not nothing at all.
+     * The gap is then visible where gaps belong — the completeness report and
+     * the attention list — rather than at the door. A value that is *present*
+     * but unreadable is still refused here, however: a wrong number is worse
+     * than a missing one.
+     */
     fun validate(
         schema: TypeSchema,
         customFields: List<CustomFieldRow>,
         submitted: Map<String, Any?>,
+        requireEssentials: Boolean = true,
     ): Map<String, Any?> {
         val definitions = buildMap<String, FieldDef> {
             schema.fields.forEach { put(it.key, it) }
@@ -55,7 +66,7 @@ class AttributeValidator {
         definitions.values.forEach { def ->
             val raw = submitted[def.key]
             if (raw == null || (raw is String && raw.isBlank())) {
-                if (def.required) errors[def.key] = "${def.label} is needed"
+                if (def.required && requireEssentials) errors[def.key] = "${def.label} is needed"
                 return@forEach
             }
             try {

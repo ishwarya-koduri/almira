@@ -267,6 +267,79 @@
         ],
         "type": "object"
       },
+      "BeneficiaryInput": {
+        "properties": {
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "liabilityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "relationship": {
+            "type": "string"
+          },
+          "sharePct": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "sharePct"
+        ],
+        "type": "object"
+      },
+      "BeneficiaryResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "investmentTitle": {
+            "type": "string"
+          },
+          "liabilityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "relationship": {
+            "type": "string"
+          },
+          "sharePct": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sharePct"
+        ],
+        "type": "object"
+      },
       "Breakdown": {
         "properties": {
           "color": {
@@ -587,6 +660,17 @@
         ],
         "type": "object"
       },
+      "CompleteConnectionBody": {
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
       "CompleteReminderResponse": {
         "properties": {
           "reminder": {
@@ -710,6 +794,156 @@
         ],
         "type": "object"
       },
+      "ConsentHandle": {
+        "properties": {
+          "approvalUrl": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "handle": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "handle",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ContactLinkInput": {
+        "properties": {
+          "entityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entityId",
+          "entityType"
+        ],
+        "type": "object"
+      },
+      "ContactLinkResponse": {
+        "properties": {
+          "entityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "entityTitle": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entityId",
+          "entityType"
+        ],
+        "type": "object"
+      },
+      "ContactResponse": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/ContactLinkResponse"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "organisation": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "links",
+          "name",
+          "version",
+          "visibility"
+        ],
+        "type": "object"
+      },
+      "Converted": {
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "convertedAmount": {
+            "type": "number"
+          },
+          "convertedCurrency": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "number"
+          },
+          "rateAsOf": {
+            "format": "date",
+            "type": "string"
+          },
+          "rateSource": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "convertedCurrency",
+          "currency"
+        ],
+        "type": "object"
+      },
       "CreateAccountBody": {
         "properties": {
           "accountKind": {
@@ -763,6 +997,115 @@
           "label",
           "storeFullNumber",
           "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "CreateContact": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/ContactLinkInput"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "organisation": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "links",
+          "name",
+          "visibility"
+        ],
+        "type": "object"
+      },
+      "CreateEstateDocument": {
+        "properties": {
+          "beneficiaries": {
+            "items": {
+              "$ref": "#/components/schemas/BeneficiaryInput"
+            },
+            "type": "array"
+          },
+          "documentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "executedOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "registered": {
+            "type": "boolean"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/EstateRoleInput"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "beneficiaries",
+          "kind",
+          "memberId",
+          "registered",
+          "roles",
+          "status",
+          "title",
+          "visibility"
         ],
         "type": "object"
       },
@@ -1100,6 +1443,51 @@
         ],
         "type": "object"
       },
+      "CreateShare": {
+        "properties": {
+          "expiresInDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "financialYear": {
+            "type": "string"
+          },
+          "includeDocuments": {
+            "type": "boolean"
+          },
+          "investmentIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "label": {
+            "type": "string"
+          },
+          "maxViews": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "recipientHint": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresInDays",
+          "includeDocuments",
+          "investmentIds",
+          "label",
+          "scope"
+        ],
+        "type": "object"
+      },
       "CreateTemplate": {
         "properties": {
           "accountId": {
@@ -1314,6 +1702,12 @@
           "totalLiabilitiesFormatted": {
             "type": "string"
           },
+          "unconverted": {
+            "items": {
+              "$ref": "#/components/schemas/UnconvertedHoldings"
+            },
+            "type": "array"
+          },
           "upcoming": {
             "items": {
               "$ref": "#/components/schemas/UpcomingItem"
@@ -1343,6 +1737,7 @@
           "totalAssetsFormatted",
           "totalLiabilities",
           "totalLiabilitiesFormatted",
+          "unconverted",
           "upcoming",
           "valueConfidence"
         ],
@@ -1601,6 +1996,340 @@
         "required": [
           "carryMaturityDate",
           "copyNominees"
+        ],
+        "type": "object"
+      },
+      "E2eKeyEnvelope": {
+        "properties": {
+          "iterations": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "kdf": {
+            "type": "string"
+          },
+          "kdfSalt": {
+            "type": "string"
+          },
+          "keyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "verifier": {
+            "type": "string"
+          },
+          "wrapAlgorithm": {
+            "type": "string"
+          },
+          "wrappedKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "iterations",
+          "kdf",
+          "kdfSalt",
+          "keyVersion",
+          "verifier",
+          "wrapAlgorithm",
+          "wrappedKey"
+        ],
+        "type": "object"
+      },
+      "E2eStatus": {
+        "properties": {
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "key": {
+            "$ref": "#/components/schemas/E2eKeyEnvelope"
+          },
+          "sealedFieldCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "caveats",
+          "enabled",
+          "sealedFieldCount"
+        ],
+        "type": "object"
+      },
+      "EmergencyRequestRow": {
+        "properties": {
+          "accessExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "requestedByMe": {
+            "type": "boolean"
+          },
+          "requestedByName": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "secondsUntilUnlock": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subjectMemberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subjectName": {
+            "type": "string"
+          },
+          "unlockAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "vetoedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accessExpiresAt",
+          "explanation",
+          "id",
+          "requestedAt",
+          "requestedByMe",
+          "status",
+          "subjectMemberId",
+          "unlockAt"
+        ],
+        "type": "object"
+      },
+      "EstateDocumentResponse": {
+        "properties": {
+          "beneficiaries": {
+            "items": {
+              "$ref": "#/components/schemas/BeneficiaryResponse"
+            },
+            "type": "array"
+          },
+          "disclaimer": {
+            "type": "string"
+          },
+          "documentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "executedOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "registered": {
+            "type": "boolean"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/EstateRoleResponse"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "beneficiaries",
+          "disclaimer",
+          "id",
+          "kind",
+          "memberId",
+          "registered",
+          "roles",
+          "status",
+          "title",
+          "version",
+          "visibility"
+        ],
+        "type": "object"
+      },
+      "EstateRoleInput": {
+        "properties": {
+          "contactId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      },
+      "EstateRoleResponse": {
+        "properties": {
+          "contactId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
+        "type": "object"
+      },
+      "FamilyHandbook": {
+        "properties": {
+          "contacts": {
+            "items": {
+              "$ref": "#/components/schemas/TransmissionContact"
+            },
+            "type": "array"
+          },
+          "debts": {
+            "items": {
+              "$ref": "#/components/schemas/HandbookDebt"
+            },
+            "type": "array"
+          },
+          "disclaimer": {
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/HandbookEntry"
+            },
+            "type": "array"
+          },
+          "excludedCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "householdName": {
+            "type": "string"
+          },
+          "instruments": {
+            "items": {
+              "$ref": "#/components/schemas/HandbookInstrument"
+            },
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          },
+          "preparedFor": {
+            "type": "string"
+          },
+          "preparedOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "totalIncluded": {
+            "type": "number"
+          },
+          "totalIncludedFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contacts",
+          "debts",
+          "disclaimer",
+          "entries",
+          "excludedCount",
+          "householdName",
+          "instruments",
+          "note",
+          "preparedFor",
+          "preparedOn",
+          "totalIncluded",
+          "totalIncludedFormatted"
         ],
         "type": "object"
       },
@@ -1879,6 +2608,217 @@
         ],
         "type": "object"
       },
+      "GuestPayload": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "handbook": {
+            "$ref": "#/components/schemas/FamilyHandbook"
+          },
+          "householdName": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "notice": {
+            "type": "string"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/GuestRecord"
+            },
+            "type": "array"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "sharedBy": {
+            "type": "string"
+          },
+          "taxPack": {
+            "$ref": "#/components/schemas/TaxPack"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "householdName",
+          "label",
+          "notice",
+          "records",
+          "scope",
+          "sharedBy"
+        ],
+        "type": "object"
+      },
+      "GuestRecord": {
+        "properties": {
+          "institutionName": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "typeLabel": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "valueBasis": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "typeLabel",
+          "valueBasis"
+        ],
+        "type": "object"
+      },
+      "HandbookDebt": {
+        "properties": {
+          "lender": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "outstanding": {
+            "type": "number"
+          },
+          "outstandingFormatted": {
+            "type": "string"
+          },
+          "securedAgainst": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "note",
+          "securedAgainst",
+          "title"
+        ],
+        "type": "object"
+      },
+      "HandbookEntry": {
+        "properties": {
+          "accountLabel": {
+            "type": "string"
+          },
+          "categoryCode": {
+            "type": "string"
+          },
+          "contacts": {
+            "items": {
+              "$ref": "#/components/schemas/TransmissionContact"
+            },
+            "type": "array"
+          },
+          "hasProof": {
+            "type": "boolean"
+          },
+          "howToClaim": {
+            "type": "string"
+          },
+          "institutionName": {
+            "type": "string"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nominees": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "typeCode": {
+            "type": "string"
+          },
+          "typeLabel": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "valueBasis": {
+            "type": "string"
+          },
+          "valueFormatted": {
+            "type": "string"
+          },
+          "whereItIsKept": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "categoryCode",
+          "contacts",
+          "hasProof",
+          "howToClaim",
+          "investmentId",
+          "nominees",
+          "title",
+          "typeCode",
+          "typeLabel",
+          "valueBasis"
+        ],
+        "type": "object"
+      },
+      "HandbookInstrument": {
+        "properties": {
+          "executedOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "executors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forMember": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "executors",
+          "kind",
+          "title"
+        ],
+        "type": "object"
+      },
       "HolderInput": {
         "properties": {
           "holderType": {
@@ -1934,6 +2874,20 @@
           "myRole",
           "name",
           "version"
+        ],
+        "type": "object"
+      },
+      "ImportDocumentsBody": {
+        "properties": {
+          "uris": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "uris"
         ],
         "type": "object"
       },
@@ -2022,6 +2976,38 @@
           "rows",
           "total",
           "wouldImport"
+        ],
+        "type": "object"
+      },
+      "ImportedFromProvider": {
+        "properties": {
+          "imported": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "skipped": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "imported",
+          "note",
+          "provider",
+          "skipped",
+          "titles"
         ],
         "type": "object"
       },
@@ -2657,6 +3643,26 @@
         ],
         "type": "object"
       },
+      "NameTrustedContactBody": {
+        "properties": {
+          "note": {
+            "type": "string"
+          },
+          "trustedMemberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "waitDays": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trustedMemberId",
+          "waitDays"
+        ],
+        "type": "object"
+      },
       "NetWorthTrend": {
         "properties": {
           "basis": {
@@ -2725,6 +3731,44 @@
           "id",
           "name",
           "sharePct"
+        ],
+        "type": "object"
+      },
+      "NomineeWillMismatch": {
+        "properties": {
+          "estateDocumentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "heirs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nominees": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "explanation",
+          "heirs",
+          "investmentId",
+          "nominees",
+          "title"
         ],
         "type": "object"
       },
@@ -2921,6 +3965,100 @@
         },
         "type": "object"
       },
+      "ProviderStatus": {
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lastSyncedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "OFF",
+              "SANDBOX",
+              "LIVE"
+            ],
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "sandboxNote": {
+            "type": "string"
+          },
+          "toGoLive": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "connected",
+          "label",
+          "mode",
+          "provider",
+          "toGoLive"
+        ],
+        "type": "object"
+      },
+      "RateQuote": {
+        "properties": {
+          "asOf": {
+            "format": "date",
+            "type": "string"
+          },
+          "base": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "asOf",
+          "base",
+          "quote",
+          "rate",
+          "source"
+        ],
+        "type": "object"
+      },
+      "RecordRate": {
+        "properties": {
+          "asOf": {
+            "format": "date",
+            "type": "string"
+          },
+          "baseCurrency": {
+            "type": "string"
+          },
+          "quoteCurrency": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "asOf",
+          "baseCurrency",
+          "quoteCurrency",
+          "rate"
+        ],
+        "type": "object"
+      },
       "RecordTransactionBody": {
         "properties": {
           "amount": {
@@ -3040,6 +4178,39 @@
         ],
         "type": "object"
       },
+      "RequestAccessBody": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "subjectMemberId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subjectMemberId"
+        ],
+        "type": "object"
+      },
+      "RequiredDocument": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "ready"
+        ],
+        "type": "object"
+      },
       "ResponsibilityInput": {
         "properties": {
           "memberId": {
@@ -3137,6 +4308,60 @@
         "required": [
           "outcome",
           "row"
+        ],
+        "type": "object"
+      },
+      "SealBody": {
+        "properties": {
+          "ciphertext": {
+            "type": "string"
+          },
+          "keyVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ciphertext",
+          "keyVersion"
+        ],
+        "type": "object"
+      },
+      "SealedField": {
+        "properties": {
+          "algorithm": {
+            "type": "string"
+          },
+          "ciphertext": {
+            "type": "string"
+          },
+          "fieldKey": {
+            "type": "string"
+          },
+          "keyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "algorithm",
+          "ciphertext",
+          "fieldKey",
+          "keyVersion",
+          "recordId",
+          "recordType",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -3280,6 +4505,88 @@
         },
         "required": [
           "nominees"
+        ],
+        "type": "object"
+      },
+      "ShareRow": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "includeDocuments": {
+            "type": "boolean"
+          },
+          "itemCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "maxViews": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "recipientHint": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "scopeDetail": {
+            "type": "string"
+          },
+          "scopeNote": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdAt",
+          "expiresAt",
+          "id",
+          "includeDocuments",
+          "itemCount",
+          "label",
+          "scope",
+          "viewCount"
+        ],
+        "type": "object"
+      },
+      "ShareViewRow": {
+        "properties": {
+          "userAgent": {
+            "type": "string"
+          },
+          "viewedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "viewedAt"
         ],
         "type": "object"
       },
@@ -3594,6 +4901,119 @@
         ],
         "type": "object"
       },
+      "TransmissionContact": {
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "TransmissionGuide": {
+        "properties": {
+          "authority": {
+            "type": "string"
+          },
+          "contactHint": {
+            "type": "string"
+          },
+          "contacts": {
+            "items": {
+              "$ref": "#/components/schemas/TransmissionContact"
+            },
+            "type": "array"
+          },
+          "disclaimer": {
+            "type": "string"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/RequiredDocument"
+            },
+            "type": "array"
+          },
+          "institutionName": {
+            "type": "string"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "nominees": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/TransmissionStep"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "title2": {
+            "type": "string"
+          },
+          "typeLabel": {
+            "type": "string"
+          },
+          "typicalDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "whereItIsKept": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contactHint",
+          "contacts",
+          "disclaimer",
+          "documents",
+          "investmentId",
+          "nominees",
+          "steps",
+          "summary",
+          "title",
+          "title2",
+          "typeLabel"
+        ],
+        "type": "object"
+      },
+      "TransmissionStep": {
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "step": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "step"
+        ],
+        "type": "object"
+      },
       "TrendPoint": {
         "properties": {
           "assets": {
@@ -3619,6 +5039,46 @@
           "liabilities",
           "netWorth",
           "netWorthFormatted"
+        ],
+        "type": "object"
+      },
+      "TrustedContact": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "theyTrustMe": {
+            "type": "boolean"
+          },
+          "trustedMemberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "trustedMemberName": {
+            "type": "string"
+          },
+          "waitDays": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "memberId",
+          "theyTrustMe",
+          "trustedMemberId",
+          "waitDays"
         ],
         "type": "object"
       },
@@ -3714,6 +5174,26 @@
           "investmentId",
           "title",
           "unallocatedPct"
+        ],
+        "type": "object"
+      },
+      "UnconvertedHoldings": {
+        "properties": {
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "currency",
+          "note"
         ],
         "type": "object"
       },
@@ -3816,6 +5296,92 @@
           "version": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "UpdateContact": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "organisation": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "UpdateEstateDocument": {
+        "properties": {
+          "beneficiaries": {
+            "items": {
+              "$ref": "#/components/schemas/BeneficiaryInput"
+            },
+            "type": "array"
+          },
+          "documentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "executedOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "registered": {
+            "type": "boolean"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/EstateRoleInput"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
           }
         },
         "required": [
@@ -4131,6 +5697,65 @@
           "fromCustomField",
           "unknown",
           "valued"
+        ],
+        "type": "object"
+      },
+      "VaultDocument": {
+        "properties": {
+          "docType": {
+            "type": "string"
+          },
+          "issuedOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "uri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "docType",
+          "issuer",
+          "mimeType",
+          "name",
+          "sizeBytes",
+          "uri"
+        ],
+        "type": "object"
+      },
+      "WhatsAppCapture": {
+        "properties": {
+          "fields": {
+            "items": {
+              "additionalProperties": {},
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "reply": {
+            "type": "string"
+          },
+          "understood": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fields",
+          "reply",
+          "understood"
         ],
         "type": "object"
       }
@@ -4529,7 +6154,7 @@
     },
     "/api/v1/households/{householdId}/accounts": {
       "get": {
-        "operationId": "list_7",
+        "operationId": "list_11",
         "parameters": [
           {
             "in": "path",
@@ -4561,7 +6186,7 @@
         ]
       },
       "post": {
-        "operationId": "create_7",
+        "operationId": "create_10",
         "parameters": [
           {
             "in": "path",
@@ -4633,7 +6258,7 @@
         ]
       },
       "get": {
-        "operationId": "get_5",
+        "operationId": "get_7",
         "parameters": [
           {
             "in": "path",
@@ -4671,7 +6296,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_5",
+        "operationId": "update_7",
         "parameters": [
           {
             "in": "path",
@@ -4899,6 +6524,714 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/connect/aa/consent": {
+      "get": {
+        "operationId": "consentStatus",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentHandle"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "connect-controller"
+        ]
+      },
+      "post": {
+        "operationId": "requestConsent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentHandle"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "connect-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/connect/aa/import": {
+      "post": {
+        "operationId": "importHoldings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportedFromProvider"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "connect-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/connect/digilocker/complete": {
+      "post": {
+        "operationId": "completeDigiLocker",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteConnectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VaultDocument"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "connect-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/connect/digilocker/import": {
+      "post": {
+        "operationId": "importDocuments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportDocumentsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportedFromProvider"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "connect-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/connect/digilocker/start": {
+      "post": {
+        "operationId": "startDigiLocker",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "connect-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/connect/providers": {
+      "get": {
+        "operationId": "providers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderStatus"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "connect-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/connect/whatsapp/inbound": {
+      "post": {
+        "operationId": "inbound",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Hub-Signature-256",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatsAppCapture"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "connect-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/contacts": {
+      "get": {
+        "operationId": "list_10",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContactResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "contact-controller"
+        ]
+      },
+      "post": {
+        "operationId": "create_9",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateContact"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "contact-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/contacts/{id}": {
+      "delete": {
+        "operationId": "delete_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "contact-controller"
+        ]
+      },
+      "get": {
+        "operationId": "get_6",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "contact-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "update_6",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateContact"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "contact-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/contacts/{id}/links": {
+      "delete": {
+        "operationId": "unlink_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "contact-controller"
+        ]
+      },
+      "post": {
+        "operationId": "link_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactLinkInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "contact-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/continuity/handbook": {
+      "get": {
+        "operationId": "familyHandbook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/FamilyHandbook"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "continuity-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/continuity/handbook.pdf": {
+      "get": {
+        "operationId": "printableHandbook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "continuity-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/continuity/transmission/{investmentId}": {
+      "get": {
+        "operationId": "transmission",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "investmentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransmissionGuide"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "continuity-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/dashboard": {
       "get": {
         "operationId": "dashboard",
@@ -4950,7 +7283,7 @@
     },
     "/api/v1/households/{householdId}/documents": {
       "get": {
-        "operationId": "list_6",
+        "operationId": "list_9",
         "parameters": [
           {
             "in": "path",
@@ -5164,7 +7497,7 @@
         ]
       },
       "get": {
-        "operationId": "get_6",
+        "operationId": "get_9",
         "parameters": [
           {
             "in": "path",
@@ -5354,9 +7687,739 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/e2e": {
+      "get": {
+        "operationId": "status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/E2eStatus"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "e-2e-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/e2e/key": {
+      "put": {
+        "operationId": "putKey",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/E2eKeyEnvelope"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/E2eKeyEnvelope"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "e-2e-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/e2e/values": {
+      "get": {
+        "operationId": "list_13",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recordType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recordId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SealedField"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "e-2e-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/e2e/values/{recordType}/{recordId}/{fieldKey}": {
+      "delete": {
+        "operationId": "unseal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "fieldKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "e-2e-controller"
+        ]
+      },
+      "put": {
+        "operationId": "seal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "fieldKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SealBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SealedField"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "e-2e-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/contacts": {
+      "get": {
+        "operationId": "contacts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TrustedContact"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "emergency-controller"
+        ]
+      },
+      "post": {
+        "operationId": "nameContact",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NameTrustedContactBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustedContact"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "emergency-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/contacts/{trustedMemberId}": {
+      "delete": {
+        "operationId": "removeContact",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "trustedMemberId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "emergency-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/requests": {
+      "get": {
+        "operationId": "requests",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EmergencyRequestRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "emergency-controller"
+        ]
+      },
+      "post": {
+        "operationId": "request",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestAccessBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmergencyRequestRow"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "emergency-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/requests/{id}/veto": {
+      "post": {
+        "operationId": "veto",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmergencyRequestRow"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "emergency-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/requests/{id}/withdraw": {
+      "post": {
+        "operationId": "withdraw",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmergencyRequestRow"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "emergency-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/estate/documents": {
+      "get": {
+        "operationId": "list_8",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EstateDocumentResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "estate-controller"
+        ]
+      },
+      "post": {
+        "operationId": "create_8",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEstateDocument"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstateDocumentResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "estate-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/estate/documents/{id}": {
+      "delete": {
+        "operationId": "delete_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "estate-controller"
+        ]
+      },
+      "get": {
+        "operationId": "get_5",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstateDocumentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "estate-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "update_5",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEstateDocument"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstateDocumentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "estate-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/estate/mismatches": {
+      "get": {
+        "operationId": "mismatches",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NomineeWillMismatch"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "estate-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/goals": {
       "get": {
-        "operationId": "list_5",
+        "operationId": "list_7",
         "parameters": [
           {
             "in": "path",
@@ -5396,7 +8459,7 @@
         ]
       },
       "post": {
-        "operationId": "create_6",
+        "operationId": "create_7",
         "parameters": [
           {
             "in": "path",
@@ -5934,7 +8997,7 @@
     },
     "/api/v1/households/{householdId}/investments": {
       "get": {
-        "operationId": "list_4",
+        "operationId": "list_6",
         "parameters": [
           {
             "in": "path",
@@ -6066,7 +9129,7 @@
         ]
       },
       "post": {
-        "operationId": "create_5",
+        "operationId": "create_6",
         "parameters": [
           {
             "in": "path",
@@ -6639,7 +9702,7 @@
         ]
       },
       "post": {
-        "operationId": "record",
+        "operationId": "record_1",
         "parameters": [
           {
             "in": "path",
@@ -6744,7 +9807,7 @@
     },
     "/api/v1/households/{householdId}/invitations": {
       "get": {
-        "operationId": "list_3",
+        "operationId": "list_5",
         "parameters": [
           {
             "in": "path",
@@ -6776,7 +9839,7 @@
         ]
       },
       "post": {
-        "operationId": "create_4",
+        "operationId": "create_5",
         "parameters": [
           {
             "in": "path",
@@ -6817,7 +9880,7 @@
     },
     "/api/v1/households/{householdId}/invitations/{invitationId}": {
       "delete": {
-        "operationId": "revoke",
+        "operationId": "revoke_1",
         "parameters": [
           {
             "in": "path",
@@ -6850,7 +9913,7 @@
     },
     "/api/v1/households/{householdId}/liabilities": {
       "get": {
-        "operationId": "list_2",
+        "operationId": "list_4",
         "parameters": [
           {
             "in": "path",
@@ -6890,7 +9953,7 @@
         ]
       },
       "post": {
-        "operationId": "create_3",
+        "operationId": "create_4",
         "parameters": [
           {
             "in": "path",
@@ -7442,9 +10505,156 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/rates": {
+      "get": {
+        "operationId": "list_3",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "quote",
+            "required": false,
+            "schema": {
+              "default": "INR",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RateQuote"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "currency-controller"
+        ]
+      },
+      "post": {
+        "operationId": "record",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordRate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateQuote"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "currency-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/rates/convert": {
+      "get": {
+        "operationId": "convert",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "amount",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "default": "INR",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "on",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/Converted"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "currency-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/reminders": {
       "get": {
-        "operationId": "list_1",
+        "operationId": "list_2",
         "parameters": [
           {
             "in": "path",
@@ -7494,7 +10704,7 @@
         ]
       },
       "post": {
-        "operationId": "create_2",
+        "operationId": "create_3",
         "parameters": [
           {
             "in": "path",
@@ -7535,7 +10745,7 @@
     },
     "/api/v1/households/{householdId}/reminders/{id}": {
       "delete": {
-        "operationId": "delete_1",
+        "operationId": "delete_3",
         "parameters": [
           {
             "in": "path",
@@ -7948,6 +11158,193 @@
         },
         "tags": [
           "search-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/shares": {
+      "get": {
+        "operationId": "list_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ShareRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "share-controller"
+        ]
+      },
+      "post": {
+        "operationId": "create_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShare"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareRow"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "share-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/shares/{id}": {
+      "delete": {
+        "operationId": "revoke",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "share-controller"
+        ]
+      },
+      "get": {
+        "operationId": "get_8",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareRow"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "share-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/shares/{id}/views": {
+      "get": {
+        "operationId": "views",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ShareViewRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "share-controller"
         ]
       }
     },
@@ -8423,7 +11820,7 @@
     },
     "/api/v1/households/{householdId}/trash": {
       "get": {
-        "operationId": "list_8",
+        "operationId": "list_12",
         "parameters": [
           {
             "in": "path",
@@ -8614,6 +12011,36 @@
         },
         "tags": [
           "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/share/{token}": {
+      "get": {
+        "operationId": "open",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestPayload"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "guest-share-controller"
         ]
       }
     }

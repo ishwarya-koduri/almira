@@ -56,9 +56,19 @@ hasnt() { case "$2" in *"$3"*) bad "$1" "'$2' contains '$3'";; *) ok "$1";; esac
 section() { echo; echo "${BOLD}$1${OFF}"; }
 
 login() {
-  local phone="$1" code
-  code=$(curl -s -X POST "$BASE/api/v1/auth/otp/request" -H 'Content-Type: application/json' \
-        -d "{\"phone\":\"$phone\"}" | jq_ "['developmentCode']")
+  local phone="$1" requested code
+  requested=$(curl -s -X POST "$BASE/api/v1/auth/otp/request" -H 'Content-Type: application/json' \
+        -d "{\"phone\":\"$phone\"}")
+  # The per-network sign-in cap counts a laptop's suites as one attacker, which
+  # is correct and reads like a broken build. Say which it is.
+  case "$requested" in
+    *rate_limited*)
+      echo "${RED}Sign-in is rate limited for this network.${OFF}" >&2
+      echo "  Development raises the cap: run through ./scripts/dev.sh, or set" >&2
+      echo "  ALMIRA_OTP_MAX_PER_IP_PER_HOUR=500 on the server." >&2
+      exit 2;;
+  esac
+  code=$(echo "$requested" | jq_ "['developmentCode']")
   curl -s -X POST "$BASE/api/v1/auth/otp/verify" -H 'Content-Type: application/json' \
     -d "{\"phone\":\"$phone\",\"code\":\"$code\"}" | jq_ "['accessToken']"
 }

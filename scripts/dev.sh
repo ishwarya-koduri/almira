@@ -41,6 +41,12 @@ export ALMIRA_TEST_DB_URL="jdbc:postgresql://localhost:55432/almira_test"
 export ALMIRA_TEST_REDIS_HOST=localhost
 export ALMIRA_TEST_REDIS_PORT=56379
 
+# Every request from a laptop comes from 127.0.0.1, so the per-network sign-in
+# cap — which is right in a deployment — counts all three end-to-end suites as
+# one attacker. Raised for development only; the default still applies anywhere
+# this variable is not set.
+export ALMIRA_OTP_MAX_PER_IP_PER_HOUR="${ALMIRA_OTP_MAX_PER_IP_PER_HOUR:-500}"
+
 if [ "${1:-}" = "test" ]; then
   say "Unit and integration tests…"
   (cd backend && ./gradlew test --console=plain -q)
@@ -56,6 +62,7 @@ if [ "${1:-}" = "test" ]; then
   echo "  ${DIM}./scripts/dev.sh   # in one terminal${OFF}"
   echo "  ${DIM}./scripts/e2e-phase0.sh   # foundations, privacy, the balance sheet${OFF}"
   echo "  ${DIM}./scripts/e2e-phase2.sh   # goals, returns, tax, capture, reports${OFF}"
+  echo "  ${DIM}./scripts/e2e-phase3.sh   # estate, continuity, sharing, emergency, zero-knowledge${OFF}"
   exit 0
 fi
 

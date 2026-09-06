@@ -1,7 +1,7 @@
 # Building a client against Almira v1
 
-The contract is [`openapi-v1.json`](openapi-v1.json) — 78 paths, 107 operations,
-119 schemas. Generate a typed client from it; do not hand-write one.
+The contract is [`openapi-v1.json`](openapi-v1.json) — 109 paths, 152 operations,
+164 schemas. Generate a typed client from it; do not hand-write one.
 
 **v1 is additive-only.** New endpoints and new optional fields may appear; nothing
 will be removed, renamed or retyped. A breaking change goes to `/api/v2` and v1
@@ -178,6 +178,59 @@ the two never both count — while remaining visible as history.
 **Completeness is a measure of the records, not of the person.** Each check
 carries the ids to fix, so offer one tap. An empty household scores 100 with a
 `nextStep` inviting a first record; do not render 0%.
+
+---
+
+## Phase 3 and 4: the parts that decide who sees what
+
+**Three kinds of outsider, and they behave differently.** A *guest link* has no
+login: the token is the credential, `GET /api/v1/share/{token}` is
+unauthenticated, and the payload is one slice, read-only, until it expires. An
+*emergency contact* is a member who asked and waited. An *advisor* is a member
+whose role means household visibility never reaches them — they see only records
+explicitly shared with them, and a `403` on a write is the expected answer, not
+an error to report.
+
+**A share tells you what is inside before you send it.** `scopeNote` on the
+creation response says how many records, and how many of those are private to
+the sharer — the family handbook deliberately includes those. Show it. The `url`
+is returned exactly once, because the server keeps only a hash; a lost link can
+be withdrawn and replaced, never recovered.
+
+**An expired link and a withdrawn one answer identically.** Do not write UI that
+distinguishes them: telling them apart would confirm a link once existed.
+
+**Emergency access is a state machine with a clock.** `status` is `waiting`,
+`open`, `vetoed`, `withdrawn` or `ended`, derived from timestamps rather than
+stored — so a client should re-read rather than cache it, and
+`secondsUntilUnlock` is there to render a countdown honestly. Only the subject
+may veto; only the requester may withdraw. When a window is open, the ordinary
+endpoints simply return more rows: there is no separate "emergency mode" API,
+which is exactly why nothing can forget to apply it.
+
+**The nominee-versus-will flag is derived from two records**, so it appears only
+when both are visible to you. Render `explanation` as written — it states the
+difference and deliberately does not say which side is wrong.
+
+**Zero-knowledge fields are opaque and the server means it.** `PUT
+/e2e/values/…` takes base64 and returns it unchanged; the server can tell you
+nothing about the contents, cannot search or sort them, and rejects anything
+that is not plausibly ciphertext. A client that has not unlocked should render a
+sealed field as locked rather than blank. The scheme — PBKDF2 parameters,
+envelope layout, AAD construction — is in [Doc 12](../12-end-to-end-encryption.md)
+and the backend test implements the client half in Kotlin, which you can copy.
+
+**Money is stored in the currency it is in.** `currency` is per record; the
+dashboard converts into the household's base currency and reports what it could
+not convert in `unconverted` — render that, because the total is deliberately
+smaller than the truth rather than wrong. A conversion carries `rate`, `rateAsOf`
+and `rateSource`; a figure without them is a number pretending to be a fact.
+
+**Providers are in sandbox until a credential says otherwise.**
+`GET /connect/providers` reports each one's `mode` and the list of what would
+make it live. Anything imported arrives at the household's default visibility,
+never wider, and an inbound WhatsApp message is a *proposal*, never a saved
+record.
 
 ---
 

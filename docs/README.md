@@ -24,6 +24,11 @@ This is the **build-ready documentation set**, split into interlinked docs for c
 | 09 | [Build & Launch Plan](09-build-and-launch-plan.md) | **End to end:** accounts, tooling, Kotlin stack, Docker, DB/cache, OTP login, CI/CD, and publishing to Google Play + App Store. |
 | 10 | [Phases, Stories & Definition of Done](10-phases-user-stories-and-dod.md) | The delivery backlog: every phase with **user stories, acceptance criteria, and a Definition of Done**. |
 | 11 | [Getting Started Runbook](11-getting-started-runbook.md) | **How to actually build it, step by step from zero** — accounts, tools, repo, first running slice, then how to iterate to launch. |
+| 12 | [Zero-knowledge encryption](12-end-to-end-encryption.md) | The scheme, completely: KDF parameters, envelope layout, AAD, rotation, and what it does *not* defend against — written so a second client implements the same one. |
+| 13 | [Providers & going live](13-providers-and-going-live.md) | DigiLocker, Account Aggregator, WhatsApp, SMS, email, push: what is built, what the sandbox does, and exactly which credential or registration flips each one live. |
+| 14 | [Language](14-localization.md) | English, Telugu, Hindi — what is translated, what is not, and what finishing would take. |
+| 15 | [Security whitepaper](15-security-whitepaper.md) | The public document: how the privacy model is enforced, what is encrypted and how, and a plain section on what none of it defends against. |
+| 16 | [Controls & threat model](16-controls-and-threat-model.md) | The auditor's companion: trust boundaries, assets against adversaries, STRIDE, a control catalogue naming the file to read, and the known gaps. |
 
 ## How the docs interlink
 Each doc has a top nav bar (**‹ Index · Prev · Next ›**) and cross-links inline. The dependency order for building: **01 → 04 → 05 → 06 → 02/03 → 07 → 08 → 09**.
@@ -35,9 +40,13 @@ Each doc has a top nav bar (**‹ Index · Prev · Next ›**) and cross-links i
 - **Stack** — **Kotlin everywhere: Spring Boot backend + Kotlin Multiplatform/Compose app** + PostgreSQL + Redis (Flutter is the documented app-framework alternative). ([Doc 09 §1–2](09-build-and-launch-plan.md))
 - **Login** — **phone OTP** (Twilio Verify / MSG91) + biometric app-lock. ([Doc 09 §9](09-build-and-launch-plan.md))
 
+**Decided since, in the build**
+- **Privacy depth** — both. Server-side envelope encryption for everything sensitive, *plus* optional zero-knowledge fields the server cannot read at all ([Doc 12](12-end-to-end-encryption.md)).
+- **Web companion** — built alongside the backend rather than later; it is how every phase was exercised, and several bugs were only ever going to be found by looking at a screen.
+- **Providers** — adapters with working sandboxes, built before the accounts exist ([Doc 13](13-providers-and-going-live.md)).
+
 **Still pending your call**
 1. **App framework** — Flutter (best UI) vs Kotlin Multiplatform + Compose (one language, IntelliJ-native)?
-2. **Privacy depth in v1** — standard encryption, or end-to-end/zero-knowledge from day one?
 3. **Household default visibility** — "transparent by default" or "private by default" (see [Doc 05 §3](05-security-and-privacy.md#3-the-intra-household-privacy-model))?
 4. **Continuity in v1** — full Transmission Assistant + emergency access, or a simple shareable summary first?
 5. **Tax depth in v1** — full 80C + capital gains, or deduction meters only?

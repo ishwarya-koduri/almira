@@ -4,7 +4,7 @@
 
 The product documentation lives in [`docs/`](docs/README.md). This file covers the code.
 
-**Status: Phases 0–2 complete — backend and web client.**
+**Status: Phases 0–4 complete except the native app — backend and web client.**
 
 Phase 1 gave the whole balance sheet: phone-OTP sign-in, households and members,
 type-aware capture including the universal "record anything" type, accounts with
@@ -12,19 +12,35 @@ encrypted numbers, liabilities and **true net worth**, nominees, reminders and a
 cash-flow calendar, an encrypted document vault, global search, and the
 per-record privacy model enforced by PostgreSQL row-level security.
 
-Phase 2 adds what makes those records worth keeping: goals and what funds them;
+Phase 2 added what makes those records worth keeping: goals and what funds them;
 returns (XIRR, CAGR, realised against unrealised, computed only where the data
 supports them); the India tax layer (80C, 80D, 80CCD(1B), 24(b), and capital
-gains from tax lots); three faster ways in — natural-language quick add,
-server-side document reading, and spreadsheet import; templates, duplicate and
-maturity rollover; and reports — completeness, concentration, liquidity, and
-export as CSV, XLSX or PDF.
+gains from tax lots); natural-language quick add, server-side document reading
+and spreadsheet import; templates, duplicate and maturity rollover; and reports
+— completeness, concentration, liquidity, and export as CSV, XLSX or PDF.
 
-Every one of them is computed under the caller's own row-level security, so
-derived data leaks no more than the records it derives from — with a test for
-each. Notifications remain a logging stand-in until provider accounts exist, and
-the native app is Phase 3's, built against the frozen v1 contract below.
-Phases 3–4 are laid out in [`docs/10`](docs/10-phases-user-stories-and-dod.md).
+Phase 3 is continuity and trust: wills, powers of attorney and advisors, with
+the **nominee ≠ heir** flag that is the reason the module exists; the
+**Transmission Assistant**, fourteen playbooks for how a family actually claims
+each kind of thing; the printable family handbook; **scoped guest links**;
+**emergency access** with a waiting period, an owner veto and a full audit; and
+**zero-knowledge fields** encrypted in the browser with a passphrase the server
+never receives ([docs/12](docs/12-end-to-end-encryption.md)).
+
+Phase 4 is everything that needs no provider account: **multi-currency** behind
+a pluggable rate source, **Telugu and Hindi** in the web client
+([docs/14](docs/14-localization.md)), and an **advisor** role that sees only what
+it is given. DigiLocker, the Account Aggregator network, WhatsApp, SMS, email and
+push are built as adapters with working sandboxes and a list of exactly what
+flips each one live ([docs/13](docs/13-providers-and-going-live.md)).
+
+The security whitepaper is [docs/15](docs/15-security-whitepaper.md) and the
+controls and threat model are [docs/16](docs/16-controls-and-threat-model.md).
+An external penetration test is **to be scheduled** — it needs a deployed
+environment, not a laptop. The native app is the remaining work, built against
+the frozen v1 contract below.
+
+The phases themselves are laid out in [`docs/10`](docs/10-phases-user-stories-and-dod.md).
 
 ---
 
@@ -91,8 +107,8 @@ not a substitute for one.
 ## The v1 API contract
 
 The API is **frozen at v1** and lives at `/api/v1/**`. The contract is committed
-as [`docs/api/openapi-v1.json`](docs/api/openapi-v1.json) — 78 paths, 107
-operations, 119 schemas — and that file is the handoff artefact the mobile app is
+as [`docs/api/openapi-v1.json`](docs/api/openapi-v1.json) — 109 paths, 152
+operations, 164 schemas — and that file is the handoff artefact the mobile app is
 built against.
 
 **The rule for the life of v1 is additive-only.** New endpoints, new optional
@@ -198,7 +214,7 @@ Switch `ALMIRA_OTP_PROVIDER` to `twilio` or `msg91` and the field disappears. **
 Three suites, each proving something the others cannot.
 
 ```bash
-# 1. Unit + full-stack integration (290 tests)
+# 1. Unit + full-stack integration (369 tests)
 cd backend
 ALMIRA_TEST_DB_URL=jdbc:postgresql://localhost:55432/almira_test \
 ALMIRA_TEST_REDIS_HOST=localhost ALMIRA_TEST_REDIS_PORT=56379 \
@@ -214,12 +230,13 @@ docker exec -e PGPASSWORD=app_dev_password almira-db \
   psql -h 127.0.0.1 -U almira_app -d almira -v ON_ERROR_STOP=1 -f /tmp/t.sql
 ```
 
-45 assertions. If a future refactor bypasses a service, the policies still have to hold.
+57 assertions. If a future refactor bypasses a service, the policies still have to hold.
 
 ```bash
 # 3. End-to-end over real HTTP, against a running server
 ./scripts/e2e-phase0.sh   # 65 checks
 ./scripts/e2e-phase2.sh   # 40 checks
+./scripts/e2e-phase3.sh   # 46 checks
 ```
 
 The first covers the whole journey with two signed-in users: sign-in, invitation
@@ -232,6 +249,12 @@ goal funded by the renewal rather than by both records, returns that stay null
 until the data earns them, an import previewed before it is committed — and
 every derived surface, down to the CSV export, hiding precisely what the records
 it derives from hide.
+
+The third covers Phase 3 and 4, where people outside the family get to see
+something: a guest link that opens with no sign-in and dies the moment it is
+withdrawn, an advisor who sees only what was given, an emergency request that
+waits and can be vetoed, and sealed fields the server stores without being able
+to read.
 
 ### Something to look at
 

@@ -67,6 +67,13 @@ almira:
     max-attempts: 5
     resend-cooldown: 30s
     max-per-hour: 5
+    # Per network, per hour. The default protects a real deployment, where one
+    # address making dozens of sign-in attempts is an attack. On a laptop every
+    # request comes from 127.0.0.1, so running the three end-to-end suites back
+    # to back — which is exactly what the runbook and the audit checklist ask
+    # for — used to exhaust it and fail with "too many attempts from this
+    # network", which reads like a broken build rather than a working defence.
+    max-per-ip-per-hour: ${ALMIRA_OTP_MAX_PER_IP_PER_HOUR:20}
 
 springdoc:
   # The spec IS the contract, so it contains exactly what the app depends on.

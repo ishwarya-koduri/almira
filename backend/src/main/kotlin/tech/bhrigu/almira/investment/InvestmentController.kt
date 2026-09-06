@@ -111,6 +111,8 @@ data class InvestmentResponse(
     /** Value minus what is owed against it — what is actually yours today. */
     val netEquity: BigDecimal?,
     val lastVerifiedAt: Instant?,
+    /** Set when this record renewed an earlier one. */
+    val rolledFromId: UUID? = null,
     val version: Int,
     val createdAt: Instant,
 )
@@ -124,6 +126,12 @@ data class CreateInvestmentResponse(
      */
     val visibleToYou: Boolean,
     val investment: InvestmentResponse?,
+)
+
+data class RolloverResponse(
+    /** The matured record, kept. */
+    val previous: InvestmentResponse,
+    val created: CreateInvestmentResponse,
 )
 
 @RestController
@@ -178,6 +186,38 @@ class InvestmentController(private val service: InvestmentService) {
             limit = limit.coerceIn(1, 500), offset = offset.coerceAtLeast(0),
         ),
     ).map { it.toResponse() }
+
+    /** Same shape, new record — the fourth FD of the year, typed once. */
+    @PostMapping("/{id}/duplicate")
+    @ResponseStatus(HttpStatus.CREATED)
+    fun duplicate(
+        @PathVariable householdId: UUID,
+        @PathVariable id: UUID,
+        @RequestBody(required = false) body: DuplicateInvestment?,
+    ): CreateInvestmentResponse {
+        val created = service.duplicate(householdId, id, body ?: DuplicateInvestment())
+        return CreateInvestmentResponse(created.id, created.visibleToYou, created.record?.toResponse())
+    }
+
+    /**
+     * Renew a maturity. The old record is kept and marked matured; the new one
+     * points back at it, so the history survives the renewal.
+     */
+    @PostMapping("/{id}/rollover")
+    @ResponseStatus(HttpStatus.CREATED)
+    fun rollover(
+        @PathVariable householdId: UUID,
+        @PathVariable id: UUID,
+        @RequestBody(required = false) body: DuplicateInvestment?,
+    ): RolloverResponse {
+        val result = service.rollover(householdId, id, body ?: DuplicateInvestment())
+        return RolloverResponse(
+            previous = result.previous.toResponse(),
+            created = CreateInvestmentResponse(
+                result.created.id, result.created.visibleToYou, result.created.record?.toResponse(),
+            ),
+        )
+    }
 
     @GetMapping("/{id}")
     fun get(@PathVariable householdId: UUID, @PathVariable id: UUID): InvestmentResponse =
@@ -272,4 +312,5 @@ internal fun InvestmentRow.toResponse() = InvestmentResponse(
         null
     },
     lastVerifiedAt = lastVerifiedAt, version = version, createdAt = createdAt,
+    rolledFromId = rolledFromId,
 )

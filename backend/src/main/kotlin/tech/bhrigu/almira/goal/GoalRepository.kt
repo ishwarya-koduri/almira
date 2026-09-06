@@ -204,6 +204,10 @@ class GoalRepository(private val jdbc: NamedParameterJdbcTemplate) {
             join investments i on i.id = ig.investment_id
             left join investment_value iv on iv.investment_id = ig.investment_id
             where ig.goal_id in (:ids)
+              -- A renewed holding funds its goal through the record that
+              -- replaced it, not twice.
+              and not exists (select 1 from investments s
+                              where s.rolled_from_id = ig.investment_id and s.deleted_at is null)
             order by contribution desc
             """.trimIndent(),
             mapOf("ids" to ids),

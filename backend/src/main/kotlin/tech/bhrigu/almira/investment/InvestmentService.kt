@@ -70,6 +70,30 @@ data class CreateInvestment(
     val initialValuation: ValuationInput? = null,
 )
 
+/**
+ * What to change about the copy. Everything not named here is carried over.
+ */
+data class DuplicateInvestment(
+    /** Client-supplied, so a retry of the same tap does not make a third record. */
+    val id: UUID? = null,
+    val title: String? = null,
+    val investedAmount: BigDecimal? = null,
+    val quantity: BigDecimal? = null,
+    val startDate: LocalDate? = null,
+    val maturityDate: LocalDate? = null,
+    val visibility: String? = null,
+    /** The nominees are usually the same people; the option exists for when they aren't. */
+    val copyNominees: Boolean = true,
+    /**
+     * False for a renewal. Carrying the old maturity date forward would create a
+     * record that matured before it started, and it would show on the dashboard
+     * as overdue the day it was made.
+     */
+    val carryMaturityDate: Boolean = true,
+)
+
+data class RolledOver(val previous: InvestmentRow, val created: CreatedInvestment)
+
 data class UpdateInvestment(
     val version: Int,
     val title: String? = null,
@@ -179,6 +203,120 @@ class InvestmentService(
         // things and one you have to remember to interrogate.
         readBack?.let(reminders::syncForInvestment)
         return CreatedInvestment(id, visibleToYou = readBack != null, record = readBack)
+    }
+
+    /**
+     * The fourth FD of the year, typed once.
+     *
+     * A duplicate copies the *shape* — type, institution, account, unit,
+     * attributes, custom field definitions, owners, nominees, visibility — and
+     * none of the history. Valuations, transactions, tax lots and documents
+     * belong to the record that actually happened; copying them would invent a
+     * second purchase that never took place, and every return figure downstream
+     * would be wrong in the same direction.
+     */
+    @Transactional
+    fun duplicate(householdId: UUID, id: UUID, input: DuplicateInvestment): CreatedInvestment {
+        val source = get(householdId, id)
+        val customFields = catalogRepo.customFields("record", listOf(id))
+
+        val created = create(
+            householdId,
+            CreateInvestment(
+                id = input.id,
+                typeId = source.typeId,
+                title = input.title?.trim()?.takeIf { it.isNotBlank() } ?: "${source.title} (copy)",
+                investedAmount = input.investedAmount ?: source.investedAmount,
+                currency = source.currency,
+                quantity = input.quantity ?: source.quantity,
+                unit = source.unit,
+                startDate = input.startDate ?: source.startDate,
+                maturityDate = input.maturityDate
+                    ?: source.maturityDate.takeIf { input.carryMaturityDate },
+                storageLocation = source.storageLocation,
+                institutionId = source.institutionId,
+                accountId = source.accountId,
+                attributes = source.attributes,
+                owners = source.owners.map { OwnerInput(it.memberId, it.sharePct) },
+                visibility = input.visibility ?: source.visibility,
+                visibleToMemberIds = source.visibleToMemberIds,
+                isInContinuity = source.isInContinuity,
+                notes = source.notes,
+                customFields = customFields.map {
+                    CustomFieldInput(
+                        key = it.key, label = it.label, dataType = it.dataType, unit = it.unit,
+                        options = it.options, required = it.required,
+                        countsTowardValue = it.countsTowardValue,
+                    )
+                },
+            ),
+        )
+
+        if (input.copyNominees && source.nominees.isNotEmpty()) {
+            repo.replaceNominees(
+                created.id,
+                source.nominees.map {
+                    Triple(it.memberId, it.name, it.relationship to it.sharePct)
+                },
+            )
+        }
+        return created.copy(record = repo.find(householdId, created.id))
+    }
+
+    /**
+     * A maturity, renewed.
+     *
+     * The old record is not edited into the new one: it is marked matured and
+     * kept, and the new one points back at it. Overwriting would lose the years
+     * of valuations and interest that make the renewal worth recording — and
+     * "what did that FD actually earn?" is exactly the question a registry is
+     * for (docs/07 §1 "rollover without losing history").
+     */
+    @Transactional
+    fun rollover(householdId: UUID, id: UUID, input: DuplicateInvestment): RolledOver {
+        val userId = userContext.require()
+        val source = get(householdId, id)
+        if (source.status == "closed") {
+            throw ApiException.badRequest(
+                "already_closed", "This one is closed. Add it as a new record instead.",
+            )
+        }
+
+        val created = duplicate(
+            householdId, id,
+            input.copy(
+                title = input.title ?: source.title,
+                // The new term starts where the old one ended, unless told otherwise.
+                startDate = input.startDate ?: source.maturityDate ?: LocalDate.now(),
+                // Ask for the new maturity date rather than guessing at it.
+                maturityDate = input.maturityDate,
+                carryMaturityDate = false,
+            ),
+        )
+        repo.setRolledFrom(created.id, id)
+        repo.copyGoalLinks(id, created.id)
+
+        val previous = repo.update(
+            id = id, version = source.version, status = "matured",
+            title = null, investedAmount = null, quantity = null, unit = null,
+            startDate = null, maturityDate = null, storageLocation = null,
+            institutionId = null, accountId = null, attributes = null, notes = null,
+            isInContinuity = null,
+        )
+        if (previous == 0) {
+            throw ApiException.conflict(
+                "stale_write",
+                "Someone else changed this while you were renewing it. Reload and try again.",
+                mapOf("currentVersion" to source.version),
+            )
+        }
+
+        audit.record(
+            householdId = householdId, actorUserId = userId, action = "investment.rollover",
+            entityType = "investment", entityId = id,
+            diff = mapOf("renewedAs" to created.id.toString()),
+        )
+        return RolledOver(previous = get(householdId, id), created = created.copy(record = repo.find(householdId, created.id)))
     }
 
     @Transactional(readOnly = true)

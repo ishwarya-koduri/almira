@@ -248,9 +248,13 @@ begin
 
   -- And a type nobody has written a holder rule for fails loudly rather than
   -- defaulting open -- the point of routing every type through one function.
+  -- 'template' is deliberately not a grantable type: a template is private to
+  -- its maker or shared with the household, with nothing in between. Should it
+  -- ever gain scoped sharing, this assertion is meant to fail and be pointed at
+  -- some other unhandled name.
   blocked := false;
   begin
-    perform app.can_grant_visibility('goal', gen_random_uuid());
+    perform app.can_grant_visibility('template', gen_random_uuid());
   exception when others then blocked := true;
   end;
   perform pg_temp.assert(blocked,
@@ -401,6 +405,61 @@ begin
   exception when others then v_ok := true;
   end;
   perform pg_temp.assert(v_ok, 'responsibility totalling 140% is rejected');
+end $$;
+
+-- ------------------------------------------------------------ templates ----
+do $$ begin raise notice '--- a saved form is as private as what it was saved from ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into investment_templates (id, household_id, name, type_id, title, visibility,
+                                  source_visibility, created_by)
+  values (gen_random_uuid(), (select v from t where k='hh'), 'Her FD preset',
+          (select id from investment_types where code = 'fd' limit 1),
+          'ICICI FD', 'private', null, app.current_user_id())
+  returning id as id \gset tpl_hers_
+insert into investment_templates (id, household_id, name, type_id, title, visibility,
+                                  source_visibility, created_by)
+  values (gen_random_uuid(), (select v from t where k='hh'), 'Household FD preset',
+          (select id from investment_types where code = 'fd' limit 1),
+          'Shared FD', 'household', null, app.current_user_id())
+  returning id as id \gset tpl_shared_
+insert into t values ('tpl_hers', :'tpl_hers_id'), ('tpl_shared', :'tpl_shared_id');
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert(
+  not exists (select 1 from investment_templates where id = (select v from t where k='tpl_hers')),
+  'an admin cannot see another member''s private template');
+select pg_temp.assert(
+  exists (select 1 from investment_templates where id = (select v from t where k='tpl_shared')),
+  'a shared template is visible to the household');
+
+-- Shared means usable, not editable. Otherwise a preset someone relies on could
+-- be rewritten under them by anyone who can read it.
+do $$
+declare n int;
+begin
+  update investment_templates set name = 'Renamed by someone else'
+    where id = (select v from t where k='tpl_shared');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'a shared template stays its maker''s to change');
+end $$;
+
+-- A template made from a private record carries that record's details, so it
+-- can never be shared more widely than the record it came from.
+select pg_temp.as_user('ish');
+do $$
+declare v_ok boolean := false;
+begin
+  begin
+    insert into investment_templates (household_id, name, type_id, visibility,
+                                      source_visibility, created_by)
+      values ((select v from t where k='hh'), 'Leaky preset',
+              (select id from investment_types where code = 'fd' limit 1),
+              'household', 'private', app.current_user_id());
+  exception when others then v_ok := true;
+  end;
+  perform pg_temp.assert(v_ok,
+    'a template saved from a private record cannot be shared with the household');
 end $$;
 
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;

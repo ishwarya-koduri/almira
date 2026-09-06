@@ -56,6 +56,12 @@ data class InvestmentRow(
     val lastVerifiedAt: Instant?,
     val version: Int,
     val createdAt: Instant,
+    /**
+     * The record this one renewed, when it was rolled over from a maturity.
+     * The old FD stays; this points back at it, so a renewal adds to the history
+     * instead of replacing it (docs/07 §1).
+     */
+    val rolledFromId: UUID? = null,
     val owners: List<OwnerShare> = emptyList(),
     val nominees: List<NomineeShare> = emptyList(),
     val visibleToMemberIds: List<UUID> = emptyList(),
@@ -300,6 +306,30 @@ class InvestmentRepository(
         mapOf("id" to id),
     )
 
+    fun setRolledFrom(id: UUID, previousId: UUID): Int = jdbc.update(
+        "update investments set rolled_from_id = :previous where id = :id",
+        mapOf("id" to id, "previous" to previousId),
+    )
+
+    /**
+     * A renewal keeps funding what the original funded. Without this, renewing
+     * an FD quietly drops the goal it was earmarked for, and the goal's progress
+     * falls by that much with nothing to explain it.
+     *
+     * Under the caller's own RLS: a mapping to a goal they cannot see is not
+     * visible to copy, and is left alone.
+     */
+    fun copyGoalLinks(fromId: UUID, toId: UUID): Int = jdbc.update(
+        """
+        insert into investment_goals (goal_id, investment_id, allocation_pct)
+        select g.goal_id, :to, g.allocation_pct
+        from investment_goals g
+        where g.investment_id = :from
+        on conflict (goal_id, investment_id) do nothing
+        """.trimIndent(),
+        mapOf("from" to fromId, "to" to toId),
+    )
+
     fun markVerified(id: UUID): Int = jdbc.update(
         "update investments set last_verified_at = now() where id = :id and deleted_at is null",
         mapOf("id" to id),
@@ -528,6 +558,7 @@ class InvestmentRepository(
             lastVerifiedAt = rs.getTimestamp("last_verified_at")?.toInstant(),
             version = rs.getInt("version"),
             createdAt = rs.getTimestamp("created_at").toInstant(),
+            rolledFromId = rs.getObject("rolled_from_id", UUID::class.java),
         )
     }
 

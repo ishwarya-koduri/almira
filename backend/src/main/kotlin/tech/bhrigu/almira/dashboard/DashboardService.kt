@@ -219,6 +219,13 @@ class DashboardService(
         where i.household_id = :hid
           and i.deleted_at is null
           and i.status in ('active','matured')
+          -- A matured FD that is still sitting there is real money and counts.
+          -- One that was renewed is not: its money is in the record that
+          -- replaced it, and counting both would double the household's worth
+          -- on the day of a renewal. Under the caller's own RLS, a viewer who
+          -- cannot see the renewal still sees exactly one of the two.
+          and not exists (select 1 from investments s
+                          where s.rolled_from_id = i.id and s.deleted_at is null)
         """.trimIndent(),
         mapOf("hid" to householdId),
     ) { rs, _ ->

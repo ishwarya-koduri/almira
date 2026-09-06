@@ -62,7 +62,7 @@ data class CompleteReminderResponse(
 )
 
 @RestController
-@RequestMapping("/api/households/{householdId}/reminders")
+@RequestMapping("/api/v1/households/{householdId}/reminders")
 class ReminderController(
     private val service: ReminderService,
     private val investments: InvestmentService,

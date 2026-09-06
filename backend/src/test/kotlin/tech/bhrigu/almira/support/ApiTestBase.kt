@@ -99,7 +99,7 @@ abstract class ApiTestBase {
 
     /** Signs up (or signs in) a user and returns their access token. */
     protected fun signIn(phone: String = uniquePhone()): String {
-        val response = post("/api/auth/otp/request", body = mapOf("phone" to phone))
+        val response = post("/api/v1/auth/otp/request", body = mapOf("phone" to phone))
         val code = response.json().path("developmentCode").asText()
         // Reporting the body matters: an OTP request can fail for reasons that
         // have nothing to do with the test (rate limits, config), and a bare
@@ -108,7 +108,7 @@ abstract class ApiTestBase {
             "no OTP code in the response (${response.statusCode}): ${response.body}"
         }
         return post(
-            "/api/auth/otp/verify",
+            "/api/v1/auth/otp/verify",
             body = mapOf("phone" to phone, "code" to code),
         ).json().path("accessToken").asText()
     }
@@ -119,7 +119,7 @@ abstract class ApiTestBase {
         defaultVisibility: String = "private",
         displayName: String = "Owner",
     ): JsonNode = post(
-        "/api/households", token,
+        "/api/v1/households", token,
         mapOf(
             "name" to name,
             "defaultVisibility" to defaultVisibility,
@@ -129,7 +129,7 @@ abstract class ApiTestBase {
 
     protected fun addMember(token: String, householdId: String, name: String): JsonNode =
         post(
-            "/api/households/$householdId/members", token,
+            "/api/v1/households/$householdId/members", token,
             mapOf("displayName" to name, "relationship" to "spouse"),
         ).json()
 
@@ -142,17 +142,17 @@ abstract class ApiTestBase {
         role: String = "admin",
     ) {
         val invite = post(
-            "/api/households/$householdId/invitations", ownerToken,
+            "/api/v1/households/$householdId/invitations", ownerToken,
             mapOf("memberId" to memberId, "phone" to uniquePhone(), "role" to role),
         ).json()
         post(
-            "/api/invitations/accept", joinerToken,
+            "/api/v1/invitations/accept", joinerToken,
             mapOf("token" to invite.path("token").asText()),
         )
     }
 
     protected fun typeId(token: String, householdId: String, code: String): String {
-        val taxonomy = get("/api/households/$householdId/taxonomy", token).json()
+        val taxonomy = get("/api/v1/households/$householdId/taxonomy", token).json()
         for (category in taxonomy) {
             for (type in category.path("types")) {
                 if (type.path("code").asText() == code) return type.path("id").asText()
@@ -173,7 +173,7 @@ abstract class ApiTestBase {
         attributes: Map<String, Any?> = emptyMap(),
     ): JsonNode {
         val response = post(
-            "/api/households/$householdId/investments", token,
+            "/api/v1/households/$householdId/investments", token,
             buildMap {
                 put("typeId", typeId(token, householdId, typeCode))
                 put("title", title)
@@ -200,7 +200,7 @@ abstract class ApiTestBase {
         member: String? = null,
     ): BigDecimal {
         val query = "?scope=$scope" + (member?.let { "&member=$it" } ?: "")
-        return get("/api/households/$householdId/dashboard$query", token)
+        return get("/api/v1/households/$householdId/dashboard$query", token)
             .json().path("totalAssets").decimalValue()
     }
 

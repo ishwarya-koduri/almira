@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/households/{householdId}")
+@RequestMapping("/api/v1/households/{householdId}")
 class SearchController(private val service: SearchService) {
 
     @GetMapping("/search")

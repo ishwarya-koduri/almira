@@ -52,10 +52,60 @@ By default only the **last four digits** of a number are kept. The rest is store
 only if someone explicitly opts in, and seeing it again needs a fresh
 confirmation on that session, recorded in the audit log.
 
-`LocalKeyManagement` refuses to start outside development without a real key, and
-refuses the published development key outright — a KEK that protects nothing is
-worse than none, because it looks like protection in an audit. It is the seam a
-managed KMS plugs into, not a substitute for one.
+**There is no key in this repository.** Each install generates its own
+development key on first run into a gitignored `backend/var/dev-kek`. Nothing to
+leak, and rotating is `rm backend/var/dev-kek` — which makes every development
+record unreadable, exactly as rotating a KEK should, and better met here than in
+production. A test fails the build if any 32-byte base64 literal appears in the
+source tree, because a repository containing something key-shaped teaches
+everyone who reads it that keys in version control are sometimes fine.
+
+Outside development a key must be supplied deliberately: `LocalKeyManagement`
+refuses to start rather than fall back to a generated one, since a deploy that
+"works" while protecting data with a key nobody chose and nothing durable holds
+is worse than one that will not start. It is the seam a managed KMS plugs into,
+not a substitute for one.
+
+---
+
+## The v1 API contract
+
+The API is **frozen at v1** and lives at `/api/v1/**`. The contract is committed
+as [`docs/api/openapi-v1.json`](docs/api/openapi-v1.json) — 51 paths, 73
+operations, 81 schemas — and that file is the handoff artefact the mobile app is
+built against.
+
+**The rule for the life of v1 is additive-only.** New endpoints, new optional
+request fields and new response fields are fine. Removing anything, renaming
+anything, changing a type, or making an existing request field required are not;
+those go to `/api/v2`, and v1 stays as it is for as long as a released app
+depends on it.
+
+That is enforced, not merely intended. `OpenApiContractTest` diffs the live API
+against the frozen copy on every build and fails on anything a v1 client would
+notice. It judges request and response schemas differently, because it matters
+who sends what:
+
+| | Response — the client **reads** it | Request — the client **sends** it |
+|---|---|---|
+| Remove a field | breaking | breaking |
+| Add a field | fine | fine, if optional |
+| Make it required | fine | **breaking** |
+| Stop requiring it | **breaking** | fine |
+| Change its type | breaking | breaking |
+
+Without this, a Phase 2 refactor that renamed a field would pass every backend
+test — the backend would be perfectly consistent with itself — and surface as a
+crash on someone's phone, weeks later, in a build that had already shipped.
+
+For a genuinely additive change, re-freeze deliberately and commit the result
+alongside the code:
+
+```bash
+./scripts/freeze-api-spec.sh
+```
+
+Browsable docs are at <http://localhost:8080/docs>.
 
 ---
 

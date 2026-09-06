@@ -127,7 +127,7 @@ data class CreateInvestmentResponse(
 )
 
 @RestController
-@RequestMapping("/api/households/{householdId}/investments")
+@RequestMapping("/api/v1/households/{householdId}/investments")
 class InvestmentController(private val service: InvestmentService) {
 
     @PostMapping
@@ -232,7 +232,7 @@ class InvestmentController(private val service: InvestmentService) {
 }
 
 @RestController
-@RequestMapping("/api/households/{householdId}/trash")
+@RequestMapping("/api/v1/households/{householdId}/trash")
 class TrashController(private val service: InvestmentService) {
 
     @GetMapping

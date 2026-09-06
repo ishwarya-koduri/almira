@@ -35,7 +35,7 @@ class SecurityConfig(
         }
         .authorizeHttpRequests { auth ->
             auth.requestMatchers(
-                "/api/auth/otp/**", "/api/auth/refresh",
+                "/api/v1/auth/otp/**", "/api/v1/auth/refresh",
                 "/actuator/health", "/health",
                 "/docs/**", "/swagger-ui/**", "/v3/api-docs/**",
             ).permitAll()
@@ -43,7 +43,7 @@ class SecurityConfig(
             // ticket itself is the authority, minted only after a visibility
             // check and a step-up, valid for two minutes and single-use. That
             // is what lets an <img> or <iframe> load a document directly.
-            auth.requestMatchers("/api/documents/download").permitAll()
+            auth.requestMatchers("/api/v1/documents/download").permitAll()
             // The web client is static and holds no secrets — everything it
             // shows is fetched from /api with a bearer token, which is where
             // the real gate is.

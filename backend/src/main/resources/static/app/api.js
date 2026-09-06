@@ -67,7 +67,7 @@ async function refreshTokens() {
   if (!token) return null;
 
   refreshing = (async () => {
-    const { response, payload } = await raw("POST", "/api/auth/refresh", { refreshToken: token });
+    const { response, payload } = await raw("POST", "/api/v1/auth/refresh", { refreshToken: token });
     if (!response.ok) { auth.clear(); return null; }
     auth.set(payload);
     return payload.accessToken;
@@ -106,7 +106,7 @@ export const api = {
   del:    (path)       => request("DELETE", path),
 
   // --- auth -----------------------------------------------------------------
-  requestOtp: (phone) => raw("POST", "/api/auth/otp/request", { phone })
+  requestOtp: (phone) => raw("POST", "/api/v1/auth/otp/request", { phone })
     .then(({ response, payload }) => {
       if (!response.ok) {
         const e = payload?.error || {};
@@ -116,7 +116,7 @@ export const api = {
     }),
 
   verifyOtp: async (phone, code, requestId) => {
-    const { response, payload } = await raw("POST", "/api/auth/otp/verify", {
+    const { response, payload } = await raw("POST", "/api/v1/auth/otp/verify", {
       phone, code, requestId, deviceName: deviceName(),
     });
     if (!response.ok) {
@@ -128,60 +128,60 @@ export const api = {
   },
 
   signOut: async () => {
-    try { await request("POST", "/api/auth/logout"); } catch { /* leaving anyway */ }
+    try { await request("POST", "/api/v1/auth/logout"); } catch { /* leaving anyway */ }
     auth.clear();
   },
 
   // --- resources ------------------------------------------------------------
-  me:            ()               => api.get("/api/me"),
-  households:    ()               => api.get("/api/households"),
-  createHousehold: (body)         => api.post("/api/households", body),
-  members:       (hid)            => api.get(`/api/households/${hid}/members`),
-  addMember:     (hid, body)      => api.post(`/api/households/${hid}/members`, body),
-  taxonomy:      (hid)            => api.get(`/api/households/${hid}/taxonomy`),
-  institutions:  (hid, q)         => api.get(`/api/households/${hid}/institutions${q ? `?q=${encodeURIComponent(q)}` : ""}`),
-  investments:   (hid, query)     => api.get(`/api/households/${hid}/investments${query ? `?${query}` : ""}`),
-  investment:    (hid, id)        => api.get(`/api/households/${hid}/investments/${id}`),
-  capture:       (hid, body)      => api.post(`/api/households/${hid}/investments`, body),
-  updateInvestment: (hid, id, b)  => api.patch(`/api/households/${hid}/investments/${id}`, b),
-  setVisibility: (hid, id, b)     => api.patch(`/api/households/${hid}/investments/${id}/visibility`, b),
-  addValuation:  (hid, id, b)     => api.post(`/api/households/${hid}/investments/${id}/valuations`, b),
-  archive:       (hid, id)        => api.del(`/api/households/${hid}/investments/${id}`),
-  restore:       (hid, id)        => api.post(`/api/households/${hid}/trash/investments/${id}/restore`),
-  trash:         (hid)            => api.get(`/api/households/${hid}/trash`),
+  me:            ()               => api.get("/api/v1/me"),
+  households:    ()               => api.get("/api/v1/households"),
+  createHousehold: (body)         => api.post("/api/v1/households", body),
+  members:       (hid)            => api.get(`/api/v1/households/${hid}/members`),
+  addMember:     (hid, body)      => api.post(`/api/v1/households/${hid}/members`, body),
+  taxonomy:      (hid)            => api.get(`/api/v1/households/${hid}/taxonomy`),
+  institutions:  (hid, q)         => api.get(`/api/v1/households/${hid}/institutions${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  investments:   (hid, query)     => api.get(`/api/v1/households/${hid}/investments${query ? `?${query}` : ""}`),
+  investment:    (hid, id)        => api.get(`/api/v1/households/${hid}/investments/${id}`),
+  capture:       (hid, body)      => api.post(`/api/v1/households/${hid}/investments`, body),
+  updateInvestment: (hid, id, b)  => api.patch(`/api/v1/households/${hid}/investments/${id}`, b),
+  setVisibility: (hid, id, b)     => api.patch(`/api/v1/households/${hid}/investments/${id}/visibility`, b),
+  addValuation:  (hid, id, b)     => api.post(`/api/v1/households/${hid}/investments/${id}/valuations`, b),
+  archive:       (hid, id)        => api.del(`/api/v1/households/${hid}/investments/${id}`),
+  restore:       (hid, id)        => api.post(`/api/v1/households/${hid}/trash/investments/${id}/restore`),
+  trash:         (hid)            => api.get(`/api/v1/households/${hid}/trash`),
   dashboard:     (hid, scope, m)  => api.get(
-    `/api/households/${hid}/dashboard?scope=${scope}${m ? `&member=${m}` : ""}`),
-  invite:        (hid, body)      => api.post(`/api/households/${hid}/invitations`, body),
+    `/api/v1/households/${hid}/dashboard?scope=${scope}${m ? `&member=${m}` : ""}`),
+  invite:        (hid, body)      => api.post(`/api/v1/households/${hid}/invitations`, body),
 
   // --- accounts -------------------------------------------------------------
-  accounts:      (hid)            => api.get(`/api/households/${hid}/accounts`),
-  account:       (hid, id)        => api.get(`/api/households/${hid}/accounts/${id}`),
-  createAccount: (hid, body)      => api.post(`/api/households/${hid}/accounts`, body),
-  updateAccount: (hid, id, body)  => api.patch(`/api/households/${hid}/accounts/${id}`, body),
-  deleteAccount: (hid, id)        => api.del(`/api/households/${hid}/accounts/${id}`),
-  revealNumber:  (hid, id)        => api.post(`/api/households/${hid}/accounts/${id}/reveal-number`),
+  accounts:      (hid)            => api.get(`/api/v1/households/${hid}/accounts`),
+  account:       (hid, id)        => api.get(`/api/v1/households/${hid}/accounts/${id}`),
+  createAccount: (hid, body)      => api.post(`/api/v1/households/${hid}/accounts`, body),
+  updateAccount: (hid, id, body)  => api.patch(`/api/v1/households/${hid}/accounts/${id}`, body),
+  deleteAccount: (hid, id)        => api.del(`/api/v1/households/${hid}/accounts/${id}`),
+  revealNumber:  (hid, id)        => api.post(`/api/v1/households/${hid}/accounts/${id}/reveal-number`),
 
   // --- step-up --------------------------------------------------------------
-  stepUpStatus:  ()               => api.get("/api/auth/step-up"),
-  stepUpRequest: ()               => api.post("/api/auth/step-up/request"),
-  stepUpVerify:  (body)           => api.post("/api/auth/step-up/verify", body),
+  stepUpStatus:  ()               => api.get("/api/v1/auth/step-up"),
+  stepUpRequest: ()               => api.post("/api/v1/auth/step-up/request"),
+  stepUpVerify:  (body)           => api.post("/api/v1/auth/step-up/verify", body),
 
   // --- liabilities ----------------------------------------------------------
-  liabilities:   (hid)            => api.get(`/api/households/${hid}/liabilities`),
-  liability:     (hid, id)        => api.get(`/api/households/${hid}/liabilities/${id}`),
-  createLiability: (hid, body)    => api.post(`/api/households/${hid}/liabilities`, body),
-  updateLiability: (hid, id, b)   => api.patch(`/api/households/${hid}/liabilities/${id}`, b),
-  recordBalance: (hid, id, body)  => api.post(`/api/households/${hid}/liabilities/${id}/balances`, body),
+  liabilities:   (hid)            => api.get(`/api/v1/households/${hid}/liabilities`),
+  liability:     (hid, id)        => api.get(`/api/v1/households/${hid}/liabilities/${id}`),
+  createLiability: (hid, body)    => api.post(`/api/v1/households/${hid}/liabilities`, body),
+  updateLiability: (hid, id, b)   => api.patch(`/api/v1/households/${hid}/liabilities/${id}`, b),
+  recordBalance: (hid, id, body)  => api.post(`/api/v1/households/${hid}/liabilities/${id}/balances`, body),
   setLiabilityVisibility: (hid, id, b) =>
-    api.patch(`/api/households/${hid}/liabilities/${id}/visibility`, b),
-  linkSecuredAsset: (hid, id, b)  => api.post(`/api/households/${hid}/liabilities/${id}/secured-by`, b),
-  deleteLiability: (hid, id)      => api.del(`/api/households/${hid}/liabilities/${id}`),
+    api.patch(`/api/v1/households/${hid}/liabilities/${id}/visibility`, b),
+  linkSecuredAsset: (hid, id, b)  => api.post(`/api/v1/households/${hid}/liabilities/${id}/secured-by`, b),
+  deleteLiability: (hid, id)      => api.del(`/api/v1/households/${hid}/liabilities/${id}`),
 
   // --- nominees -------------------------------------------------------------
   // PUT, not PATCH: the nominee list is replaced as a unit.
   setNominees:   (hid, id, body)  =>
-    api.put(`/api/households/${hid}/investments/${id}/nominees`, body),
-  acceptInvite:  (token)          => api.post("/api/invitations/accept", { token }),
+    api.put(`/api/v1/households/${hid}/investments/${id}/nominees`, body),
+  acceptInvite:  (token)          => api.post("/api/v1/invitations/accept", { token }),
 };
 
 function deviceName() {

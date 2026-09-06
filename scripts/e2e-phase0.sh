@@ -62,9 +62,9 @@ section() { echo; echo "${BOLD}$1${OFF}"; }
 login() { # login <phone> -> access token
   local phone="$1"
   local code
-  code=$(curl -s -X POST "$BASE/api/auth/otp/request" -H 'Content-Type: application/json' \
+  code=$(curl -s -X POST "$BASE/api/v1/auth/otp/request" -H 'Content-Type: application/json' \
         -d "{\"phone\":\"$phone\"}" | jq_ "['developmentCode']")
-  curl -s -X POST "$BASE/api/auth/otp/verify" -H 'Content-Type: application/json' \
+  curl -s -X POST "$BASE/api/v1/auth/otp/verify" -H 'Content-Type: application/json' \
     -d "{\"phone\":\"$phone\",\"code\":\"$code\"}" | jq_ "['accessToken']"
 }
 api() { # api <token> <method> <path> [body]
@@ -97,32 +97,32 @@ RAVI=$(login "$P_RAVI"); isnt "Ravi signs in with a phone OTP" "$RAVI" ""
 OUT=$(login "$P_OUT");   isnt "An unrelated user signs in" "$OUT" ""
 
 section "Household and members"
-HH=$(api "$ISH" POST /api/households '{"name":"Koduri","mode":"family","defaultVisibility":"private","displayName":"Ishwarya"}')
+HH=$(api "$ISH" POST /api/v1/households '{"name":"Koduri","mode":"family","defaultVisibility":"private","displayName":"Ishwarya"}')
 HID=$(echo "$HH" | jq_ "['id']")
 isnt "household created" "$HID" ""
 is   "default visibility is private" "$(echo "$HH" | jq_ "['defaultVisibility']")" "private"
 is   "creator is the owner" "$(echo "$HH" | jq_ "['myRole']")" "owner"
 ISH_MEM=$(echo "$HH" | jq_ "['myMemberId']")
 
-AARAV=$(api "$ISH" POST "/api/households/$HID/members" '{"displayName":"Aarav","relationship":"child","dateOfBirth":"2015-04-02"}')
+AARAV=$(api "$ISH" POST "/api/v1/households/$HID/members" '{"displayName":"Aarav","relationship":"child","dateOfBirth":"2015-04-02"}')
 is "a child is flagged as a minor" "$(echo "$AARAV" | jq_ "['isMinor']")" "True"
 is "a child has no login of their own" "$(echo "$AARAV" | jq_ "['isManaged']")" "True"
 
-RAVI_PLACEHOLDER=$(api "$ISH" POST "/api/households/$HID/members" '{"displayName":"Ravi","relationship":"spouse"}')
+RAVI_PLACEHOLDER=$(api "$ISH" POST "/api/v1/households/$HID/members" '{"displayName":"Ravi","relationship":"spouse"}')
 RAVI_MEM=$(echo "$RAVI_PLACEHOLDER" | jq_ "['id']")
 
 section "Invitation claims the existing member (merge, not duplicate)"
-INV=$(api "$ISH" POST "/api/households/$HID/invitations" "{\"memberId\":\"$RAVI_MEM\",\"phone\":\"$P_RAVI\",\"role\":\"admin\"}")
+INV=$(api "$ISH" POST "/api/v1/households/$HID/invitations" "{\"memberId\":\"$RAVI_MEM\",\"phone\":\"$P_RAVI\",\"role\":\"admin\"}")
 TOKEN=$(echo "$INV" | jq_ "['token']")
 isnt "invitation issued" "$TOKEN" ""
-ACC=$(api "$RAVI" POST /api/invitations/accept "{\"token\":\"$TOKEN\"}")
+ACC=$(api "$RAVI" POST /api/v1/invitations/accept "{\"token\":\"$TOKEN\"}")
 is "Ravi joins as admin" "$(echo "$ACC" | jq_ "['role']")" "admin"
 is "Ravi claims the existing member row, not a new one" "$(echo "$ACC" | jq_ "['memberId']")" "$RAVI_MEM"
-MEMBERS=$(api "$ISH" GET "/api/households/$HID/members")
+MEMBERS=$(api "$ISH" GET "/api/v1/households/$HID/members")
 is "the household still has exactly 3 people" "$(echo "$MEMBERS" | count)" "3"
 
 section "Taxonomy"
-TAX=$(api "$ISH" GET "/api/households/$HID/taxonomy")
+TAX=$(api "$ISH" GET "/api/v1/households/$HID/taxonomy")
 CATS=$(echo "$TAX" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))')
 is "12 categories are seeded" "$CATS" "12"
 TYPE_FD=$(echo "$TAX" | python3 -c '
@@ -159,7 +159,7 @@ for c in json.load(sys.stdin):
                  || bad "FD essentials should be <= 6" "$ESS"
 
 section "Capture"
-FD=$(api "$ISH" POST "/api/households/$HID/investments" "{
+FD=$(api "$ISH" POST "/api/v1/households/$HID/investments" "{
   \"typeId\":\"$TYPE_FD\",\"title\":\"SBI FD (retirement buffer)\",
   \"investedAmount\":500000,\"maturityDate\":\"2029-03-31\",
   \"visibility\":\"private\",
@@ -169,7 +169,7 @@ isnt "a private FD is captured" "$FD_ID" ""
 is   "it is visible to its owner" "$(echo "$FD" | jq_ "['visibleToYou']")" "True"
 is   "value basis is at_cost with no valuation yet" "$(echo "$FD" | jq_ "['investment']['valueBasis']")" "at_cost"
 
-GOLD=$(api "$ISH" POST "/api/households/$HID/investments" "{
+GOLD=$(api "$ISH" POST "/api/v1/households/$HID/investments" "{
   \"typeId\":\"$TYPE_GOLD\",\"title\":\"Wedding coins\",
   \"investedAmount\":100000,\"quantity\":6.3,\"unit\":\"g\",
   \"visibility\":\"household\",
@@ -178,7 +178,7 @@ GOLD=$(api "$ISH" POST "/api/households/$HID/investments" "{
 GOLD_ID=$(echo "$GOLD" | jq_ "['id']")
 isnt "household-shared gold is captured" "$GOLD_ID" ""
 
-SCOPED=$(api "$ISH" POST "/api/households/$HID/investments" "{
+SCOPED=$(api "$ISH" POST "/api/v1/households/$HID/investments" "{
   \"typeId\":\"$TYPE_FD\",\"title\":\"HDFC FD (shared with Ravi)\",
   \"investedAmount\":200000,\"maturityDate\":\"2027-01-15\",
   \"visibility\":\"scoped\",\"visibleToMemberIds\":[\"$RAVI_MEM\"],
@@ -186,7 +186,7 @@ SCOPED=$(api "$ISH" POST "/api/households/$HID/investments" "{
 SCOPED_ID=$(echo "$SCOPED" | jq_ "['id']")
 isnt "a scoped FD is captured" "$SCOPED_ID" ""
 
-JOINT=$(api "$ISH" POST "/api/households/$HID/investments" "{
+JOINT=$(api "$ISH" POST "/api/v1/households/$HID/investments" "{
   \"typeId\":\"$TYPE_UNIV\",\"title\":\"Flat, Kakinada\",
   \"investedAmount\":4000000,\"visibility\":\"private\",
   \"owners\":[{\"memberId\":\"$ISH_MEM\",\"sharePct\":50},{\"memberId\":\"$RAVI_MEM\",\"sharePct\":50}],
@@ -194,7 +194,7 @@ JOINT=$(api "$ISH" POST "/api/households/$HID/investments" "{
 JOINT_ID=$(echo "$JOINT" | jq_ "['id']")
 isnt "a jointly owned record is captured" "$JOINT_ID" ""
 
-RAVI_MF=$(api "$RAVI" POST "/api/households/$HID/investments" "{
+RAVI_MF=$(api "$RAVI" POST "/api/v1/households/$HID/investments" "{
   \"typeId\":\"$TYPE_MF\",\"title\":\"Parag Parikh Flexi Cap\",
   \"investedAmount\":300000,\"visibility\":\"private\",
   \"attributes\":{\"scheme_name\":\"PPFAS Flexi Cap\",\"sip_amount\":\"25000\",\"sip_day\":\"5\"}}")
@@ -202,7 +202,7 @@ RAVI_MF_ID=$(echo "$RAVI_MF" | jq_ "['id']")
 isnt "Ravi captures his own private SIP" "$RAVI_MF_ID" ""
 
 section "Record anything: the universal type with a custom money field"
-CUSTOM=$(api "$ISH" POST "/api/households/$HID/investments" "{
+CUSTOM=$(api "$ISH" POST "/api/v1/households/$HID/investments" "{
   \"typeId\":\"$TYPE_UNIV\",\"title\":\"Stake in Meera's bakery\",
   \"visibility\":\"household\",
   \"customFields\":[
@@ -217,23 +217,23 @@ is "and that value is counted" \
    "$(echo "$CUSTOM" | money "['investment']['value']")" "250000.00"
 
 section "Type-aware validation"
-BAD=$(api "$ISH" POST "/api/households/$HID/investments" "{
+BAD=$(api "$ISH" POST "/api/v1/households/$HID/investments" "{
   \"typeId\":\"$TYPE_GOLD\",\"title\":\"Bad purity\",\"investedAmount\":1000,
   \"attributes\":{\"purity\":\"platinum\"}}")
 is "an invalid choice is refused" "$(echo "$BAD" | jq_ "['error']['code']")" "attributes_invalid"
-TYPO=$(api "$ISH" POST "/api/households/$HID/investments" "{
+TYPO=$(api "$ISH" POST "/api/v1/households/$HID/investments" "{
   \"typeId\":\"$TYPE_GOLD\",\"title\":\"Typo\",\"investedAmount\":1000,
   \"attributes\":{\"purtiy\":\"22k\"}}")
 is "a misspelled field is refused rather than silently stored" \
    "$(echo "$TYPO" | jq_ "['error']['code']")" "attribute_unknown"
-SHARES=$(api "$ISH" POST "/api/households/$HID/investments" "{
+SHARES=$(api "$ISH" POST "/api/v1/households/$HID/investments" "{
   \"typeId\":\"$TYPE_UNIV\",\"title\":\"Bad shares\",\"investedAmount\":1000,
   \"owners\":[{\"memberId\":\"$ISH_MEM\",\"sharePct\":60},{\"memberId\":\"$RAVI_MEM\",\"sharePct\":30}]}")
 is "ownership shares that don't total 100% are refused" \
    "$(echo "$SHARES" | jq_ "['error']['code']")" "shares_must_total_100"
 
 section "Privacy through the API"
-RAVI_LIST=$(api "$RAVI" GET "/api/households/$HID/investments")
+RAVI_LIST=$(api "$RAVI" GET "/api/v1/households/$HID/investments")
 RAVI_TITLES=$(echo "$RAVI_LIST" | titles)
 case "$RAVI_TITLES" in
   *"SBI FD (retirement buffer)"*) bad "an admin must not see another member's private FD" "$RAVI_TITLES";;
@@ -253,17 +253,17 @@ case "$RAVI_TITLES" in
 esac
 
 is "fetching another member's private record returns 404, not 403" \
-   "$(status "$RAVI" GET "/api/households/$HID/investments/$FD_ID")" "404"
+   "$(status "$RAVI" GET "/api/v1/households/$HID/investments/$FD_ID")" "404"
 is "editing it is refused too" \
-   "$(status "$RAVI" PATCH "/api/households/$HID/investments/$FD_ID" '{"version":1,"title":"hijacked"}')" "404"
+   "$(status "$RAVI" PATCH "/api/v1/households/$HID/investments/$FD_ID" '{"version":1,"title":"hijacked"}')" "404"
 is "deleting it is refused too" \
-   "$(status "$RAVI" DELETE "/api/households/$HID/investments/$FD_ID")" "404"
+   "$(status "$RAVI" DELETE "/api/v1/households/$HID/investments/$FD_ID")" "404"
 is "an unrelated user cannot reach the household at all" \
-   "$(status "$OUT" GET "/api/households/$HID/investments")" "404"
+   "$(status "$OUT" GET "/api/v1/households/$HID/investments")" "404"
 
 section "Totals must not leak"
-ISH_DASH=$(api "$ISH"  GET "/api/households/$HID/dashboard?scope=household")
-RAVI_DASH=$(api "$RAVI" GET "/api/households/$HID/dashboard?scope=household")
+ISH_DASH=$(api "$ISH"  GET "/api/v1/households/$HID/dashboard?scope=household")
+RAVI_DASH=$(api "$RAVI" GET "/api/v1/households/$HID/dashboard?scope=household")
 ISH_TOTAL=$(echo "$ISH_DASH"  | money "['totalAssets']")
 RAVI_TOTAL=$(echo "$RAVI_DASH" | money "['totalAssets']")
 # Ishwarya: FD 500,000 + gold 100,000 + scoped 200,000 + flat 4,000,000
@@ -281,52 +281,52 @@ is "amount-in-words is rendered server-side" \
 is "Indian grouping is applied" \
    "$(echo "$ISH_DASH" | jq_ "['totalAssetsFormatted']")" "₹50,50,000"
 
-ME_DASH=$(api "$RAVI" GET "/api/households/$HID/dashboard?scope=me")
+ME_DASH=$(api "$RAVI" GET "/api/v1/households/$HID/dashboard?scope=me")
 # Ravi's own share: his SIP 300,000 + half the flat 2,000,000 = 2,300,000
 is "the member lens splits a joint holding by share" \
    "$(echo "$ME_DASH" | money "['totalAssets']")" "2300000.00"
 
 section "Revoking a scoped grant"
-api "$ISH" PATCH "/api/households/$HID/investments/$SCOPED_ID/visibility" \
+api "$ISH" PATCH "/api/v1/households/$HID/investments/$SCOPED_ID/visibility" \
    '{"visibility":"private"}' > /dev/null
 is "the scoped record disappears for Ravi at once" \
-   "$(status "$RAVI" GET "/api/households/$HID/investments/$SCOPED_ID")" "404"
-RAVI_TOTAL2=$(api "$RAVI" GET "/api/households/$HID/dashboard?scope=household" | money "['totalAssets']")
+   "$(status "$RAVI" GET "/api/v1/households/$HID/investments/$SCOPED_ID")" "404"
+RAVI_TOTAL2=$(api "$RAVI" GET "/api/v1/households/$HID/dashboard?scope=household" | money "['totalAssets']")
 is "and its amount leaves his total"  "$RAVI_TOTAL2" "4650000.00"
 
 section "Concurrency and idempotency"
-V=$(api "$ISH" GET "/api/households/$HID/investments/$GOLD_ID" | jq_ "['version']")
-api "$ISH" PATCH "/api/households/$HID/investments/$GOLD_ID" "{\"version\":$V,\"title\":\"Wedding coins (2018)\"}" >/dev/null
+V=$(api "$ISH" GET "/api/v1/households/$HID/investments/$GOLD_ID" | jq_ "['version']")
+api "$ISH" PATCH "/api/v1/households/$HID/investments/$GOLD_ID" "{\"version\":$V,\"title\":\"Wedding coins (2018)\"}" >/dev/null
 is "a second write with the stale version is rejected" \
-   "$(status "$ISH" PATCH "/api/households/$HID/investments/$GOLD_ID" "{\"version\":$V,\"title\":\"clobber\"}")" "409"
+   "$(status "$ISH" PATCH "/api/v1/households/$HID/investments/$GOLD_ID" "{\"version\":$V,\"title\":\"clobber\"}")" "409"
 
 OFFLINE_ID=$(python3 -c 'import uuid;print(uuid.uuid4())')
 BODY="{\"id\":\"$OFFLINE_ID\",\"typeId\":\"$TYPE_UNIV\",\"title\":\"Captured offline\",\"investedAmount\":1000,\"visibility\":\"household\"}"
-api "$ISH" POST "/api/households/$HID/investments" "$BODY" >/dev/null
-RETRY=$(api "$ISH" POST "/api/households/$HID/investments" "$BODY")
+api "$ISH" POST "/api/v1/households/$HID/investments" "$BODY" >/dev/null
+RETRY=$(api "$ISH" POST "/api/v1/households/$HID/investments" "$BODY")
 is "re-sending an offline capture returns the same record, not a duplicate" \
    "$(echo "$RETRY" | jq_ "['id']")" "$OFFLINE_ID"
-COUNT=$(api "$ISH" GET "/api/households/$HID/investments?q=Captured%20offline" | count)
+COUNT=$(api "$ISH" GET "/api/v1/households/$HID/investments?q=Captured%20offline" | count)
 is "only one copy exists" "$COUNT" "1"
 
 section "Valuation and trash"
-api "$ISH" POST "/api/households/$HID/investments/$GOLD_ID/valuations" \
+api "$ISH" POST "/api/v1/households/$HID/investments/$GOLD_ID/valuations" \
    '{"value":143000,"note":"Jeweller quote"}' >/dev/null
-G=$(api "$ISH" GET "/api/households/$HID/investments/$GOLD_ID")
+G=$(api "$ISH" GET "/api/v1/households/$HID/investments/$GOLD_ID")
 is "a valuation replaces the at-cost basis" "$(echo "$G" | jq_ "['valueBasis']")" "valued"
 is "and the current value follows it" "$(echo "$G" | money "['value']")" "143000.00"
 
-api "$ISH" DELETE "/api/households/$HID/investments/$OFFLINE_ID" >/dev/null
+api "$ISH" DELETE "/api/v1/households/$HID/investments/$OFFLINE_ID" >/dev/null
 is "a deleted record leaves the list" \
-   "$(api "$ISH" GET "/api/households/$HID/investments?q=Captured%20offline" | count)" "0"
+   "$(api "$ISH" GET "/api/v1/households/$HID/investments?q=Captured%20offline" | count)" "0"
 is "and lands in the trash" \
-   "$(api "$ISH" GET "/api/households/$HID/trash" | count)" "1"
-api "$ISH" POST "/api/households/$HID/trash/investments/$OFFLINE_ID/restore" >/dev/null
+   "$(api "$ISH" GET "/api/v1/households/$HID/trash" | count)" "1"
+api "$ISH" POST "/api/v1/households/$HID/trash/investments/$OFFLINE_ID/restore" >/dev/null
 is "restore brings it back" \
-   "$(api "$ISH" GET "/api/households/$HID/investments?q=Captured%20offline" | count)" "1"
+   "$(api "$ISH" GET "/api/v1/households/$HID/investments?q=Captured%20offline" | count)" "1"
 
 section "Liabilities and true net worth"
-LOAN=$(api "$ISH" POST "/api/households/$HID/liabilities" "{
+LOAN=$(api "$ISH" POST "/api/v1/households/$HID/liabilities" "{
   \"title\":\"HDFC home loan\",\"kind\":\"home\",\"outstanding\":4000000,
   \"emiAmount\":22000,\"emiDay\":5,\"visibility\":\"household\",
   \"securedByInvestmentId\":\"$JOINT_ID\",
@@ -340,25 +340,25 @@ is   "outstanding renders with Indian grouping" \
 # Asserted as a relationship, not a constant: earlier sections revalue holdings,
 # and a hard-coded total would be a test that breaks whenever anything above it
 # changes — without ever telling you whether the subtraction is right.
-D=$(api "$ISH" GET "/api/households/$HID/dashboard?scope=household")
+D=$(api "$ISH" GET "/api/v1/households/$HID/dashboard?scope=household")
 A=$(echo "$D" | money "['totalAssets']"); L=$(echo "$D" | money "['totalLiabilities']")
 is "the whole loan is counted, once" "$L" "4000000.00"
 is "net worth is exactly assets minus what is owed" \
    "$(echo "$D" | money "['netWorth']")" "$(minus "$A" "$L")"
 
 is "the asset it secures shows as encumbered" \
-   "$(api "$ISH" GET "/api/households/$HID/investments/$JOINT_ID" | money "['encumbrance']")" \
+   "$(api "$ISH" GET "/api/v1/households/$HID/investments/$JOINT_ID" | money "['encumbrance']")" \
    "4000000.00"
 is "and its net equity is what's actually yours" \
-   "$(api "$ISH" GET "/api/households/$HID/investments/$JOINT_ID" | money "['netEquity']")" \
+   "$(api "$ISH" GET "/api/v1/households/$HID/investments/$JOINT_ID" | money "['netEquity']")" \
    "0.00"
 
-PRIVATE_DEBT=$(api "$ISH" POST "/api/households/$HID/liabilities" \
+PRIVATE_DEBT=$(api "$ISH" POST "/api/v1/households/$HID/liabilities" \
   '{"title":"Private personal loan","kind":"personal","outstanding":300000,"visibility":"private"}')
 isnt "a private debt is recorded" "$(echo "$PRIVATE_DEBT" | jq_ "['id']")" ""
 
-DI=$(api "$ISH"  GET "/api/households/$HID/dashboard?scope=household")
-DR=$(api "$RAVI" GET "/api/households/$HID/dashboard?scope=household")
+DI=$(api "$ISH"  GET "/api/v1/households/$HID/dashboard?scope=household")
+DR=$(api "$RAVI" GET "/api/v1/households/$HID/dashboard?scope=household")
 is "the owner's debts include her private loan" \
    "$(echo "$DI" | money "['totalLiabilities']")" "4300000.00"
 is "the admin's debts do NOT — her 3,00,000 is invisible" \
@@ -371,13 +371,13 @@ is "and a private debt never shrinks another member's net worth" \
    "$(minus "$(echo "$DR" | money "['totalAssets']")" "4000000.00")"
 
 section "Nominees"
-N=$(api "$ISH" PUT "/api/households/$HID/investments/$GOLD_ID/nominees" \
+N=$(api "$ISH" PUT "/api/v1/households/$HID/investments/$GOLD_ID/nominees" \
   "{\"nominees\":[{\"memberId\":\"$RAVI_MEM\",\"sharePct\":60},
                  {\"name\":\"Aarav Koduri\",\"relationship\":\"son\",\"sharePct\":40}]}")
 is "nominees can be a member or a plain name" \
    "$(echo "$N" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["nominees"]))')" "2"
 is "nominee shares that don't total 100% are refused" \
-   "$(api "$ISH" PUT "/api/households/$HID/investments/$GOLD_ID/nominees" \
+   "$(api "$ISH" PUT "/api/v1/households/$HID/investments/$GOLD_ID/nominees" \
       "{\"nominees\":[{\"memberId\":\"$RAVI_MEM\",\"sharePct\":70}]}" | jq_ "['error']['code']")" \
    "nominee_shares_must_total_100"
 

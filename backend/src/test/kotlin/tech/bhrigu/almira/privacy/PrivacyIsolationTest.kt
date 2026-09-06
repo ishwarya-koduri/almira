@@ -59,24 +59,24 @@ class PrivacyIsolationTest : ApiTestBase() {
         )
         val fdId = fd.path("id").asText()
 
-        val visibleToRavi = get("/api/households/$householdId/investments", ravi).json()
+        val visibleToRavi = get("/api/v1/households/$householdId/investments", ravi).json()
             .map { it.path("title").asText() }
         assertThat(visibleToRavi)
             .describedAs("an admin's list must not contain another member's private record")
             .doesNotContain("SBI FD")
 
-        assertThat(get("/api/households/$householdId/investments/$fdId", ravi).status())
+        assertThat(get("/api/v1/households/$householdId/investments/$fdId", ravi).status())
             .describedAs("404, not 403 — a 403 would confirm the record exists")
             .isEqualTo(HttpStatus.NOT_FOUND)
 
         assertThat(
             patch(
-                "/api/households/$householdId/investments/$fdId", ravi,
+                "/api/v1/households/$householdId/investments/$fdId", ravi,
                 mapOf("version" to 1, "title" to "hijacked"),
             ).status(),
         ).isEqualTo(HttpStatus.NOT_FOUND)
 
-        assertThat(delete("/api/households/$householdId/investments/$fdId", ravi).status())
+        assertThat(delete("/api/v1/households/$householdId/investments/$fdId", ravi).status())
             .isEqualTo(HttpStatus.NOT_FOUND)
     }
 
@@ -109,7 +109,7 @@ class PrivacyIsolationTest : ApiTestBase() {
         )
         val id = joint.path("id").asText()
 
-        assertThat(get("/api/households/$householdId/investments/$id", ravi).status())
+        assertThat(get("/api/v1/households/$householdId/investments/$id", ravi).status())
             .describedAs("you cannot hide a jointly owned asset from your co-owner")
             .isEqualTo(HttpStatus.OK)
     }
@@ -146,10 +146,10 @@ class PrivacyIsolationTest : ApiTestBase() {
         )
         val id = scoped.path("id").asText()
 
-        assertThat(get("/api/households/$householdId/investments/$id", ravi).status())
+        assertThat(get("/api/v1/households/$householdId/investments/$id", ravi).status())
             .describedAs("the named member sees it")
             .isEqualTo(HttpStatus.OK)
-        assertThat(get("/api/households/$householdId/investments/$id", third).status())
+        assertThat(get("/api/v1/households/$householdId/investments/$id", third).status())
             .describedAs("another household member does not")
             .isEqualTo(HttpStatus.NOT_FOUND)
     }
@@ -164,11 +164,11 @@ class PrivacyIsolationTest : ApiTestBase() {
         assertThat(dashboardTotal(ravi, householdId)).isEqualByComparingTo(BigDecimal(200_000))
 
         patch(
-            "/api/households/$householdId/investments/$id/visibility", ishwarya,
+            "/api/v1/households/$householdId/investments/$id/visibility", ishwarya,
             mapOf("visibility" to "private"),
         )
 
-        assertThat(get("/api/households/$householdId/investments/$id", ravi).status())
+        assertThat(get("/api/v1/households/$householdId/investments/$id", ravi).status())
             .describedAs("access ends mid-session, not at next login")
             .isEqualTo(HttpStatus.NOT_FOUND)
         assertThat(dashboardTotal(ravi, householdId))
@@ -182,18 +182,18 @@ class PrivacyIsolationTest : ApiTestBase() {
             ishwarya, householdId, "gold_physical", "Coins", BigDecimal(100_000), "household",
         )
         val id = gold.path("id").asText()
-        assertThat(get("/api/households/$householdId/investments/$id", ravi).status())
+        assertThat(get("/api/v1/households/$householdId/investments/$id", ravi).status())
             .isEqualTo(HttpStatus.OK)
 
         patch(
-            "/api/households/$householdId/investments/$id/visibility", ishwarya,
+            "/api/v1/households/$householdId/investments/$id/visibility", ishwarya,
             mapOf("visibility" to "private"),
         )
 
-        val titles = get("/api/households/$householdId/investments", ravi).json()
+        val titles = get("/api/v1/households/$householdId/investments", ravi).json()
             .map { it.path("title").asText() }
         assertThat(titles).doesNotContain("Coins")
-        assertThat(get("/api/households/$householdId/investments?q=Coins", ravi).json())
+        assertThat(get("/api/v1/households/$householdId/investments?q=Coins", ravi).json())
             .describedAs("search is not a side-channel")
             .isEmpty()
         assertThat(dashboardTotal(ravi, householdId)).isEqualByComparingTo(BigDecimal.ZERO)
@@ -203,19 +203,19 @@ class PrivacyIsolationTest : ApiTestBase() {
     fun `a user from another household sees nothing at all`() {
         capture(ishwarya, householdId, "gold_physical", "Coins", BigDecimal(100_000), "household")
 
-        assertThat(get("/api/households/$householdId/investments", outsider).status())
+        assertThat(get("/api/v1/households/$householdId/investments", outsider).status())
             .isEqualTo(HttpStatus.NOT_FOUND)
-        assertThat(get("/api/households/$householdId/members", outsider).status())
+        assertThat(get("/api/v1/households/$householdId/members", outsider).status())
             .describedAs("not even the roster")
             .isEqualTo(HttpStatus.NOT_FOUND)
-        assertThat(get("/api/households/$householdId/dashboard", outsider).status())
+        assertThat(get("/api/v1/households/$householdId/dashboard", outsider).status())
             .isEqualTo(HttpStatus.NOT_FOUND)
     }
 
     @Test
     fun `an unauthenticated request reaches nothing`() {
-        assertThat(get("/api/households/$householdId/investments").status())
+        assertThat(get("/api/v1/households/$householdId/investments").status())
             .isEqualTo(HttpStatus.UNAUTHORIZED)
-        assertThat(get("/api/me").status()).isEqualTo(HttpStatus.UNAUTHORIZED)
+        assertThat(get("/api/v1/me").status()).isEqualTo(HttpStatus.UNAUTHORIZED)
     }
 }

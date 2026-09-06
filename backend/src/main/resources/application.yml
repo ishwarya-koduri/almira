@@ -42,6 +42,8 @@ almira:
     # Base64, 32 bytes: openssl rand -base64 32
     master-key: ${ALMIRA_KMS_MASTER_KEY:}
     kms-key-id: ${ALMIRA_KMS_KEY_ID:}
+    # Development only: generated on first run, never committed. Delete to rotate.
+    dev-key-file: ${ALMIRA_DEV_KEY_FILE:./var/dev-kek}
   storage:
     provider: ${ALMIRA_STORAGE_PROVIDER:filesystem}
     root: ${ALMIRA_STORAGE_ROOT:./var/documents}
@@ -67,8 +69,22 @@ almira:
     max-per-hour: 5
 
 springdoc:
+  # The spec IS the contract, so it contains exactly what the app depends on.
+  # /health is operational — useful, but not something a client builds against,
+  # and including it would mean the contract test guards an endpoint that is
+  # free to change.
+  paths-to-match: /api/v1/**
+  api-docs:
+    path: /v3/api-docs
   swagger-ui:
     path: /docs
+    # Endpoints grouped by tag, alphabetical, so the browsable docs and the
+    # frozen spec read in the same order.
+    operations-sorter: alpha
+    tags-sorter: alpha
+  # Deterministic output: the contract test diffs this against a committed file,
+  # and map ordering that varies per JVM run would make every diff noise.
+  writer-with-order-by-keys: true
 
 logging:
   level:

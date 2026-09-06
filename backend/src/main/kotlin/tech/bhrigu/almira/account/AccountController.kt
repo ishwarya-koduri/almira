@@ -63,7 +63,7 @@ data class AccountResponse(
 data class RevealedNumberResponse(val number: String)
 
 @RestController
-@RequestMapping("/api/households/{householdId}/accounts")
+@RequestMapping("/api/v1/households/{householdId}/accounts")
 class AccountController(private val service: AccountService) {
 
     @PostMapping

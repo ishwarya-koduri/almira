@@ -37,11 +37,11 @@ class EnvelopeCipherTest : ApiTestBase() {
     @BeforeEach
     fun setUp() {
         val tokenA = signIn()
-        userA = UUID.fromString(get("/api/me", tokenA).json().path("id").asText())
+        userA = UUID.fromString(get("/api/v1/me", tokenA).json().path("id").asText())
         householdA = UUID.fromString(createHousehold(tokenA, "A").path("id").asText())
 
         val tokenB = signIn()
-        userB = UUID.fromString(get("/api/me", tokenB).json().path("id").asText())
+        userB = UUID.fromString(get("/api/v1/me", tokenB).json().path("id").asText())
         householdB = UUID.fromString(createHousehold(tokenB, "B").path("id").asText())
     }
 

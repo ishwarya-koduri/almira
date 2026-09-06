@@ -22,7 +22,7 @@ data class CreateInvitationBody(
 )
 
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/v1")
 class InvitationController(private val service: InvitationService) {
 
     @PostMapping("/households/{householdId}/invitations")

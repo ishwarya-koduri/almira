@@ -38,7 +38,7 @@ data class DocumentResponse(
 )
 
 @RestController
-@RequestMapping("/api/households/{householdId}/documents")
+@RequestMapping("/api/v1/households/{householdId}/documents")
 class DocumentController(private val service: DocumentService) {
 
     @PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
@@ -130,7 +130,7 @@ class DocumentController(private val service: DocumentService) {
  * spent.
  */
 @RestController
-@RequestMapping("/api/documents")
+@RequestMapping("/api/v1/documents")
 class DocumentDownloadController(private val service: DocumentService) {
 
     @GetMapping("/download")

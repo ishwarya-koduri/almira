@@ -70,7 +70,7 @@ class LiabilityPrivacyTest : ApiTestBase() {
         emiAmount: Int? = null,
         emiDay: Int? = null,
     ) = post(
-        "/api/households/$householdId/liabilities", token,
+        "/api/v1/households/$householdId/liabilities", token,
         buildMap {
             put("title", title)
             put("kind", kind)
@@ -86,11 +86,11 @@ class LiabilityPrivacyTest : ApiTestBase() {
     }.json()
 
     private fun netWorth(token: String, scope: String = "household") =
-        get("/api/households/$householdId/dashboard?scope=$scope", token)
+        get("/api/v1/households/$householdId/dashboard?scope=$scope", token)
             .json().path("netWorth").decimalValue()
 
     private fun totalLiabilities(token: String, scope: String = "household") =
-        get("/api/households/$householdId/dashboard?scope=$scope", token)
+        get("/api/v1/households/$householdId/dashboard?scope=$scope", token)
             .json().path("totalLiabilities").decimalValue()
 
     // -------------------------------------------------------------------------
@@ -100,20 +100,20 @@ class LiabilityPrivacyTest : ApiTestBase() {
         val loan = createLiability(ishwarya, "Personal loan", "personal", BigDecimal(300_000))
         val id = loan.path("id").asText()
 
-        val visible = get("/api/households/$householdId/liabilities", ravi).json()
+        val visible = get("/api/v1/households/$householdId/liabilities", ravi).json()
             .map { it.path("title").asText() }
         assertThat(visible).doesNotContain("Personal loan")
 
-        assertThat(get("/api/households/$householdId/liabilities/$id", ravi).status())
+        assertThat(get("/api/v1/households/$householdId/liabilities/$id", ravi).status())
             .describedAs("404, not 403 — a 403 would confirm the debt exists")
             .isEqualTo(HttpStatus.NOT_FOUND)
         assertThat(
             patch(
-                "/api/households/$householdId/liabilities/$id", ravi,
+                "/api/v1/households/$householdId/liabilities/$id", ravi,
                 mapOf("version" to 1, "title" to "hijacked"),
             ).status(),
         ).isEqualTo(HttpStatus.NOT_FOUND)
-        assertThat(delete("/api/households/$householdId/liabilities/$id", ravi).status())
+        assertThat(delete("/api/v1/households/$householdId/liabilities/$id", ravi).status())
             .isEqualTo(HttpStatus.NOT_FOUND)
     }
 
@@ -177,7 +177,7 @@ class LiabilityPrivacyTest : ApiTestBase() {
     @Test
     fun `responsibility that does not total 100 percent is refused`() {
         val response = post(
-            "/api/households/$householdId/liabilities", ishwarya,
+            "/api/v1/households/$householdId/liabilities", ishwarya,
             mapOf(
                 "title" to "Bad split", "kind" to "home", "outstanding" to 100000,
                 "holders" to listOf(
@@ -201,14 +201,14 @@ class LiabilityPrivacyTest : ApiTestBase() {
             visibility = "private", securedBy = goldId,
         )
 
-        val hersGold = get("/api/households/$householdId/investments/$goldId", ishwarya).json()
+        val hersGold = get("/api/v1/households/$householdId/investments/$goldId", ishwarya).json()
         assertThat(hersGold.path("encumbrance").decimalValue())
             .isEqualByComparingTo(BigDecimal(300_000))
         assertThat(hersGold.path("netEquity").decimalValue())
             .describedAs("value minus what is owed against it")
             .isEqualByComparingTo(BigDecimal(700_000))
 
-        val hisGold = get("/api/households/$householdId/investments/$goldId", ravi).json()
+        val hisGold = get("/api/v1/households/$householdId/investments/$goldId", ravi).json()
         // The API omits null fields, so an absent encumbrance is a MISSING node
         // rather than a null one — `isNull` alone would quietly pass on a real
         // leak, since MissingNode.isNull() is false.
@@ -232,7 +232,7 @@ class LiabilityPrivacyTest : ApiTestBase() {
                 mapOf("memberId" to raviMemberId, "responsibilityPct" to 50),
             ),
         )
-        val flat = get("/api/households/$householdId/investments/$flatId", ravi).json()
+        val flat = get("/api/v1/households/$householdId/investments/$flatId", ravi).json()
         assertThat(flat.path("encumbrance").decimalValue()).isEqualByComparingTo(BigDecimal(4_000_000))
         assertThat(flat.path("netEquity").decimalValue()).isEqualByComparingTo(BigDecimal.ZERO)
     }
@@ -246,11 +246,11 @@ class LiabilityPrivacyTest : ApiTestBase() {
         assertThat(totalLiabilities(ravi)).isEqualByComparingTo(BigDecimal(600_000))
 
         patch(
-            "/api/households/$householdId/liabilities/$id/visibility", ishwarya,
+            "/api/v1/households/$householdId/liabilities/$id/visibility", ishwarya,
             mapOf("visibility" to "private"),
         )
 
-        assertThat(get("/api/households/$householdId/liabilities/$id", ravi).status())
+        assertThat(get("/api/v1/households/$householdId/liabilities/$id", ravi).status())
             .isEqualTo(HttpStatus.NOT_FOUND)
         assertThat(totalLiabilities(ravi))
             .describedAs("retroactively, and in the totals too")
@@ -267,7 +267,7 @@ class LiabilityPrivacyTest : ApiTestBase() {
             ),
         )
         assertThat(
-            get("/api/households/$householdId/liabilities/${loan.path("id").asText()}", ravi).status(),
+            get("/api/v1/households/$householdId/liabilities/${loan.path("id").asText()}", ravi).status(),
         ).describedAs("you cannot hide a debt from the person who shares it").isEqualTo(HttpStatus.OK)
     }
 
@@ -277,14 +277,14 @@ class LiabilityPrivacyTest : ApiTestBase() {
         val id = loan.path("id").asText()
 
         val after = post(
-            "/api/households/$householdId/liabilities/$id/balances", ishwarya,
+            "/api/v1/households/$householdId/liabilities/$id/balances", ishwarya,
             mapOf("outstanding" to 550_000, "note" to "October EMI"),
         ).json()
 
         assertThat(after.path("outstanding").decimalValue()).isEqualByComparingTo(BigDecimal(550_000))
         assertThat(netWorth(ishwarya)).isEqualByComparingTo(BigDecimal(4_450_000))
 
-        val history = get("/api/households/$householdId/liabilities/$id/balances", ishwarya).json()
+        val history = get("/api/v1/households/$householdId/liabilities/$id/balances", ishwarya).json()
         assertThat(history)
             .describedAs("the trend is drawn from what was recorded, not interpolated")
             .hasSize(1) // opening balance and payment share today's date
@@ -297,7 +297,7 @@ class LiabilityPrivacyTest : ApiTestBase() {
             visibility = "household", emiAmount = 22_000, emiDay = 5,
             holders = listOf(mapOf("memberId" to ishwaryaMemberId, "responsibilityPct" to 100)),
         )
-        val upcoming = get("/api/households/$householdId/dashboard", ishwarya).json().path("upcoming")
+        val upcoming = get("/api/v1/households/$householdId/dashboard", ishwarya).json().path("upcoming")
         val emis = upcoming.filter { it.path("kind").asText() == "emi" }
         assertThat(emis).describedAs("money out belongs beside money in").hasSize(1)
         assertThat(emis[0].path("value").decimalValue()).isEqualByComparingTo(BigDecimal(22_000))

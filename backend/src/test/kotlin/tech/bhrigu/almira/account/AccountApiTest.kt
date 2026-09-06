@@ -43,7 +43,7 @@ class AccountApiTest : ApiTestBase() {
         visibility: String = "private",
         holders: List<Map<String, Any>> = emptyList(),
     ) = post(
-        "/api/households/$householdId/accounts", token,
+        "/api/v1/households/$householdId/accounts", token,
         buildMap {
             put("label", label)
             put("accountKind", "savings")
@@ -92,9 +92,9 @@ class AccountApiTest : ApiTestBase() {
     fun `no response body ever carries the full number`() {
         createAccount(storeFullNumber = true)
 
-        val listBody = get("/api/households/$householdId/accounts", owner).body!!
-        val detailId = get("/api/households/$householdId/accounts", owner).json()[0].path("id").asText()
-        val detailBody = get("/api/households/$householdId/accounts/$detailId", owner).body!!
+        val listBody = get("/api/v1/households/$householdId/accounts", owner).body!!
+        val detailId = get("/api/v1/households/$householdId/accounts", owner).json()[0].path("id").asText()
+        val detailBody = get("/api/v1/households/$householdId/accounts/$detailId", owner).body!!
 
         assertThat(listBody).doesNotContain(realNumber)
         assertThat(detailBody).doesNotContain(realNumber)
@@ -107,7 +107,7 @@ class AccountApiTest : ApiTestBase() {
     fun `revealing the number needs a fresh confirmation of who you are`() {
         val id = createAccount(storeFullNumber = true).json().path("id").asText()
 
-        val refused = post("/api/households/$householdId/accounts/$id/reveal-number", owner)
+        val refused = post("/api/v1/households/$householdId/accounts/$id/reveal-number", owner)
         assertThat(refused.status()).isEqualTo(HttpStatus.FORBIDDEN)
         assertThat(refused.errorCode()).isEqualTo("step_up_required")
     }
@@ -116,14 +116,14 @@ class AccountApiTest : ApiTestBase() {
     fun `after confirming, the number comes back and the view is recorded`() {
         val id = createAccount(storeFullNumber = true).json().path("id").asText()
 
-        val challenge = post("/api/auth/step-up/request", owner).json()
+        val challenge = post("/api/v1/auth/step-up/request", owner).json()
         post(
-            "/api/auth/step-up/verify", owner,
+            "/api/v1/auth/step-up/verify", owner,
             mapOf("code" to challenge.path("developmentCode").asText(),
                   "requestId" to challenge.path("requestId").asText()),
         )
 
-        val revealed = post("/api/households/$householdId/accounts/$id/reveal-number", owner)
+        val revealed = post("/api/v1/households/$householdId/accounts/$id/reveal-number", owner)
         assertThat(revealed.status()).isEqualTo(HttpStatus.OK)
         assertThat(revealed.json().path("number").asText()).isEqualTo(realNumber)
 
@@ -146,17 +146,17 @@ class AccountApiTest : ApiTestBase() {
         val id = createAccount(storeFullNumber = true, visibility = "household").json()
             .path("id").asText()
 
-        val challenge = post("/api/auth/step-up/request", owner).json()
+        val challenge = post("/api/v1/auth/step-up/request", owner).json()
         post(
-            "/api/auth/step-up/verify", owner,
+            "/api/v1/auth/step-up/verify", owner,
             mapOf("code" to challenge.path("developmentCode").asText(),
                   "requestId" to challenge.path("requestId").asText()),
         )
-        assertThat(post("/api/households/$householdId/accounts/$id/reveal-number", owner).status())
+        assertThat(post("/api/v1/households/$householdId/accounts/$id/reveal-number", owner).status())
             .isEqualTo(HttpStatus.OK)
 
         // The spouse can see the account, but has confirmed nothing.
-        assertThat(post("/api/households/$householdId/accounts/$id/reveal-number", spouse).errorCode())
+        assertThat(post("/api/v1/households/$householdId/accounts/$id/reveal-number", spouse).errorCode())
             .isEqualTo("step_up_required")
     }
 
@@ -165,7 +165,7 @@ class AccountApiTest : ApiTestBase() {
         // Login and step-up share a phone but not a cooldown: colliding on one
         // would refuse a legitimate confirmation seconds after sign-in, and a
         // step-up code would silently invalidate a login code.
-        val response = post("/api/auth/step-up/request", owner)
+        val response = post("/api/v1/auth/step-up/request", owner)
         assertThat(response.status()).isEqualTo(HttpStatus.OK)
         assertThat(response.json().path("developmentCode").asText()).isNotBlank()
     }
@@ -173,13 +173,13 @@ class AccountApiTest : ApiTestBase() {
     @Test
     fun `an account that kept only the mask has nothing to reveal`() {
         val id = createAccount(storeFullNumber = false).json().path("id").asText()
-        val challenge = post("/api/auth/step-up/request", owner).json()
+        val challenge = post("/api/v1/auth/step-up/request", owner).json()
         post(
-            "/api/auth/step-up/verify", owner,
+            "/api/v1/auth/step-up/verify", owner,
             mapOf("code" to challenge.path("developmentCode").asText(),
                   "requestId" to challenge.path("requestId").asText()),
         )
-        assertThat(post("/api/households/$householdId/accounts/$id/reveal-number", owner).errorCode())
+        assertThat(post("/api/v1/households/$householdId/accounts/$id/reveal-number", owner).errorCode())
             .isEqualTo("no_full_number")
     }
 
@@ -190,9 +190,9 @@ class AccountApiTest : ApiTestBase() {
         val id = createAccount(visibility = "private", storeFullNumber = true).json()
             .path("id").asText()
 
-        assertThat(get("/api/households/$householdId/accounts/$id", spouse).status())
+        assertThat(get("/api/v1/households/$householdId/accounts/$id", spouse).status())
             .isEqualTo(HttpStatus.NOT_FOUND)
-        assertThat(get("/api/households/$householdId/accounts", spouse).json()).isEmpty()
+        assertThat(get("/api/v1/households/$householdId/accounts", spouse).json()).isEmpty()
     }
 
     @Test
@@ -205,7 +205,7 @@ class AccountApiTest : ApiTestBase() {
             ),
         ).json().path("id").asText()
 
-        assertThat(get("/api/households/$householdId/accounts/$id", spouse).status())
+        assertThat(get("/api/v1/households/$householdId/accounts/$id", spouse).status())
             .describedAs("you cannot hide a joint account from your co-holder")
             .isEqualTo(HttpStatus.OK)
     }
@@ -216,7 +216,7 @@ class AccountApiTest : ApiTestBase() {
     fun `an account in use cannot be removed out from under its holdings`() {
         val accountId = createAccount(visibility = "household").json().path("id").asText()
         post(
-            "/api/households/$householdId/investments", owner,
+            "/api/v1/households/$householdId/investments", owner,
             mapOf(
                 "typeId" to typeId(owner, householdId, "fd"),
                 "title" to "SBI FD", "investedAmount" to 100000,
@@ -225,11 +225,11 @@ class AccountApiTest : ApiTestBase() {
             ),
         )
 
-        val refused = delete("/api/households/$householdId/accounts/$accountId", owner)
+        val refused = delete("/api/v1/households/$householdId/accounts/$accountId", owner)
         assertThat(refused.status()).isEqualTo(HttpStatus.CONFLICT)
         assertThat(refused.errorCode()).isEqualTo("account_in_use")
 
-        assertThat(get("/api/households/$householdId/accounts/$accountId", owner).json()
+        assertThat(get("/api/v1/households/$householdId/accounts/$accountId", owner).json()
             .path("linkedInvestmentCount").asInt()).isEqualTo(1)
     }
 
@@ -240,7 +240,7 @@ class AccountApiTest : ApiTestBase() {
         assertThat(created.path("hasFullNumber").asBoolean()).isTrue()
 
         val response = patch(
-            "/api/households/$householdId/accounts/$id", owner,
+            "/api/v1/households/$householdId/accounts/$id", owner,
             mapOf("version" to created.path("version").asInt(),
                   "number" to "50100299998888", "storeFullNumber" to false),
         )

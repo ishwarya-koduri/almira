@@ -72,15 +72,15 @@ class DocumentApiTest : ApiTestBase() {
             linkTo?.let { append("&entityType=${it.first}&entityId=${it.second}") }
         }
         return upload.exchange(
-            url("/api/households/$householdId/documents$query"),
+            url("/api/v1/households/$householdId/documents$query"),
             HttpMethod.POST, HttpEntity(body, headers), String::class.java,
         )
     }
 
     private fun stepUp(token: String) {
-        val challenge = post("/api/auth/step-up/request", token).json()
+        val challenge = post("/api/v1/auth/step-up/request", token).json()
         post(
-            "/api/auth/step-up/verify", token,
+            "/api/v1/auth/step-up/verify", token,
             mapOf(
                 "code" to challenge.path("developmentCode").asText(),
                 "requestId" to challenge.path("requestId").asText(),
@@ -113,26 +113,26 @@ class DocumentApiTest : ApiTestBase() {
     fun `viewing a document needs a confirmation, then works once`() {
         val id = mapper.readTree(uploadFile(owner).body).path("id").asText()
 
-        assertThat(post("/api/households/$householdId/documents/$id/access", owner).errorCode())
+        assertThat(post("/api/v1/households/$householdId/documents/$id/access", owner).errorCode())
             .isEqualTo("step_up_required")
 
         stepUp(owner)
-        val ticket = post("/api/households/$householdId/documents/$id/access", owner).json()
+        val ticket = post("/api/v1/households/$householdId/documents/$id/access", owner).json()
         val token = ticket.path("token").asText()
         assertThat(token).isNotBlank()
 
-        val first = get("/api/documents/download?token=$token")
+        val first = get("/api/v1/documents/download?token=$token")
         assertThat(first.status()).isEqualTo(HttpStatus.OK)
         assertThat(first.body).contains("POLICY 5567123")
 
         // Single use: a token that leaks through a log or a screenshot is spent.
-        assertThat(get("/api/documents/download?token=$token").status())
+        assertThat(get("/api/v1/documents/download?token=$token").status())
             .isEqualTo(HttpStatus.NOT_FOUND)
     }
 
     @Test
     fun `a made-up ticket gets nothing`() {
-        assertThat(get("/api/documents/download?token=not-a-real-ticket").status())
+        assertThat(get("/api/v1/documents/download?token=not-a-real-ticket").status())
             .isEqualTo(HttpStatus.NOT_FOUND)
     }
 
@@ -150,7 +150,7 @@ class DocumentApiTest : ApiTestBase() {
 
         uploadFile(owner, "fd-receipt.pdf", linkTo = "investment" to privateFd)
 
-        assertThat(get("/api/households/$householdId/documents", spouse).json())
+        assertThat(get("/api/v1/households/$householdId/documents", spouse).json())
             .describedAs("the receipt must not announce the deposit")
             .isEmpty()
     }
@@ -163,7 +163,7 @@ class DocumentApiTest : ApiTestBase() {
 
         uploadFile(owner, "gold-bill.pdf", linkTo = "investment" to sharedGold)
 
-        val visible = get("/api/households/$householdId/documents", spouse).json()
+        val visible = get("/api/v1/households/$householdId/documents", spouse).json()
             .map { it.path("fileName").asText() }
         assertThat(visible).containsExactly("gold-bill.pdf")
     }
@@ -171,10 +171,10 @@ class DocumentApiTest : ApiTestBase() {
     @Test
     fun `a standalone document stays with whoever uploaded it`() {
         uploadFile(owner, "my-will.pdf")
-        assertThat(get("/api/households/$householdId/documents", spouse).json())
+        assertThat(get("/api/v1/households/$householdId/documents", spouse).json())
             .describedAs("attached to nothing, it carries its own privacy")
             .isEmpty()
-        assertThat(get("/api/households/$householdId/documents", owner).json()).hasSize(1)
+        assertThat(get("/api/v1/households/$householdId/documents", owner).json()).hasSize(1)
     }
 
     @Test
@@ -187,11 +187,11 @@ class DocumentApiTest : ApiTestBase() {
             attributes = mapOf("interest_rate" to "7.1"),
         )
 
-        val mine = get("/api/households/$householdId/documents/missing-proof", owner).json()
+        val mine = get("/api/v1/households/$householdId/documents/missing-proof", owner).json()
             .map { it.path("title").asText() }
         assertThat(mine).containsExactlyInAnyOrder("Family gold", "Private FD")
 
-        val theirs = get("/api/households/$householdId/documents/missing-proof", spouse).json()
+        val theirs = get("/api/v1/households/$householdId/documents/missing-proof", spouse).json()
             .map { it.path("title").asText() }
         assertThat(theirs)
             .describedAs("a checklist must not reveal that someone else's record lacks a proof")

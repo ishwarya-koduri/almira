@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/households/{householdId}/reports")
+@RequestMapping("/api/v1/households/{householdId}/reports")
 class ReportsController(
     private val trends: TrendService,
     private val cashflow: CashflowService,

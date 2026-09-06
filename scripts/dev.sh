@@ -59,8 +59,9 @@ if [ "${1:-}" = "test" ]; then
 fi
 
 say "Starting the backend on http://localhost:8080 …"
-echo "  ${DIM}web client  http://localhost:8080${OFF}"
-echo "  ${DIM}API docs    http://localhost:8080/docs${OFF}"
-echo "  ${DIM}health      http://localhost:8080/health${OFF}"
+echo "  ${DIM}web client   http://localhost:8080${OFF}"
+echo "  ${DIM}API docs     http://localhost:8080/docs${OFF}"
+echo "  ${DIM}v1 contract  docs/api/openapi-v1.json  (./scripts/freeze-api-spec.sh)${OFF}"
+echo "  ${DIM}health       http://localhost:8080/health${OFF}"
 echo
 cd backend && exec ./gradlew bootRun --console=plain

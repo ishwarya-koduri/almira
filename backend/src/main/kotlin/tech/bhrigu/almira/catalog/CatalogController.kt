@@ -51,7 +51,7 @@ data class TaxonomyResponse(
 )
 
 @RestController
-@RequestMapping("/api/households/{householdId}")
+@RequestMapping("/api/v1/households/{householdId}")
 class CatalogController(private val service: CatalogService) {
 
     @GetMapping("/taxonomy")

@@ -86,7 +86,7 @@ data class LiabilityResponse(
 )
 
 @RestController
-@RequestMapping("/api/households/{householdId}/liabilities")
+@RequestMapping("/api/v1/households/{householdId}/liabilities")
 class LiabilityController(private val service: LiabilityService) {
 
     @PostMapping

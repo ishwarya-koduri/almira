@@ -1,0 +1,5683 @@
+{
+  "components": {
+    "schemas": {
+      "AcceptedInvitation": {
+        "properties": {
+          "householdId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "householdId",
+          "role"
+        ],
+        "type": "object"
+      },
+      "AccountHolderResponse": {
+        "properties": {
+          "holderType": {
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "holderType",
+          "memberId"
+        ],
+        "type": "object"
+      },
+      "AccountResponse": {
+        "properties": {
+          "accountKind": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "hasFullNumber": {
+            "type": "boolean"
+          },
+          "holders": {
+            "items": {
+              "$ref": "#/components/schemas/AccountHolderResponse"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ifsc": {
+            "type": "string"
+          },
+          "institutionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "institutionName": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "linkedInvestmentCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "numberMasked": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "accountKind",
+          "createdAt",
+          "hasFullNumber",
+          "holders",
+          "id",
+          "label",
+          "linkedInvestmentCount",
+          "version",
+          "visibility",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "AddMemberBody": {
+        "properties": {
+          "dateOfBirth": {
+            "format": "date",
+            "type": "string"
+          },
+          "displayName": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "relationship": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "AttentionItem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "investmentIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "count",
+          "investmentIds",
+          "label"
+        ],
+        "type": "object"
+      },
+      "BalanceInput": {
+        "properties": {
+          "asOfDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "outstanding": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "outstanding"
+        ],
+        "type": "object"
+      },
+      "BalanceRow": {
+        "properties": {
+          "asOfDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "outstanding": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "asOfDate",
+          "id",
+          "outstanding",
+          "source"
+        ],
+        "type": "object"
+      },
+      "Breakdown": {
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "percentage": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number"
+          },
+          "valueFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "key",
+          "label",
+          "percentage",
+          "value",
+          "valueFormatted"
+        ],
+        "type": "object"
+      },
+      "Cashflow": {
+        "properties": {
+          "from": {
+            "format": "date",
+            "type": "string"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/CashflowMonth"
+            },
+            "type": "array"
+          },
+          "until": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "months",
+          "until"
+        ],
+        "type": "object"
+      },
+      "CashflowEntry": {
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "amountFormatted": {
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "amountFormatted",
+          "date",
+          "direction",
+          "kind",
+          "recordId",
+          "recordType",
+          "title"
+        ],
+        "type": "object"
+      },
+      "CashflowMonth": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/CashflowEntry"
+            },
+            "type": "array"
+          },
+          "inflow": {
+            "type": "number"
+          },
+          "inflowFormatted": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string"
+          },
+          "net": {
+            "type": "number"
+          },
+          "netFormatted": {
+            "type": "string"
+          },
+          "out": {
+            "type": "number"
+          },
+          "outFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entries",
+          "inflow",
+          "inflowFormatted",
+          "month",
+          "net",
+          "netFormatted",
+          "out",
+          "outFormatted"
+        ],
+        "type": "object"
+      },
+      "ChangeAccountVisibilityBody": {
+        "properties": {
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "visibility",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "ChangeLiabilityVisibilityBody": {
+        "properties": {
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "visibility",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "ChangeVisibilityBody": {
+        "properties": {
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "visibility",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "CommonFieldDef": {
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "help": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "sort": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "label",
+          "required",
+          "sort"
+        ],
+        "type": "object"
+      },
+      "CompleteReminderResponse": {
+        "properties": {
+          "reminder": {
+            "$ref": "#/components/schemas/ReminderResponse"
+          },
+          "rollover": {
+            "$ref": "#/components/schemas/RolloverDraft"
+          }
+        },
+        "type": "object"
+      },
+      "CreateAccountBody": {
+        "properties": {
+          "accountKind": {
+            "type": "string"
+          },
+          "holders": {
+            "items": {
+              "$ref": "#/components/schemas/HolderInput"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ifsc": {
+            "type": "string"
+          },
+          "institutionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 120,
+            "minLength": 0,
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string"
+          },
+          "storeFullNumber": {
+            "type": "boolean"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "accountKind",
+          "holders",
+          "label",
+          "storeFullNumber",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "CreateHouseholdBody": {
+        "properties": {
+          "defaultVisibility": {
+            "type": "string"
+          },
+          "displayName": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreateInstitutionBody": {
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateInvestmentBody": {
+        "properties": {
+          "accountId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "attributes": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customFields": {
+            "items": {
+              "$ref": "#/components/schemas/CustomFieldInput"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "initialValuation": {
+            "$ref": "#/components/schemas/ValuationInput"
+          },
+          "institutionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "investedAmount": {
+            "type": "number"
+          },
+          "isInContinuity": {
+            "type": "boolean"
+          },
+          "maturityDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerInput"
+            },
+            "type": "array"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "storageLocation": {
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 160,
+            "minLength": 0,
+            "type": "string"
+          },
+          "typeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "attributes",
+          "customFields",
+          "isInContinuity",
+          "owners",
+          "title",
+          "typeId",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "CreateInvestmentResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "investment": {
+            "$ref": "#/components/schemas/InvestmentResponse"
+          },
+          "visibleToYou": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "visibleToYou"
+        ],
+        "type": "object"
+      },
+      "CreateInvitationBody": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      },
+      "CreateLiabilityBody": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "emiAmount": {
+            "type": "number"
+          },
+          "emiDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "holders": {
+            "items": {
+              "$ref": "#/components/schemas/ResponsibilityInput"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "interestRate": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lenderId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "outstanding": {
+            "type": "number"
+          },
+          "principal": {
+            "type": "number"
+          },
+          "securedByInvestmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 160,
+            "minLength": 0,
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "attributes",
+          "holders",
+          "kind",
+          "outstanding",
+          "title",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "CreateReminderBody": {
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "dueDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "leadDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "liabilityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "recurrence": {
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "dueDate",
+          "kind",
+          "leadDays",
+          "recurrence",
+          "title"
+        ],
+        "type": "object"
+      },
+      "CreateTypeBody": {
+        "properties": {
+          "categoryCode": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldDef"
+            },
+            "type": "array"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "fields",
+          "label"
+        ],
+        "type": "object"
+      },
+      "CreatedInvitation": {
+        "properties": {
+          "invitation": {
+            "$ref": "#/components/schemas/InvitationRow"
+          },
+          "link": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "invitation",
+          "link",
+          "token"
+        ],
+        "type": "object"
+      },
+      "CustomFieldInput": {
+        "properties": {
+          "countsTowardValue": {
+            "type": "boolean"
+          },
+          "dataType": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/FieldOption"
+            },
+            "type": "array"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "countsTowardValue",
+          "dataType",
+          "key",
+          "label",
+          "required"
+        ],
+        "type": "object"
+      },
+      "Dashboard": {
+        "properties": {
+          "attention": {
+            "items": {
+              "$ref": "#/components/schemas/AttentionItem"
+            },
+            "type": "array"
+          },
+          "byCategory": {
+            "items": {
+              "$ref": "#/components/schemas/Breakdown"
+            },
+            "type": "array"
+          },
+          "byInstitution": {
+            "items": {
+              "$ref": "#/components/schemas/Breakdown"
+            },
+            "type": "array"
+          },
+          "byLiabilityKind": {
+            "items": {
+              "$ref": "#/components/schemas/Breakdown"
+            },
+            "type": "array"
+          },
+          "byMember": {
+            "items": {
+              "$ref": "#/components/schemas/Breakdown"
+            },
+            "type": "array"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "disclaimer": {
+            "type": "string"
+          },
+          "holdingCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "liabilityCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "netWorth": {
+            "type": "number"
+          },
+          "netWorthFormatted": {
+            "type": "string"
+          },
+          "netWorthInWords": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "scopeLabel": {
+            "type": "string"
+          },
+          "totalAssets": {
+            "type": "number"
+          },
+          "totalAssetsFormatted": {
+            "type": "string"
+          },
+          "totalLiabilities": {
+            "type": "number"
+          },
+          "totalLiabilitiesFormatted": {
+            "type": "string"
+          },
+          "upcoming": {
+            "items": {
+              "$ref": "#/components/schemas/UpcomingItem"
+            },
+            "type": "array"
+          },
+          "valueConfidence": {
+            "$ref": "#/components/schemas/ValueConfidence"
+          }
+        },
+        "required": [
+          "attention",
+          "byCategory",
+          "byInstitution",
+          "byLiabilityKind",
+          "byMember",
+          "currency",
+          "disclaimer",
+          "holdingCount",
+          "liabilityCount",
+          "netWorth",
+          "netWorthFormatted",
+          "netWorthInWords",
+          "scope",
+          "scopeLabel",
+          "totalAssets",
+          "totalAssetsFormatted",
+          "totalLiabilities",
+          "totalLiabilitiesFormatted",
+          "upcoming",
+          "valueConfidence"
+        ],
+        "type": "object"
+      },
+      "DocumentLinkResponse": {
+        "properties": {
+          "entityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "entityTitle": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entityId",
+          "entityType"
+        ],
+        "type": "object"
+      },
+      "DocumentResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "docType": {
+            "type": "string"
+          },
+          "expired": {
+            "type": "boolean"
+          },
+          "expiresOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentLinkResponse"
+            },
+            "type": "array"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "docType",
+          "expired",
+          "fileName",
+          "id",
+          "links",
+          "mimeType",
+          "sizeBytes",
+          "visibility"
+        ],
+        "type": "object"
+      },
+      "DownloadTicket": {
+        "properties": {
+          "expiresInSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresInSeconds",
+          "fileName",
+          "token"
+        ],
+        "type": "object"
+      },
+      "FieldDef": {
+        "properties": {
+          "dataType": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "help": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/FieldOption"
+            },
+            "type": "array"
+          },
+          "placeholder": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "sort": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataType",
+          "group",
+          "key",
+          "label",
+          "required",
+          "sort"
+        ],
+        "type": "object"
+      },
+      "FieldOption": {
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "type": "object"
+      },
+      "HolderInput": {
+        "properties": {
+          "holderType": {
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "holderType",
+          "memberId"
+        ],
+        "type": "object"
+      },
+      "HouseholdResponse": {
+        "properties": {
+          "baseCurrency": {
+            "type": "string"
+          },
+          "defaultVisibility": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "myMemberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "myRole": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "baseCurrency",
+          "defaultVisibility",
+          "id",
+          "memberCount",
+          "myRole",
+          "name",
+          "version"
+        ],
+        "type": "object"
+      },
+      "InstitutionRow": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isCustom": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "logoUrl": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "isCustom",
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "InvestmentResponse": {
+        "properties": {
+          "accountId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "accountLabel": {
+            "type": "string"
+          },
+          "attributes": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "categoryCode": {
+            "type": "string"
+          },
+          "categoryLabel": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "encumbrance": {
+            "type": "number"
+          },
+          "encumbranceFormatted": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "institutionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "institutionName": {
+            "type": "string"
+          },
+          "investedAmount": {
+            "type": "number"
+          },
+          "isInContinuity": {
+            "type": "boolean"
+          },
+          "lastVerifiedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "maturityDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "netEquity": {
+            "type": "number"
+          },
+          "nominees": {
+            "items": {
+              "$ref": "#/components/schemas/NomineeResponse"
+            },
+            "type": "array"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerResponse"
+            },
+            "type": "array"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "storageLocation": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "typeCode": {
+            "type": "string"
+          },
+          "typeIcon": {
+            "type": "string"
+          },
+          "typeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "typeLabel": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "valueBasis": {
+            "type": "string"
+          },
+          "valueFormatted": {
+            "type": "string"
+          },
+          "valuedOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "attributes",
+          "categoryCode",
+          "categoryLabel",
+          "color",
+          "createdAt",
+          "currency",
+          "id",
+          "isInContinuity",
+          "nominees",
+          "owners",
+          "status",
+          "title",
+          "typeCode",
+          "typeId",
+          "typeLabel",
+          "valueBasis",
+          "version",
+          "visibility",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "InvitationRow": {
+        "properties": {
+          "acceptedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "householdId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "householdId",
+          "id",
+          "role"
+        ],
+        "type": "object"
+      },
+      "LiabilityHolderResponse": {
+        "properties": {
+          "holderType": {
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "responsibilityPct": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "holderType",
+          "memberId",
+          "responsibilityPct"
+        ],
+        "type": "object"
+      },
+      "LiabilityResponse": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "balanceAsOf": {
+            "format": "date",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "emiAmount": {
+            "type": "number"
+          },
+          "emiDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "holders": {
+            "items": {
+              "$ref": "#/components/schemas/LiabilityHolderResponse"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "interestRate": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lenderId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lenderName": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "outstanding": {
+            "type": "number"
+          },
+          "outstandingFormatted": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "number"
+          },
+          "securedBy": {
+            "items": {
+              "$ref": "#/components/schemas/SecuredAssetResponse"
+            },
+            "type": "array"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "attributes",
+          "createdAt",
+          "holders",
+          "id",
+          "kind",
+          "outstanding",
+          "outstandingFormatted",
+          "securedBy",
+          "status",
+          "title",
+          "version",
+          "visibility",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "LinkAssetBody": {
+        "properties": {
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investmentId"
+        ],
+        "type": "object"
+      },
+      "LoginResponse": {
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "expiresInSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "isNewUser": {
+            "type": "boolean"
+          },
+          "refreshToken": {
+            "type": "string"
+          },
+          "tokenType": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/MeResponse"
+          }
+        },
+        "required": [
+          "accessToken",
+          "expiresInSeconds",
+          "isNewUser",
+          "refreshToken",
+          "tokenType",
+          "user"
+        ],
+        "type": "object"
+      },
+      "MeResponse": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "defaultVisibility": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency",
+          "defaultVisibility",
+          "id",
+          "locale"
+        ],
+        "type": "object"
+      },
+      "MemberResponse": {
+        "properties": {
+          "dateOfBirth": {
+            "format": "date",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isManaged": {
+            "type": "boolean"
+          },
+          "isMe": {
+            "type": "boolean"
+          },
+          "isMinor": {
+            "type": "boolean"
+          },
+          "relationship": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "displayName",
+          "id",
+          "isManaged",
+          "isMe",
+          "isMinor",
+          "version"
+        ],
+        "type": "object"
+      },
+      "MissingProof": {
+        "properties": {
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investmentId",
+          "title"
+        ],
+        "type": "object"
+      },
+      "NetWorthTrend": {
+        "properties": {
+          "basis": {
+            "type": "string"
+          },
+          "historyBeginsAt": {
+            "format": "date",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/TrendPoint"
+            },
+            "type": "array"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "basis",
+          "points",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "NomineeInput": {
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "relationship": {
+            "type": "string"
+          },
+          "sharePct": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "NomineeResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "relationship": {
+            "type": "string"
+          },
+          "sharePct": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sharePct"
+        ],
+        "type": "object"
+      },
+      "OtpChallengeResponse": {
+        "properties": {
+          "developmentCode": {
+            "type": "string"
+          },
+          "expiresInSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "resendAfterSeconds": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expiresInSeconds",
+          "requestId",
+          "resendAfterSeconds"
+        ],
+        "type": "object"
+      },
+      "OtpRequestBody": {
+        "properties": {
+          "phone": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone"
+        ],
+        "type": "object"
+      },
+      "OtpVerifyBody": {
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{4,8}$",
+            "type": "string"
+          },
+          "deviceName": {
+            "type": "string"
+          },
+          "phone": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "phone"
+        ],
+        "type": "object"
+      },
+      "OwnerInput": {
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sharePct": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "memberId"
+        ],
+        "type": "object"
+      },
+      "OwnerResponse": {
+        "properties": {
+          "holderType": {
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sharePct": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "holderType",
+          "memberId",
+          "sharePct"
+        ],
+        "type": "object"
+      },
+      "PreferencesBody": {
+        "properties": {
+          "defaultVisibility": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RefreshBody": {
+        "properties": {
+          "refreshToken": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "refreshToken"
+        ],
+        "type": "object"
+      },
+      "ReminderResponse": {
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "amountFormatted": {
+            "type": "string"
+          },
+          "autoGenerated": {
+            "type": "boolean"
+          },
+          "daysAway": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dueDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "effectiveDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "leadDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "liabilityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "recordTitle": {
+            "type": "string"
+          },
+          "recurrence": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "autoGenerated",
+          "daysAway",
+          "dueDate",
+          "effectiveDate",
+          "id",
+          "kind",
+          "leadDays",
+          "recurrence",
+          "status",
+          "title"
+        ],
+        "type": "object"
+      },
+      "ResponsibilityInput": {
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "responsibilityPct": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "memberId"
+        ],
+        "type": "object"
+      },
+      "RevealedNumberResponse": {
+        "properties": {
+          "number": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "number"
+        ],
+        "type": "object"
+      },
+      "RolloverDraft": {
+        "properties": {
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "suggestedAmount": {
+            "type": "number"
+          },
+          "suggestedStartDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "typeId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "investmentId",
+          "message",
+          "suggestedStartDate",
+          "title",
+          "typeId"
+        ],
+        "type": "object"
+      },
+      "SearchHit": {
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "amountFormatted": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "route",
+          "title"
+        ],
+        "type": "object"
+      },
+      "SearchResults": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "type": "array"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "type": "array"
+          },
+          "investments": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "type": "array"
+          },
+          "liabilities": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "type": "array"
+          },
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "type": "array"
+          },
+          "query": {
+            "type": "string"
+          },
+          "total": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accounts",
+          "documents",
+          "investments",
+          "liabilities",
+          "people",
+          "query",
+          "total"
+        ],
+        "type": "object"
+      },
+      "SecuredAssetResponse": {
+        "properties": {
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investmentId",
+          "title"
+        ],
+        "type": "object"
+      },
+      "SessionResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deviceName": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "expiresAt",
+          "id",
+          "lastUsedAt"
+        ],
+        "type": "object"
+      },
+      "SetNomineesBody": {
+        "properties": {
+          "nominees": {
+            "items": {
+              "$ref": "#/components/schemas/NomineeInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "nominees"
+        ],
+        "type": "object"
+      },
+      "SnoozeBody": {
+        "properties": {
+          "until": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "until"
+        ],
+        "type": "object"
+      },
+      "StepUpStatusResponse": {
+        "properties": {
+          "elevated": {
+            "type": "boolean"
+          },
+          "expiresInSeconds": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "elevated",
+          "expiresInSeconds"
+        ],
+        "type": "object"
+      },
+      "StepUpVerifyBody": {
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{4,8}$",
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "TaxonomyResponse": {
+        "properties": {
+          "categoryCode": {
+            "type": "string"
+          },
+          "categoryLabel": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "types": {
+            "items": {
+              "$ref": "#/components/schemas/TypeResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "categoryCode",
+          "categoryLabel",
+          "color",
+          "icon",
+          "types"
+        ],
+        "type": "object"
+      },
+      "TokenPair": {
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "expiresInSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "refreshToken": {
+            "type": "string"
+          },
+          "tokenType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accessToken",
+          "expiresInSeconds",
+          "refreshToken",
+          "tokenType"
+        ],
+        "type": "object"
+      },
+      "TrendPoint": {
+        "properties": {
+          "assets": {
+            "type": "number"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "liabilities": {
+            "type": "number"
+          },
+          "netWorth": {
+            "type": "number"
+          },
+          "netWorthFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "assets",
+          "date",
+          "liabilities",
+          "netWorth",
+          "netWorthFormatted"
+        ],
+        "type": "object"
+      },
+      "TypeResponse": {
+        "properties": {
+          "categoryCode": {
+            "type": "string"
+          },
+          "categoryLabel": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isCustom": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "schema": {
+            "$ref": "#/components/schemas/TypeSchema"
+          },
+          "schemaVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "categoryCode",
+          "categoryLabel",
+          "code",
+          "color",
+          "id",
+          "isCustom",
+          "label",
+          "schema",
+          "schemaVersion"
+        ],
+        "type": "object"
+      },
+      "TypeSchema": {
+        "properties": {
+          "common": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CommonFieldDef"
+            },
+            "type": "object"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldDef"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "common",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "UpcomingItem": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "daysAway": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "daysAway",
+          "investmentId",
+          "kind",
+          "title"
+        ],
+        "type": "object"
+      },
+      "UpdateAccount": {
+        "properties": {
+          "holders": {
+            "items": {
+              "$ref": "#/components/schemas/HolderInput"
+            },
+            "type": "array"
+          },
+          "ifsc": {
+            "type": "string"
+          },
+          "institutionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string"
+          },
+          "storeFullNumber": {
+            "type": "boolean"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "UpdateHouseholdBody": {
+        "properties": {
+          "defaultVisibility": {
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 0,
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateInvestment": {
+        "properties": {
+          "accountId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "attributes": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "institutionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "investedAmount": {
+            "type": "number"
+          },
+          "isInContinuity": {
+            "type": "boolean"
+          },
+          "maturityDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerInput"
+            },
+            "type": "array"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "storageLocation": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "UpdateLiability": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "emiAmount": {
+            "type": "number"
+          },
+          "emiDay": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "holders": {
+            "items": {
+              "$ref": "#/components/schemas/ResponsibilityInput"
+            },
+            "type": "array"
+          },
+          "interestRate": {
+            "type": "number"
+          },
+          "lenderId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "UpdateMemberBody": {
+        "properties": {
+          "dateOfBirth": {
+            "format": "date",
+            "type": "string"
+          },
+          "displayName": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "relationship": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ValuationInput": {
+        "properties": {
+          "asOfDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "ValuationRow": {
+        "properties": {
+          "asOfDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "asOfDate",
+          "id",
+          "source",
+          "value"
+        ],
+        "type": "object"
+      },
+      "ValueConfidence": {
+        "properties": {
+          "atCost": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "fromCustomField": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "unknown": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "valued": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "atCost",
+          "fromCustomField",
+          "unknown",
+          "valued"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "description": "Access token from POST /api/v1/auth/otp/verify.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "email": "padmini.koduri@bhrigu.tech",
+      "name": "Almira"
+    },
+    "description": "Every rupee a family has invested or owes, in one private place.\n\n**Authentication.** Phone OTP issues a short-lived access token and a\nrotating refresh token. Send `Authorization: Bearer <accessToken>`.\nRefresh tokens are single-use: presenting one twice is treated as theft\nand ends the session.\n\n**Privacy.** Every read passes a per-record visibility check enforced by\nPostgreSQL row-level security. A record you may not see returns 404, not\n403 — a 403 would confirm it exists. Totals are computed through the same\nfilter, so a private record contributes nothing, not even its amount, to\nanother member's figures.\n\n**Money** is decimal, never floating point. Amounts also arrive formatted\n(`₹1,76,875`) so every surface renders them identically.\n\n**Concurrency.** Writes carry the record's `version`; a stale write is\nrejected with 409 and the current version. Creates accept a client-supplied\n`id`, so an offline capture keeps its identity and a retry is idempotent.\n\n**Stability.** v1 is frozen and additive-only. Breaking changes go to v2.",
+    "title": "Almira API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/otp/request": {
+      "post": {
+        "operationId": "requestOtp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OtpRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/OtpChallengeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/otp/verify": {
+      "post": {
+        "operationId": "verifyOtp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OtpVerifyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "refresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "operationId": "sessions",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/{id}": {
+      "delete": {
+        "operationId": "revokeSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/step-up": {
+      "get": {
+        "operationId": "stepUpStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpStatusResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/step-up/request": {
+      "post": {
+        "operationId": "requestStepUp",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/OtpChallengeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/step-up/verify": {
+      "post": {
+        "operationId": "verifyStepUp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepUpVerifyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpStatusResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/documents/download": {
+      "get": {
+        "operationId": "download",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "document-download-controller"
+        ]
+      }
+    },
+    "/api/v1/households": {
+      "get": {
+        "operationId": "listMine",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HouseholdResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "household-controller"
+        ]
+      },
+      "post": {
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHouseholdBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "household-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}": {
+      "get": {
+        "operationId": "get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "household-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHouseholdBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "household-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/accounts": {
+      "get": {
+        "operationId": "list_5",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccountResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "account-controller"
+        ]
+      },
+      "post": {
+        "operationId": "create_5",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAccountBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "account-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/accounts/{id}": {
+      "delete": {
+        "operationId": "archive_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "account-controller"
+        ]
+      },
+      "get": {
+        "operationId": "get_3",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "account-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "update_3",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccount"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "account-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/accounts/{id}/reveal-number": {
+      "post": {
+        "operationId": "revealNumber",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevealedNumberResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "account-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/accounts/{id}/visibility": {
+      "patch": {
+        "operationId": "changeVisibility_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeAccountVisibilityBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "account-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/dashboard": {
+      "get": {
+        "operationId": "dashboard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "household",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "dashboard-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/documents": {
+      "get": {
+        "operationId": "list_4",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "document-controller"
+        ]
+      },
+      "post": {
+        "operationId": "upload",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "docType",
+            "required": false,
+            "schema": {
+              "default": "other",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expiresOn",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "visibility",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "notes",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "document-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/documents/missing-proof": {
+      "get": {
+        "operationId": "missingProof",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MissingProof"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "document-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/documents/{id}": {
+      "delete": {
+        "operationId": "archive_3",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "document-controller"
+        ]
+      },
+      "get": {
+        "operationId": "get_4",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "document-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/documents/{id}/access": {
+      "post": {
+        "operationId": "requestAccess",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadTicket"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "document-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/documents/{id}/links": {
+      "delete": {
+        "operationId": "unlink",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "document-controller"
+        ]
+      },
+      "post": {
+        "operationId": "link",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "document-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/institutions": {
+      "get": {
+        "operationId": "institutions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InstitutionRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "catalog-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createInstitution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInstitutionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstitutionRow"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "catalog-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/investments": {
+      "get": {
+        "operationId": "list_3",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "institution",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unlinked",
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "visibility",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InvestmentResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "investment-controller"
+        ]
+      },
+      "post": {
+        "operationId": "create_4",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvestmentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateInvestmentResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "investment-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/investments/{id}": {
+      "delete": {
+        "operationId": "archive_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "investment-controller"
+        ]
+      },
+      "get": {
+        "operationId": "get_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestmentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "investment-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "update_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateInvestment"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestmentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "investment-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/investments/{id}/nominees": {
+      "put": {
+        "operationId": "setNominees",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetNomineesBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestmentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "investment-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/investments/{id}/valuations": {
+      "get": {
+        "operationId": "valuations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ValuationRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "investment-controller"
+        ]
+      },
+      "post": {
+        "operationId": "addValuation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValuationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestmentResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "investment-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/investments/{id}/visibility": {
+      "patch": {
+        "operationId": "changeVisibility_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeVisibilityBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestmentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "investment-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/invitations": {
+      "get": {
+        "operationId": "list_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InvitationRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "invitation-controller"
+        ]
+      },
+      "post": {
+        "operationId": "create_3",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvitationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedInvitation"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "invitation-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/invitations/{invitationId}": {
+      "delete": {
+        "operationId": "revoke",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "invitationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "invitation-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/liabilities": {
+      "get": {
+        "operationId": "list_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LiabilityResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "liability-controller"
+        ]
+      },
+      "post": {
+        "operationId": "create_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLiabilityBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiabilityResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "liability-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/liabilities/{id}": {
+      "delete": {
+        "operationId": "archive",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "liability-controller"
+        ]
+      },
+      "get": {
+        "operationId": "get_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiabilityResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "liability-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "update_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLiability"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiabilityResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "liability-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/liabilities/{id}/balances": {
+      "get": {
+        "operationId": "balances",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BalanceRow"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "liability-controller"
+        ]
+      },
+      "post": {
+        "operationId": "recordBalance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BalanceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiabilityResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "liability-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/liabilities/{id}/secured-by": {
+      "post": {
+        "operationId": "linkAsset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkAssetBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiabilityResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "liability-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/liabilities/{id}/secured-by/{investmentId}": {
+      "delete": {
+        "operationId": "unlinkAsset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "investmentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiabilityResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "liability-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/liabilities/{id}/visibility": {
+      "patch": {
+        "operationId": "changeVisibility",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeLiabilityVisibilityBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiabilityResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "liability-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/members": {
+      "get": {
+        "operationId": "members",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemberResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "household-controller"
+        ]
+      },
+      "post": {
+        "operationId": "addMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddMemberBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "household-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/members/{memberId}": {
+      "delete": {
+        "operationId": "removeMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "memberId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "household-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "updateMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "memberId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "household-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/reminders": {
+      "get": {
+        "operationId": "list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "withinDays",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeDone",
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReminderResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "reminder-controller"
+        ]
+      },
+      "post": {
+        "operationId": "create_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReminderBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "reminder-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/reminders/{id}": {
+      "delete": {
+        "operationId": "delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "reminder-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/reminders/{id}/done": {
+      "post": {
+        "operationId": "complete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteReminderResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "reminder-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/reminders/{id}/snooze": {
+      "post": {
+        "operationId": "snooze",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnoozeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "reminder-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/reports/cashflow": {
+      "get": {
+        "operationId": "cashflow",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "months",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cashflow"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "reports-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/reports/net-worth-trend": {
+      "get": {
+        "operationId": "netWorthTrend",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "months",
+            "required": false,
+            "schema": {
+              "default": 12,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "household",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetWorthTrend"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "reports-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/search": {
+      "get": {
+        "operationId": "search",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 8,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "search-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/taxonomy": {
+      "get": {
+        "operationId": "taxonomy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TaxonomyResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "catalog-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/trash": {
+      "get": {
+        "operationId": "list_6",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InvestmentResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "trash-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/trash/investments/{id}/restore": {
+      "post": {
+        "operationId": "restore",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestmentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "trash-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/types": {
+      "post": {
+        "operationId": "createType",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTypeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TypeResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "catalog-controller"
+        ]
+      }
+    },
+    "/api/v1/invitations/accept": {
+      "post": {
+        "operationId": "accept",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedInvitation"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "invitation-controller"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "updateMe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencesBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "Generated server url",
+      "url": "http://localhost:8080"
+    }
+  ]
+}

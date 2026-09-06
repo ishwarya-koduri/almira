@@ -82,7 +82,7 @@ data class LoginResponse(
 )
 
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/v1")
 @Validated
 class AuthController(
     private val auth: AuthService,

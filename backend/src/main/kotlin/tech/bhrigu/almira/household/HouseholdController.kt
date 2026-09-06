@@ -71,7 +71,7 @@ data class MemberResponse(
 )
 
 @RestController
-@RequestMapping("/api/households")
+@RequestMapping("/api/v1/households")
 class HouseholdController(private val service: HouseholdService) {
 
     @PostMapping

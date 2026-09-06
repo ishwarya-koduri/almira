@@ -228,6 +228,42 @@ export const api = {
   runImport:     (hid, file, options) =>
     upload(`/api/v1/households/${hid}/import`, file, options),
 
+  // --- zero-knowledge mode --------------------------------------------------
+  e2eStatus:     (hid)            => api.get(`/api/v1/households/${hid}/e2e`),
+  putE2eKey:     (hid, body)      => api.put(`/api/v1/households/${hid}/e2e/key`, body),
+  sealedValues:  (hid, type, id)  => api.get(
+    `/api/v1/households/${hid}/e2e/values${type ? `?recordType=${type}&recordId=${id}` : ""}`),
+  sealValue:     (hid, type, id, field, body) =>
+    api.put(`/api/v1/households/${hid}/e2e/values/${type}/${id}/${field}`, body),
+  unsealValue:   (hid, type, id, field) =>
+    api.del(`/api/v1/households/${hid}/e2e/values/${type}/${id}/${field}`),
+
+  // --- estate, contacts and continuity --------------------------------------
+  contacts:      (hid, query)     => api.get(`/api/v1/households/${hid}/contacts${query ? `?${query}` : ""}`),
+  createContact: (hid, body)      => api.post(`/api/v1/households/${hid}/contacts`, body),
+  linkContact:   (hid, id, body)  => api.post(`/api/v1/households/${hid}/contacts/${id}/links`, body),
+  deleteContact: (hid, id)        => api.del(`/api/v1/households/${hid}/contacts/${id}`),
+  estateDocuments: (hid)          => api.get(`/api/v1/households/${hid}/estate/documents`),
+  createEstateDocument: (hid, b)  => api.post(`/api/v1/households/${hid}/estate/documents`, b),
+  mismatches:    (hid)            => api.get(`/api/v1/households/${hid}/estate/mismatches`),
+  transmission:  (hid, id)        => api.get(`/api/v1/households/${hid}/continuity/transmission/${id}`),
+  handbook:      (hid)            => api.get(`/api/v1/households/${hid}/continuity/handbook`),
+  handbookPdfUrl: (hid)           => `/api/v1/households/${hid}/continuity/handbook.pdf`,
+
+  // --- sharing and emergency access -----------------------------------------
+  shares:        (hid)            => api.get(`/api/v1/households/${hid}/shares`),
+  createShare:   (hid, body)      => api.post(`/api/v1/households/${hid}/shares`, body),
+  shareViews:    (hid, id)        => api.get(`/api/v1/households/${hid}/shares/${id}/views`),
+  revokeShare:   (hid, id)        => api.del(`/api/v1/households/${hid}/shares/${id}`),
+  trustedContacts: (hid)          => api.get(`/api/v1/households/${hid}/emergency/contacts`),
+  nameTrustedContact: (hid, body) => api.post(`/api/v1/households/${hid}/emergency/contacts`, body),
+  removeTrustedContact: (hid, id) => api.del(`/api/v1/households/${hid}/emergency/contacts/${id}`),
+  emergencyRequests: (hid)        => api.get(`/api/v1/households/${hid}/emergency/requests`),
+  requestEmergencyAccess: (hid, b) => api.post(`/api/v1/households/${hid}/emergency/requests`, b),
+  vetoEmergencyAccess: (hid, id)  => api.post(`/api/v1/households/${hid}/emergency/requests/${id}/veto`),
+  withdrawEmergencyAccess: (hid, id) =>
+    api.post(`/api/v1/households/${hid}/emergency/requests/${id}/withdraw`),
+
   // --- documents ------------------------------------------------------------
   documents:     (hid)            => api.get(`/api/v1/households/${hid}/documents`),
   documentAccess: (hid, id)       => api.post(`/api/v1/households/${hid}/documents/${id}/access`),

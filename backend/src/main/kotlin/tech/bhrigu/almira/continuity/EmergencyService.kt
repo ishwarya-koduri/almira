@@ -41,6 +41,13 @@ data class EmergencyRequestRow(
     /** waiting | open | vetoed | withdrawn | ended */
     val status: String,
     val secondsUntilUnlock: Long?,
+    /**
+     * True when the person it concerns has used Almira since the request. The
+     * window stays shut while this holds — signing in is the plainest possible
+     * statement that someone is reachable, and it stops the clock without them
+     * having to understand what a veto is.
+     */
+    val subjectHasBeenActive: Boolean,
     val explanation: String,
 )
 
@@ -296,7 +303,11 @@ class EmergencyService(
         val userId = userContext.currentUserId()
         return jdbc.query(
             """
-            select r.*, m.display_name as subject_name, u.full_name as requester_name
+            select r.*, m.display_name as subject_name, u.full_name as requester_name,
+                   exists (
+                     select 1 from user_sessions s
+                     where s.user_id = m.user_id and s.last_used_at > r.requested_at
+                   ) as subject_active
             from emergency_requests r
             left join members m on m.id = r.subject_member_id
             left join users u on u.id = r.requested_by
@@ -309,12 +320,17 @@ class EmergencyService(
             val vetoedAt = rs.getTimestamp("vetoed_at")?.toInstant()
             val revokedAt = rs.getTimestamp("revoked_at")?.toInstant()
             val now = Instant.now()
+            val subjectActive = rs.getBoolean("subject_active")
             val status = when {
                 vetoedAt != null -> "vetoed"
                 revokedAt != null -> "withdrawn"
                 now.isBefore(unlockAt) -> "waiting"
-                now.isBefore(expiresAt) -> "open"
-                else -> "ended"
+                !now.isBefore(expiresAt) -> "ended"
+                // Past the wait, still inside the window, but the person has
+                // been here since: it does not open, and it is not a refusal
+                // either — they simply turned out to be reachable.
+                subjectActive -> "waiting"
+                else -> "open"
             }
             EmergencyRequestRow(
                 id = rs.getObject("id", UUID::class.java),
@@ -329,19 +345,25 @@ class EmergencyService(
                 vetoedAt = vetoedAt,
                 revokedAt = revokedAt,
                 status = status,
-                secondsUntilUnlock = if (status == "waiting") {
+                secondsUntilUnlock = if (status == "waiting" && now.isBefore(unlockAt)) {
                     Duration.between(now, unlockAt).seconds
                 } else {
                     null
                 },
-                explanation = explain(status, rs.getString("subject_name")),
+                subjectHasBeenActive = subjectActive,
+                explanation = explain(status, rs.getString("subject_name"), subjectActive),
             )
         }
     }
 
-    private fun explain(status: String, subject: String?) = when (status) {
-        "waiting" -> "Waiting. ${subject ?: "The person it concerns"} can stop this at any time " +
-            "before it opens, and has been told."
+    private fun explain(status: String, subject: String?, subjectActive: Boolean) = when (status) {
+        "waiting" -> if (subjectActive) {
+            "${subject ?: "The person it concerns"} has used Almira since you asked, so nothing " +
+                "will open. They are reachable — talk to them."
+        } else {
+            "Waiting. ${subject ?: "The person it concerns"} can stop this at any time " +
+                "before it opens, and has been told."
+        }
         "open" -> "Open. Only records marked for the family summary are visible, and every " +
             "view is logged."
         "vetoed" -> "Stopped by ${subject ?: "the person it concerns"}. Nothing was opened."

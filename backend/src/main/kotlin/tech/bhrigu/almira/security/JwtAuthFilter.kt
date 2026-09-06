@@ -25,6 +25,7 @@ class JwtAuthFilter(
     private val jwtService: JwtService,
     private val userContext: RequestUserContext,
     private val revocations: SessionRevocationCache,
+    private val activity: SessionActivity,
 ) : OncePerRequestFilter() {
 
     override fun doFilterInternal(
@@ -43,6 +44,10 @@ class JwtAuthFilter(
                     // The session id travels with the identity: some decisions
                     // are about this device, not the account (see StepUpService).
                     userContext.set(claims.userId, claims.sessionId)
+                    // Throttled, and deliberately here rather than on refresh:
+                    // "last seen" has to mean last seen, because the
+                    // emergency-access window depends on it.
+                    activity.seen(claims.sessionId)
                     SecurityContextHolder.getContext().authentication =
                         UsernamePasswordAuthenticationToken(
                             claims.userId,

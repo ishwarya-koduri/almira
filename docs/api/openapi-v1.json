@@ -2103,6 +2103,9 @@
           "status": {
             "type": "string"
           },
+          "subjectHasBeenActive": {
+            "type": "boolean"
+          },
           "subjectMemberId": {
             "format": "uuid",
             "type": "string"
@@ -2126,6 +2129,7 @@
           "requestedAt",
           "requestedByMe",
           "status",
+          "subjectHasBeenActive",
           "subjectMemberId",
           "unlockAt"
         ],

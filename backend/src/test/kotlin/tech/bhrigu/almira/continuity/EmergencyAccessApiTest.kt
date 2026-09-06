@@ -53,6 +53,20 @@ class EmergencyAccessApiTest : ApiTestBase() {
             """.trimIndent(),
             householdId,
         )
+        // And the silence that goes with it. The window opens only if the person
+        // it concerns has not used Almira since the request, so a fixture that
+        // ages the request but not the sessions is describing an owner who
+        // asked, waited — and was demonstrably here the whole time.
+        db.update(
+            """
+            update user_sessions set last_used_at = now() - interval '30 days'
+            where user_id in (
+              select m.user_id from members m
+              where m.household_id = ?::uuid and m.user_id is not null
+            )
+            """.trimIndent(),
+            householdId,
+        )
     }
 
     @Test
@@ -189,6 +203,49 @@ class EmergencyAccessApiTest : ApiTestBase() {
             .isEqualTo("Home locker")
     }
 
+    /**
+     * The veto protects an owner who notices. The point of an inactivity unlock
+     * is the owner who cannot — and its mirror image is the owner who is
+     * perfectly fine and simply never saw the notification. Signing in is the
+     * plainest possible statement that somebody is reachable, and it stops the
+     * clock without them having to understand what a veto is.
+     */
+    @Test
+    fun `using Almira after the request keeps the window shut`() {
+        capture(
+            owner, householdId, "gold_physical", "Her private gold", BigDecimal("500000"),
+            visibility = "private",
+        )
+        nameContact()
+        requestAccess()
+        fastForwardPastTheWait()
+
+        // The owner is alive and well, and uses the app. Written directly
+        // because the filter throttles this to once every couple of minutes —
+        // right in production, and in a test it would only prove the throttle.
+        // That the filter records it at all is asserted separately below.
+        db.update(
+            """
+            update user_sessions set last_used_at = now()
+            where user_id = (
+              select m.user_id from members m where m.id = ?::uuid
+            )
+            """.trimIndent(),
+            ownerMemberId,
+        )
+
+        assertThat(get("/api/v1/households/$householdId/investments", trusted).json())
+            .describedAs("they turned out to be reachable, so nothing opens")
+            .isEmpty()
+
+        val request = get("/api/v1/households/$householdId/emergency/requests", trusted).json().first()
+        assertThat(request.path("status").asText()).isEqualTo("waiting")
+        assertThat(request.path("subjectHasBeenActive").asBoolean()).isTrue()
+        assertThat(request.path("explanation").asText())
+            .describedAs("says why, and what to do instead")
+            .contains("They are reachable")
+    }
+
     @Test
     fun `an expired window closes on its own`() {
         capture(
@@ -235,6 +292,36 @@ class EmergencyAccessApiTest : ApiTestBase() {
         assertThat(get("/api/v1/households/$householdId/investments", third).json())
             .describedAs("the unlock belongs to whoever asked, not to everyone")
             .isEmpty()
+    }
+
+    /**
+     * The rule above is only worth anything if "last seen" means last seen.
+     * Refreshing a token used to be the only signal, which is far too coarse:
+     * an access token lasts fifteen minutes, so somebody reading their records
+     * for ten of them looked exactly like somebody who had vanished.
+     */
+    @Test
+    fun `an ordinary request records that someone was here`() {
+        // A brand-new session, because the filter writes at most once every
+        // couple of minutes per session — right in production, and in a test on
+        // an established session it would only prove the throttle.
+        val fresh = signIn()
+        db.update(
+            """
+            update user_sessions set last_used_at = now() - interval '1 day'
+            where id = (select id from user_sessions order by created_at desc limit 1)
+            """.trimIndent(),
+        )
+
+        get("/api/v1/me", fresh)
+
+        val lastUsed = db.queryForList(
+            "select last_used_at from user_sessions order by created_at desc limit 1",
+        ).single()["last_used_at"] as java.sql.Timestamp
+
+        assertThat(lastUsed.toInstant())
+            .describedAs("a read counts as being here, not only a token refresh")
+            .isAfter(java.time.Instant.now().minusSeconds(120))
     }
 
     @Test

@@ -554,6 +554,17 @@ update emergency_requests
 
 select pg_temp.assert(pg_temp.sees('i_private'),
   'once the window opens, a continuity-marked private record is visible');
+
+-- ...and shuts again the moment the person turns out to be reachable. Signing
+-- in is the plainest statement that somebody is here, and it stops the clock
+-- without them having to understand what a veto is.
+insert into user_sessions (user_id, expires_at, last_used_at)
+  values ((select v from t where k='ish'), now() + interval '1 day', now());
+select pg_temp.assert(not pg_temp.sees('i_private'),
+  'using Almira after the request keeps the window shut');
+delete from user_sessions where user_id = (select v from t where k='ish');
+select pg_temp.assert(pg_temp.sees('i_private'),
+  'and the window is open again once that activity is behind the request');
 select pg_temp.assert(not pg_temp.sees('i_excluded'),
   'a record left out of continuity stays invisible even under emergency access');
 

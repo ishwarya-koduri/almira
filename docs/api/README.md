@@ -200,11 +200,15 @@ be withdrawn and replaced, never recovered.
 **An expired link and a withdrawn one answer identically.** Do not write UI that
 distinguishes them: telling them apart would confirm a link once existed.
 
-**Emergency access is a state machine with a clock.** `status` is `waiting`,
-`open`, `vetoed`, `withdrawn` or `ended`, derived from timestamps rather than
-stored — so a client should re-read rather than cache it, and
-`secondsUntilUnlock` is there to render a countdown honestly. Only the subject
-may veto; only the requester may withdraw. When a window is open, the ordinary
+**Emergency access is a state machine with a clock *and* a silence.** `status`
+is `waiting`, `open`, `vetoed`, `withdrawn` or `ended`, derived from timestamps
+rather than stored — so a client should re-read rather than cache it, and
+`secondsUntilUnlock` renders a countdown honestly. The window also stays shut
+while `subjectHasBeenActive` is true: using Almira after somebody asked about
+you is the plainest possible statement that you are reachable, and it stops the
+clock without you having to understand what a veto is. Render `explanation`,
+which says which of the two is happening. Only the subject may veto; only the
+requester may withdraw. When a window is open, the ordinary
 endpoints simply return more rows: there is no separate "emergency mode" API,
 which is exactly why nothing can forget to apply it.
 

@@ -51,7 +51,7 @@ check it.*
 | Sealed fields | The operator, a subpoena, a full backup | Client-side AES-GCM under a PBKDF2 key the server never sees | `E2eApiTest` — searches the database for the plaintext |
 | A session | Token theft, a borrowed unlocked phone | Single-use refresh with reuse-detection; step-up for sensitive reads | `AuthApiTest` |
 | A guest link | Anyone who receives or guesses one | 256-bit token stored hashed; scope materialised at creation; read-only guest transaction; expiry, view cap, revocation | `ShareApiTest`, SQL suite guest section |
-| Emergency access | A trusted contact acting too early, or a coercive one | Waiting period, owner veto, notifications, audit, continuity-only reveal, read-only | `EmergencyAccessApiTest`, SQL suite emergency section |
+| Emergency access | A trusted contact acting too early, or a coercive one | Waiting period, owner veto, **inactivity requirement**, notifications, audit, continuity-only reveal, read-only | `EmergencyAccessApiTest`, SQL suite emergency section |
 | The audit trail | The application itself | `almira_app` has INSERT only on `activity_log` | `R__grants.sql`; SQL suite |
 | Imported provider data | A provider returning too much, or the wrong household's | Imports arrive at the household's default visibility; the AA sandbox proves the consent gate | `ProviderApiTest` |
 
@@ -85,6 +85,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | AC-6 | Advisors see only explicit grants — `V23__currencies_and_advisors.sql` |
 | AC-7 | Guest sessions are read-only in the database — `V21__guests_are_read_only.sql` |
 | AC-8 | Emergency access reveals continuity records only, and only to the requester — `V20`, `EmergencyService.kt` |
+| AC-9 | The emergency window opens only after real inactivity by the person it concerns — `V25__emergency_needs_real_inactivity.sql`, `security/SessionActivity.kt` |
 
 ### Cryptography
 | | |

@@ -126,10 +126,13 @@ indistinguishable from outside.
 
 **Emergency access** — a person the owner has named asks, and then nothing
 happens for a waiting period the owner chose. Both sides are notified; the owner
-can stop it at any point; the whole sequence is audited. When the window opens
-it reveals records marked for continuity and the will, and nothing else — and it
-grants reading only. The state is derived from timestamps, so no failed
-background job can leave an unlock switched on.
+can stop it at any point; the whole sequence is audited. The window also opens
+only if the owner has genuinely not used Almira since the request: signing in is
+the plainest possible statement that somebody is reachable, and it stops the
+clock without them having to understand what a veto is. When it does open it
+reveals records marked for continuity and the will, and nothing else — and it
+grants reading only. The state is derived from timestamps and activity, so no
+failed background job can leave an unlock switched on.
 
 **An advisor** — a colleague with a login who sees only what has been explicitly
 shared with them. Household visibility does not reach them, and they cannot

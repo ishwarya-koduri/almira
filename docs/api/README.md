@@ -1,7 +1,7 @@
 # Building a client against Almira v1
 
-The contract is [`openapi-v1.json`](openapi-v1.json) — 51 paths, 73 operations,
-81 schemas. Generate a typed client from it; do not hand-write one.
+The contract is [`openapi-v1.json`](openapi-v1.json) — 78 paths, 107 operations,
+119 schemas. Generate a typed client from it; do not hand-write one.
 
 **v1 is additive-only.** New endpoints and new optional fields may appear; nothing
 will be removed, renamed or retyped. A breaking change goes to `/api/v2` and v1
@@ -129,6 +129,55 @@ rather than an app release.
 
 Unknown attribute keys are rejected, deliberately: a typo that lands in `jsonb`
 looks saved and is never seen again.
+
+---
+
+## Phase 2: what the schema still cannot tell you
+
+**Returns are allowed to be missing.** `Performance` carries nulls for
+`xirr`, `cagr`, `absoluteReturn` and the gains, each with a `note` saying why —
+"Showing what you paid. Add today's value to see the return." Render the note.
+A null shown as `0%` is a claim the data does not support, and XIRR in
+particular is null wherever the cash flows cannot produce an honest answer.
+
+**Tax is informational and never cached.** Every response carries `disclaimer`;
+show it with the numbers, not in a footer. `DeductionSource.basis` says whether a
+figure came from recorded `transactions`, a `declared` amount, or an `estimated`
+one — a meter that hides this is stating an opinion. The financial year runs
+1 April – 31 March; `fy` accepts `2026-27`, `2026-2027` or `2026`.
+
+**Nothing a parser produces is saved.** `POST /capture/parse-text` and
+`/capture/parse-document` return proposed fields with the text each came from, so
+they can be shown as editable chips and dropped individually. A document upload
+is the exception: the file itself is stored, encrypted, whether or not anything
+could be read from it — the proof is the durable part, and `extractedFrom` says
+`pdf-text-layer` or `none`.
+
+**Import: preview, then commit.** `POST /import/preview` proposes a column
+mapping; `POST /import` runs it, `dryRun: true` by default. On a dry run read
+`wouldImport`, not `imported` — `imported` is 0 there and reads as "nothing will
+happen". A row whose cell was present but unreadable still imports, with a
+message naming the cell; show those before the Import button, not after. Rows are
+numbered as the spreadsheet numbers them, header included. Re-importing the same
+file adds nothing.
+
+**Templates belong to their maker.** `mine` is false for one someone shared —
+usable, not editable, so do not offer an edit affordance. A template saved from a
+record can never be shared more widely than that record; the refusal code is
+`template_would_widen`. Applying one can fail on a field the type requires
+(`attributes_invalid`, with `details.fields`) — offer the full form rather than a
+dead end.
+
+**Duplicate keeps the shape; rollover keeps the history.** A duplicate copies
+type, institution, owners and nominees, and deliberately not the valuations or
+transactions. A rollover marks the old record `matured`, keeps it, sets
+`rolledFromId` on the new one and carries the goal allocations across. A record
+superseded by a rollover stops counting toward net worth and goal funding — so
+the two never both count — while remaining visible as history.
+
+**Completeness is a measure of the records, not of the person.** Each check
+carries the ids to fix, so offer one tap. An empty household scores 100 with a
+`nextStep` inviting a first record; do not render 0%.
 
 ---
 

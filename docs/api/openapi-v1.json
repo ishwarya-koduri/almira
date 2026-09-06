@@ -137,6 +137,62 @@
         ],
         "type": "object"
       },
+      "ApplyTemplate": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "initialValuation": {
+            "$ref": "#/components/schemas/ValuationInput"
+          },
+          "investedAmount": {
+            "type": "number"
+          },
+          "maturityDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerInput"
+            },
+            "type": "array"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "owners",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
       "AttentionItem": {
         "properties": {
           "code": {
@@ -243,6 +299,43 @@
           "percentage",
           "value",
           "valueFormatted"
+        ],
+        "type": "object"
+      },
+      "CapitalGains": {
+        "properties": {
+          "disclaimer": {
+            "type": "string"
+          },
+          "financialYear": {
+            "type": "string"
+          },
+          "netRealized": {
+            "type": "number"
+          },
+          "netRealizedFormatted": {
+            "type": "string"
+          },
+          "realized": {
+            "items": {
+              "$ref": "#/components/schemas/GainsBucket"
+            },
+            "type": "array"
+          },
+          "unrealized": {
+            "items": {
+              "$ref": "#/components/schemas/UnrealizedPosition"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "disclaimer",
+          "financialYear",
+          "netRealized",
+          "netRealizedFormatted",
+          "realized",
+          "unrealized"
         ],
         "type": "object"
       },
@@ -372,6 +465,25 @@
         ],
         "type": "object"
       },
+      "ChangeGoalVisibilityBody": {
+        "properties": {
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "visibility",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
       "ChangeLiabilityVisibilityBody": {
         "properties": {
           "visibility": {
@@ -408,6 +520,41 @@
           "visibility",
           "visibleToMemberIds"
         ],
+        "type": "object"
+      },
+      "ColumnMapping": {
+        "properties": {
+          "institution": {
+            "type": "string"
+          },
+          "investedAmount": {
+            "type": "string"
+          },
+          "maturityDate": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "CommonFieldDef": {
@@ -449,6 +596,118 @@
             "$ref": "#/components/schemas/RolloverDraft"
           }
         },
+        "type": "object"
+      },
+      "Completeness": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CompletenessCheck"
+            },
+            "type": "array"
+          },
+          "nextStep": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "recordCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "score": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "scoreLabel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "checks",
+          "note",
+          "recordCount",
+          "score",
+          "scoreLabel"
+        ],
+        "type": "object"
+      },
+      "CompletenessCheck": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "done": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "fix": {
+            "type": "string"
+          },
+          "investmentIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "label": {
+            "type": "string"
+          },
+          "outstanding": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "weight": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "done",
+          "fix",
+          "investmentIds",
+          "label",
+          "outstanding",
+          "weight"
+        ],
+        "type": "object"
+      },
+      "Concentration": {
+        "properties": {
+          "investmentIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "percentage": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number"
+          },
+          "valueFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investmentIds",
+          "kind",
+          "label",
+          "percentage",
+          "value",
+          "valueFormatted"
+        ],
         "type": "object"
       },
       "CreateAccountBody": {
@@ -504,6 +763,45 @@
           "label",
           "storeFullNumber",
           "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "CreateGoalBody": {
+        "properties": {
+          "icon": {
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 0,
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "priority": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "targetAmount": {
+            "type": "number"
+          },
+          "targetDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "priority",
+          "targetAmount"
         ],
         "type": "object"
       },
@@ -802,6 +1100,63 @@
         ],
         "type": "object"
       },
+      "CreateTemplate": {
+        "properties": {
+          "accountId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "attributes": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "fromInvestmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "institutionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "investedAmount": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "storageLocation": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "typeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "visibility"
+        ],
+        "type": "object"
+      },
       "CreateTypeBody": {
         "properties": {
           "categoryCode": {
@@ -993,6 +1348,128 @@
         ],
         "type": "object"
       },
+      "DeductionMeter": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "limitFormatted": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "percentUsed": {
+            "type": "number"
+          },
+          "remaining": {
+            "type": "number"
+          },
+          "remainingFormatted": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DeductionSource"
+            },
+            "type": "array"
+          },
+          "used": {
+            "type": "number"
+          },
+          "usedFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "label",
+          "limit",
+          "limitFormatted",
+          "percentUsed",
+          "remaining",
+          "remainingFormatted",
+          "section",
+          "sources",
+          "used",
+          "usedFormatted"
+        ],
+        "type": "object"
+      },
+      "DeductionSource": {
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "amountFormatted": {
+            "type": "string"
+          },
+          "basis": {
+            "type": "string"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "amountFormatted",
+          "basis",
+          "investmentId",
+          "title"
+        ],
+        "type": "object"
+      },
+      "DocumentCapture": {
+        "properties": {
+          "documentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "extractedFrom": {
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            },
+            "type": "array"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "needsReview": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "documentId",
+          "extractedFrom",
+          "fields",
+          "fileName",
+          "needsReview"
+        ],
+        "type": "object"
+      },
       "DocumentLinkResponse": {
         "properties": {
           "entityId": {
@@ -1088,6 +1565,76 @@
         ],
         "type": "object"
       },
+      "DuplicateInvestment": {
+        "properties": {
+          "carryMaturityDate": {
+            "type": "boolean"
+          },
+          "copyNominees": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "investedAmount": {
+            "type": "number"
+          },
+          "maturityDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "carryMaturityDate",
+          "copyNominees"
+        ],
+        "type": "object"
+      },
+      "Field": {
+        "properties": {
+          "confidence": {
+            "type": "string"
+          },
+          "display": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "sourceText": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "confidence",
+          "display",
+          "key",
+          "label",
+          "sourceText",
+          "value"
+        ],
+        "type": "object"
+      },
       "FieldDef": {
         "properties": {
           "dataType": {
@@ -1150,6 +1697,188 @@
         ],
         "type": "object"
       },
+      "FundingSourceResponse": {
+        "properties": {
+          "allocationPct": {
+            "type": "number"
+          },
+          "contribution": {
+            "type": "number"
+          },
+          "contributionFormatted": {
+            "type": "string"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "allocationPct",
+          "contribution",
+          "contributionFormatted",
+          "investmentId",
+          "title"
+        ],
+        "type": "object"
+      },
+      "GainsBucket": {
+        "properties": {
+          "costBasis": {
+            "type": "number"
+          },
+          "disposals": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "gain": {
+            "type": "number"
+          },
+          "gainFormatted": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "proceeds": {
+            "type": "number"
+          },
+          "term": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "costBasis",
+          "disposals",
+          "gain",
+          "gainFormatted",
+          "label",
+          "proceeds",
+          "term"
+        ],
+        "type": "object"
+      },
+      "GoalProgress": {
+        "properties": {
+          "monthlyToClose": {
+            "type": "number"
+          },
+          "monthsRemaining": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "onTrack": {
+            "type": "boolean"
+          },
+          "percentComplete": {
+            "type": "number"
+          },
+          "shortfall": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "percentComplete",
+          "shortfall"
+        ],
+        "type": "object"
+      },
+      "GoalResponse": {
+        "properties": {
+          "disclaimer": {
+            "type": "string"
+          },
+          "funded": {
+            "type": "number"
+          },
+          "fundedBy": {
+            "items": {
+              "$ref": "#/components/schemas/FundingSourceResponse"
+            },
+            "type": "array"
+          },
+          "fundedFormatted": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "priority": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/GoalProgress"
+          },
+          "status": {
+            "type": "string"
+          },
+          "targetAmount": {
+            "type": "number"
+          },
+          "targetAmountFormatted": {
+            "type": "string"
+          },
+          "targetDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "visibleToMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "disclaimer",
+          "funded",
+          "fundedBy",
+          "fundedFormatted",
+          "id",
+          "name",
+          "priority",
+          "progress",
+          "status",
+          "targetAmount",
+          "targetAmountFormatted",
+          "version",
+          "visibility",
+          "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
       "HolderInput": {
         "properties": {
           "holderType": {
@@ -1208,6 +1937,139 @@
         ],
         "type": "object"
       },
+      "ImportPreview": {
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "headers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          },
+          "rowCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sample": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "suggestedMapping": {
+            "$ref": "#/components/schemas/ColumnMapping"
+          }
+        },
+        "required": [
+          "fileName",
+          "headers",
+          "note",
+          "rowCount",
+          "sample",
+          "suggestedMapping"
+        ],
+        "type": "object"
+      },
+      "ImportReport": {
+        "properties": {
+          "dryRun": {
+            "type": "boolean"
+          },
+          "duplicates": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "failed": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "imported": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RowOutcome"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "wouldImport": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dryRun",
+          "duplicates",
+          "failed",
+          "imported",
+          "note",
+          "rows",
+          "total",
+          "wouldImport"
+        ],
+        "type": "object"
+      },
+      "Insights": {
+        "properties": {
+          "concentration": {
+            "items": {
+              "$ref": "#/components/schemas/Concentration"
+            },
+            "type": "array"
+          },
+          "disclaimer": {
+            "type": "string"
+          },
+          "holdingCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "liquidity": {
+            "items": {
+              "$ref": "#/components/schemas/LiquidityBucket"
+            },
+            "type": "array"
+          },
+          "observations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "totalAssets": {
+            "type": "number"
+          },
+          "totalAssetsFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "concentration",
+          "disclaimer",
+          "holdingCount",
+          "liquidity",
+          "observations",
+          "totalAssets",
+          "totalAssetsFormatted"
+        ],
+        "type": "object"
+      },
       "InstitutionRow": {
         "properties": {
           "id": {
@@ -1232,6 +2094,32 @@
           "isCustom",
           "kind",
           "name"
+        ],
+        "type": "object"
+      },
+      "InterestIncome": {
+        "properties": {
+          "bySource": {
+            "items": {
+              "$ref": "#/components/schemas/DeductionSource"
+            },
+            "type": "array"
+          },
+          "financialYear": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number"
+          },
+          "totalFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bySource",
+          "financialYear",
+          "total",
+          "totalFormatted"
         ],
         "type": "object"
       },
@@ -1315,6 +2203,10 @@
           },
           "quantity": {
             "type": "number"
+          },
+          "rolledFromId": {
+            "format": "uuid",
+            "type": "string"
           },
           "startDate": {
             "format": "date",
@@ -1589,6 +2481,42 @@
         ],
         "type": "object"
       },
+      "LiquidityBucket": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "percentage": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number"
+          },
+          "valueFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "count",
+          "description",
+          "label",
+          "percentage",
+          "value",
+          "valueFormatted"
+        ],
+        "type": "object"
+      },
       "LoginResponse": {
         "properties": {
           "accessToken": {
@@ -1618,6 +2546,22 @@
           "refreshToken",
           "tokenType",
           "user"
+        ],
+        "type": "object"
+      },
+      "MapInvestmentBody": {
+        "properties": {
+          "allocationPct": {
+            "type": "number"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "allocationPct",
+          "investmentId"
         ],
         "type": "object"
       },
@@ -1881,6 +2825,91 @@
         ],
         "type": "object"
       },
+      "ParseTextBody": {
+        "properties": {
+          "text": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "Parsed": {
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            },
+            "type": "array"
+          },
+          "input": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "unparsed": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fields",
+          "input",
+          "unparsed"
+        ],
+        "type": "object"
+      },
+      "Performance": {
+        "properties": {
+          "absoluteReturn": {
+            "type": "number"
+          },
+          "cagr": {
+            "type": "number"
+          },
+          "currentValue": {
+            "type": "number"
+          },
+          "currentValueFormatted": {
+            "type": "string"
+          },
+          "invested": {
+            "type": "number"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "realizedGain": {
+            "type": "number"
+          },
+          "realizedGainFormatted": {
+            "type": "string"
+          },
+          "unrealizedGain": {
+            "type": "number"
+          },
+          "unrealizedGainFormatted": {
+            "type": "string"
+          },
+          "xirr": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "type": "object"
+      },
       "PreferencesBody": {
         "properties": {
           "defaultVisibility": {
@@ -1890,6 +2919,41 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "RecordTransactionBody": {
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "fromAccountId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "ratio": {
+            "type": "string"
+          },
+          "txnDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "txnType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "txnDate",
+          "txnType"
+        ],
         "type": "object"
       },
       "RefreshBody": {
@@ -2032,6 +3096,47 @@
           "suggestedStartDate",
           "title",
           "typeId"
+        ],
+        "type": "object"
+      },
+      "RolloverResponse": {
+        "properties": {
+          "created": {
+            "$ref": "#/components/schemas/CreateInvestmentResponse"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/InvestmentResponse"
+          }
+        },
+        "required": [
+          "created",
+          "previous"
+        ],
+        "type": "object"
+      },
+      "RowOutcome": {
+        "properties": {
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "row": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "row"
         ],
         "type": "object"
       },
@@ -2221,6 +3326,76 @@
         ],
         "type": "object"
       },
+      "TaxLotResponse": {
+        "properties": {
+          "acquiredOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "exhausted": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "remainingQty": {
+            "type": "number"
+          },
+          "unitCost": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "acquiredOn",
+          "exhausted",
+          "id",
+          "quantity",
+          "remainingQty",
+          "unitCost"
+        ],
+        "type": "object"
+      },
+      "TaxPack": {
+        "properties": {
+          "capitalGains": {
+            "$ref": "#/components/schemas/CapitalGains"
+          },
+          "deductions": {
+            "items": {
+              "$ref": "#/components/schemas/DeductionMeter"
+            },
+            "type": "array"
+          },
+          "disclaimer": {
+            "type": "string"
+          },
+          "financialYear": {
+            "type": "string"
+          },
+          "interestIncome": {
+            "$ref": "#/components/schemas/InterestIncome"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "capitalGains",
+          "deductions",
+          "disclaimer",
+          "financialYear",
+          "interestIncome"
+        ],
+        "type": "object"
+      },
       "TaxonomyResponse": {
         "properties": {
           "categoryCode": {
@@ -2251,6 +3426,104 @@
         ],
         "type": "object"
       },
+      "TemplateResponse": {
+        "properties": {
+          "accountId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "accountLabel": {
+            "type": "string"
+          },
+          "attributes": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "categoryCode": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "institutionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "institutionName": {
+            "type": "string"
+          },
+          "investedAmount": {
+            "type": "number"
+          },
+          "investedAmountFormatted": {
+            "type": "string"
+          },
+          "mine": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "storageLocation": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "typeCode": {
+            "type": "string"
+          },
+          "typeIcon": {
+            "type": "string"
+          },
+          "typeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "typeLabel": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "useCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attributes",
+          "categoryCode",
+          "currency",
+          "id",
+          "mine",
+          "name",
+          "typeCode",
+          "typeId",
+          "typeLabel",
+          "useCount",
+          "version",
+          "visibility"
+        ],
+        "type": "object"
+      },
       "TokenPair": {
         "properties": {
           "accessToken": {
@@ -2272,6 +3545,52 @@
           "expiresInSeconds",
           "refreshToken",
           "tokenType"
+        ],
+        "type": "object"
+      },
+      "TransactionResponse": {
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "amountFormatted": {
+            "type": "string"
+          },
+          "fromAccountId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fromAccountLabel": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "ratio": {
+            "type": "string"
+          },
+          "txnDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "txnType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "txnDate",
+          "txnType"
         ],
         "type": "object"
       },
@@ -2372,6 +3691,68 @@
         ],
         "type": "object"
       },
+      "UnallocatedHolding": {
+        "properties": {
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "unallocatedPct": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number"
+          },
+          "valueFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investmentId",
+          "title",
+          "unallocatedPct"
+        ],
+        "type": "object"
+      },
+      "UnrealizedPosition": {
+        "properties": {
+          "costOfHoldings": {
+            "type": "number"
+          },
+          "currentValue": {
+            "type": "number"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "termIfSoldToday": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "unrealizedGain": {
+            "type": "number"
+          },
+          "unrealizedGainFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "costOfHoldings",
+          "currentValue",
+          "investmentId",
+          "termIfSoldToday",
+          "title",
+          "unrealizedGain",
+          "unrealizedGainFormatted"
+        ],
+        "type": "object"
+      },
       "UpcomingItem": {
         "properties": {
           "date": {
@@ -2431,6 +3812,38 @@
           },
           "storeFullNumber": {
             "type": "boolean"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "UpdateGoalBody": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "priority": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "targetAmount": {
+            "type": "number"
+          },
+          "targetDate": {
+            "format": "date",
+            "type": "string"
           },
           "version": {
             "format": "int32",
@@ -2592,6 +4005,54 @@
             "type": "integer"
           }
         },
+        "type": "object"
+      },
+      "UpdateTemplate": {
+        "properties": {
+          "accountId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "attributes": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "institutionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "investedAmount": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "storageLocation": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
         "type": "object"
       },
       "ValuationInput": {
@@ -3068,7 +4529,7 @@
     },
     "/api/v1/households/{householdId}/accounts": {
       "get": {
-        "operationId": "list_5",
+        "operationId": "list_7",
         "parameters": [
           {
             "in": "path",
@@ -3100,7 +4561,7 @@
         ]
       },
       "post": {
-        "operationId": "create_5",
+        "operationId": "create_7",
         "parameters": [
           {
             "in": "path",
@@ -3141,7 +4602,7 @@
     },
     "/api/v1/households/{householdId}/accounts/{id}": {
       "delete": {
-        "operationId": "archive_2",
+        "operationId": "archive_3",
         "parameters": [
           {
             "in": "path",
@@ -3172,7 +4633,7 @@
         ]
       },
       "get": {
-        "operationId": "get_3",
+        "operationId": "get_5",
         "parameters": [
           {
             "in": "path",
@@ -3210,7 +4671,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_3",
+        "operationId": "update_5",
         "parameters": [
           {
             "in": "path",
@@ -3300,7 +4761,7 @@
     },
     "/api/v1/households/{householdId}/accounts/{id}/visibility": {
       "patch": {
-        "operationId": "changeVisibility_2",
+        "operationId": "changeVisibility_3",
         "parameters": [
           {
             "in": "path",
@@ -3345,6 +4806,96 @@
         },
         "tags": [
           "account-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/capture/parse-document": {
+      "post": {
+        "operationId": "parseDocument",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentCapture"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "capture-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/capture/parse-text": {
+      "post": {
+        "operationId": "parseText",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParseTextBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/Parsed"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "capture-controller"
         ]
       }
     },
@@ -3399,7 +4950,7 @@
     },
     "/api/v1/households/{householdId}/documents": {
       "get": {
-        "operationId": "list_4",
+        "operationId": "list_6",
         "parameters": [
           {
             "in": "path",
@@ -3582,7 +5133,7 @@
     },
     "/api/v1/households/{householdId}/documents/{id}": {
       "delete": {
-        "operationId": "archive_3",
+        "operationId": "archive_4",
         "parameters": [
           {
             "in": "path",
@@ -3613,7 +5164,7 @@
         ]
       },
       "get": {
-        "operationId": "get_4",
+        "operationId": "get_6",
         "parameters": [
           {
             "in": "path",
@@ -3803,6 +5354,495 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/goals": {
+      "get": {
+        "operationId": "list_5",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GoalResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "goal-controller"
+        ]
+      },
+      "post": {
+        "operationId": "create_6",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGoalBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "goal-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/goals-unallocated": {
+      "get": {
+        "operationId": "unallocated",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UnallocatedHolding"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "unallocated-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/goals/{id}": {
+      "delete": {
+        "operationId": "archive_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "goal-controller"
+        ]
+      },
+      "get": {
+        "operationId": "get_4",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "goal-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "update_4",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGoalBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "goal-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/goals/{id}/investments": {
+      "post": {
+        "operationId": "mapInvestment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MapInvestmentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "goal-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/goals/{id}/investments/{investmentId}": {
+      "delete": {
+        "operationId": "unmapInvestment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "investmentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "goal-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/goals/{id}/visibility": {
+      "patch": {
+        "operationId": "changeVisibility_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeGoalVisibilityBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "goal-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/import": {
+      "post": {
+        "operationId": "import",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "import-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/import/preview": {
+      "post": {
+        "operationId": "preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreview"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "import-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/institutions": {
       "get": {
         "operationId": "institutions",
@@ -3894,7 +5934,7 @@
     },
     "/api/v1/households/{householdId}/investments": {
       "get": {
-        "operationId": "list_3",
+        "operationId": "list_4",
         "parameters": [
           {
             "in": "path",
@@ -4026,7 +6066,7 @@
         ]
       },
       "post": {
-        "operationId": "create_4",
+        "operationId": "create_5",
         "parameters": [
           {
             "in": "path",
@@ -4098,7 +6138,7 @@
         ]
       },
       "get": {
-        "operationId": "get_2",
+        "operationId": "get_3",
         "parameters": [
           {
             "in": "path",
@@ -4136,7 +6176,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_2",
+        "operationId": "update_3",
         "parameters": [
           {
             "in": "path",
@@ -4177,6 +6217,55 @@
               }
             },
             "description": "OK"
+          }
+        },
+        "tags": [
+          "investment-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/investments/{id}/duplicate": {
+      "post": {
+        "operationId": "duplicate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateInvestment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateInvestmentResponse"
+                }
+              }
+            },
+            "description": "Created"
           }
         },
         "tags": [
@@ -4227,6 +6316,55 @@
               }
             },
             "description": "OK"
+          }
+        },
+        "tags": [
+          "investment-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/investments/{id}/rollover": {
+      "post": {
+        "operationId": "rollover",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateInvestment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolloverResponse"
+                }
+              }
+            },
+            "description": "Created"
           }
         },
         "tags": [
@@ -4375,9 +6513,238 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/investments/{investmentId}/returns": {
+      "get": {
+        "operationId": "forInvestment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "investmentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/Performance"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "returns-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/investments/{investmentId}/tax-lots": {
+      "get": {
+        "operationId": "lots",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "investmentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TaxLotResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "returns-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/investments/{investmentId}/transactions": {
+      "get": {
+        "operationId": "transactions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "investmentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TransactionResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "returns-controller"
+        ]
+      },
+      "post": {
+        "operationId": "record",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "investmentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordTransactionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TransactionResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "returns-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/investments/{investmentId}/transactions/{transactionId}": {
+      "delete": {
+        "operationId": "remove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "investmentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "transactionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TransactionResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "returns-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/invitations": {
       "get": {
-        "operationId": "list_2",
+        "operationId": "list_3",
         "parameters": [
           {
             "in": "path",
@@ -4409,7 +6776,7 @@
         ]
       },
       "post": {
-        "operationId": "create_3",
+        "operationId": "create_4",
         "parameters": [
           {
             "in": "path",
@@ -4483,7 +6850,7 @@
     },
     "/api/v1/households/{householdId}/liabilities": {
       "get": {
-        "operationId": "list_1",
+        "operationId": "list_2",
         "parameters": [
           {
             "in": "path",
@@ -4523,7 +6890,7 @@
         ]
       },
       "post": {
-        "operationId": "create_2",
+        "operationId": "create_3",
         "parameters": [
           {
             "in": "path",
@@ -4595,7 +6962,7 @@
         ]
       },
       "get": {
-        "operationId": "get_1",
+        "operationId": "get_2",
         "parameters": [
           {
             "in": "path",
@@ -4633,7 +7000,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_1",
+        "operationId": "update_2",
         "parameters": [
           {
             "in": "path",
@@ -5077,7 +7444,7 @@
     },
     "/api/v1/households/{householdId}/reminders": {
       "get": {
-        "operationId": "list",
+        "operationId": "list_1",
         "parameters": [
           {
             "in": "path",
@@ -5127,7 +7494,7 @@
         ]
       },
       "post": {
-        "operationId": "create_1",
+        "operationId": "create_2",
         "parameters": [
           {
             "in": "path",
@@ -5168,7 +7535,7 @@
     },
     "/api/v1/households/{householdId}/reminders/{id}": {
       "delete": {
-        "operationId": "delete",
+        "operationId": "delete_1",
         "parameters": [
           {
             "in": "path",
@@ -5330,6 +7697,109 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/reports/completeness": {
+      "get": {
+        "operationId": "completeness",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/Completeness"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "reports-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/reports/export": {
+      "get": {
+        "operationId": "export",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "csv",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "reports-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/reports/insights": {
+      "get": {
+        "operationId": "insights",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/Insights"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "reports-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/reports/net-worth-trend": {
       "get": {
         "operationId": "netWorthTrend",
@@ -5389,6 +7859,49 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/returns": {
+      "get": {
+        "operationId": "portfolio",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "groupBy",
+            "required": false,
+            "schema": {
+              "default": "total",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Performance"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "returns-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/search": {
       "get": {
         "operationId": "search",
@@ -5438,6 +7951,201 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/tax/capital-gains": {
+      "get": {
+        "operationId": "capitalGains",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fy",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapitalGains"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "tax-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/tax/deductions": {
+      "get": {
+        "operationId": "deductions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fy",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeductionMeter"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "tax-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/tax/interest-income": {
+      "get": {
+        "operationId": "interestIncome",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fy",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestIncome"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "tax-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/tax/pack": {
+      "get": {
+        "operationId": "pack",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fy",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxPack"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "tax-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/taxonomy": {
       "get": {
         "operationId": "taxonomy",
@@ -5472,9 +8180,250 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/templates": {
+      "get": {
+        "operationId": "list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "template-controller"
+        ]
+      },
+      "post": {
+        "operationId": "create_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTemplate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "template-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/templates/{id}": {
+      "delete": {
+        "operationId": "delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "template-controller"
+        ]
+      },
+      "get": {
+        "operationId": "get_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "template-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "update_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTemplate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "template-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/templates/{id}/apply": {
+      "post": {
+        "operationId": "apply",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyTemplate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateInvestmentResponse"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "template-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/trash": {
       "get": {
-        "operationId": "list_6",
+        "operationId": "list_8",
         "parameters": [
           {
             "in": "path",

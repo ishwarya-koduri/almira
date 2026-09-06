@@ -52,9 +52,10 @@ if [ "${1:-}" = "test" ]; then
     | grep -E "ok |PASSED" | sed 's/^psql:[^ ]* NOTICE:  //'
 
   echo
-  say "The end-to-end suite needs a running server:"
+  say "The end-to-end suites need a running server:"
   echo "  ${DIM}./scripts/dev.sh   # in one terminal${OFF}"
-  echo "  ${DIM}./scripts/e2e-phase0.sh${OFF}"
+  echo "  ${DIM}./scripts/e2e-phase0.sh   # foundations, privacy, the balance sheet${OFF}"
+  echo "  ${DIM}./scripts/e2e-phase2.sh   # goals, returns, tax, capture, reports${OFF}"
   exit 0
 fi
 

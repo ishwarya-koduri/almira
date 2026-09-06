@@ -4,7 +4,27 @@
 
 The product documentation lives in [`docs/`](docs/README.md). This file covers the code.
 
-**Status: Phase 1 complete — the whole balance sheet, backend and web client** — phone-OTP sign-in, households and members, type-aware capture including the universal "record anything" type, accounts with encrypted numbers, liabilities and **true net worth**, nominees, reminders and a cash-flow calendar, an encrypted document vault, global search, and the per-record privacy model enforced by PostgreSQL row-level security. Phases 2–4 are laid out in [`docs/10`](docs/10-phases-user-stories-and-dod.md).
+**Status: Phases 0–2 complete — backend and web client.**
+
+Phase 1 gave the whole balance sheet: phone-OTP sign-in, households and members,
+type-aware capture including the universal "record anything" type, accounts with
+encrypted numbers, liabilities and **true net worth**, nominees, reminders and a
+cash-flow calendar, an encrypted document vault, global search, and the
+per-record privacy model enforced by PostgreSQL row-level security.
+
+Phase 2 adds what makes those records worth keeping: goals and what funds them;
+returns (XIRR, CAGR, realised against unrealised, computed only where the data
+supports them); the India tax layer (80C, 80D, 80CCD(1B), 24(b), and capital
+gains from tax lots); three faster ways in — natural-language quick add,
+server-side document reading, and spreadsheet import; templates, duplicate and
+maturity rollover; and reports — completeness, concentration, liquidity, and
+export as CSV, XLSX or PDF.
+
+Every one of them is computed under the caller's own row-level security, so
+derived data leaks no more than the records it derives from — with a test for
+each. Notifications remain a logging stand-in until provider accounts exist, and
+the native app is Phase 3's, built against the frozen v1 contract below.
+Phases 3–4 are laid out in [`docs/10`](docs/10-phases-user-stories-and-dod.md).
 
 ---
 
@@ -71,8 +91,8 @@ not a substitute for one.
 ## The v1 API contract
 
 The API is **frozen at v1** and lives at `/api/v1/**`. The contract is committed
-as [`docs/api/openapi-v1.json`](docs/api/openapi-v1.json) — 51 paths, 73
-operations, 81 schemas — and that file is the handoff artefact the mobile app is
+as [`docs/api/openapi-v1.json`](docs/api/openapi-v1.json) — 78 paths, 107
+operations, 119 schemas — and that file is the handoff artefact the mobile app is
 built against.
 
 **The rule for the life of v1 is additive-only.** New endpoints, new optional
@@ -178,7 +198,7 @@ Switch `ALMIRA_OTP_PROVIDER` to `twilio` or `msg91` and the field disappears. **
 Three suites, each proving something the others cannot.
 
 ```bash
-# 1. Unit + full-stack integration (51 tests)
+# 1. Unit + full-stack integration (290 tests)
 cd backend
 ALMIRA_TEST_DB_URL=jdbc:postgresql://localhost:55432/almira_test \
 ALMIRA_TEST_REDIS_HOST=localhost ALMIRA_TEST_REDIS_PORT=56379 \
@@ -194,16 +214,24 @@ docker exec -e PGPASSWORD=app_dev_password almira-db \
   psql -h 127.0.0.1 -U almira_app -d almira -v ON_ERROR_STOP=1 -f /tmp/t.sql
 ```
 
-27 assertions. If a future refactor bypasses a service, the policies still have to hold.
+45 assertions. If a future refactor bypasses a service, the policies still have to hold.
 
 ```bash
 # 3. End-to-end over real HTTP, against a running server
-./scripts/e2e-phase0.sh
+./scripts/e2e-phase0.sh   # 65 checks
+./scripts/e2e-phase2.sh   # 40 checks
 ```
 
-65 checks covering the whole journey with two signed-in users: sign-in,
-invitation merge, capture, type-aware validation, privacy, true net worth,
-encumbrance, nominees, concurrency, offline idempotency, valuations and trash.
+The first covers the whole journey with two signed-in users: sign-in, invitation
+merge, capture, type-aware validation, privacy, true net worth, encumbrance,
+nominees, concurrency, offline idempotency, valuations and trash.
+
+The second covers what Phase 2 built on top, and the arithmetic that ties it
+together: a renewal that keeps its history and moves the total exactly once, a
+goal funded by the renewal rather than by both records, returns that stay null
+until the data earns them, an import previewed before it is committed — and
+every derived surface, down to the CSV export, hiding precisely what the records
+it derives from hide.
 
 ### Something to look at
 

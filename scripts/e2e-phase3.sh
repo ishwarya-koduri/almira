@@ -19,6 +19,14 @@ BASE="${1:-http://localhost:8080}"
 PASS=0; FAIL=0
 GREEN=$'\033[32m'; RED=$'\033[31m'; DIM=$'\033[2m'; BOLD=$'\033[1m'; OFF=$'\033[0m'
 
+# Both gates before anything is written: a local address, and a server that says
+# it is in development. This suite creates users, households and holdings — the
+# way that goes wrong is a mistyped URL at one in the morning, not an attacker.
+# shellcheck source=scripts/lib/require-development-server.sh
+. "$(dirname "$0")/lib/require-development-server.sh"
+require_development_server "$BASE" \
+  "This suite signs up users and writes holdings, wills, share links and access requests."
+
 jq_() { python3 -c "
 import sys,json
 d=json.load(sys.stdin)

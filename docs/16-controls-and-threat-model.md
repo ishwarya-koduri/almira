@@ -128,6 +128,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | SC-1 | Pinned dependency versions; Gradle lockfile-free but explicit |
 | SC-2 | Migrations are forward-only and checksum-validated by Flyway; `scripts/check-migration.sh` proves the chain applies to an empty database |
 | SC-3 | The API is frozen at v1 and a contract test fails the build on any breaking change — `contract/OpenApiContractTest.kt` |
+| SC-4 | Every data-writing development script refuses a non-local or non-development target, from one shared implementation — `scripts/lib/require-development-server.sh` |
 
 ---
 
@@ -138,8 +139,13 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 ./scripts/dev.sh             # in one terminal
 ./scripts/e2e-phase0.sh      # 65 checks — foundations and privacy
 ./scripts/e2e-phase2.sh      # 40 checks — goals, returns, tax, capture, reports
-./scripts/e2e-phase3.sh      # 40 checks — estate, continuity, sharing, emergency, zero-knowledge
+./scripts/e2e-phase3.sh      # 46 checks — estate, continuity, sharing, emergency, zero-knowledge
 ```
+
+The three end-to-end suites refuse to run against anything that is not a local
+server reporting `environment: development`, so reviewing them cannot damage a
+real deployment. `scripts/smoke-prod.sh` is the one written to run against a
+deployment: it announces that it writes, and prints the SQL to undo it.
 
 Three things worth doing by hand, because they are the claims most worth
 disbelieving:

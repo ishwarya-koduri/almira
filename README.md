@@ -274,6 +274,14 @@ docker exec -e PGPASSWORD=app_dev_password almira-db \
 ./scripts/e2e-phase3.sh   # 46 checks
 ```
 
+All three write heavily — users, households, holdings, share links — so each
+refuses to run unless the target is a local address **and** the server there
+reports `environment: development`. Both gates, checked before anything is
+written, failing closed on an unreachable or unrecognisable server. The way this
+goes wrong is a mistyped URL at one in the morning, not an attacker.
+`scripts/smoke-prod.sh` is the only script meant to touch a deployment, and it
+says so.
+
 The first covers the whole journey with two signed-in users: sign-in, invitation
 merge, capture, type-aware validation, privacy, true net worth, encumbrance,
 nominees, concurrency, offline idempotency, valuations and trash.

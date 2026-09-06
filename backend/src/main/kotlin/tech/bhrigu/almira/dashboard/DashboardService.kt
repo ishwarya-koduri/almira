@@ -26,6 +26,7 @@ private data class Slice(
     val effectiveValue: BigDecimal?,
     val valueBasis: String,
     val attributedValue: BigDecimal,
+    val currency: String,
     val maturityDate: LocalDate?,
     val lastVerified: LocalDate?,
     val hasInstitution: Boolean,
@@ -80,6 +81,19 @@ data class ValueConfidence(
     val unknown: Int,
 )
 
+/**
+ * Holdings in a currency this household has no rate for.
+ *
+ * They are left out of the total rather than converted at a guess, and said out
+ * loud rather than quietly dropped — a total that silently omits a holding is
+ * the worst of the three options (docs/07 §1).
+ */
+data class UnconvertedHoldings(
+    val currency: String,
+    val count: Int,
+    val note: String,
+)
+
 data class Dashboard(
     val scope: String,
     val scopeLabel: String,
@@ -106,6 +120,7 @@ data class Dashboard(
     val byLiabilityKind: List<Breakdown>,
     val upcoming: List<UpcomingItem>,
     val attention: List<AttentionItem>,
+    val unconverted: List<UnconvertedHoldings> = emptyList(),
     val disclaimer: String,
 )
 
@@ -113,6 +128,7 @@ data class Dashboard(
 class DashboardService(
     private val jdbc: NamedParameterJdbcTemplate,
     private val households: HouseholdService,
+    private val currencies: tech.bhrigu.almira.money.CurrencyService,
 ) {
 
     /**
@@ -127,7 +143,10 @@ class DashboardService(
         val members = households.members(householdId)
         val myMemberIds = members.filter { it.isMe }.map { it.id }.toSet()
 
-        val slices = loadSlices(householdId)
+        val loaded = loadSlices(householdId)
+        // Converted into the household's own currency before anything is added
+        // up. What has no rate is excluded and counted, never guessed at.
+        val (slices, unconverted) = convert(loaded, household.baseCurrency, householdId)
         val debts = loadDebtSlices(householdId)
 
         // Both sides are filtered by the same scope, so a member lens shows what
@@ -192,13 +211,54 @@ class DashboardService(
             byLiabilityKind = groupDebts(selectedDebts, owed),
             upcoming = upcoming(distinct, selectedDebts.distinctBy { it.liabilityId }),
             attention = attention(distinct),
+            unconverted = unconverted,
             disclaimer = DISCLAIMER,
         )
     }
 
+    /**
+     * Values arrive in whatever currency they were recorded in. The total needs
+     * one currency, so each is converted at a rate that has a date and a source;
+     * a holding with no rate available is dropped from the sum and reported, so
+     * the figure is smaller than the truth and says why rather than being wrong
+     * and silent.
+     */
+    private fun convert(
+        slices: List<Slice>,
+        baseCurrency: String,
+        householdId: UUID,
+    ): Pair<List<Slice>, List<UnconvertedHoldings>> {
+        val (native, foreign) = slices.partition { it.currency.equals(baseCurrency, true) }
+        if (foreign.isEmpty()) return slices to emptyList()
+
+        val converted = mutableListOf<Slice>()
+        val missing = mutableMapOf<String, MutableSet<UUID>>()
+
+        foreign.forEach { slice ->
+            val result = currencies.convert(
+                slice.attributedValue, slice.currency, baseCurrency, householdId,
+            )
+            if (result.convertedAmount != null) {
+                converted += slice.copy(attributedValue = result.convertedAmount)
+            } else {
+                missing.getOrPut(slice.currency) { mutableSetOf() } += slice.investmentId
+            }
+        }
+
+        return (native + converted) to missing.map { (currency, ids) ->
+            UnconvertedHoldings(
+                currency = currency,
+                count = ids.size,
+                note = "${ids.size} ${if (ids.size == 1) "holding is" else "holdings are"} in " +
+                    "$currency and there's no $currency→$baseCurrency rate recorded, so they " +
+                    "aren't in this total. Add a rate and they will be.",
+            )
+        }
+    }
+
     private fun loadSlices(householdId: UUID): List<Slice> = jdbc.query(
         """
-        select i.id, i.title, i.maturity_date, i.last_verified_at,
+        select i.id, i.title, i.maturity_date, i.last_verified_at, i.currency,
                c.code as category_code, c.label as category_label,
                coalesce(t.color, c.color) as color, t.label as type_label,
                o.member_id, m.display_name as member_name,
@@ -242,6 +302,7 @@ class DashboardService(
             effectiveValue = rs.getBigDecimal("effective_value"),
             valueBasis = rs.getString("value_basis") ?: "unknown",
             attributedValue = rs.getBigDecimal("attributed_value") ?: BigDecimal.ZERO,
+            currency = rs.getString("currency"),
             maturityDate = rs.getDate("maturity_date")?.toLocalDate(),
             lastVerified = rs.getTimestamp("freshness")
                 ?.toInstant()?.atZone(java.time.ZoneOffset.UTC)?.toLocalDate(),

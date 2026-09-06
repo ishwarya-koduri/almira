@@ -41,7 +41,11 @@ class InvitationService(
     private val audit: AuditService,
     private val userContext: RequestUserContext,
 ) {
-    private val roles = setOf("owner", "admin", "editor", "viewer", "restricted")
+    // "advisor" is a colleague rather than a member of the family: they see only
+    // what has been explicitly shared with them, household visibility does not
+    // reach them, and they cannot write. Enforced in app.can_read_record, not
+    // here (V23).
+    private val roles = setOf("owner", "admin", "editor", "viewer", "restricted", "advisor")
 
     /**
      * The invitee's consent is what makes storing an adult's data lawful under

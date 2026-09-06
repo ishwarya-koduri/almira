@@ -154,6 +154,14 @@ class LiabilityService(
             attributes = input.attributes, notes = input.notes, status = input.status,
         )
         if (updated == 0) {
+            // Nothing was written for one of two very different reasons, and
+            // saying the wrong one is worse than unhelpful: a viewer or an
+            // advisor told "someone else changed this" will reload, try again,
+            // and see the same thing forever. If the version they sent is still
+            // the current one, nobody changed anything — the write was refused.
+            if (input.version == current.version) {
+                throw ApiException.forbidden("You can read this, but it isn't yours to change.")
+            }
             throw ApiException.conflict(
                 "stale_write",
                 "Someone else changed this while you were editing. Reload and try again.",

@@ -135,6 +135,12 @@ class GoalService(
             }
         }
         if (repo.update(id, version, name?.trim(), targetAmount, targetDate, priority, notes, status) == 0) {
+            // A refusal and a race look identical from here — zero rows — and
+            // telling someone "reload and try again" when the answer is "not
+            // yours to change" sends them round the same loop forever.
+            if (version == current.version) {
+                throw ApiException.forbidden("You can read this, but it isn't yours to change.")
+            }
             throw ApiException.conflict(
                 "stale_write",
                 "Someone else changed this while you were editing. Reload and try again.",

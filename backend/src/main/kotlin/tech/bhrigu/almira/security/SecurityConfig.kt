@@ -44,6 +44,12 @@ class SecurityConfig(
             // check and a step-up, valid for two minutes and single-use. That
             // is what lets an <img> or <iframe> load a document directly.
             auth.requestMatchers("/api/v1/documents/download").permitAll()
+            // A guest link is unauthenticated for the same reason: the token IS
+            // the credential. It is 256 random bits, it expires, it can be
+            // withdrawn, and inside the request the database narrows every read
+            // to the records that one link names — so this endpoint cannot
+            // return anything else even if it tries (docs/05 §7).
+            auth.requestMatchers("/api/v1/share/**").permitAll()
             // The web client is static and holds no secrets — everything it
             // shows is fetched from /api with a bearer token, which is where
             // the real gate is.

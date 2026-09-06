@@ -20,7 +20,13 @@ import java.util.UUID
 @Component
 class RequestUserContext {
 
-    data class Principal(val userId: UUID, val sessionId: UUID?)
+    /**
+     * [guestShareId] is set only while serving a guest link. It is stamped onto
+     * the transaction alongside the user id, and every read policy narrows to
+     * the records that link names — so a guest session cannot read outside its
+     * scope even if an endpoint asks it to.
+     */
+    data class Principal(val userId: UUID, val sessionId: UUID?, val guestShareId: UUID? = null)
 
     private val holder = ThreadLocal<Principal?>()
 
@@ -32,6 +38,8 @@ class RequestUserContext {
 
     fun currentSessionId(): UUID? = holder.get()?.sessionId
 
+    fun currentGuestShareId(): UUID? = holder.get()?.guestShareId
+
     fun require(): UUID =
         holder.get()?.userId ?: throw IllegalStateException("no authenticated user on this thread")
 
@@ -41,9 +49,14 @@ class RequestUserContext {
     fun clear() = holder.remove()
 
     /** Runs [block] as [userId], restoring the previous principal afterwards. */
-    fun <T> runAs(userId: UUID?, sessionId: UUID? = null, block: () -> T): T {
+    fun <T> runAs(
+        userId: UUID?,
+        sessionId: UUID? = null,
+        guestShareId: UUID? = null,
+        block: () -> T,
+    ): T {
         val previous = holder.get()
-        holder.set(userId?.let { Principal(it, sessionId) })
+        holder.set(userId?.let { Principal(it, sessionId, guestShareId) })
         try {
             return block()
         } finally {

@@ -462,5 +462,121 @@ begin
     'a template saved from a private record cannot be shared with the household');
 end $$;
 
+-- --------------------------------------------------------------- guests ----
+do $$ begin raise notice '--- a guest link reaches its slice and nothing else ---'; end $$;
+
+select pg_temp.as_user('ish');
+select gen_random_uuid() as id \gset share_
+insert into guest_shares (id, household_id, label, scope, token_hash, expires_at, created_by)
+  values (:'share_id', (select v from t where k='hh'), 'Slice for the CA', 'records',
+          'not-a-real-hash', now() + interval '7 days', app.current_user_id());
+insert into t values ('share', :'share_id');
+
+-- The link names exactly one holding: the shared gold.
+insert into guest_share_items (share_id, record_type, record_id)
+  values (:'share_id', 'investment', (select v from t where k='i_shared'));
+
+-- Becoming the guest: same identity, clamped.
+select set_config('app.guest_share_id', :'share_id', false);
+
+select pg_temp.assert(
+  (select count(*) from investments) = 1,
+  'inside a guest session only the linked record is visible');
+select pg_temp.assert(
+  pg_temp.sees('i_shared') and not pg_temp.sees('i_joint'),
+  'the guest sees the linked holding and not the sharer''s others');
+select pg_temp.assert(
+  (select count(*) from liabilities) = 0,
+  'a link to a holding reveals no debts at all');
+
+-- And it is not a way to write, either.
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    update investments set title = 'Changed by a guest'
+      where id = (select v from t where k='i_shared');
+    if not found then blocked := true; end if;
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a guest cannot change what it can see');
+end $$;
+
+select set_config('app.guest_share_id', '', false);
+select pg_temp.assert(
+  (select count(*) from investments) > 1,
+  'leaving the guest scope restores the sharer''s own view');
+
+-- ------------------------------------------------------------ emergency ----
+do $$ begin raise notice '--- emergency access reveals only continuity records ---'; end $$;
+
+select pg_temp.as_user('ish');
+-- One private holding is marked for the family; the other deliberately is not.
+update investments set is_in_continuity = true
+  where id = (select v from t where k='i_private');
+-- The id is chosen first rather than returned, for the same reason the API
+-- takes a client-supplied one: a private record has no ownership rows for the
+-- instant between these two statements, so RETURNING would be refused by the
+-- read policy on the row that was just written.
+select gen_random_uuid() as id \gset i_excluded_
+insert into investments (id, household_id, type_id, title, invested_amount, visibility,
+                         is_in_continuity, created_by)
+  values (:'i_excluded_id', (select v from t where k='hh'),
+          (select id from investment_types where code = 'gold_physical' limit 1),
+          'Not for the family', 250000, 'private', false, app.current_user_id());
+insert into investment_ownerships (investment_id, member_id, share_pct)
+  values (:'i_excluded_id', (select v from t where k='m_ish'), 100);
+insert into t values ('i_excluded', :'i_excluded_id');
+
+insert into emergency_contacts (household_id, member_id, trusted_member_id, wait_days, created_by)
+  values ((select v from t where k='hh'), (select v from t where k='m_ish'),
+          (select v from t where k='m_ravi'), 14, app.current_user_id());
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert(not pg_temp.sees('i_private'),
+  'before any request, a private record stays private');
+
+select gen_random_uuid() as id \gset request_
+insert into emergency_requests (id, household_id, subject_member_id, requested_by, unlock_at,
+                                access_expires_at)
+  values (:'request_id', (select v from t where k='hh'), (select v from t where k='m_ish'),
+          app.current_user_id(), now() + interval '14 days', now() + interval '44 days');
+insert into t values ('request', :'request_id');
+
+select pg_temp.assert(not pg_temp.sees('i_private'),
+  'while the request is waiting, nothing has opened');
+
+-- The wait elapses. Ageing the request rather than only the unlock, because the
+-- database will not let an unlock precede its own request.
+update emergency_requests
+   set requested_at = now() - interval '20 days', unlock_at = now() - interval '6 days'
+ where id = :'request_id';
+
+select pg_temp.assert(pg_temp.sees('i_private'),
+  'once the window opens, a continuity-marked private record is visible');
+select pg_temp.assert(not pg_temp.sees('i_excluded'),
+  'a record left out of continuity stays invisible even under emergency access');
+
+-- An unlock is a read, and only a read. Someone acting for a family that
+-- cannot answer must not be able to change what they find.
+do $$
+declare n int;
+begin
+  update investments set title = 'Edited under emergency access'
+    where id = (select v from t where k='i_private');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'emergency access reveals; it does not permit writing');
+end $$;
+
+select pg_temp.as_user('out');
+select pg_temp.assert(not pg_temp.sees('i_private'),
+  'someone outside the household gains nothing from another person''s unlock');
+
+select pg_temp.as_user('ish');
+update emergency_requests set vetoed_at = now() where id = :'request_id';
+select pg_temp.as_user('ravi');
+select pg_temp.assert(not pg_temp.sees('i_private'),
+  'a veto closes the window immediately, mid-session');
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

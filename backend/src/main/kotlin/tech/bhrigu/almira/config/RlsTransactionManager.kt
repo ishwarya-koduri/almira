@@ -50,10 +50,34 @@ class RlsTransactionManager(
             statement.setString(1, userId)
             statement.execute()
         }
+
+        // A guest link narrows the same identity to the records it names. It is
+        // transaction-scoped for the same reason the user id is: nothing can
+        // leak into the next borrower of this connection, and a guest scope
+        // cannot outlive the request that set it.
+        val guestShareId = userContext.currentGuestShareId()?.toString() ?: ""
+        connection.prepareStatement(SET_LOCAL_GUEST).use { statement ->
+            statement.setString(1, guestShareId)
+            statement.execute()
+        }
+
+        // And a guest transaction is read-only, in the database's own terms.
+        //
+        // The scope clamp lives on the READ policies, which left a gap worth
+        // closing structurally rather than by remembering: a guest session
+        // borrows the sharer's identity, so the write policies would have
+        // happily let it edit the very record it was allowed to see. Adding a
+        // guest clause to forty write policies would work until someone adds
+        // the forty-first table. This cannot be forgotten, and it covers
+        // statements nobody has written yet.
+        if (guestShareId.isNotEmpty()) {
+            connection.createStatement().use { it.execute("set transaction read only") }
+        }
     }
 
     private companion object {
         /** is_local => true: discarded by PostgreSQL at commit or rollback. */
         const val SET_LOCAL_USER = "select set_config('app.user_id', ?, true)"
+        const val SET_LOCAL_GUEST = "select set_config('app.guest_share_id', ?, true)"
     }
 }

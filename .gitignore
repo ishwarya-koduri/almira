@@ -8,10 +8,12 @@ target/
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
 
-# Secrets — never commit. Copy .env.example -> .env locally.
+# Secrets — never commit. Copy .env.example -> .env locally, and
+# .env.production.example -> .env.production on a server.
 .env
 .env.*
 !.env.example
+!.env.production.example
 *.pem
 *.p8
 *.p12

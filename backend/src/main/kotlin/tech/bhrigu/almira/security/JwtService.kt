@@ -18,6 +18,25 @@ data class AccessTokenClaims(val userId: UUID, val sessionId: UUID, val expiresA
 class JwtService(props: AlmiraProperties) {
 
     private val jwt = props.jwt
+
+    init {
+        // The same refusal the key-encryption key already makes, for the same
+        // reason. A deployment that starts with the development signing secret
+        // looks entirely healthy and will mint tokens anybody who has read this
+        // repository can forge — which is worse than not starting, because
+        // nothing about it looks wrong.
+        val isDevelopment = props.environment.equals("development", ignoreCase = true)
+        require(isDevelopment || jwt.secret != AlmiraProperties.DEVELOPMENT_JWT_SECRET) {
+            "ALMIRA_JWT_SECRET is still the development default. Outside development " +
+                "a signing secret must be supplied deliberately — refusing to start " +
+                "rather than sign sessions with a public value."
+        }
+        require(isDevelopment || jwt.secret.length >= 32) {
+            "ALMIRA_JWT_SECRET is too short to sign anything with: use at least 32 " +
+                "characters (openssl rand -base64 48)."
+        }
+    }
+
     private val algorithm: Algorithm = Algorithm.HMAC256(jwt.secret)
     private val verifier: JWTVerifier = JWT.require(algorithm).withIssuer(jwt.issuer).build()
     private val random = SecureRandom()

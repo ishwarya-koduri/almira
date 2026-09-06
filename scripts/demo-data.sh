@@ -1,16 +1,42 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Fills a fresh install with one plausible household, so the app can be looked
-# at with real shapes in it rather than empty states.
+# DEVELOPMENT ONLY. Fills a fresh install with one plausible household, so the
+# app can be looked at with real shapes in it rather than empty states.
 #
 #   ./scripts/demo-data.sh [base-url]
 #
 # Prints the phone number to sign in with. The OTP is shown on screen because
 # ALMIRA_OTP_PROVIDER defaults to `log` in development.
+#
+# It refuses to run against anything that is not a local, development-mode
+# server — two independent checks, because inventing a family's finances inside
+# somebody's real records would be a difficult thing to explain and a worse one
+# to undo. The server is asked what it thinks it is; a host that reports
+# `production` is refused even if it is called localhost.
 # =============================================================================
 set -euo pipefail
 BASE="${1:-http://localhost:8080}"
-BOLD=$'\033[1m'; DIM=$'\033[2m'; OFF=$'\033[0m'
+BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; OFF=$'\033[0m'
+
+refuse() {
+  echo "${RED}${BOLD}Refusing to seed demo data.${OFF}" >&2
+  echo "  $1" >&2
+  echo >&2
+  echo "  This script invents holdings, loans and family members. It exists for" >&2
+  echo "  an empty development database and nothing else." >&2
+  exit 1
+}
+
+case "$BASE" in
+  http://localhost:*|http://127.0.0.1:*|http://[::1]:*) ;;
+  *) refuse "$BASE is not a local address.";;
+esac
+
+HEALTH=$(curl -fsS "$BASE/health" 2>/dev/null) || refuse "No server answering at $BASE."
+case "$HEALTH" in
+  *'"environment":"development"'*) ;;
+  *) refuse "That server reports $(printf '%s' "$HEALTH" | sed -n 's/.*"environment":"\([^"]*\)".*/\1/p'), not development.";;
+esac
 
 j() { python3 -c "import sys,json;print(json.load(sys.stdin)$1)"; }
 

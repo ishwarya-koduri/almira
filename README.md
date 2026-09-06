@@ -104,6 +104,41 @@ not a substitute for one.
 
 ---
 
+## Deploying it
+
+The web client is an installable PWA — manifest, icons, and a service worker
+that caches the app shell and, deliberately, **never an API response**: Cache
+Storage is persistent per-origin storage, and a cached balance sheet on a shared
+laptop would undo what the rest of this spends its effort on.
+
+Everything needed to run it on a host is in [`deploy/`](deploy/) and
+[`docs/17`](docs/17-deploying.md): a production Dockerfile, a compose stack
+where only the application is exposed, `.env.production.example` with every
+variable and what it costs to get it wrong, and a bootstrap that creates the
+non-owner runtime role on a fresh database.
+
+```bash
+cp .env.production.example .env.production   # fill in every REQUIRED value
+docker compose -f deploy/docker-compose.prod.yml --env-file .env.production up -d db redis
+docker compose -f deploy/docker-compose.prod.yml --env-file .env.production run --rm db-bootstrap
+docker compose -f deploy/docker-compose.prod.yml --env-file .env.production up -d --build app
+curl -s http://127.0.0.1:8080/health     # must say "rlsEnforced":true
+./scripts/smoke-prod.sh https://your-host
+```
+
+`/health` reports the database role it actually connected as, so the one
+misconfiguration that would silently switch off every privacy policy — serving
+traffic as the schema owner — is visible from outside without signing in. The
+smoke test proves the property everything else rests on: two members of one
+household see different net worth, and both are right.
+
+**One thing will block your first testers**: sign-in is phone plus one-time
+code, and the only implemented delivery is the log. Real SMS in India needs DLT
+registration, and email sign-in does not exist yet —
+[docs/17 §5](docs/17-deploying.md) says exactly what each would take.
+
+---
+
 ## The v1 API contract
 
 The API is **frozen at v1** and lives at `/api/v1/**`. The contract is committed
@@ -292,13 +327,20 @@ almira/
 │     ├─ reports/      net-worth trend and the cash-flow calendar
 │     ├─ search/       one search across everything, through RLS
 │     ├─ dashboard/    totals and breakdowns, per viewer
+│     ├─ estate/       wills, powers of attorney, advisors, nominee ≠ heir
+│     ├─ continuity/   the Transmission Assistant, the family handbook, emergency access
+│     ├─ sharing/      scoped, time-boxed guest links
+│     ├─ e2e/          zero-knowledge fields the server cannot read
+│     ├─ money/        multi-currency and the pluggable rate source
+│     ├─ provider/     DigiLocker, Account Aggregator, WhatsApp, SMS, email, push — adapters and sandboxes
 │     └─ audit/        append-only activity log
 ├─ db/
 │  ├─ migrations/      Flyway — the schema, RLS policies, and the seeded taxonomy
 │  ├─ taxonomy.py      generates V6; edit this, not the SQL
 │  └─ tests/           SQL-level privacy assertions
-├─ infra/              docker-compose and the two-role Postgres init
-├─ scripts/            end-to-end test
+├─ infra/              docker-compose and the two-role Postgres init (development)
+├─ deploy/             production Dockerfile, compose stack, database bootstrap
+├─ scripts/            dev runner, the end-to-end suites, icons, prod bootstrap and smoke test
 └─ docs/               the product documentation set
 ```
 

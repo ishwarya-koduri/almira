@@ -11,6 +11,10 @@ spring:
     redis:
       host: ${ALMIRA_REDIS_HOST:localhost}
       port: ${ALMIRA_REDIS_PORT:56379}
+      # Empty locally, where Redis is not reachable off the machine. Set in any
+      # deployment: this store holds one-time codes, and a code store anybody
+      # can read is a sign-in anybody can complete.
+      password: ${ALMIRA_REDIS_PASSWORD:}
       timeout: 2s
   jackson:
     default-property-inclusion: non_null

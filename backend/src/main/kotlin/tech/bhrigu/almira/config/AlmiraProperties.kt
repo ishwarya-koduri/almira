@@ -73,4 +73,14 @@ data class AlmiraProperties(
         val maxPerHour: Int = 5,
         val maxPerIpPerHour: Int = 20,
     )
+
+    companion object {
+        /**
+         * The value in application.yml, so that JwtService can recognise it and
+         * refuse to run with it anywhere but development. It is a placeholder,
+         * not a secret — which is exactly the problem it guards against.
+         */
+        const val DEVELOPMENT_JWT_SECRET =
+            "development-only-secret-please-override-in-every-real-environment"
+    }
 }

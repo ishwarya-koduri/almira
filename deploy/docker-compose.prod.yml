@@ -1,0 +1,137 @@
+# =============================================================================
+# Almira — a single-host production stack.
+#
+#   cp .env.production.example .env.production   # then fill it in
+#   docker compose -f deploy/docker-compose.prod.yml --env-file .env.production up -d
+#
+# Deliberate choices, each of which has a reason:
+#
+#   · Postgres and Redis publish NO ports. They are reachable only from the
+#     compose network. The only thing exposed is the application, and in front
+#     of that belongs a reverse proxy that terminates TLS — Almira sets HSTS and
+#     assumes it is behind one (docs/17).
+#   · The database bootstrap is a separate one-shot service rather than an
+#     init script, because a managed Postgres has no init directory and the
+#     same command has to work in both places.
+#   · No `latest` tags: pin the images you actually tested.
+# =============================================================================
+name: almira
+
+services:
+  db:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${ALMIRA_DB_NAME:?set ALMIRA_DB_NAME}
+      POSTGRES_USER: ${ALMIRA_DB_OWNER_USER:?set ALMIRA_DB_OWNER_USER}
+      POSTGRES_PASSWORD: ${ALMIRA_DB_OWNER_PASSWORD:?set ALMIRA_DB_OWNER_PASSWORD}
+      LANG: C.UTF-8
+    command: >
+      postgres
+      -c max_connections=100
+      -c shared_buffers=256MB
+      -c log_min_duration_statement=500
+      -c log_statement=none
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    # Never publish this. If you need psql, go through the host:
+    #   docker compose -f deploy/docker-compose.prod.yml exec db psql -U "$ALMIRA_DB_OWNER_USER"
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --save 60 1
+      --requirepass ${ALMIRA_REDIS_PASSWORD:?set ALMIRA_REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD:-$$ALMIRA_REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    environment:
+      ALMIRA_REDIS_PASSWORD: ${ALMIRA_REDIS_PASSWORD}
+
+  # One-shot: creates the non-owner runtime role and its grants on a database
+  # that may already exist. Safe to run again — every statement is guarded.
+  #
+  #   docker compose -f deploy/docker-compose.prod.yml --env-file .env.production \
+  #     run --rm db-bootstrap
+  db-bootstrap:
+    image: postgres:16.4-alpine
+    profiles: ["bootstrap"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${ALMIRA_DB_OWNER_PASSWORD}
+      ALMIRA_DB_APP_USER: ${ALMIRA_DB_APP_USER}
+      ALMIRA_DB_APP_PASSWORD: ${ALMIRA_DB_APP_PASSWORD}
+      ALMIRA_DB_NAME: ${ALMIRA_DB_NAME}
+    volumes:
+      - ./bootstrap-db.sql:/bootstrap-db.sql:ro
+    entrypoint:
+      - sh
+      - -c
+      - >
+        psql -h db -U "$${ALMIRA_DB_OWNER_USER:-almira}" -d "$${ALMIRA_DB_NAME}"
+        -v ON_ERROR_STOP=1
+        -v app_user="$${ALMIRA_DB_APP_USER}"
+        -v app_password="$${ALMIRA_DB_APP_PASSWORD}"
+        -f /bootstrap-db.sql
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: almira:${ALMIRA_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ALMIRA_ENV: production
+      ALMIRA_DB_URL: jdbc:postgresql://db:5432/${ALMIRA_DB_NAME}
+      ALMIRA_DB_OWNER_USER: ${ALMIRA_DB_OWNER_USER}
+      ALMIRA_DB_OWNER_PASSWORD: ${ALMIRA_DB_OWNER_PASSWORD}
+      ALMIRA_DB_APP_USER: ${ALMIRA_DB_APP_USER}
+      ALMIRA_DB_APP_PASSWORD: ${ALMIRA_DB_APP_PASSWORD}
+      ALMIRA_REDIS_HOST: redis
+      ALMIRA_REDIS_PORT: 6379
+      ALMIRA_REDIS_PASSWORD: ${ALMIRA_REDIS_PASSWORD}
+      ALMIRA_JWT_SECRET: ${ALMIRA_JWT_SECRET:?set ALMIRA_JWT_SECRET}
+      ALMIRA_KMS_PROVIDER: ${ALMIRA_KMS_PROVIDER:-local}
+      ALMIRA_KMS_MASTER_KEY: ${ALMIRA_KMS_MASTER_KEY:?set ALMIRA_KMS_MASTER_KEY}
+      ALMIRA_KMS_KEY_ID: ${ALMIRA_KMS_KEY_ID:-}
+      ALMIRA_OTP_PROVIDER: ${ALMIRA_OTP_PROVIDER:-log}
+      ALMIRA_OTP_MAX_PER_IP_PER_HOUR: ${ALMIRA_OTP_MAX_PER_IP_PER_HOUR:-20}
+      ALMIRA_NOTIFY_PROVIDER: ${ALMIRA_NOTIFY_PROVIDER:-log}
+      ALMIRA_STORAGE_PROVIDER: ${ALMIRA_STORAGE_PROVIDER:-filesystem}
+      ALMIRA_STORAGE_ROOT: /app/var/documents
+    volumes:
+      - documents:/app/var
+    ports:
+      # Bound to the loopback interface: the reverse proxy in front of this is
+      # what the internet talks to, and it is what holds the certificate.
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health | grep -q '\"rlsEnforced\":true'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  dbdata:
+  redisdata:
+  documents:

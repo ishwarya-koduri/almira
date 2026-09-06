@@ -38,6 +38,15 @@ dependencies {
     implementation("com.auth0:java-jwt:4.5.0")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.9")
 
+    // Spreadsheet import. POI is heavy, but XLSX is a zip of XML with shared
+    // string tables, styled dates and a dozen edge cases — hand-rolling a reader
+    // is a source of quiet wrong numbers, which is the one thing this must not be.
+    implementation("org.apache.poi:poi-ooxml:5.4.0")
+
+    // Reads the text layer out of a PDF. Real extraction for the documents that
+    // have one, without needing an OCR service account (see DocumentTextExtractor).
+    implementation("org.apache.pdfbox:pdfbox:3.0.4")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:junit-jupiter:1.20.6")

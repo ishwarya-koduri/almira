@@ -54,8 +54,12 @@ class SecurityConfig(
             // shows is fetched from /api with a bearer token, which is where
             // the real gate is.
             auth.requestMatchers(
-                "/", "/index.html", "/app/**", "/assets/**",
+                "/", "/index.html", "/app/**", "/assets/**", "/icons/**",
                 "/favicon.ico", "/manifest.webmanifest",
+                // The service worker is served from the root so its scope is
+                // the whole origin. It caches the shell and never an API
+                // response — see static/sw.js.
+                "/sw.js",
             ).permitAll()
             auth.anyRequest().authenticated()
         }

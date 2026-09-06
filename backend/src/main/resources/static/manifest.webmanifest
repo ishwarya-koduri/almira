@@ -1,0 +1,36 @@
+{
+  "name": "Almira",
+  "short_name": "Almira",
+  "description": "Everything your family owns and owes, in one calm, private place.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "lang": "en-IN",
+  "dir": "ltr",
+  "background_color": "#FBF9F5",
+  "theme_color": "#FBF9F5",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Add something",
+      "short_name": "Add",
+      "description": "Record a holding, a loan or a document",
+      "url": "/#/investments"
+    },
+    {
+      "name": "For my family",
+      "short_name": "Family",
+      "description": "What exists, where it is, and who to call",
+      "url": "/#/continuity"
+    }
+  ]
+}

@@ -17,6 +17,17 @@
   <link rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap">
 
+  <!-- Installable: the manifest, the icons iOS and Android each want, and the
+       two meta tags that make Safari open it as an app rather than a tab.
+       docs/17 says what the offline story is, and deliberately is not. -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Almira">
+  <meta name="application-name" content="Almira">
+
   <link rel="stylesheet" href="/app/tokens.css">
   <link rel="stylesheet" href="/app/base.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230F5A57'/><text x='16' y='23' font-family='Georgia,serif' font-size='19' fill='%23fff' text-anchor='middle'>A</text></svg>">
@@ -45,5 +56,18 @@
     } catch (_) {}
   </script>
   <script type="module" src="/app/app.js"></script>
+  <script>
+    // Registered after load so it never competes with the first paint, and
+    // guarded because a browser without service workers must still work — this
+    // is an enhancement, not a dependency.
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch(() => {
+          // A failed registration is not worth interrupting anybody over: the
+          // app works online exactly as before.
+        });
+      });
+    }
+  </script>
 </body>
 </html>

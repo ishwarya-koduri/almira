@@ -106,6 +106,11 @@ alongside the code:
 ```
 
 Browsable docs are at <http://localhost:8080/docs>.
+[`docs/api/README.md`](docs/api/README.md) is the note that travels with the
+spec: the behaviour a schema cannot express — refresh-token reuse, why a hidden
+record is a 404 and not a 403, why two members see different net worth and both
+are right, client-supplied ids for offline capture, and how to build capture
+forms from the type schema rather than hand-writing one per type.
 
 ---
 

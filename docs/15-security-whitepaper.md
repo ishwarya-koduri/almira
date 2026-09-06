@@ -192,9 +192,9 @@ Every statement above corresponds to a test that runs on every build.
 
 | | |
 |---|---|
-| SQL, run as the application role, independent of any application code | **57 assertions** |
-| Unit and full-stack HTTP tests | **380+ tests** |
-| End-to-end over real HTTP against a running server | **145 checks** across three suites |
+| SQL, run as the application role, independent of any application code | **59 assertions** |
+| Unit and full-stack HTTP tests | **371 tests** |
+| End-to-end over real HTTP against a running server | **151 checks** across three suites |
 
 The privacy suites deliberately include the *derived* surfaces — totals, returns,
 tax, goal funding, completeness, exports, the guest clamp and the emergency

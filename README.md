@@ -214,7 +214,7 @@ Switch `ALMIRA_OTP_PROVIDER` to `twilio` or `msg91` and the field disappears. **
 Three suites, each proving something the others cannot.
 
 ```bash
-# 1. Unit + full-stack integration (369 tests)
+# 1. Unit + full-stack integration (371 tests)
 cd backend
 ALMIRA_TEST_DB_URL=jdbc:postgresql://localhost:55432/almira_test \
 ALMIRA_TEST_REDIS_HOST=localhost ALMIRA_TEST_REDIS_PORT=56379 \
@@ -230,7 +230,7 @@ docker exec -e PGPASSWORD=app_dev_password almira-db \
   psql -h 127.0.0.1 -U almira_app -d almira -v ON_ERROR_STOP=1 -f /tmp/t.sql
 ```
 
-57 assertions. If a future refactor bypasses a service, the policies still have to hold.
+59 assertions. If a future refactor bypasses a service, the policies still have to hold.
 
 ```bash
 # 3. End-to-end over real HTTP, against a running server

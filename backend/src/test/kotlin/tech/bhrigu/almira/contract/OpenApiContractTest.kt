@@ -130,9 +130,18 @@ class OpenApiContractTest : ApiTestBase() {
     fun `adding an endpoint or an optional field is not a breaking change`() {
         val baseline = mapper.readTree(Files.readString(frozenSpec)) as ObjectNode
 
+        // A path that does not exist yet, asserted rather than assumed: this
+        // fixture used "/goals", Phase 2 built it, and putObject then *replaced*
+        // a real endpoint — so the test that proves additive changes pass was
+        // quietly testing a removal instead.
+        val futurePath = "/api/v1/households/{householdId}/not-built-yet"
+        assertThat(baseline.get("paths").has(futurePath))
+            .describedAs("the fixture path must be one the API does not have")
+            .isFalse()
+
         val widened = baseline.deepCopy().apply {
-            (get("paths") as ObjectNode).putObject("/api/v1/households/{householdId}/goals")
-                .putObject("get").put("summary", "Phase 2")
+            (get("paths") as ObjectNode).putObject(futurePath)
+                .putObject("get").put("summary", "Something a later phase adds")
 
             val schemas = get("components").get("schemas") as ObjectNode
             (schemas.get("InvestmentResponse").get("properties") as ObjectNode)

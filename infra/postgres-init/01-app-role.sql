@@ -27,3 +27,12 @@ grant usage on schema public to almira_app;
 -- Flyway migrates this one on test startup exactly as it does the real one.
 create database almira_test owner almira;
 grant connect on database almira_test to almira_app;
+
+-- A throwaway database for syntax-checking a migration before Flyway owns it.
+--
+-- Hand-applying a migration to a Flyway-managed database leaves the objects
+-- present with no history row, and the next startup fails with "relation already
+-- exists". Checking against this one instead keeps that impossible rather than
+-- merely discouraged. See scripts/check-migration.sh.
+create database almira_scratch owner almira;
+grant connect on database almira_scratch to almira_app;

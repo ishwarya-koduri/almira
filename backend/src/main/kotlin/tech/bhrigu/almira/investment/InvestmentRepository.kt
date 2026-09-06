@@ -37,6 +37,8 @@ data class InvestmentRow(
     val currency: String,
     val quantity: BigDecimal?,
     val unit: String?,
+    /** fifo | average | manual — how a disposal's cost is attributed. */
+    val costBasisMethod: String,
     val startDate: LocalDate?,
     val maturityDate: LocalDate?,
     val storageLocation: String?,
@@ -508,6 +510,7 @@ class InvestmentRepository(
             currency = rs.getString("currency"),
             quantity = rs.getBigDecimal("quantity"),
             unit = rs.getString("unit"),
+            costBasisMethod = rs.getString("cost_basis_method") ?: "fifo",
             startDate = rs.getDate("start_date")?.toLocalDate(),
             maturityDate = rs.getDate("maturity_date")?.toLocalDate(),
             storageLocation = rs.getString("storage_location"),

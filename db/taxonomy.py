@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """Generates db/migrations/V6__seed_taxonomy.sql from a declarative spec.
 
+ONLY V6 — the initial seed. Once a migration is applied it is history, so later
+changes to the taxonomy are their own migrations (see V15). Regenerating this
+file is for reconstructing V6, not for evolving the taxonomy.
+
 Keeping the taxonomy as data (not code) is what lets a custom type be promoted
 into the official list with zero migration -- docs/01 section 5.
 """

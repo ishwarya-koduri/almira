@@ -82,6 +82,11 @@ class ApiErrorHandler {
         val (code, message) = when {
             "must total 100" in text ->
                 "ownership_shares_invalid" to "Ownership shares need to add up to 100%."
+            "more than it is" in text ->
+                "allocation_exceeds_holding" to
+                    "That holding can't be allocated to goals more than once over."
+            "responsibility for liability" in text ->
+                "responsibility_invalid" to "Responsibility for a loan needs to add up to 100%."
             "row-level security" in text ->
                 "forbidden" to "You don't have access to do that."
             "duplicate key" in text ->

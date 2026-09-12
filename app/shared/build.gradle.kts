@@ -36,6 +36,14 @@ kotlin {
     }
 }
 
+// The generated accessor lands in our own package rather than a derived one,
+// so `Res.font.inter_regular` reads the same from either platform module.
+compose.resources {
+    publicResClass = true
+    packageOfResClass = "tech.bhrigu.almira.shared.resources"
+    generateResClass = always
+}
+
 android {
     namespace = "tech.bhrigu.almira.shared"
     compileSdk = 35

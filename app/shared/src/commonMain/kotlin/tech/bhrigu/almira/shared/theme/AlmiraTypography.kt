@@ -1,6 +1,8 @@
 package tech.bhrigu.almira.shared.theme
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -14,12 +16,10 @@ import androidx.compose.ui.unit.sp
  * amounts and headlines take the humanist serif while the interface itself
  * takes a grotesk. Body never goes below 14sp.
  *
- * The real faces are Fraunces and Inter. Bundling them is a step of its own —
- * two variable fonts are about 400 KB and they need licence files shipped with
- * them — so the skeleton uses the platform serif and sans, which keeps the
- * *shape* of the system (which text is serif, at what size, at what weight)
- * correct while the faces are still to come. Swapping them in later changes
- * this file and nothing else.
+ * The faces are Fraunces and Inter, bundled with the app — see [almiraDisplayFamily].
+ * [AlmiraDefaultTypography] keeps the platform serif and sans as a fallback, so
+ * a preview or a test that renders outside [AlmiraTheme] still gets the right
+ * sizes and weights rather than nothing at all.
  */
 @Immutable
 data class AlmiraTypography(
@@ -37,6 +37,7 @@ data class AlmiraTypography(
     val amount: TextStyle,
 )
 
+// Fallbacks. The real faces arrive through [rememberAlmiraTypography].
 private val Display = FontFamily.Serif
 private val Ui = FontFamily.SansSerif
 
@@ -67,3 +68,36 @@ val AlmiraDefaultTypography = AlmiraTypography(
         fontWeight = FontWeight.Medium,
     ),
 )
+
+/**
+ * The type scale with the bundled faces in it.
+ *
+ * Composable because loading a bundled font is — the scale itself is the same
+ * one above, with the two families swapped in. Anything that changes about the
+ * type happens here and nowhere else.
+ */
+@Composable
+fun rememberAlmiraTypography(): AlmiraTypography {
+    val display = almiraDisplayFamily()
+    val ui = almiraUiFamily()
+    return remember(display, ui) {
+        AlmiraDefaultTypography.copy(
+            display = AlmiraDefaultTypography.display.copy(fontFamily = display),
+            h1 = AlmiraDefaultTypography.h1.copy(fontFamily = display),
+            h2 = AlmiraDefaultTypography.h2.copy(fontFamily = display),
+            h3 = AlmiraDefaultTypography.h3.copy(fontFamily = display),
+            h4 = AlmiraDefaultTypography.h4.copy(fontFamily = ui),
+            large = AlmiraDefaultTypography.large.copy(fontFamily = ui),
+            body = AlmiraDefaultTypography.body.copy(fontFamily = ui),
+            small = AlmiraDefaultTypography.small.copy(fontFamily = ui),
+            caption = AlmiraDefaultTypography.caption.copy(fontFamily = ui),
+            overline = AlmiraDefaultTypography.overline.copy(fontFamily = ui),
+            amount = AlmiraDefaultTypography.amount.copy(
+                fontFamily = display,
+                // Tabular figures, so a column of amounts lines up rather than
+                // shuffling as the digits change.
+                fontFeatureSettings = "tnum",
+            ),
+        )
+    }
+}

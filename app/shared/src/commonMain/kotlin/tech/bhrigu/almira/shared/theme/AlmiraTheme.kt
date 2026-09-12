@@ -101,7 +101,7 @@ fun AlmiraTheme(
 
     CompositionLocalProvider(
         LocalAlmiraColors provides colors,
-        LocalAlmiraTypography provides AlmiraDefaultTypography,
+        LocalAlmiraTypography provides rememberAlmiraTypography(),
         LocalAlmiraSpacing provides AlmiraSpacing(),
         LocalAlmiraRadii provides radii,
     ) {

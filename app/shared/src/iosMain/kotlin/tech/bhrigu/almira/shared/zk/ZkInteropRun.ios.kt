@@ -113,6 +113,73 @@ fun zkInteropRun(apiBaseUrl: String, householdId: String, recordId: String, pass
         }
         check("moved ciphertext", "refused", movedOutcome)
 
+        // --- a rotation, and values written before it ---
+        //
+        // docs/12 §8.5 listed this as proved on no client at all. It is the one
+        // that cannot be discovered late: rotation rewraps the same content key
+        // and rewrites no field, so if that is wrong, the first person to change
+        // their passphrase loses every sealed value they have.
+        //
+        // Rotated to a temporary passphrase and then back, so the passphrase
+        // docs/zk-interop-acceptance.md names still opens this household when
+        // this returns. The key version rises either way — that is what a
+        // rotation is — and every value keeps the version it was written under.
+        val temporary = "a temporary passphrase for the rotation check ఖ "
+
+        // Read again here rather than reusing the list from the top of this
+        // run. That list was fetched before this run re-sealed
+        // `sealed_from_the_iphone`, so it records that field's *previous* key
+        // version — and the comparison below then fails on one field out of
+        // eight and looks like a rotation defect. It was this harness holding a
+        // stale baseline, which is a fair warning about how easy the mistake is.
+        val beforeRotation = api.sealedValues(householdId, "investment", recordId)
+        val versionsBefore = beforeRotation
+            .associate { it.fieldKey to Envelope.parse(it.ciphertext).keyVersion }
+
+        val rotated = vault.rotate(householdId, passphrase, temporary)
+        check("rotate to a temporary passphrase", "rotated", when (rotated) {
+            is RotateOutcome.Rotated -> "rotated"
+            is RotateOutcome.Refused -> "refused (${rotated.because})"
+        })
+
+        // Forget everything and come back in with the new passphrase only, so
+        // nothing below can be answered out of a key still in hand.
+        vault.forget()
+        val afterRotation = vault.unlock(householdId, temporary)
+        check("unlock with the new passphrase", "Unlocked", afterRotation.toString().substringAfterLast('.'))
+
+        // The old passphrase must now be refused, or the rotation did not happen.
+        vault.forget()
+        val oldRefused = vault.unlock(householdId, passphrase)
+        check("the old passphrase no longer opens it", "WrongPassphrase",
+            oldRefused.toString().substringAfterLast('.'))
+
+        vault.forget()
+        vault.unlock(householdId, temporary)
+        val afterFields = api.sealedValues(householdId, "investment", recordId)
+        var reopened = 0
+        var keptVersion = 0
+        afterFields.forEach { field ->
+            val opened = vault.open(householdId, field)
+            if (opened is OpenOutcome.Opened) reopened += 1
+            if (Envelope.parse(field.ciphertext).keyVersion == versionsBefore[field.fieldKey]) keptVersion += 1
+        }
+        check("every field sealed before the rotation still opens",
+            "${beforeRotation.size} of ${beforeRotation.size}", "$reopened of ${afterFields.size}")
+        check("and each still carries the key version it was written under",
+            "${beforeRotation.size} of ${beforeRotation.size}", "$keptVersion of ${afterFields.size}")
+
+        // Back to the documented passphrase, so this run leaves the household
+        // exactly as usable as it found it.
+        val restored = vault.rotate(householdId, temporary, passphrase)
+        check("rotate back to the documented passphrase", "rotated", when (restored) {
+            is RotateOutcome.Rotated -> "rotated"
+            is RotateOutcome.Refused -> "refused (${restored.because})"
+        })
+        vault.forget()
+        check("the documented passphrase opens it again", "Unlocked",
+            vault.unlock(householdId, passphrase).toString().substringAfterLast('.'))
+
         // --- and a passphrase one byte different must fail clean ---
         vault.forget()
         val wrong = vault.unlock(householdId, passphrase.trimEnd())

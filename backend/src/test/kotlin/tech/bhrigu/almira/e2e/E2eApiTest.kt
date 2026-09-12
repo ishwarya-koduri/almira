@@ -9,12 +9,12 @@ import org.springframework.http.HttpStatus
 import tech.bhrigu.almira.support.ApiTestBase
 import java.math.BigDecimal
 import java.security.SecureRandom
+import java.text.Normalizer
 import java.util.Base64
 import javax.crypto.Cipher
+import javax.crypto.Mac
 import javax.crypto.SecretKey
-import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
@@ -48,12 +48,57 @@ class E2eApiTest : ApiTestBase() {
     private fun b64(bytes: ByteArray): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 
-    private fun deriveWrappingKey(salt: ByteArray, iterations: Int): SecretKey {
-        val spec = PBEKeySpec(passphrase.toCharArray(), salt, iterations, 256)
-        return SecretKeySpec(
-            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded,
-            "AES",
-        )
+    /**
+     * PBKDF2-HMAC-SHA256, written out, over bytes this file produced itself.
+     *
+     * **Not** `PBEKeySpec` with `SecretKeyFactory`, which is what this used to
+     * be and which docs/12 §2 forbids by name: that API takes a `char[]` and
+     * the char-to-byte step belongs to the platform provider, so the one step
+     * that decides whether two clients agree would be outside our control and
+     * is not the same on Android as on the JVM. It passed here only because
+     * this test's passphrase is ASCII — which is exactly the kind of accident
+     * that holds until the first Telugu passphrase and then takes the data with
+     * it.
+     *
+     * Caught by `scripts/check-spec.py`, which reads the prohibitions in
+     * docs/12 §2 and §7 and checks the derivation paths — including this one,
+     * because §7 points at this file as code to copy.
+     */
+    private fun deriveWrappingKey(
+        salt: ByteArray,
+        iterations: Int,
+        from: String = passphrase,
+    ): SecretKey = SecretKeySpec(pbkdf2(passphraseBytes(from), salt, iterations, 32), "AES")
+
+    /** NFC, then UTF-8, and nothing else — no trim, no case folding (docs/12 §2). */
+    private fun passphraseBytes(text: String): ByteArray =
+        Normalizer.normalize(text, Normalizer.Form.NFC).toByteArray(Charsets.UTF_8)
+
+    /** RFC 8018 §5.2, for one block, which is all a 256-bit key needs. */
+    private fun pbkdf2(password: ByteArray, salt: ByteArray, iterations: Int, length: Int): ByteArray {
+        val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(password, "HmacSHA256")) }
+        val output = ByteArray(length)
+        var written = 0
+        var block = 1
+        while (written < length) {
+            // U1 = PRF(password, salt ‖ INT(block)), then xor in each U.
+            var u = mac.doFinal(
+                salt + byteArrayOf(
+                    (block ushr 24).toByte(), (block ushr 16).toByte(),
+                    (block ushr 8).toByte(), block.toByte(),
+                ),
+            )
+            val accumulated = u.copyOf()
+            repeat(iterations - 1) {
+                u = mac.doFinal(u)
+                for (i in accumulated.indices) accumulated[i] = (accumulated[i].toInt() xor u[i].toInt()).toByte()
+            }
+            val take = minOf(accumulated.size, length - written)
+            accumulated.copyInto(output, written, 0, take)
+            written += take
+            block += 1
+        }
+        return output
     }
 
     /**
@@ -99,6 +144,17 @@ class E2eApiTest : ApiTestBase() {
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
         aad?.let(cipher::updateAAD)
         return String(cipher.doFinal(raw.copyOfRange(17, raw.size)))
+    }
+
+    /** The same reader, when what comes out is a key rather than a sentence. */
+    private fun gcmOpenBytes(key: SecretKey, envelope: String, aad: ByteArray?): ByteArray {
+        val raw = Base64.getUrlDecoder().decode(envelope)
+        require(raw.size >= 33) { "not an envelope: ${raw.size} bytes" }
+        require(raw[0].toInt() == 1) { "envelope version ${raw[0].toInt()} is not one this knows" }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, raw.copyOfRange(5, 17)))
+        aad?.let(cipher::updateAAD)
+        return cipher.doFinal(raw.copyOfRange(17, raw.size))
     }
 
     /** What the envelope says it was written under. */
@@ -263,6 +319,156 @@ class E2eApiTest : ApiTestBase() {
         }
         assertThat(unwrapped).isEqualTo(contentKey.encoded)
         assertThat(gcmOpen(contentKey, stored.path("verifier").asText(), null)).isEqualTo("almira")
+    }
+
+    /**
+     * The conformance vector from docs/12 §8.1, asserted here so that the
+     * reference implementation the document points at is pinned to the same
+     * bytes as the web client, Android and iOS.
+     *
+     * This exists because of what it caught. `deriveWrappingKey` used to be a
+     * `PBEKeySpec`/`SecretKeyFactory` pair — the API §2 forbids by name — and
+     * nothing noticed, because this suite only ever round-tripped its own
+     * output. A reference half that agrees with itself is worth nothing; the
+     * only question that matters is whether it agrees with the browser.
+     */
+    @Test
+    fun `the reference half derives the conformance vector from docs 12`() {
+        val salt = ByteArray(16) { it.toByte() }
+        val key = deriveWrappingKey(salt, 600_000, "correct horse battery staple ")
+        assertThat(key.encoded.joinToString("") { "%02x".format(it) })
+            .describedAs(
+                "the reference implementation must derive the same key as every other " +
+                    "client. If this fails, this file's PBKDF2 disagrees with docs/12 §8.1 " +
+                    "and anything it seals is unopenable by the real clients.",
+            )
+            .isEqualTo("17c0b45fe7d3dcc10b70395e28a8cc533a0c8113691b174d39b8a205f2085f6f")
+    }
+
+    /**
+     * A truncated envelope, stored through the real API and read back through
+     * it — the gap docs/12 §8.5 listed as asserted only in unit tests.
+     *
+     * The server cannot tell: a truncated envelope is still base64 and still
+     * longer than the 17-byte floor, so it is accepted, which is correct. The
+     * refusal has to happen in the client, on read, and it has to be a refusal
+     * rather than a plausible-looking answer.
+     */
+    @Test
+    fun `a truncated envelope survives the API and is refused by the client`() {
+        val (_, contentKey) = enable()
+        val id = capture(
+            owner, householdId, "gold_physical", "Gold", BigDecimal("1"), visibility = "household",
+        ).path("id").asText()
+
+        val whole = gcmSeal(contentKey, secret.toByteArray(), aadFor(id, "where_it_is"))
+        val rawWhole = Base64.getUrlDecoder().decode(whole)
+        // Keep the header and the first half of the body: the version byte, the
+        // key version and the iv all still parse, so nothing short-circuits
+        // before the tag check.
+        val truncated = b64(rawWhole.copyOfRange(0, 17 + (rawWhole.size - 17) / 2))
+
+        val stored = call(
+            HttpMethod.PUT, "/api/v1/households/$householdId/e2e/values/investment/$id/where_it_is",
+            owner, mapOf("ciphertext" to truncated),
+        )
+        assertThat(stored.status())
+            .describedAs("the server takes it, because it cannot know — that is the whole design")
+            .isEqualTo(HttpStatus.OK)
+
+        val fetched = get(
+            "/api/v1/households/$householdId/e2e/values?recordType=investment&recordId=$id", owner,
+        ).json().first().path("ciphertext").asText()
+        assertThat(fetched).isEqualTo(truncated)
+
+        assertThat(runCatching { gcmOpen(contentKey, fetched, aadFor(id, "where_it_is")) }.isFailure)
+            .describedAs("a truncated envelope must fail to open, never open partially")
+            .isTrue()
+
+        // And a body shorter than a tag is refused before any cipher is asked,
+        // which is the other half of truncation.
+        val headerOnly = b64(rawWhole.copyOfRange(0, 17))
+        val tooShort = call(
+            HttpMethod.PUT, "/api/v1/households/$householdId/e2e/values/investment/$id/nothing",
+            owner, mapOf("ciphertext" to headerOnly),
+        )
+        assertThat(tooShort.status())
+            .describedAs("17 bytes is a header and no tag; the server's floor catches this one")
+            .isEqualTo(HttpStatus.BAD_REQUEST)
+    }
+
+    /**
+     * The gap docs/12 §8.5 said was proved on no client at all: a value sealed
+     * **before** a passphrase rotation, opened **after** it.
+     *
+     * It must open, because rotation rewraps the same content key and rewrites
+     * no field — and the value's envelope must still carry the old key version,
+     * because that field records what wrote it rather than selecting what reads
+     * it. If this ever fails, rotation is a data-loss operation and the first
+     * person to change their passphrase finds out.
+     */
+    @Test
+    fun `a value sealed before a rotation still opens after it`() {
+        val (_, contentKey) = enable()
+        val id = capture(
+            owner, householdId, "gold_physical", "Gold", BigDecimal("1"), visibility = "household",
+        ).path("id").asText()
+
+        // Sealed under key version 1, before anything rotates.
+        val before = gcmSeal(contentKey, secret.toByteArray(), aadFor(id, "where_it_is"), keyVersion = 1)
+        assertThat(
+            call(
+                HttpMethod.PUT,
+                "/api/v1/households/$householdId/e2e/values/investment/$id/where_it_is",
+                owner, mapOf("ciphertext" to before),
+            ).status(),
+        ).isEqualTo(HttpStatus.OK)
+
+        // Rotate to a new passphrase: new salt, new wrapping key, the same
+        // content key, version 2. Exactly docs/12 §6, and no field is touched.
+        val newPassphrase = "a different passphrase entirely ఖ"
+        val newSalt = ByteArray(16).also(random::nextBytes)
+        val newWrappingKey = deriveWrappingKey(newSalt, 600_000, newPassphrase)
+        assertThat(
+            call(
+                HttpMethod.PUT, "/api/v1/households/$householdId/e2e/key", owner,
+                mapOf(
+                    "kdfSalt" to b64(newSalt),
+                    "iterations" to 600_000,
+                    "wrappedKey" to gcmSeal(newWrappingKey, contentKey.encoded, null, keyVersion = 2),
+                    "verifier" to gcmSeal(contentKey, "almira".toByteArray(), null, keyVersion = 2),
+                    "keyVersion" to 2,
+                ),
+            ).status(),
+        ).isEqualTo(HttpStatus.OK)
+
+        // Now unlock the way a client would after the rotation: fetch the key,
+        // derive from the *new* passphrase and the *stored* salt, unwrap.
+        val key = get("/api/v1/households/$householdId/e2e", owner).json().path("key")
+        assertThat(key.path("keyVersion").asInt()).isEqualTo(2)
+        val derived = deriveWrappingKey(
+            Base64.getUrlDecoder().decode(key.path("kdfSalt").asText()),
+            key.path("iterations").asInt(),
+            newPassphrase,
+        )
+        val recovered = SecretKeySpec(
+            gcmOpenBytes(derived, key.path("wrappedKey").asText(), null), "AES",
+        )
+        assertThat(recovered.encoded)
+            .describedAs("a rotation must hand back the same content key, or every sealed field is lost")
+            .isEqualTo(contentKey.encoded)
+        assertThat(gcmOpen(recovered, key.path("verifier").asText(), null)).isEqualTo("almira")
+
+        val fetched = get(
+            "/api/v1/households/$householdId/e2e/values?recordType=investment&recordId=$id", owner,
+        ).json().first().path("ciphertext").asText()
+
+        assertThat(envelopeKeyVersion(fetched))
+            .describedAs("the value still says what wrote it; rotation rewrites no field")
+            .isEqualTo(1)
+        assertThat(gcmOpen(recovered, fetched, aadFor(id, "where_it_is")))
+            .describedAs("and it opens, under the content key recovered from the new passphrase")
+            .isEqualTo(secret)
     }
 
     @Test

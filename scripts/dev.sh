@@ -48,6 +48,13 @@ export ALMIRA_TEST_REDIS_PORT=56379
 export ALMIRA_OTP_MAX_PER_IP_PER_HOUR="${ALMIRA_OTP_MAX_PER_IP_PER_HOUR:-500}"
 
 if [ "${1:-}" = "test" ]; then
+  # First, because it is the cheapest and because prose is the thing nothing
+  # else checks. docs/12 is the contract a second client implements from, and
+  # three of its claims had quietly become false — including telling an
+  # implementer to use an API the same document forbids by name.
+  say "docs/12 against the code that implements it…"
+  python3 scripts/check-spec.py | sed 's/^/  /'
+
   say "Unit and integration tests…"
   (cd backend && ./gradlew test --console=plain -q)
 

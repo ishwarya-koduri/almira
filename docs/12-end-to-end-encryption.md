@@ -381,10 +381,37 @@ not an inspection of the code.
 | the vector in 9.1 on JVM, Android, Kotlin/Native and the browser | done, byte-identical |
 | moved ciphertext refused, both clients | done |
 | wrong passphrase refused, both clients | done |
-| **truncated payload** | asserted in unit tests; **not** yet against the live API |
-| **an older `keyVersion` after a real rotation** | **not proved on any client** |
+| truncated payload, stored and read through the live API | done |
+| a value sealed before a rotation, opened after it — web, app, and the JVM reference | done |
+| the app reading values across a rotation the **web** performed, and the reverse | done |
+| docs/12 checked against the code that implements it, on every test run | `scripts/check-spec.py`, 31 assertions |
 
-The last two are the outstanding work for this item.
+**How the rotation case was proved**, since it is the one that cannot be
+discovered late. On the live stack, with eight real sealed values written before
+any rotation:
+
+- the JVM reference seals at `keyVersion` 1, rotates to a new passphrase with a
+  new salt, recovers the **same** content key from the new passphrase, and opens
+  the pre-rotation value — whose envelope still says `keyVersion` 1;
+- the app rotates, is refused by the old passphrase, opens all eight
+  pre-rotation fields under the new one, and rotates back;
+- the web does the same, independently, and all eight open on both sides of it;
+- and each client opens values across a rotation **the other one performed** —
+  the household went through key versions 1 → 7 during the run and every value
+  still opens under the passphrase this document names.
+
+Two things that went wrong while proving it, both worth keeping:
+
+- The reference implementation this document points at as "code you can copy"
+  was deriving its key with `PBEKeySpec`/`SecretKeyFactory` — the API §2 forbids
+  by name. It passed for years because this suite only ever round-tripped its
+  own output, and a reference half that agrees with itself proves nothing. It
+  now derives the way §7 says and asserts the §8.1 vector, so it is pinned to
+  the browser's bytes rather than to its own.
+- The first rotation run reported 7 of 8 fields keeping their key version. That
+  was the harness holding a baseline captured before it re-sealed one field, not
+  a rotation defect — but it is a fair warning about how easily this particular
+  check is written wrongly.
 
 ---
 

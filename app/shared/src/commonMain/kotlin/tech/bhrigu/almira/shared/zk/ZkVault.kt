@@ -94,6 +94,71 @@ class ZkVault(private val api: AlmiraApi) {
         return UnlockOutcome.Unlocked
     }
 
+    /**
+     * Change the passphrase without rewriting a single field (docs/12 §6).
+     *
+     * The content key does not change. A new wrapping key is derived from the
+     * new passphrase with a **new salt**, the same content key is rewrapped
+     * under it, and `keyVersion` goes up by one. Every value already sealed
+     * stays exactly as it is and keeps the key version it was written under —
+     * which is why rotation is instant and re-encryption is not.
+     *
+     * The order matters and is the reason this is not four lines inline: the
+     * old passphrase is proved first, via [unlock], so a rotation started with
+     * a typo fails before anything is written. A rotation that wrote first and
+     * checked afterwards would replace the only wrapped key in existence with
+     * one derived from a passphrase nobody meant to set — and there is no
+     * recovery in this scheme, so that is not a bug, it is the data gone.
+     *
+     * The local [keyVersion] is only advanced after the server has accepted the
+     * new key, so a failed call leaves this object describing what is actually
+     * stored.
+     */
+    suspend fun rotate(
+        householdId: String,
+        currentPassphrase: String,
+        newPassphrase: String,
+    ): RotateOutcome {
+        // Prove the old passphrase before touching anything. This also leaves
+        // the content key in hand, which is the thing being rewrapped.
+        when (val unlocked = unlock(householdId, currentPassphrase)) {
+            is UnlockOutcome.Unlocked -> Unit
+            else -> return RotateOutcome.Refused(unlocked)
+        }
+        val key = contentKey ?: return RotateOutcome.Refused(UnlockOutcome.Unreadable)
+
+        val salt = secureRandomBytes(SALT_BYTES)
+        val wrappingKey = PassphraseKey.derive(newPassphrase, salt, ITERATIONS)
+        val nextVersion = currentKeyVersion + 1
+
+        val wrappedIv = secureRandomBytes(Envelope.IV_BYTES)
+        val verifierIv = secureRandomBytes(Envelope.IV_BYTES)
+
+        val stored = api.putE2eKey(
+            householdId,
+            E2eKeyEnvelope(
+                kdf = KDF,
+                kdfSalt = Envelope.encodeBase64Url(salt),
+                iterations = ITERATIONS,
+                wrapAlgorithm = WRAP,
+                // Both wrap envelopes are stamped with the version they belong
+                // to, not with 1 — a reference half that always wrote 1 would
+                // agree with the other client until the first rotation.
+                wrappedKey = Envelope.build(
+                    nextVersion, wrappedIv, aesGcmSeal(wrappingKey, wrappedIv, key, null),
+                ),
+                verifier = Envelope.build(
+                    nextVersion, verifierIv,
+                    aesGcmSeal(key, verifierIv, VERIFIER.encodeToByteArray(), null),
+                ),
+                keyVersion = nextVersion,
+            ),
+        )
+
+        currentKeyVersion = stored.keyVersion
+        return RotateOutcome.Rotated(stored.keyVersion)
+    }
+
     /** Everything this object holds, gone. Called when the app leaves the foreground. */
     fun forget() {
         // Overwritten before being dropped: a reference the collector has not
@@ -153,6 +218,12 @@ class ZkVault(private val api: AlmiraApi) {
         const val WRAP = "AES-GCM-256"
         const val VERIFIER = "almira"
         const val KEY_BYTES = 32
+
+        /** What a new or rotated key is stretched with. The server's floor is 100 000. */
+        const val ITERATIONS = 600_000
+
+        /** 16 bytes, new on enable and new on every rotation — never reused. */
+        const val SALT_BYTES = 16
     }
 }
 
@@ -163,6 +234,16 @@ sealed interface UnlockOutcome {
     data object NewerVersion : UnlockOutcome
     data object UnknownScheme : UnlockOutcome
     data object Unreadable : UnlockOutcome
+}
+
+sealed interface RotateOutcome {
+    data class Rotated(val keyVersion: Int) : RotateOutcome
+    /**
+     * The old passphrase did not open the vault, so nothing was written. Carries
+     * the reason rather than flattening it, because "wrong passphrase" and "this
+     * was sealed by a newer Almira" are different sentences to a person.
+     */
+    data class Refused(val because: UnlockOutcome) : RotateOutcome
 }
 
 sealed interface OpenOutcome {

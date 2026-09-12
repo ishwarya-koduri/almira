@@ -224,6 +224,15 @@ docker exec almira-personal-verifypg psql -U almira -d almira_verify -c \
   || warn "the application role may already exist — continuing"
 
 # -----------------------------------------------------------------------------
+step "docs/12 against the code that implements it"
+# -----------------------------------------------------------------------------
+if ( cd "$REPO" && python3 scripts/check-spec.py > /dev/null 2>&1 ); then
+  ok "the zero-knowledge spec and the code agree"
+else
+  bad "docs/12 disagrees with the code — run: python3 scripts/check-spec.py"
+fi
+
+# -----------------------------------------------------------------------------
 step "Backend tests"
 # -----------------------------------------------------------------------------
 if ( cd "$REPO/backend" && \

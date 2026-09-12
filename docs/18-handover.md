@@ -20,7 +20,7 @@ end to end on both platforms as a thin slice.
 | **Privacy** | Per-record visibility enforced in PostgreSQL, with the application connecting as a role that cannot bypass it. |
 | **Tests** | 375 unit and full-stack, 59 SQL privacy assertions, 151 end-to-end checks over real HTTP. |
 | **Native app** | Kotlin Multiplatform with Compose Multiplatform, one shared module for both platforms. The thin slice runs on Android and iOS and is tagged `v0.1.0-thinslice`: OTP sign-in, capture from the type's `field_schema`, per-viewer net worth, Keystore/Keychain session storage behind biometrics, and zero-knowledge seal and open. Verified on an emulator and a simulator, never on a physical device. |
-| **Brand** | One master, [`brand/almira-mark.svg`](../brand/almira-mark.svg). Every icon in the repository — web, Android and iOS — is rendered from it by `brand/render-icons.py`. |
+| **Brand** | One master, [`brand/almira-mark.svg`](../brand/almira-mark.svg) — the supplied artwork, provenance manifest intact, wordmark as outlined paths so no font is needed. Every icon for web, Android and iOS is rendered from it by `brand/render-icons.py`, which also derives the maskable and adaptive scales by measuring the rendered pixels and fails if any variant overflows the area its platform guarantees. |
 | **Deployment** | [`deploy/`](../deploy) and [Doc 17](17-deploying.md): Dockerfile, compose stack, database bootstrap, `.env.production.example`, smoke test. Written; never run against a real host. |
 
 ## 2 · What is deliberately not built

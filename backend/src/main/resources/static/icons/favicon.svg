@@ -1,33 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-<defs><style>
-      .ground { fill: #0F4034; }
-      .cream  { fill: #F7F4EA; }
-      .gold   { fill: #DFB86F; }
-      .arch   { fill: none; stroke: #F7F4EA; stroke-width: 66; }
-      .word   { fill: #F7F4EA; font-family: Georgia, "Times New Roman", serif;
-                font-size: 104px; letter-spacing: 16px; }
-    </style></defs>
-<rect width="1024" height="1024" fill="#0F4034"/>
-<g transform="translate(0.000 0.000) scale(1.0)">
-    <!-- The cabinet: two legs and a dome, drawn as one stroked centreline so
-         the corners join rather than being mitred by hand. -->
-    <path class="arch" d="M 192 880 L 192 440 A 320 320 0 0 1 832 440 L 832 880"/>
-
-    <!-- The centre stile between the two doors. It stops at the keyhole,
-         because that is where a real almirah's handle plate begins. -->
-    <rect class="cream" x="479" y="152" width="66" height="228"/>
-
-    <!-- The keyhole: the only way in. -->
-    <circle class="gold" cx="512" cy="448" r="80"/>
-    <path class="gold" d="M 482 500 L 542 500 L 572 614 L 452 614 Z"/>
-
-    <!-- The lock rail, crossing the doors and both legs. -->
-    <rect class="gold" x="160" y="672" width="704" height="80"/>
-
-    <!-- The name, inside the cabinet rather than under it. -->
-    
-
-    <!-- The plinth it stands on, wider than the body. -->
-    <rect class="cream" x="120" y="890" width="784" height="68" rx="34"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024" fill="none"><rect width="100" height="100" fill="#123F3A" />
+  <g transform="translate(0 0) scale(1.000000)"><path d="M20 84 V44 C20 26 33 12.5 50 12.5 C67 12.5 80 26 80 44 V84" stroke="#FAF6F0" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M15 90 H85" stroke="#FAF6F0" stroke-width="6" stroke-linecap="round" />
+  <path d="M50 14 V38" stroke="#FAF6F0" stroke-width="7.5" stroke-linecap="round" />
+  <circle cx="50" cy="45" r="7.6" fill="#E0BC7E" />
+  <path d="M46.2 50.3 L44.1 60 H55.9 L53.8 50.3 Z" fill="#E0BC7E" />
+  <path d="M16.25 70 H83.75" stroke="#E0BC7E" stroke-width="7.5" stroke-linecap="butt" />
+  </g></svg>

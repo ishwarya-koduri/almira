@@ -12,7 +12,7 @@ derives the same key on both sides.
 **Settle order:** B1 + B2 together (they are one change) → B3 → B5 into docs/12
 → B6 / B7 → B4 / B8 / B9.
 
-**Landed so far:** B1, B2, B3 and B5, on both clients, with vectors and
+**Landed so far:** B1, B2, B3, B5 and B6, on both clients, with vectors and
 negatives — see the end of Part B.
 
 **What "done" means, in one sentence:** the Android app opens a field the web
@@ -276,7 +276,7 @@ app so the rules have somewhere to live and a test has something to hold, the
 byte encoding agreed with the browser vector by vector, and the round trip run
 through the **deployed** envelope rather than a copy of it.
 
-### B6 · The version byte — **DECIDED**
+### B6 · The version byte — **DECIDED, LANDED**
 
 > **Read it, and refuse anything but `0x01`. Fail closed.**
 
@@ -286,6 +286,14 @@ it. One envelope parser, used for all three envelope kinds.
 **Required negative:** a `wrappedKey` carrying an unknown version byte is
 refused, not best-effort parsed. This is what makes a future format bump safe
 instead of silently misread.
+
+Landed. `Envelope` on the app and `parseEnvelope` on the web are each the only
+reader in their client, and the `wrappedKey` path goes through it rather than
+slicing. Both refuse an unknown version, a truncated envelope, and anything that
+is not base64; both read key version 1 and 258 identically out of envelopes the
+browser produced. "Newer version of Almira" and "this is broken" stay separate
+sentences, because they deserve different ones — and neither is "wrong
+passphrase", which is now reached only by a genuine failure to decrypt.
 
 ### B7 · `keyVersion` inside the wrap envelopes — **DECIDED**
 

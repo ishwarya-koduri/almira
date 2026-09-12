@@ -66,15 +66,42 @@ async function seal(key, plaintextBytes, aad, version = keyVersion) {
   return toBase64Url(envelope);
 }
 
-async function open(key, envelopeText, aad) {
-  const raw = fromBase64Url(envelopeText);
+/**
+ * The one envelope reader, used for all three kinds of envelope — wrapped key,
+ * verifier and every sealed field.
+ *
+ * There used to be two: this one, and an inline slice in `unlock` that took
+ * offsets 5..17 out of the wrapped key without ever looking at the version
+ * byte. Nothing was wrong with the bytes it produced, which is exactly the
+ * problem — a second parser is correct right up until a format changes, and
+ * then it reads the wrong offsets out of a newer envelope and hands back
+ * plausible rubbish instead of an error (docs/zk-interop-acceptance.md B6).
+ *
+ * Fails closed on everything: unknown version, truncation, not-base64. A sealed
+ * value nobody can read is a thing someone gets told about. A sealed value read
+ * wrongly is an address they will believe.
+ */
+function parseEnvelope(envelopeText) {
+  let raw;
+  try {
+    raw = fromBase64Url(envelopeText);
+  } catch {
+    throw new Error("This doesn't look like sealed data.");
+  }
+  if (raw.length < 33) throw new Error("This doesn't look like sealed data.");
   if (raw[0] !== 1) {
     // A version we do not know is not a thing to guess at: guessing here means
     // showing someone the wrong bytes and calling them their note.
     throw new Error("This was sealed by a newer version of Almira.");
   }
-  const iv = raw.slice(5, 17);
-  const body = raw.slice(17);
+  const keyVersion = new DataView(raw.buffer, raw.byteOffset).getUint32(1, false);
+  if (keyVersion < 1) throw new Error("This doesn't look like sealed data.");
+
+  return { keyVersion, iv: raw.slice(5, 17), body: raw.slice(17) };
+}
+
+async function open(key, envelopeText, aad) {
+  const { iv, body } = parseEnvelope(envelopeText);
   const plain = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv, ...(aad ? { additionalData: aad } : {}) },
     key,
@@ -186,15 +213,21 @@ export async function unlock(householdId, passphrase) {
     passphrase, fromBase64Url(stored.kdfSalt), stored.iterations,
   );
 
+  // Parsed before anything is attempted, and by the same reader the fields use,
+  // so an envelope from a newer Almira is refused here rather than being sliced
+  // at offsets that may no longer mean what they meant.
+  const wrapped = parseEnvelope(stored.wrappedKey);
+
   let rawContentKey;
   try {
-    const raw = fromBase64Url(stored.wrappedKey);
     rawContentKey = new Uint8Array(await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: raw.slice(5, 17) }, wrappingKey, raw.slice(17),
+      { name: "AES-GCM", iv: wrapped.iv }, wrappingKey, wrapped.body,
     ));
   } catch {
-    // The verifier exists so this is a clean "wrong passphrase" rather than a
-    // decryption error pointed at someone's records.
+    // Only a failure to *decrypt* is a wrong passphrase. A malformed or
+    // future-versioned envelope threw above, with its own sentence, because
+    // telling someone their passphrase is wrong when it is not is worse than
+    // telling them nothing.
     throw new Error("That passphrase doesn't open this. Nothing has been changed.");
   }
 

@@ -12,8 +12,8 @@ derives the same key on both sides.
 **Settle order:** B1 + B2 together (they are one change) → B3 → B5 into docs/12
 → B6 / B7 → B4 / B8 / B9.
 
-**Landed so far:** B1, B2 and B3, on both clients, with vectors and negatives —
-see the end of Part B.
+**Landed so far:** B1, B2, B3 and B5, on both clients, with vectors and
+negatives — see the end of Part B.
 
 **What "done" means, in one sentence:** the Android app opens a field the web
 client sealed, and the web client opens a field the app sealed, with the same
@@ -256,7 +256,7 @@ half-gone. See docs/known-issues.md for the server's side of this.
 inputs producing exact expected bytes, asserted in **both** clients. A
 derivation that is "compatible" without a KAT is compatible until it is not.
 
-### B5 · What is encrypted — **DECIDED**
+### B5 · What is encrypted — **DECIDED, LANDED**
 
 > **The plaintext is the raw UTF-8 bytes of the value's string. Wrapping it in
 > anything is a version-byte bump, never a convention.**
@@ -268,6 +268,13 @@ convenience" and breaks the other.
 
 **Required test:** seal a value that looks like JSON — `{"a":1}` — and confirm it
 round-trips as that literal seven-character string, proving no client parses it.
+
+Landed. The docs/12 sentence went in early, with B1, because the two rules —
+normalise the passphrase, never the value — only make sense written together.
+What landed here is the code and the proof: a named `SealedValue` pair on the
+app so the rules have somewhere to live and a test has something to hold, the
+byte encoding agreed with the browser vector by vector, and the round trip run
+through the **deployed** envelope rather than a copy of it.
 
 ### B6 · The version byte — **DECIDED**
 
@@ -357,6 +364,23 @@ arrays only shows that a file agrees with itself. A value sealed while holding
 an uppercase id **opens** against the server's lowercase echo; the AAD a
 non-canonicalising client would build **fails the GCM tag** against that same
 echo; a component carrying `|` is refused before anything is sealed.
+
+**B5, on both clients.** The plaintext encoding, agreed vector by vector with
+the shipped `valueBytes`:
+
+| Value | Bytes |
+|---|---|
+| `{"a":1}` | `7b2261223a317d` — seven characters, not an object |
+| `ఖజానా తాళం` | `e0b096…e0b082` |
+| `🔐 locker ` | `f09f9490206c6f636b657220` — trailing space kept |
+| `""` | *(empty)* |
+| `"   "` | `202020` |
+| `cafe` + U+0301 | `63616665cc81` — **still decomposed** |
+
+That last row is the mirror of B1 and the reason both rules are written down:
+the passphrase folds to one form, a value never does. Seven values round-trip
+unchanged through the **deployed** browser envelope — including the empty
+string and the whitespace-only one — and five app tests assert the same bytes.
 
 ---
 

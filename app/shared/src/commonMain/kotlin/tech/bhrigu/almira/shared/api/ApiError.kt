@@ -35,7 +35,14 @@ class ApiException(
     val code: String,
     override val message: String,
     val details: Map<String, JsonElement> = emptyMap(),
-) : Exception(message) {
+    /**
+     * Passed to the constructor rather than attached afterwards. `initCause`
+     * is a JVM method and does not exist on Kotlin/Native, so the fluent
+     * version of this compiled happily for two platforms and not for the
+     * third — which is the sort of thing only a real iOS compile finds.
+     */
+    cause: Throwable? = null,
+) : Exception(message, cause) {
 
     /** Field-level messages for inline form errors, when the server sent them. */
     val fieldErrors: Map<String, String>
@@ -55,6 +62,7 @@ class ApiException(
             status = 0,
             code = "offline",
             message = "Couldn't reach Almira. Check your connection and try again.",
-        ).also { it.initCause(cause) }
+            cause = cause,
+        )
     }
 }

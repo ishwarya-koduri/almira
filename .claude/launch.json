@@ -1,0 +1,10 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "almira-personal",
+      "url": "http://localhost:18080",
+      "port": 18080
+    }
+  ]
+}

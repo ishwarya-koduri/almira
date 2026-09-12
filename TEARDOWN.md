@@ -4,7 +4,8 @@ Written as the personal setup is built, not afterwards, so it says what is
 actually true rather than what was intended. Two lists: what a folder delete and
 a `down -v` really remove, and what genuinely is not folder-removable.
 
-Last updated at the end of Stage 3 (Android emulator running).
+Last updated at the end of Stage 3, after verifying the `~/.android`
+question rather than assuming it.
 
 ---
 
@@ -69,40 +70,42 @@ working copy; the history is on the remote.
 
 ## 2 · What is **not** folder-removable
 
-### `~/.android` — 24 KB, five files, created 12 Sep 2026
+### `~/.android` — 8 KB, two files. Verified, not assumed.
 
-The one genuine leak, and it is worth being precise about because the rest of
-the isolation held.
+The one genuine leak, now measured rather than estimated. The first emulator
+boot left five files here. `env.sh` gained `ANDROID_EMULATOR_HOME`, the
+directory was deleted, and the emulator was booted again from clean — this is
+what actually happened:
 
-`ANDROID_USER_HOME` and `ANDROID_AVD_HOME` moved the bulk — the AVD and its 2 GB
-of disk images went folder-local as intended. But adb and the emulator write a
-handful of small files to a hard-coded `$HOME/.android` regardless:
-
-| file | what it is |
+| file | where it lands now |
 |---|---|
-| `analytics.settings` | an anonymous UUID and `"hasOptedIn": false` — written by the SDK tools on first run |
-| `adbkey` | adb's RSA key, the one a physical device would be asked to trust |
-| `emu-last-feature-flags.protobuf` | the emulator's feature flags from its last run |
-| `emu-update-last-check.ini` | when it last looked for an update |
-| `modem-nv-ram-5554` | simulated modem state for the running AVD |
+| `analytics.settings` | folder-local |
+| `emu-last-feature-flags.protobuf` | folder-local |
+| `emu-update-last-check.ini` | folder-local |
+| `modem-nv-ram-5554` | folder-local |
+| `debug.keystore`, `userid` | folder-local |
+| **`adbkey`, `adbkey.pub`** | **`~/.android` — unavoidable** |
+
+`ANDROID_EMULATOR_HOME` replaces `$HOME/.android` for the emulator, and it
+works. **adb does not honour it.** `ANDROID_SDK_HOME` — the legacy variable adb
+historically consulted — was tested too, and platform-tools 37.0.1 ignores it:
+the key path is hard-coded to `$HOME/.android/adbkey`. So two files, 8 KB, and
+no amount of environment will move them.
+
+Those two are adb's RSA key pair: the identity a physical Android device is
+asked to trust when it shows the USB-debugging prompt.
 
 **This directory did not exist on this machine before 12 Sep 2026**, so removing
 it restores the machine exactly:
 
 ```bash
+adb kill-server        # or the key is regenerated straight away
 rm -rf ~/.android
 ```
 
 Do that only if no other Android work is happening on this Mac. If any is, the
-`adbkey` there may be authorising a real device and deleting it means
-re-approving that device's USB debugging prompt.
-
-`env.sh` now also sets `ANDROID_EMULATOR_HOME`, which per the emulator's own
-`-help-environment` replaces `$HOME/.android` outright. It was added after the
-first boot demonstrated the leak, so **a fresh setup following these
-instructions should not produce this directory at all** — that has not been
-re-tested here, because proving it means deleting the existing one, and deleting
-something in a home directory is a decision for whoever owns the machine.
+key there may be authorising a real device, and deleting it means approving that
+device's USB-debugging prompt again.
 
 ### `~/.konan` — pre-empted, not yet a problem
 

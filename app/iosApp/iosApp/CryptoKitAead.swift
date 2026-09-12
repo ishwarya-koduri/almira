@@ -42,7 +42,13 @@ final class CryptoKitAead: NSObject, AppleAead {
         // A body shorter than the tag is not a failure to authenticate, it is
         // not an envelope — but it reaches the caller as the same nil, because
         // telling the two apart tells an attacker which half they got right.
-        guard body.count > 16 else { return nil }
+        //
+        // `>=`, not `>`. A sealed empty string is a body of exactly sixteen
+        // bytes: the tag, and no ciphertext at all. The first version of this
+        // line rejected it, so every empty sealed field the web had written
+        // came back unreadable on iOS while every non-empty one opened — which
+        // is precisely why the acceptance matrix carries an empty value.
+        guard body.count >= 16 else { return nil }
         let tagStart = body.index(body.endIndex, offsetBy: -16)
         do {
             let box = try AES.GCM.SealedBox(

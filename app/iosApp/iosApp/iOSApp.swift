@@ -37,6 +37,23 @@ struct iOSApp: App {
         // only way to know they work is to make them work once.
         print(SecuritySelfTest_iosKt.securitySelfTest())
         print("--- end zk self-test ---")
+
+        // The cross-client round trip, against the live API and the session
+        // already in the Keychain. Reached only by this argument, so it never
+        // runs for a person using the app — and only in a debug build, so it
+        // cannot ship at all.
+        if CommandLine.arguments.contains("-almiraZkInterop") {
+            let base = Bundle.main.object(forInfoDictionaryKey: "AlmiraApiBaseUrl") as? String
+                ?? "http://localhost:18080"
+            print("--- almira zk interop (iOS) ---")
+            print(ZkInteropRun_iosKt.zkInteropRun(
+                apiBaseUrl: base,
+                householdId: "58276cae-2448-4d51-8c9d-29fefd3225d4",
+                recordId: "167d9136-e238-48cf-b093-0f51d9a43c8d",
+                passphrase: "correct horse battery staple "
+            ))
+            print("--- end zk interop ---")
+        }
         #endif
     }
 

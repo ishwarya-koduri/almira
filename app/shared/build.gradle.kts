@@ -49,6 +49,7 @@ kotlin {
             // so the type is part of this module's public surface.
             api(libs.androidx.biometric)
             api(libs.androidx.fragment)
+            implementation(libs.play.services.auth.api.phone)
             implementation(libs.androidx.core.ktx)
         }
         iosMain.dependencies {

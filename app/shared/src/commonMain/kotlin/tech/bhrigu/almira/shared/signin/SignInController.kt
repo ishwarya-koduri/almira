@@ -50,11 +50,18 @@ data class SignInState(
 class SignInController(
     private val api: AlmiraApi,
     private val scope: CoroutineScope,
+    /**
+     * Optional on purpose. Everything here works without it — it only saves
+     * six keystrokes — so a platform that cannot listen for the message, or a
+     * test that does not want to, passes nothing.
+     */
+    private val autofill: OtpAutofill? = null,
 ) {
     private val _state = MutableStateFlow(SignInState())
     val state: StateFlow<SignInState> = _state.asStateFlow()
 
     private var countdown: Job? = null
+    private var listening: Job? = null
 
     fun onPhoneChanged(input: String) {
         val digits = input.filter(Char::isDigit).take(SignInState.PHONE_LENGTH)
@@ -96,8 +103,33 @@ class SignInController(
                 it.copy(step = SignInStep.Code, challenge = challenge, code = "", error = null)
             }
             startCountdown(challenge.resendAfterSeconds)
+            listenForCode()
         }
     }
+
+    /**
+     * Wait for the message, and fill the field with it.
+     *
+     * Routed through [onCodeChanged] rather than written into the state
+     * directly, so an autofilled code goes down exactly the same path as a
+     * typed one — same validation, same submit-on-the-sixth-digit. A second
+     * code path here is how the two quietly grow apart.
+     */
+    private fun listenForCode() {
+        val autofill = autofill ?: return
+        listening?.cancel()
+        listening = scope.launch {
+            val code = autofill.awaitCode(SignInState.CODE_LENGTH) ?: return@launch
+            // Landing on the phone step again means they went back; filling a
+            // field they are no longer looking at would be a jump scare.
+            if (state.value.step == SignInStep.Code && state.value.code.isEmpty()) {
+                onCodeChanged(code)
+            }
+        }
+    }
+
+    /** The eleven characters the SMS has to end with, where that applies. */
+    fun smsSignature(): String? = autofill?.smsSignature()
 
     fun resend() {
         if (state.value.resendIn > 0 || state.value.busy) return
@@ -105,6 +137,9 @@ class SignInController(
             val challenge = api.requestOtp(state.value.phone)
             _state.update { it.copy(challenge = challenge, code = "", error = null) }
             startCountdown(challenge.resendAfterSeconds)
+            // A new code means a new message, and the old listener is watching
+            // for one that will never come.
+            listenForCode()
         }
     }
 
@@ -134,6 +169,7 @@ class SignInController(
 
     /** Back to the phone step — a wrong number should not need a restart. */
     fun editPhone() {
+        listening?.cancel()
         countdown?.cancel()
         _state.update { it.copy(step = SignInStep.Phone, code = "", error = null, challenge = null, resendIn = 0) }
     }

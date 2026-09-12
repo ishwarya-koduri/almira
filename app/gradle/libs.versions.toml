@@ -14,6 +14,8 @@ androidx-core = "1.15.0"
 androidx-biometric = "1.1.0"
 # MainActivity is a FragmentActivity because BiometricPrompt requires one.
 androidx-fragment = "1.8.5"
+# SMS Retriever: one message handed over, no READ_SMS anywhere near it.
+play-services-auth-api-phone = "18.2.0"
 # Ktor 3.2.3 is the newest release built against Kotlin 2.1.21 — verified from
 # its POM, not assumed. 3.3 moves to Kotlin 2.2 metadata and 3.4 to 2.3, and
 # this compiler cannot read either.
@@ -35,6 +37,7 @@ androidx-activity-compose = { module = "androidx.activity:activity-compose", ver
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
 androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "androidx-biometric" }
 androidx-fragment = { module = "androidx.fragment:fragment-ktx", version.ref = "androidx-fragment" }
+play-services-auth-api-phone = { module = "com.google.android.gms:play-services-auth-api-phone", version.ref = "play-services-auth-api-phone" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

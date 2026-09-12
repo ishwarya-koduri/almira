@@ -130,6 +130,35 @@ the amount and the institution, and logs are the least protected thing here.
 3. Map each `template` to its registered DLT template id.
 4. `ALMIRA_PROVIDERS_SMS_MODE=live` plus provider credentials and the sender id.
 
+### The one-time-code template has a fifth requirement
+
+The Android app fills the code in by itself, using **SMS Retriever** — Play
+Services hands the app one message and no SMS permission is involved anywhere.
+The price is that the message has to identify itself, and the registered DLT
+template must carry it:
+
+```
+<#> 123456 is your Almira code. FkcDLUV0sv8
+```
+
+- The last token is an **eleven-character hash of the signing certificate**, so
+  it is different for the debug build, for a locally signed release, and again
+  for the build Google Play re-signs. Getting it wrong fails **silently**: the
+  message arrives, looks perfect, and autofill simply never happens.
+- The app computes its own and shows it in the development banner on the code
+  step, so the value to register is read off the build rather than derived by
+  hand. For a Play-signed release, take the certificate from Play Console's app
+  signing page.
+- `<#>` is optional and worth keeping: it lets a messaging app hide the message.
+- The whole body must stay within 140 bytes.
+
+The **DLT template must be registered with that hash in it**, which means a
+release signed by a new key needs a template change and a re-registration. Plan
+that with the key, not after it.
+
+iOS needs none of this: `textContentType = .oneTimeCode` makes the keyboard
+offer the code, and the message needs nothing special.
+
 ---
 
 ## 5 · Email and push

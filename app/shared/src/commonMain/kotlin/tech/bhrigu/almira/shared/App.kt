@@ -48,6 +48,7 @@ import tech.bhrigu.almira.shared.security.UnlockResult
 import tech.bhrigu.almira.shared.security.createAppLock
 import tech.bhrigu.almira.shared.security.createTokenStore
 import tech.bhrigu.almira.shared.signin.SignInController
+import tech.bhrigu.almira.shared.signin.createOtpAutofill
 import tech.bhrigu.almira.shared.signin.SignInScreen
 import tech.bhrigu.almira.shared.theme.AlmiraTheme
 
@@ -68,6 +69,7 @@ fun App(
     val scope = rememberCoroutineScope()
     val tokens = remember(host) { createTokenStore(host) }
     val appLock = remember(host) { createAppLock(host) }
+    val autofill = remember(host) { createOtpAutofill(host) }
 
     var signedOutAt by remember { mutableStateOf(0) }
     // Bumped on every unlock so the client is rebuilt and reads the token it
@@ -95,7 +97,7 @@ fun App(
             onSessionLost = { signedOutAt += 1 },
         )
     }
-    val controller = remember(api) { SignInController(api, scope) }
+    val controller = remember(api) { SignInController(api, scope, autofill) }
     val state by controller.state.collectAsState()
 
     LaunchedEffect(signedOutAt) {
@@ -191,6 +193,7 @@ fun App(
                     onVerify = controller::verify,
                     onResend = controller::resend,
                     onEditPhone = controller::editPhone,
+                    smsSignature = controller.smsSignature(),
                 )
 
                 else -> SignedIn(

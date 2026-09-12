@@ -142,3 +142,26 @@ Swift entry point; nothing above the seam moves.
 
 **Risk if left** None today — no iOS build exists to run it. The entry points
 throw with a message pointing here rather than failing silently.
+
+---
+
+## 6. iOS one-time-code autofill is one attribute, not yet applied
+
+**Where** `app/shared/src/iosMain/.../signin/OtpAutofill.ios.kt`.
+
+**What** iOS autofill is declarative: a text field with
+`textContentType = .oneTimeCode` makes the keyboard offer the code from the
+most recent message, and no runtime API is called. The iOS side of the seam is
+therefore an honest no-op rather than a throwing stub — crashing a future iOS
+build over a feature that needs no runtime code would be a bug we invented for
+ourselves.
+
+What is genuinely missing is the attribute itself on the code field. Compose
+Multiplatform's `BasicTextField` does not expose `textContentType`, so the OTP
+field will need either a Compose `KeyboardType`/semantics bridge that maps to
+it, or a small UIKit-backed field on iOS only.
+
+**When to fix** The iOS stage, with the rest of that target.
+
+**Risk if left** iOS users type six digits by hand. No incorrect behaviour, no
+data risk — only a missing convenience.

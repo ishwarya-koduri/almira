@@ -66,6 +66,8 @@ fun SignInScreen(
     onVerify: () -> Unit,
     onResend: () -> Unit,
     onEditPhone: () -> Unit,
+    /** Shown in the development banner only; see [CodeStep]. */
+    smsSignature: String? = null,
 ) {
     val colors = AlmiraTheme.colors
     val space = AlmiraTheme.spacing
@@ -119,6 +121,7 @@ fun SignInScreen(
                         onVerify = onVerify,
                         onResend = onResend,
                         onEditPhone = onEditPhone,
+                        smsSignature = smsSignature,
                     )
                 }
             }
@@ -228,6 +231,7 @@ private fun CodeStep(
     onVerify: () -> Unit,
     onResend: () -> Unit,
     onEditPhone: () -> Unit,
+    smsSignature: String?,
 ) {
     val colors = AlmiraTheme.colors
     val type = AlmiraTheme.typography
@@ -314,6 +318,19 @@ private fun CodeStep(
                         style = type.small,
                         color = colors.ink,
                     )
+                    // The signature is derived from whatever signed this build,
+                    // so it differs between debug, release and a Play-resigned
+                    // upload. An SMS template carrying the wrong one fails
+                    // silently — the message arrives and autofill simply never
+                    // happens — so it is shown where someone testing delivery
+                    // is already looking.
+                    smsSignature?.let {
+                        Text(
+                            "Messages must end with $it for this build to autofill.",
+                            style = type.caption,
+                            color = colors.inkMuted,
+                        )
+                    }
                 }
             }
         }

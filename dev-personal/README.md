@@ -90,3 +90,43 @@ docker rm -f almira-personal-testpg almira-personal-testredis
 The throwaway Postgres publishes a loopback port because the test JVM runs on
 the host; the stack's own `almira-personal-db` still publishes nothing, which is
 the rule that keeps it from colliding with anything else on this machine.
+
+---
+
+## The machine's Xcode state, before we touched it
+
+Recorded **2026-09-12, before installing anything**, because `xcode-select` is
+the one part of an Xcode install that is system-wide: it decides which developer
+directory *every* tool on this machine uses, including for the office projects.
+Everything else Xcode brings is either folder-local or cleanly deletable.
+
+| | |
+|---|---|
+| `xcode-select -p` | **`/Library/Developer/CommandLineTools`** |
+| That path | exists, `root:wheel`, dated 2 Jul 2026 |
+| Standalone Command Line Tools | **installed** — `com.apple.pkg.CLTools_Executables` 26.6.0.0.1781586589 |
+| `/Applications/Xcode*.app` | **none** |
+| `xcodebuild` | not available (CLT instance, no Xcode) |
+| `xcrun simctl` | not available |
+| `~/Library/Developer` | **does not exist** |
+| `clang` / `swift` / `make` | `/usr/bin/…`, i.e. served by the CLT above |
+| `git` | `/opt/homebrew/bin/git` — Homebrew's, not the CLT's, so unaffected either way |
+| Free space | 664 GiB |
+
+### To restore this exactly
+
+```bash
+sudo xcode-select --switch /Library/Developer/CommandLineTools
+# or, equivalently, the documented reset:
+sudo xcode-select --reset
+```
+
+Then confirm `xcode-select -p` reads `/Library/Developer/CommandLineTools`
+again. The standalone Command Line Tools were here first and installing Xcode
+does not remove them — so nothing that depends on `/usr/bin/clang` today stops
+working, whichever way the pointer is set.
+
+To undo the rest: delete `/Applications/Xcode.app`, delete
+`~/Library/Developer` (which did not exist before today, so removing it restores
+the machine exactly), and remove simulator runtimes from Xcode's Settings →
+Platforms. Xcode's caches live in `~/Library/Caches/com.apple.dt.Xcode`.

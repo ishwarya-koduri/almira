@@ -190,3 +190,29 @@ existing blank and length checks. Additive, and no client sends one.
 
 **Risk if left** None reachable now. The cost is that a rule the clients enforce
 is not enforced where the data actually lands.
+
+---
+
+## 8. The web client can set up zero-knowledge mode but cannot seal a field
+
+**Where** `backend/src/main/resources/static/app/` — `e2e.js` exports
+`sealField`, `readSealed` and `unsealField`; no screen calls them.
+
+**What** Settings can enable zero-knowledge mode, unlock it and lock it again.
+There is no interface anywhere in the web client for sealing a value on a record
+or for reading one back, so the feature is reachable from the browser only
+through the module's exported functions.
+
+This matters for how the interop evidence should be read: when the acceptance
+run says "the web client sealed it", the shipped `e2e.js` really did the sealing
+against the real API — but a person could not have done the same thing by
+clicking, because there is no button. The Android app has the screen; the web
+does not.
+
+**When to fix** The web-widening pass. The detail sheet is the natural home: a
+sealed field belongs beside the record it describes, not on a separate screen —
+which is also a hint that the app's current standalone "Sealed" screen is a
+staging post rather than the final shape.
+
+**Risk if left** No correctness or data risk. The capability exists and is
+proven; it is simply not offered.

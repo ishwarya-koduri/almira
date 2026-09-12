@@ -1,4 +1,5 @@
 import SwiftUI
+import Shared
 
 /// The whole of the iOS app, by design.
 ///
@@ -9,10 +10,35 @@ import SwiftUI
 /// shared module declares, not written up here.
 @main
 struct iOSApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// Built once and handed down, the way `MainActivity` holds it on Android.
+    /// A new one per redraw would be a lock that forgets it was ever locked.
+    private let lockState = LockState()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(lockState: lockState)
                 .ignoresSafeArea(.all)
+        }
+        // The iOS half of the lifecycle that drives the lock. `.background` is
+        // this platform's `onStop`: the app is off screen, so the session's
+        // data key and the zero-knowledge content key are both dropped. And
+        // nothing may raise a prompt until `.active` says the window is really
+        // in front — the same rule Android needed, for the same reason.
+        // The single-argument `onChange` rather than the two-argument one that
+        // arrived in iOS 17: this app's deployment target is 16.0, and taking
+        // the newer overload would quietly raise the floor to 17 for a callback
+        // that does not need the old value.
+        .onChange(of: scenePhase) { phase in
+            switch phase {
+            case .active: lockState.foregrounded()
+            case .background: lockState.backgrounded()
+            // `.inactive` is a notification shade or an incoming call, not a
+            // departure. Locking here would lock the app every time a banner
+            // appeared.
+            default: break
+            }
         }
     }
 }

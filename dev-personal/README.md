@@ -113,20 +113,58 @@ Everything else Xcode brings is either folder-local or cleanly deletable.
 | `git` | `/opt/homebrew/bin/git` — Homebrew's, not the CLT's, so unaffected either way |
 | Free space | 664 GiB |
 
-### To restore this exactly
+### After installing Xcode 26.6 — and a correction
 
-```bash
-sudo xcode-select --switch /Library/Developer/CommandLineTools
-# or, equivalently, the documented reset:
-sudo xcode-select --reset
+`xcode-select -p` now reads `/Applications/Xcode.app/Contents/Developer`, and
+the first version of this note said the installer had *changed the system-wide
+setting*. **It had not.** There is no persisted selection on this machine and
+there never was:
+
+```
+$ ls -l /var/db/xcode_select_link
+ls: /var/db/xcode_select_link: No such file or directory
 ```
 
-Then confirm `xcode-select -p` reads `/Library/Developer/CommandLineTools`
-again. The standalone Command Line Tools were here first and installing Xcode
-does not remove them — so nothing that depends on `/usr/bin/clang` today stops
-working, whichever way the pointer is set.
+That file is what `xcode-select --switch` creates. With it absent,
+`xcode-select -p` reports a **fallback**: the Xcode that exists, or the Command
+Line Tools if none does. So the only thing that changed is which answer the
+fallback gives —
 
-To undo the rest: delete `/Applications/Xcode.app`, delete
-`~/Library/Developer` (which did not exist before today, so removing it restores
-the machine exactly), and remove simulator runtimes from Xcode's Settings →
-Platforms. Xcode's caches live in `~/Library/Caches/com.apple.dt.Xcode`.
+| | resolves to |
+|---|---|
+| before: no link, no Xcode | `/Library/Developer/CommandLineTools` |
+| now: no link, Xcode present | `/Applications/Xcode.app/Contents/Developer` |
+
+**Which makes the teardown simpler than feared.** Deleting `/Applications/Xcode.app`
+restores the previous answer by itself; there is no pointer to put back. And
+`sudo xcode-select -s …` should be run **only if something insists on it**,
+because it would *create* a persisted setting that was never here — a new piece
+of system state to undo later, reversible with `sudo xcode-select --reset`.
+
+One tool does insist: the native iOS-simulator integration refuses to run
+without that link. Everything in this project is driven through `xcrun simctl`
+instead, which does not care, so the link stays absent.
+
+The standalone Command Line Tools are untouched and still installed, so nothing
+depending on `/usr/bin/clang` changes either way.
+
+### What it costs on disk, measured
+
+| Where | Size | Recovered by |
+|---|---|---|
+| `~/Developer/almira-personal` | **13 GB** | deleting the folder |
+| `/Library/Developer/CoreSimulator` | **19 GB** | removing the iOS 26.5 runtime (Xcode → Settings → Platforms) |
+| `/Applications/Xcode.app` | **3.7 GB** | deleting the app |
+| `~/Library/Developer` | **2.1 GB** | deleting it — it did not exist before today |
+| `~/Library/Caches/com.apple.dt.Xcode` | 716 KB | deleting it |
+
+Of the folder-local 13 GB: `android-sdk` 5.6 GB, `gradle-home` 3.9 GB,
+`android-user-home` 2.3 GB, `konan` 1.5 GB — the last being the Kotlin/Native
+toolchain that arrived with the first iOS compile, exactly where
+`KONAN_DATA_DIR` pointed it.
+
+**A correction on the estimate.** Xcode was quoted at "~35–40 GB on disk". The
+application is **3.7 GB**; the bulk is the simulator runtime at 19 GB in
+`/Library/Developer/CoreSimulator`, which is a separate download and separately
+removable. The total is about 25 GB outside the project folder rather than 40,
+and the largest single piece is the easiest to delete.

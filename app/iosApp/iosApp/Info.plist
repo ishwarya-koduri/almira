@@ -52,5 +52,10 @@
 	     wording travel with the scaffold. -->
 	<key>NSFaceIDUsageDescription</key>
 	<string>Unlock Almira with Face ID, so your family's records stay closed if someone else picks up your phone.</string>
+	<!-- Compose Multiplatform refuses to start without this, and is right to:
+	     without it a 120 Hz iPhone renders this app at 60, which on a
+	     scrolling list of holdings is visible. -->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 </dict>
 </plist>

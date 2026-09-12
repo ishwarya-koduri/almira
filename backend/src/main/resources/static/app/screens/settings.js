@@ -136,7 +136,15 @@ async function securityCard(host) {
     });
 
     body.append(
-      field({ label: t("security.passphrase"), control: passphrase }),
+      field({
+        label: t("security.passphrase"),
+        control: passphrase,
+        // Said out loud because neither client trims, deliberately: a space
+        // belongs to the passphrase, and silently removing it in one client
+        // and not the other is the same unrecoverable failure as a mismatched
+        // Unicode form. Warning is honest; "helping" is not.
+        help: "Spaces count, including one at the end. There is no way to recover this.",
+      }),
       field({ label: "Type it again", control: confirm }),
       el("div.banner", {}, t("security.noRecovery")),
       error,

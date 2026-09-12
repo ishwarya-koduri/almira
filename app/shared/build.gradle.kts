@@ -55,6 +55,14 @@ kotlin {
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
         }
+        androidUnitTest.dependencies {
+            implementation(kotlin("test"))
+        }
+        androidInstrumentedTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.androidx.test.junit)
+            implementation(libs.androidx.test.runner)
+        }
     }
 }
 
@@ -69,7 +77,12 @@ compose.resources {
 android {
     namespace = "tech.bhrigu.almira.shared"
     compileSdk = 35
-    defaultConfig { minSdk = 26 }
+    defaultConfig {
+        minSdk = 26
+        // The passphrase vectors have to run against Android's crypto provider,
+        // not the JDK's, so they exist as an on-device test as well.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

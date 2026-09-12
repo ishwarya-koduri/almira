@@ -91,9 +91,30 @@ async function open(key, envelopeText, aad) {
 const aadFor = (householdId, recordType, recordId, fieldKey) =>
   encoder.encode(`${householdId}|${recordType}|${recordId}|${fieldKey}`);
 
+/**
+ * The passphrase, as bytes, canonically.
+ *
+ * **NFC first, and only here.** A passphrase is re-typed independently on every
+ * client, and "ఖ" or "é" has more than one valid Unicode spelling — a browser
+ * IME and an Android IME can emit different bytes for the same keystrokes.
+ * PBKDF2 turns a one-byte difference into an entirely different key, so the
+ * passphrase would work in one client, fail in the other, be indistinguishable
+ * from a typo, and — because there is deliberately no recovery — take the data
+ * with it. Normalising makes the same keystrokes derive the same key everywhere.
+ *
+ * **Nothing else is ever normalised.** See [valueBytes]: a sealed value is bytes
+ * one client produced and another must reproduce exactly, so normalising it
+ * would silently rewrite what somebody wrote. Two rules, opposite directions,
+ * and confusing them corrupts data in one direction or loses it in the other.
+ *
+ * No trimming either. A trailing space belongs to the passphrase, both clients
+ * keep it byte for byte, and the interface warns rather than "helping".
+ */
+const passphraseBytes = (passphrase) => encoder.encode(passphrase.normalize("NFC"));
+
 async function wrappingKeyFrom(passphrase, salt, iterations) {
   const base = await crypto.subtle.importKey(
-    "raw", encoder.encode(passphrase), "PBKDF2", false, ["deriveKey"],
+    "raw", passphraseBytes(passphrase), "PBKDF2", false, ["deriveKey"],
   );
   return crypto.subtle.deriveKey(
     { name: "PBKDF2", hash: "SHA-256", salt, iterations },
@@ -191,10 +212,24 @@ export async function rotate(householdId, currentPassphrase, newPassphrase) {
    Fields
    ----------------------------------------------------------------------------- */
 
+/**
+ * The value, as bytes, **verbatim**.
+ *
+ * The raw UTF-8 of the string and nothing else: no JSON, no object, no key
+ * ordering — so there is no canonicalisation problem to get wrong, and a value
+ * that looks like `{"a":1}` is stored as those seven characters and comes back
+ * as them. If a sealed value ever needs structure, that is a version-byte bump
+ * in the envelope, never a quiet convention (docs/12 §3).
+ *
+ * Deliberately **not** normalised, unlike [passphraseBytes]. Somebody's note is
+ * theirs as typed.
+ */
+const valueBytes = (text) => encoder.encode(text);
+
 export async function sealField(householdId, recordType, recordId, fieldKey, text) {
   if (!contentKey) throw new Error("Unlock zero-knowledge mode first.");
   const ciphertext = await seal(
-    contentKey, encoder.encode(text), aadFor(householdId, recordType, recordId, fieldKey),
+    contentKey, valueBytes(text), aadFor(householdId, recordType, recordId, fieldKey),
   );
   return api.sealValue(householdId, recordType, recordId, fieldKey, { ciphertext, keyVersion });
 }

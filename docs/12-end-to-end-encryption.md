@@ -53,6 +53,23 @@ passphrase ──PBKDF2──▶ wrapping key ──AES-GCM──▶ [ wrapped c
 | Salt | 16 random bytes, per user per household, stored in `e2e_keys.kdf_salt` |
 | Output | 256 bits, imported as an AES-GCM key |
 
+**The passphrase, as bytes** — **NFC, then UTF-8, and nothing else.**
+
+A passphrase is re-typed independently on every client, and "ఖ" or "é" has more
+than one valid Unicode spelling: a browser IME and an Android IME can emit
+different bytes for the same keystrokes. PBKDF2 turns one differing byte into an
+entirely different key, so without this the passphrase works in one client,
+fails in the other, is indistinguishable from a typo, and — because there is no
+recovery — takes the data with it.
+
+Nothing is **trimmed**: a trailing space belongs to the passphrase, both clients
+keep it byte for byte, and the interface says so rather than quietly helping.
+
+Derive from those bytes with a PBKDF2 the client controls — **not** a
+`PBEKeySpec`/`SecretKeyFactory` pair, whose char-to-byte step belongs to the
+platform provider and is not the same on Android as on the JVM. The one step
+that decides whether two clients agree is not delegated.
+
 **Content key** — 256 random bits from `crypto.getRandomValues`. Every sealed
 value is encrypted under this key, so changing the passphrase rewraps one small
 blob instead of rewriting every field.
@@ -88,6 +105,20 @@ byte layout, **base64url without padding**:
   value was written under an older content key.
 - **iv** is 12 random bytes per encryption. Never reused.
 - AES-GCM with a **128-bit tag**, which is what WebCrypto produces by default.
+
+**What the plaintext is.** A sealed value is the **raw UTF-8 bytes of a
+string** — no JSON, no object, no key ordering, and therefore no canonical-form
+problem to get wrong. A value that looks like `{"a":1}` is stored as those seven
+characters and comes back as them, because no client parses it.
+
+And unlike the passphrase above, a value is **never normalised**. Those are two
+rules pointing opposite ways and it matters which is which: the passphrase is
+canonicalised so that two clients derive one key, while a value is bytes one
+client produced that another must reproduce exactly, so touching it would
+silently rewrite what somebody wrote.
+
+If a sealed value ever needs structure, that is a **new version byte** with both
+clients taught to read it — never a convention agreed in a comment.
 
 ---
 

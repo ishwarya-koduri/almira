@@ -135,8 +135,13 @@ class AlmiraApi(
      * figures and **both are correct** — never label one "the household total"
      * in a way that implies the other is incomplete.
      */
-    suspend fun dashboard(householdId: String, scope: String = "household"): Dashboard = request {
-        client.get("$baseUrl/api/v1/households/$householdId/dashboard?scope=$scope")
+    suspend fun dashboard(
+        householdId: String,
+        scope: String = "household",
+        memberId: String? = null,
+    ): Dashboard = request {
+        val member = memberId?.let { "&member=$it" } ?: ""
+        client.get("$baseUrl/api/v1/households/$householdId/dashboard?scope=$scope$member")
     }
 
     // --- capture ------------------------------------------------------------

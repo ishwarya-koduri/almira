@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -40,6 +41,8 @@ import tech.bhrigu.almira.shared.api.ApiException
 import tech.bhrigu.almira.shared.api.Household
 import tech.bhrigu.almira.shared.capture.CaptureController
 import tech.bhrigu.almira.shared.capture.CaptureScreen
+import tech.bhrigu.almira.shared.dashboard.DashboardController
+import tech.bhrigu.almira.shared.dashboard.DashboardScreen
 import tech.bhrigu.almira.shared.api.InMemoryTokenStore
 import tech.bhrigu.almira.shared.api.Me
 import tech.bhrigu.almira.shared.signin.SignInController
@@ -125,13 +128,26 @@ private fun SignedIn(
 
     var households by remember { mutableStateOf<List<Household>?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
-    var capturingIn by remember { mutableStateOf<Household?>(null) }
+    var capturing by remember { mutableStateOf(false) }
+    // Bumped after a save, so the dashboard is rebuilt and asks the server
+    // again rather than showing a total that is one holding out of date.
+    var savedAt by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(api) {
+        try {
+            households = api.households()
+        } catch (failure: ApiException) {
+            problem = failure.message
+        }
+    }
+
+    val household = households?.firstOrNull()
 
     // Capture takes the whole screen while it is open, and its controller lives
     // exactly as long as it does: closing it drops the loaded taxonomy and the
     // half-filled form together, so reopening starts clean.
-    capturingIn?.let { household ->
+    if (capturing && household != null) {
         val capture = remember(household.id) {
             CaptureController(
                 api = api,
@@ -142,112 +158,51 @@ private fun SignedIn(
         }
         CaptureScreen(
             controller = capture,
-            onClose = { capturingIn = null },
-            onSaved = { capturingIn = null },
+            onClose = { capturing = false },
+            onSaved = { capturing = false; savedAt += 1 },
         )
         return
     }
 
-    LaunchedEffect(api) {
-        try {
-            households = api.households()
-        } catch (failure: ApiException) {
-            problem = failure.message
-        }
-    }
+    when {
+        problem != null -> Message(problem!!, colors.caution)
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding(),
-        contentAlignment = Alignment.TopCenter,
-    ) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = 440.dp)
-                .fillMaxWidth()
-                .padding(space.x6),
-            verticalArrangement = Arrangement.spacedBy(space.x4),
-        ) {
-            Spacer(Modifier.height(space.x8))
+        households == null -> Box(
+            Modifier.fillMaxSize().background(colors.canvas),
+            contentAlignment = Alignment.Center,
+        ) { CircularProgressIndicator(color = colors.accent) }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(space.x3),
-            ) {
-                // An initial, or nothing. A phone-only account has no name,
-                // and digits from the number in a circle read as a badge
-                // number rather than as a person — so the bubble is simply
-                // absent until there is a name to put in it.
-                val initial = me.fullName?.firstOrNull { it.isLetter() }?.uppercase()
-                if (initial != null) {
-                    Box(
-                        modifier = Modifier.size(44.dp).background(colors.accentSoft, CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(initial, style = type.h4, color = colors.accent)
-                    }
-                }
-                Column {
-                    Text("You're signed in", style = type.h3, color = colors.ink)
-                    Text(
-                        me.fullName ?: me.phone?.let(::formatIndianPhone) ?: me.id,
-                        style = type.small,
-                        color = colors.inkMuted,
-                    )
-                }
+        household == null -> Message(
+            "No household yet. The web client can create one.",
+            colors.inkMuted,
+        )
+
+        else -> {
+            val dashboard = remember(household.id, savedAt) {
+                DashboardController(api = api, householdId = household.id, scope = scope)
             }
-
-            Text("YOUR HOUSEHOLDS", style = type.overline, color = colors.inkFaint)
-
-            when {
-                problem != null -> Text(problem!!, style = type.small, color = colors.caution)
-
-                households == null -> Text(
-                    "Loading…",
-                    style = type.small,
-                    color = colors.inkFaint,
-                )
-
-                households!!.isEmpty() -> Text(
-                    "None yet. The web client can create one.",
-                    style = type.small,
-                    color = colors.inkMuted,
-                )
-
-                else -> households!!.forEach { household ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(colors.surface, RoundedCornerShape(AlmiraTheme.radii.lg))
-                            .clickable { capturingIn = household }
-                            .padding(space.x4),
-                        verticalArrangement = Arrangement.spacedBy(space.x1),
-                    ) {
-                        Text(household.name, style = type.h4, color = colors.ink)
-                        Text(
-                            "${household.myRole} · ${household.memberCount} people · ${household.baseCurrency}",
-                            style = type.caption,
-                            color = colors.inkMuted,
-                        )
-                        Text("Add a holding →", style = type.caption, color = colors.accent)
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(space.x2))
-
-            OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
-                Text("Sign out", style = type.body, color = colors.accent)
-            }
-
-            Text(
-                "$platformName · $apiBaseUrl",
-                style = type.caption,
-                color = colors.inkFaint,
+            DashboardScreen(
+                controller = dashboard,
+                householdName = household.name,
+                onAdd = { capturing = true },
+                onSignOut = onSignOut,
+                footnote = "${me.phone?.let(::formatIndianPhone) ?: me.id} · $platformName · $apiBaseUrl",
             )
         }
+    }
+}
+
+@Composable
+private fun Message(text: String, color: androidx.compose.ui.graphics.Color) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(AlmiraTheme.colors.canvas)
+            .statusBarsPadding()
+            .padding(AlmiraTheme.spacing.x6),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = AlmiraTheme.typography.small, color = color)
     }
 }
 

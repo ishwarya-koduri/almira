@@ -78,11 +78,26 @@ data class Household(
 
 // --- the dashboard ----------------------------------------------------------
 
+/**
+ * How much of the total is a real valuation and how much is still what someone
+ * paid. `unknown` is the "No value yet" count on the dashboard — a holding
+ * carrying no figure at all, which is a gap worth naming rather than a zero
+ * worth hiding.
+ */
+@Serializable
+data class ValueConfidence(
+    val valued: Int = 0,
+    val atCost: Int = 0,
+    val fromCustomField: Int = 0,
+    val unknown: Int = 0,
+)
+
 @Serializable
 data class Breakdown(
     val key: String,
     val label: String,
     val color: String? = null,
+    val value: Double = 0.0,
     val valueFormatted: String,
     val percentage: Double,
     val count: Int,
@@ -110,6 +125,7 @@ data class Dashboard(
     val currency: String,
     val holdingCount: Int,
     val liabilityCount: Int,
+    val valueConfidence: ValueConfidence = ValueConfidence(),
     val byCategory: List<Breakdown> = emptyList(),
     val byMember: List<Breakdown> = emptyList(),
     val disclaimer: String,

@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    The Almira mark. This file is the master: every icon in the repository is
+    rendered from it by brand/render-icons.sh, so a change here is a change
+    everywhere after one command.
+
+    An almirah seen from the front — the steel cupboard that holds a family's
+    papers, jewellery and deeds, and the object the product is named after. The
+    arch is the cabinet; the gold keyhole is the only way in; the band is its
+    lock rail; the plinth is what it stands on.
+
+    Geometry is on a 1024 grid so that every size the manifests ask for divides
+    cleanly and the stroke never lands on a half-pixel.
+  -->
+  <title>Almira</title>
+  <defs>
+    <style>
+      .ground { fill: #0F4034; }
+      .cream  { fill: #F7F4EA; }
+      .gold   { fill: #DFB86F; }
+      .arch   { fill: none; stroke: #F7F4EA; stroke-width: 66; }
+      .word   { fill: #F7F4EA; font-family: Georgia, "Times New Roman", serif;
+                font-size: 104px; letter-spacing: 16px; }
+    </style>
+  </defs>
+
+  <rect class="ground" width="1024" height="1024"/>
+
+  <g id="mark">
+    <!-- The cabinet: two legs and a dome, drawn as one stroked centreline so
+         the corners join rather than being mitred by hand. -->
+    <path class="arch" d="M 192 880 L 192 440 A 320 320 0 0 1 832 440 L 832 880"/>
+
+    <!-- The centre stile between the two doors. It stops at the keyhole,
+         because that is where a real almirah's handle plate begins. -->
+    <rect class="cream" x="479" y="152" width="66" height="228"/>
+
+    <!-- The keyhole: the only way in. -->
+    <circle class="gold" cx="512" cy="448" r="80"/>
+    <path class="gold" d="M 482 500 L 542 500 L 572 614 L 452 614 Z"/>
+
+    <!-- The lock rail, crossing the doors and both legs. -->
+    <rect class="gold" x="160" y="672" width="704" height="80"/>
+
+    <!-- The name, inside the cabinet rather than under it. -->
+    <text class="word" x="520" y="862" text-anchor="middle">ALMIRA</text>
+
+    <!-- The plinth it stands on, wider than the body. -->
+    <rect class="cream" x="120" y="890" width="784" height="68" rx="34"/>
+  </g>
+</svg>

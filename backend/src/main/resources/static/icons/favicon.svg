@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs><style>
+      .ground { fill: #0F4034; }
+      .cream  { fill: #F7F4EA; }
+      .gold   { fill: #DFB86F; }
+      .arch   { fill: none; stroke: #F7F4EA; stroke-width: 66; }
+      .word   { fill: #F7F4EA; font-family: Georgia, "Times New Roman", serif;
+                font-size: 104px; letter-spacing: 16px; }
+    </style></defs>
+<rect width="1024" height="1024" fill="#0F4034"/>
+<g transform="translate(0.000 0.000) scale(1.0)">
+    <!-- The cabinet: two legs and a dome, drawn as one stroked centreline so
+         the corners join rather than being mitred by hand. -->
+    <path class="arch" d="M 192 880 L 192 440 A 320 320 0 0 1 832 440 L 832 880"/>
+
+    <!-- The centre stile between the two doors. It stops at the keyhole,
+         because that is where a real almirah's handle plate begins. -->
+    <rect class="cream" x="479" y="152" width="66" height="228"/>
+
+    <!-- The keyhole: the only way in. -->
+    <circle class="gold" cx="512" cy="448" r="80"/>
+    <path class="gold" d="M 482 500 L 542 500 L 572 614 L 452 614 Z"/>
+
+    <!-- The lock rail, crossing the doors and both legs. -->
+    <rect class="gold" x="160" y="672" width="704" height="80"/>
+
+    <!-- The name, inside the cabinet rather than under it. -->
+    
+
+    <!-- The plinth it stands on, wider than the body. -->
+    <rect class="cream" x="120" y="890" width="784" height="68" rx="34"/>
+  </g>
+</svg>

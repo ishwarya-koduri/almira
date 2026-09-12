@@ -18,7 +18,7 @@
 
 // Bump this when the shell changes. Old caches are removed on activate, so the
 // version is the only bookkeeping.
-const VERSION = "almira-v7";
+const VERSION = "almira-v8";
 const SHELL = `${VERSION}-shell`;
 
 /**
@@ -40,6 +40,7 @@ const SHELL_FILES = [
   "/app/screens/auth.js",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
+  "/icons/favicon.svg",
 ];
 
 self.addEventListener("install", (event) => {

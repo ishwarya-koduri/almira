@@ -54,7 +54,16 @@ function currentRoute() {
 function topbar(active) {
   return el("header.topbar", {},
     el("div.brand", {},
-      el("span.brand-mark", { "aria-hidden": "true" }, "A"),
+      // The mark, not a letter in a rounded square. It was an "A" for as long
+      // as there was no logo; there is one now, and it is the same file every
+      // icon in the repository is rendered from.
+      el("img.brand-mark", {
+        src: "/icons/favicon.svg",
+        alt: "",
+        width: 22,
+        height: 22,
+        "aria-hidden": "true",
+      }),
       t("app.name"),
     ),
     // The full rail, for screens wide enough to hold ten destinations. On a

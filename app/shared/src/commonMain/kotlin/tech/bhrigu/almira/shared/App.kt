@@ -1,9 +1,5 @@
 package tech.bhrigu.almira.shared
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,27 +39,53 @@ import tech.bhrigu.almira.shared.capture.CaptureController
 import tech.bhrigu.almira.shared.capture.CaptureScreen
 import tech.bhrigu.almira.shared.dashboard.DashboardController
 import tech.bhrigu.almira.shared.dashboard.DashboardScreen
-import tech.bhrigu.almira.shared.api.InMemoryTokenStore
 import tech.bhrigu.almira.shared.api.Me
+import tech.bhrigu.almira.shared.security.LockAvailability
+import tech.bhrigu.almira.shared.security.LockScreen
+import tech.bhrigu.almira.shared.security.LockState
+import tech.bhrigu.almira.shared.security.PlatformHost
+import tech.bhrigu.almira.shared.security.UnlockResult
+import tech.bhrigu.almira.shared.security.createAppLock
+import tech.bhrigu.almira.shared.security.createTokenStore
 import tech.bhrigu.almira.shared.signin.SignInController
 import tech.bhrigu.almira.shared.signin.SignInScreen
 import tech.bhrigu.almira.shared.theme.AlmiraTheme
 
 /**
- * The app so far: sign in, and proof that the session works.
+ * The app: a lock, a sign-in, and everything behind them.
  *
- * The screen after sign-in is deliberately thin — it lists the households the
- * session can actually read, which is the smallest honest evidence that an
- * authenticated call succeeded. The dashboard is its own stage, and a
- * hand-drawn imitation of one here would be worth nothing.
+ * Three things arrive from the platform because only the platform can make
+ * them — the host that owns the Keystore and the biometric prompt, and the
+ * lock flag its lifecycle drives. Everything else is common.
  */
 @Composable
-fun App(apiBaseUrl: String, platformName: String) {
+fun App(
+    apiBaseUrl: String,
+    platformName: String,
+    host: PlatformHost,
+    lockState: LockState,
+) {
     val scope = rememberCoroutineScope()
-    val tokens = remember { InMemoryTokenStore() }
-    var signedOutAt by remember { mutableStateOf(0) }
+    val tokens = remember(host) { createTokenStore(host) }
+    val appLock = remember(host) { createAppLock(host) }
 
-    val api = remember(apiBaseUrl, signedOutAt) {
+    var signedOutAt by remember { mutableStateOf(0) }
+    // Bumped on every unlock so the client is rebuilt and reads the token it
+    // can now decrypt, rather than living with the null it loaded while locked.
+    var unlockedAt by remember { mutableStateOf(0) }
+
+    // null while we are still finding out. Neither screen is right to show yet,
+    // and guessing would mean a flash of sign-in in front of someone who is
+    // already signed in.
+    var haveSession by remember(signedOutAt) { mutableStateOf<Boolean?>(null) }
+    var unlocking by remember { mutableStateOf(false) }
+    var lockError by remember { mutableStateOf<String?>(null) }
+
+    val locked by lockState.locked.collectAsState()
+    val inForeground by lockState.inForeground.collectAsState()
+    val availability = remember(host) { appLock.availability() }
+
+    val api = remember(apiBaseUrl, signedOutAt, unlockedAt) {
         AlmiraApi(
             baseUrl = apiBaseUrl,
             tokens = tokens,
@@ -76,14 +98,92 @@ fun App(apiBaseUrl: String, platformName: String) {
     val controller = remember(api) { SignInController(api, scope) }
     val state by controller.state.collectAsState()
 
+    LaunchedEffect(signedOutAt) {
+        val stored = tokens.hasSession()
+        haveSession = stored
+        // Nothing stored, or nothing to lock with: there is no question to ask.
+        if (!stored || availability == LockAvailability.None) lockState.unlocked()
+    }
+
+    // Locking has to reach the store, not just the screen. Dropping the
+    // in-memory data key is what makes the lock a lock: after this, reading the
+    // session needs the device's own authentication again.
+    LaunchedEffect(locked) {
+        if (locked) tokens.forget()
+    }
+
+    val showLock = haveSession == true && locked && availability != LockAvailability.None
+
+    suspend fun attemptUnlock() {
+        if (unlocking) return
+        unlocking = true
+        lockError = null
+        try {
+            when (val result = appLock.unlock("Unlock Almira", "Your family's records are behind this.")) {
+                UnlockResult.Unlocked -> {
+                    lockState.unlocked()
+                    unlockedAt += 1
+                }
+                UnlockResult.Cancelled -> Unit
+                UnlockResult.Unavailable -> lockState.unlocked()
+                is UnlockResult.Failed -> lockError = result.message
+            }
+        } finally {
+            // Also runs when backgrounding cancels the attempt, which is the
+            // difference between a button that recovers and one that spins for
+            // the rest of the session.
+            unlocking = false
+        }
+    }
+
+    // Ask as soon as the lock appears, rather than making someone tap Unlock to
+    // be asked to unlock. The button stays for a second try.
+    //
+    // Keyed on the foreground count as well as the lock: coming back from the
+    // home screen re-locks during `onStop` and recomposes before the activity
+    // has resumed, and a prompt raised then is silently dropped — no dialog, no
+    // callback, a button busy for ever. Waiting for the resume is the fix.
+    LaunchedEffect(showLock, inForeground) {
+        if (showLock && inForeground) attemptUnlock()
+    }
+
+    // Once past the lock with a stored session, bring it back. `me()` is a real
+    // authenticated call, so reaching the dashboard is itself the proof that the
+    // token survived — nothing here trusts the store's say-so.
+    LaunchedEffect(haveSession, showLock, unlockedAt) {
+        if (haveSession == true && !showLock && state.signedIn == null) {
+            if (!controller.resume()) {
+                tokens.clear()
+                haveSession = false
+            }
+        }
+    }
+
     AlmiraTheme {
         Box(Modifier.fillMaxSize().background(AlmiraTheme.colors.canvas)) {
-            AnimatedVisibility(
-                visible = state.signedIn == null,
-                enter = fadeIn(tween(AlmiraMotionBase)),
-                exit = fadeOut(tween(AlmiraMotionBase)),
-            ) {
-                SignInScreen(
+            when {
+                showLock -> LockScreen(
+                    availability = availability,
+                    busy = unlocking,
+                    error = lockError,
+                    onUnlock = { scope.launch { attemptUnlock() } },
+                    onSignOut = {
+                        scope.launch {
+                            tokens.clear()
+                            haveSession = false
+                            lockState.unlocked()
+                            signedOutAt += 1
+                        }
+                    },
+                )
+
+                // Still deciding, or resuming a stored session.
+                haveSession == null || (haveSession == true && state.signedIn == null) ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = AlmiraTheme.colors.accent)
+                    }
+
+                state.signedIn == null -> SignInScreen(
                     state = state,
                     onPhoneChanged = controller::onPhoneChanged,
                     onSendCode = controller::sendCode,
@@ -92,17 +192,16 @@ fun App(apiBaseUrl: String, platformName: String) {
                     onResend = controller::resend,
                     onEditPhone = controller::editPhone,
                 )
-            }
 
-            state.signedIn?.let { me ->
-                SignedIn(
-                    me = me,
+                else -> SignedIn(
+                    me = state.signedIn!!,
                     api = api,
                     apiBaseUrl = apiBaseUrl,
                     platformName = platformName,
                     onSignOut = {
                         scope.launch {
                             api.signOut()
+                            haveSession = false
                             signedOutAt += 1
                         }
                     },
@@ -111,8 +210,6 @@ fun App(apiBaseUrl: String, platformName: String) {
         }
     }
 }
-
-private const val AlmiraMotionBase = 200
 
 @Composable
 private fun SignedIn(

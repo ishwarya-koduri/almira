@@ -69,6 +69,24 @@ class SignInController(
         if (digits.length == SignInState.CODE_LENGTH) verify()
     }
 
+    /**
+     * A session that was already on this device, brought back without asking
+     * for a phone number.
+     *
+     * `me()` is the honest test: it is a real authenticated call, so it proves
+     * the stored token is not merely present but accepted — including the case
+     * where the refresh had to rotate to answer it. A failure here is not an
+     * error to show, it is a session that has ended, so the caller falls back
+     * to the phone step.
+     */
+    suspend fun resume(): Boolean = try {
+        val me = api.me()
+        _state.update { it.copy(signedIn = me, busy = false, error = null) }
+        true
+    } catch (_: ApiException) {
+        false
+    }
+
     fun sendCode() {
         val phone = state.value.phone
         if (!state.value.phoneIsPlausible || state.value.busy) return

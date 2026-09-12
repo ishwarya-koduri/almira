@@ -94,3 +94,51 @@ version from a build property rather than a hand-edited constant.
 
 **Risk if left** Development friction only. Released builds are fine, because a
 release always changes the version.
+
+---
+
+## 4. Screenshot and recents protection is off in debug builds
+
+**Where** `app/androidApp/.../MainActivity.kt`.
+
+**What** `FLAG_SECURE` keeps a family's net worth out of the recents thumbnail
+and out of screenshots. It is applied only when `!BuildConfig.DEBUG`, because
+it also blacks out `adb exec-out screencap`, and a stage whose evidence is a
+black rectangle cannot be reviewed.
+
+**Why it is still here** Deliberate, and the release path is correct. What is
+*unverified* is the release path: every screenshot in the review of this stage
+is from a debug build, so the flag has been reasoned about rather than seen
+working.
+
+**When to fix** Not a fix — a verification. Build once with
+`assembleRelease`, confirm `screencap` returns black and the recents card shows
+a blank app, then record that here and delete this entry.
+
+**Risk if left** None in production. The risk is only that we believe something
+we have not watched happen.
+
+---
+
+## 5. The iOS half of the security seam is declared, not written
+
+**Where** `app/shared/src/iosMain/.../security/Platform.ios.kt`.
+
+**What** `PlatformHost`, `createTokenStore` and `createAppLock` exist for the
+iOS target so common code compiles against them, and the two factories throw.
+The Android implementations are real; the iOS ones are a Keychain store
+(`kSecClassGenericPassword`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`,
+`SecAccessControl` with `.biometryCurrentSet` to match the Android key's
+binding) and an `LAContext.evaluatePolicy(.deviceOwnerAuthentication)` lock,
+which is Face ID or Touch ID with the passcode behind it — the same pairing
+Android gets from `BIOMETRIC_STRONG or DEVICE_CREDENTIAL`.
+
+**Why it is still here** The iOS stage has not been opened, and nothing in
+`iosMain` has ever been compiled: that needs the Kotlin/Native toolchain, which
+is not installed on this machine by choice.
+
+**When to fix** The iOS stage. Two files in `iosMain` and four lines in the
+Swift entry point; nothing above the seam moves.
+
+**Risk if left** None today — no iOS build exists to run it. The entry points
+throw with a message pointing here rather than failing silently.

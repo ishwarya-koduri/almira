@@ -4,42 +4,41 @@ package tech.bhrigu.almira.shared.api
  * Where the session lives.
  *
  * An interface rather than a concrete class because the only correct
- * implementations are platform ones — the Android Keystore and the iOS Keychain
- * — and those arrive in their own stage. Everything above this line is written
- * against the interface now, so that stage is a swap rather than a rewrite.
+ * implementations are platform ones — the Android Keystore and the iOS
+ * Keychain. Both are reached through
+ * `tech.bhrigu.almira.shared.security.createTokenStore`, and nothing above this
+ * line knows which one it is holding.
  *
- * [InMemoryTokenStore] is the development stand-in and is deliberately named so
- * that shipping it by accident would be obvious in a stack trace.
+ * There is deliberately no in-memory implementation any more. One existed while
+ * the platform stores were unwritten and is gone now that they are not: a
+ * stand-in that works well enough is how a stand-in survives to production.
  */
 interface TokenStore {
+    /**
+     * Whether a session is stored at all.
+     *
+     * Answered **without decrypting**, which is the whole point: on Android the
+     * key needs a recent unlock, so asking for the token itself cannot
+     * distinguish "signed out" from "locked". This can, and it is what decides
+     * whether a returning person is shown a lock or a sign-in.
+     */
+    suspend fun hasSession(): Boolean
+
+    /** Null when absent, and also null when present but still locked. */
     suspend fun accessToken(): String?
     suspend fun refreshToken(): String?
+
     suspend fun save(access: String, refresh: String)
+
+    /** Sign out: the stored session is destroyed, not merely hidden. */
     suspend fun clear()
-}
 
-/**
- * Survives nothing: a process restart signs you out.
- *
- * That is the right behaviour for a stand-in. A file-backed stop-gap would be
- * worse than useless — it would work well enough that nobody would feel the
- * need to replace it, and a refresh token in plain storage is exactly what the
- * Keychain and Keystore exist to prevent.
- */
-class InMemoryTokenStore : TokenStore {
-    private var access: String? = null
-    private var refresh: String? = null
-
-    override suspend fun accessToken(): String? = access
-    override suspend fun refreshToken(): String? = refresh
-
-    override suspend fun save(access: String, refresh: String) {
-        this.access = access
-        this.refresh = refresh
-    }
-
-    override suspend fun clear() {
-        access = null
-        refresh = null
-    }
+    /**
+     * Forget anything held in memory, keeping what is stored.
+     *
+     * Called when the app leaves the foreground. Without it, "locked" would be
+     * a screen drawn over a session that is still perfectly readable — the
+     * difference between a curtain and a lock.
+     */
+    suspend fun forget()
 }

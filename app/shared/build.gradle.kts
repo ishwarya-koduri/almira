@@ -43,6 +43,13 @@ kotlin {
             // One engine per target, chosen by the platform source set. This is
             // the only place either platform appears in the networking stack.
             implementation(libs.ktor.client.okhttp)
+            // The prompt and the Keystore work both live in androidMain, so
+            // the dependency does too — commonMain never sees it.
+            // `api`, not `implementation`: PlatformHost takes a FragmentActivity,
+            // so the type is part of this module's public surface.
+            api(libs.androidx.biometric)
+            api(libs.androidx.fragment)
+            implementation(libs.androidx.core.ktx)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)

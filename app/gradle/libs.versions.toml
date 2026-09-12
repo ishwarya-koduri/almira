@@ -9,6 +9,11 @@ compose = "1.8.2"
 agp = "8.11.2"
 androidx-activity = "1.9.3"
 androidx-core = "1.15.0"
+# BiometricPrompt. 1.1.0 is the current stable; it needs a FragmentActivity,
+# which is why MainActivity extends one.
+androidx-biometric = "1.1.0"
+# MainActivity is a FragmentActivity because BiometricPrompt requires one.
+androidx-fragment = "1.8.5"
 # Ktor 3.2.3 is the newest release built against Kotlin 2.1.21 — verified from
 # its POM, not assumed. 3.3 moves to Kotlin 2.2 metadata and 3.4 to 2.3, and
 # this compiler cannot read either.
@@ -28,6 +33,8 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
+androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "androidx-biometric" }
+androidx-fragment = { module = "androidx.fragment:fragment-ktx", version.ref = "androidx-fragment" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

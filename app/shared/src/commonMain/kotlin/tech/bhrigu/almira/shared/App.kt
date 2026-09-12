@@ -18,10 +18,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import tech.bhrigu.almira.shared.api.AlmiraApi
+import tech.bhrigu.almira.shared.api.ApiException
+import tech.bhrigu.almira.shared.api.InMemoryTokenStore
 import tech.bhrigu.almira.shared.theme.AlmiraTheme
 import tech.bhrigu.almira.shared.theme.CategoryColors
 
@@ -33,12 +41,30 @@ import tech.bhrigu.almira.shared.theme.CategoryColors
  * rather than a file nobody reads, and that a stock Material `Button` already
  * comes out in Almira's accent without being restyled at the call site.
  *
- * It is deliberately not the sign-in screen. That arrives with the API client
- * in the next stage, and drawing a login form that cannot log anybody in would
- * be the kind of scaffolding that gets mistaken for progress.
+ * It is deliberately not the sign-in screen yet — that is the next stage. What
+ * it does now is reach the API, which is the only way to know the client works
+ * from inside an emulator rather than from a terminal on the host.
  */
 @Composable
 fun App(apiBaseUrl: String, platformName: String) {
+    // Built once and remembered: an HttpClient per recomposition would leak a
+    // connection pool every frame.
+    val api = remember(apiBaseUrl) { AlmiraApi(apiBaseUrl, InMemoryTokenStore()) }
+    var connection by remember { mutableStateOf<ConnectionState>(ConnectionState.Checking) }
+
+    LaunchedEffect(api) {
+        connection = try {
+            val health = api.health()
+            ConnectionState.Reached(
+                environment = health.environment,
+                role = health.dbRole,
+                rlsEnforced = health.rlsEnforced,
+            )
+        } catch (failure: ApiException) {
+            ConnectionState.Failed(failure.message)
+        }
+    }
+
     AlmiraTheme {
         val colors = AlmiraTheme.colors
         val type = AlmiraTheme.typography
@@ -116,8 +142,30 @@ fun App(apiBaseUrl: String, platformName: String) {
                     Text("Sign in", style = type.body)
                 }
 
+                // The connection check. It earns its place on a skeleton: it is
+                // the difference between "the app compiles" and "the app can
+                // talk to its server from inside an emulator".
+                val (line, tone) = when (val state = connection) {
+                    ConnectionState.Checking ->
+                        "Checking the connection…" to colors.inkFaint
+
+                    is ConnectionState.Reached ->
+                        "Connected · ${state.environment} · as ${state.role}" to
+                            if (state.rlsEnforced) colors.positive else colors.caution
+
+                    is ConnectionState.Failed ->
+                        state.message to colors.caution
+                }
+
                 Text(
-                    "$platformName · talking to $apiBaseUrl",
+                    line,
+                    style = type.caption,
+                    color = tone,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "$platformName · $apiBaseUrl",
                     style = type.caption,
                     color = colors.inkFaint,
                     textAlign = TextAlign.Center,
@@ -126,4 +174,22 @@ fun App(apiBaseUrl: String, platformName: String) {
             }
         }
     }
+}
+
+/** What the skeleton knows about its server. */
+private sealed interface ConnectionState {
+    data object Checking : ConnectionState
+
+    data class Reached(
+        val environment: String,
+        val role: String,
+        /**
+         * False would mean the server is serving as the schema owner, with every
+         * privacy policy bypassed. It is shown in the caution colour rather than
+         * hidden, because that is a thing a developer should see immediately.
+         */
+        val rlsEnforced: Boolean,
+    ) : ConnectionState
+
+    data class Failed(val message: String) : ConnectionState
 }

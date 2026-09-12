@@ -48,3 +48,45 @@ role with `nobypassrls`. PostgreSQL lets a table's owner bypass its own
 row-level security, so serving traffic as the owner would switch off every
 privacy policy in the product while everything still looked healthy. `up.sh`
 refuses to report success unless `/health` says `"rlsEnforced":true`.
+
+---
+
+## Running the backend test suite on this machine
+
+The suite brings up its own Postgres and Redis with Testcontainers, and on this
+machine Testcontainers cannot find Docker: Desktop's socket lives at
+`~/.docker/run/docker.sock`, and passing `DOCKER_HOST` through Gradle did not
+reach the test JVM. Rather than fight that, the suite's own escape hatch does
+the job — it accepts external services, and refuses outright to run against a
+database named `almira`, so there is no way to point it at real data by
+accident.
+
+Two throwaway containers, in this project's namespace, removed afterwards:
+
+```bash
+docker run -d --name almira-personal-testpg -p 127.0.0.1:15432:5432 \
+  -e POSTGRES_DB=almira_zktest -e POSTGRES_USER=almira -e POSTGRES_PASSWORD=dev \
+  postgres:16-alpine
+docker exec almira-personal-testpg psql -U almira -d almira_zktest -c \
+  "create role almira_app login password 'app_dev_password';
+   grant connect on database almira_zktest to almira_app;
+   grant usage on schema public to almira_app;"
+
+docker run -d --name almira-personal-testredis -p 127.0.0.1:16379:6379 redis:7-alpine
+```
+
+```bash
+ALMIRA_TEST_DB_URL="jdbc:postgresql://localhost:15432/almira_zktest" \
+ALMIRA_TEST_DB_OWNER_USER=almira ALMIRA_TEST_DB_OWNER_PASSWORD=dev \
+ALMIRA_TEST_DB_APP_USER=almira_app ALMIRA_TEST_DB_APP_PASSWORD=app_dev_password \
+ALMIRA_TEST_REDIS_HOST=127.0.0.1 ALMIRA_TEST_REDIS_PORT=16379 \
+./gradlew --no-daemon test --tests "*E2eApiTest*"
+```
+
+```bash
+docker rm -f almira-personal-testpg almira-personal-testredis
+```
+
+The throwaway Postgres publishes a loopback port because the test JVM runs on
+the host; the stack's own `almira-personal-db` still publishes nothing, which is
+the rule that keeps it from colliding with anything else on this machine.

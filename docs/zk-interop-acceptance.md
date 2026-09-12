@@ -12,8 +12,8 @@ derives the same key on both sides.
 **Settle order:** B1 + B2 together (they are one change) → B3 → B5 into docs/12
 → B6 / B7 → B4 / B8 / B9.
 
-**Landed so far:** B1, B2, B3, B5 and B6, on both clients, with vectors and
-negatives — see the end of Part B.
+**Landed so far:** B1, B2, B3, B5, B6 and B7. Remaining: B4, B8 and B9, which
+all need the seal-and-open path and land with it.
 
 **What "done" means, in one sentence:** the Android app opens a field the web
 client sealed, and the web client opens a field the app sealed, with the same
@@ -295,13 +295,20 @@ browser produced. "Newer version of Almira" and "this is broken" stay separate
 sentences, because they deserve different ones — and neither is "wrong
 passphrase", which is now reached only by a genuine failure to decrypt.
 
-### B7 · `keyVersion` inside the wrap envelopes — **DECIDED**
+### B7 · `keyVersion` inside the wrap envelopes — **DECIDED, LANDED**
 
 The web writes the current key version; the JVM reference hard-codes `1`. Only
 one wrapped key exists at a time, so nothing reads it — which is precisely why it
 will drift, and the first rotation is when that is discovered. Pin: the field
 equals the key version it belongs to, readers must not use it to select a key,
 and web and JVM are asserted to stamp and expect the same thing.
+
+Landed. `gcmSeal` in the reference half takes the version rather than writing a
+constant, and a new test rotates for real: both wrap envelopes carry version 2,
+the stored `keyVersion` agrees with them, the same content key comes back out of
+the rewrap, and the verifier still opens. All ten zero-knowledge backend tests
+pass. `Envelope.Parsed.keyVersion` on the app is documented as something a
+client may *read* and never something it may select on.
 
 ### B8 · Empty, whitespace, and the ceiling — **DECIDED**
 

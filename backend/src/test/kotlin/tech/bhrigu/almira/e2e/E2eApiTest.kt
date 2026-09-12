@@ -56,23 +56,56 @@ class E2eApiTest : ApiTestBase() {
         )
     }
 
-    private fun gcmSeal(key: SecretKey, plaintext: ByteArray, aad: ByteArray?): String {
+    /**
+     * version(1) | keyVersion(4, big-endian) | iv(12) | ciphertext+tag
+     *
+     * [keyVersion] is a parameter rather than a hard-coded 1 because the
+     * envelope's field must equal the key version it belongs to — the web
+     * client stamps the current one, and a reference half that always wrote 1
+     * would agree with it right up until the first rotation and not afterwards
+     * (docs/zk-interop-acceptance.md B7).
+     */
+    private fun gcmSeal(
+        key: SecretKey,
+        plaintext: ByteArray,
+        aad: ByteArray?,
+        keyVersion: Int = 1,
+    ): String {
         val iv = ByteArray(12).also(random::nextBytes)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, iv))
         aad?.let(cipher::updateAAD)
         val body = cipher.doFinal(plaintext)
-        // version(1) | keyVersion(4) | iv(12) | ciphertext+tag
-        return b64(byteArrayOf(1) + byteArrayOf(0, 0, 0, 1) + iv + body)
+        return b64(byteArrayOf(1) + keyVersionBytes(keyVersion) + iv + body)
     }
 
+    private fun keyVersionBytes(version: Int) = byteArrayOf(
+        (version ushr 24).toByte(),
+        (version ushr 16).toByte(),
+        (version ushr 8).toByte(),
+        version.toByte(),
+    )
+
+    /**
+     * The one reader, refusing a version it does not know rather than slicing
+     * offsets that may no longer mean what they meant (B6).
+     */
     private fun gcmOpen(key: SecretKey, envelope: String, aad: ByteArray?): String {
         val raw = Base64.getUrlDecoder().decode(envelope)
+        require(raw.size >= 33) { "not an envelope: ${raw.size} bytes" }
+        require(raw[0].toInt() == 1) { "envelope version ${raw[0].toInt()} is not one this knows" }
         val iv = raw.copyOfRange(5, 17)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
         aad?.let(cipher::updateAAD)
         return String(cipher.doFinal(raw.copyOfRange(17, raw.size)))
+    }
+
+    /** What the envelope says it was written under. */
+    private fun envelopeKeyVersion(envelope: String): Int {
+        val raw = Base64.getUrlDecoder().decode(envelope)
+        return ((raw[1].toInt() and 0xFF) shl 24) or ((raw[2].toInt() and 0xFF) shl 16) or
+            ((raw[3].toInt() and 0xFF) shl 8) or (raw[4].toInt() and 0xFF)
     }
 
     private fun aadFor(recordId: String, fieldKey: String) =
@@ -178,6 +211,58 @@ class E2eApiTest : ApiTestBase() {
         assertThat(status.path("caveats").map { it.asText() })
             .describedAs("the trade-offs are stated, not buried")
             .anyMatch { it.contains("no recovery") || it.contains("There is no recovery") }
+    }
+
+    /**
+     * A rotation rewraps the same content key under a new passphrase, and the
+     * envelopes it writes say so.
+     *
+     * The field exists to let a client *tell* which content key a value was
+     * written under — never to choose one, since only one wrapped key exists at
+     * a time. A reference half that always stamped 1 would agree with the web
+     * client right up until the first rotation and not afterwards, which is
+     * precisely the kind of divergence nobody finds until somebody changes
+     * their passphrase (docs/zk-interop-acceptance.md B7).
+     */
+    @Test
+    fun `rotating stamps the new key version into the wrap envelopes`() {
+        val (_, contentKey) = enable()
+
+        val newSalt = ByteArray(16).also(random::nextBytes)
+        val newWrappingKey = deriveWrappingKey(newSalt, 600_000)
+        val rotated = call(
+            HttpMethod.PUT, "/api/v1/households/$householdId/e2e/key", owner,
+            mapOf(
+                "kdfSalt" to b64(newSalt),
+                "iterations" to 600_000,
+                "wrappedKey" to gcmSeal(newWrappingKey, contentKey.encoded, null, keyVersion = 2),
+                "verifier" to gcmSeal(contentKey, "almira".toByteArray(), null, keyVersion = 2),
+                "keyVersion" to 2,
+            ),
+        )
+        assertThat(rotated.status()).isEqualTo(HttpStatus.OK)
+
+        val stored = get("/api/v1/households/$householdId/e2e", owner).json().path("key")
+        assertThat(stored.path("keyVersion").asInt()).isEqualTo(2)
+        assertThat(envelopeKeyVersion(stored.path("wrappedKey").asText()))
+            .describedAs("the wrapped key's envelope agrees with the stored key version")
+            .isEqualTo(2)
+        assertThat(envelopeKeyVersion(stored.path("verifier").asText()))
+            .describedAs("and so does the verifier's")
+            .isEqualTo(2)
+
+        // The whole point of a rotation: the same content key comes back out,
+        // so nothing already sealed has to be rewritten.
+        val unwrapped = Cipher.getInstance("AES/GCM/NoPadding").let { cipher ->
+            val raw = Base64.getUrlDecoder().decode(stored.path("wrappedKey").asText())
+            cipher.init(
+                Cipher.DECRYPT_MODE, newWrappingKey,
+                GCMParameterSpec(128, raw.copyOfRange(5, 17)),
+            )
+            cipher.doFinal(raw.copyOfRange(17, raw.size))
+        }
+        assertThat(unwrapped).isEqualTo(contentKey.encoded)
+        assertThat(gcmOpen(contentKey, stored.path("verifier").asText(), null)).isEqualTo("almira")
     }
 
     @Test

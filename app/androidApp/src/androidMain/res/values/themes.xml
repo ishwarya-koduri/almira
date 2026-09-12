@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Only what the window needs before Compose takes over. The canvas colour
+         is repeated here so the launch window is already Almira's paper rather
+         than a white flash. -->
+    <style name="Theme.Almira" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/canvas</item>
+        <item name="android:statusBarColor">@color/canvas</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

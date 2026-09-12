@@ -1,0 +1,129 @@
+package tech.bhrigu.almira.shared
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import tech.bhrigu.almira.shared.theme.AlmiraTheme
+import tech.bhrigu.almira.shared.theme.CategoryColors
+
+/**
+ * The skeleton's one screen.
+ *
+ * It exists to prove three things at once: that the shared module compiles and
+ * renders on a real device, that the theme from docs/02 is genuinely wired in
+ * rather than a file nobody reads, and that a stock Material `Button` already
+ * comes out in Almira's accent without being restyled at the call site.
+ *
+ * It is deliberately not the sign-in screen. That arrives with the API client
+ * in the next stage, and drawing a login form that cannot log anybody in would
+ * be the kind of scaffolding that gets mistaken for progress.
+ */
+@Composable
+fun App(apiBaseUrl: String, platformName: String) {
+    AlmiraTheme {
+        val colors = AlmiraTheme.colors
+        val type = AlmiraTheme.typography
+        val space = AlmiraTheme.spacing
+        val radii = AlmiraTheme.radii
+
+        Box(
+            modifier = Modifier.fillMaxSize().background(colors.canvas),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 420.dp)
+                    .padding(space.x5)
+                    .background(colors.surface, RoundedCornerShape(radii.lg))
+                    .border(1.dp, colors.hairline, RoundedCornerShape(radii.lg))
+                    .padding(space.x6),
+                verticalArrangement = Arrangement.spacedBy(space.x3),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(space.x2),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(space.x8)
+                            .background(colors.accent, RoundedCornerShape(radii.sm)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("A", style = type.h4, color = colors.accentInk)
+                    }
+                    Text("Almira", style = type.h3, color = colors.ink)
+                }
+
+                Text(
+                    "Everything your family owns and owes, in one calm, private place.",
+                    style = type.body,
+                    color = colors.inkMuted,
+                )
+
+                Spacer(Modifier.height(space.x1))
+
+                // The gold appears exactly once, on the number — which is the
+                // whole rule about it (docs/02 §2).
+                Text("TRUE NET WORTH", style = type.overline, color = colors.inkFaint)
+                Text("₹14,93,750", style = type.amount, color = colors.gold)
+                Text("Fourteen Lakh Ninety-Three Thousand", style = type.small, color = colors.inkMuted)
+
+                Spacer(Modifier.height(space.x2))
+
+                // Category dots: colour never carries meaning on its own, so
+                // each is paired with its label.
+                Row(horizontalArrangement = Arrangement.spacedBy(space.x3)) {
+                    listOf(
+                        "Gold" to CategoryColors.gold,
+                        "Deposits" to CategoryColors.deposits,
+                        "Property" to CategoryColors.realEstate,
+                    ).forEach { (label, dot) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(space.x1),
+                        ) {
+                            Box(Modifier.size(space.x2).background(dot, CircleShape))
+                            Text(label, style = type.caption, color = colors.inkMuted)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(space.x2))
+
+                // Unstyled on purpose: it picks up the accent from the Material
+                // scheme the theme derives, which is the half of a design system
+                // that is easy to leave out.
+                Button(onClick = {}, modifier = Modifier.fillMaxWidth()) {
+                    Text("Sign in", style = type.body)
+                }
+
+                Text(
+                    "$platformName · talking to $apiBaseUrl",
+                    style = type.caption,
+                    color = colors.inkFaint,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}

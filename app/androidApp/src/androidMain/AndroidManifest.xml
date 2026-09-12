@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The app talks to one server and nothing else. INTERNET is the only
+         permission it holds, and it stays that way for as long as it can. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@android:drawable/ic_menu_myplaces"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Almira"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true">
+
+        <!-- allowBackup=false on purpose: this app holds financial records and
+             a session token, and Android's automatic cloud backup is not a
+             place either of them belongs.
+             usesCleartextTraffic is for the local development server only; it
+             comes out before anything ships. -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

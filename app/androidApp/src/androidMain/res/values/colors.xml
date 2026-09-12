@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The canvas token from docs/02, for the launch window only, so the app
+         opens on Almira's paper rather than a white flash. Everything else is
+         themed in Compose. -->
+    <color name="canvas">#FBF9F5</color>
+</resources>

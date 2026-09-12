@@ -1,5 +1,9 @@
 # Build output
 build/
+# Android's machine-specific SDK path. This project reads ANDROID_HOME from
+# ~/Developer/almira-personal/env.sh instead, so a local.properties should never
+# appear — but an IDE will write one, and it must not travel.
+local.properties
 out/
 bin/
 target/

@@ -1,0 +1,22 @@
+# The versions this app is built with, in one place.
+#
+# Kotlin is pinned to the same 2.1.21 the backend uses. They are separate Gradle
+# builds and need not agree — but a house with one Kotlin version in it is a
+# house where "which one does this module use" is never a question.
+[versions]
+kotlin = "2.1.21"
+compose = "1.8.2"
+agp = "8.11.2"
+androidx-activity = "1.9.3"
+androidx-core = "1.15.0"
+
+[libraries]
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose" }
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }

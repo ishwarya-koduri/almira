@@ -151,22 +151,18 @@ private fun SignedIn(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(space.x3),
             ) {
-                Box(
-                    modifier = Modifier.size(44.dp).background(colors.accentSoft, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    // A name's initial when there is a name. A phone-only
-                    // account has none, and the first character of a normalised
-                    // number is "+", which identifies nobody — so the last two
-                    // digits stand in, which is how people recognise their own
-                    // number in a list anyway.
-                    Text(
-                        me.fullName?.firstOrNull { it.isLetter() }?.uppercase()
-                            ?: me.phone?.takeLast(2)
-                            ?: "?",
-                        style = type.h4,
-                        color = colors.accent,
-                    )
+                // An initial, or nothing. A phone-only account has no name,
+                // and digits from the number in a circle read as a badge
+                // number rather than as a person — so the bubble is simply
+                // absent until there is a name to put in it.
+                val initial = me.fullName?.firstOrNull { it.isLetter() }?.uppercase()
+                if (initial != null) {
+                    Box(
+                        modifier = Modifier.size(44.dp).background(colors.accentSoft, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(initial, style = type.h4, color = colors.accent)
+                    }
                 }
                 Column {
                     Text("You're signed in", style = type.h3, color = colors.ink)

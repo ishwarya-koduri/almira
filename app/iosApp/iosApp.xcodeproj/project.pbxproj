@@ -9,12 +9,14 @@
 /* Begin PBXBuildFile section */
 		A1000101 /* iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000001 /* iOSApp.swift */; };
 		A1000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002 /* ContentView.swift */; };
+		A100010A /* CryptoKitAead.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000A /* CryptoKitAead.swift */; };
 		A1000103 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000003 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		A1000001 /* iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSApp.swift; sourceTree = "<group>"; };
 		A1000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A100000A /* CryptoKitAead.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoKitAead.swift; sourceTree = "<group>"; };
 		A1000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1000005 /* Almira.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Almira.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -44,6 +46,7 @@
 			children = (
 				A1000001 /* iOSApp.swift */,
 				A1000002 /* ContentView.swift */,
+				A100000A /* CryptoKitAead.swift */,
 				A1000003 /* Assets.xcassets */,
 				A1000004 /* Info.plist */,
 			);
@@ -151,6 +154,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000102 /* ContentView.swift in Sources */,
+				A100010A /* CryptoKitAead.swift in Sources */,
 				A1000101 /* iOSApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -16,6 +16,30 @@ struct iOSApp: App {
     /// A new one per redraw would be a lock that forgets it was ever locked.
     private let lockState = LockState()
 
+    init() {
+        // Before anything can seal or open a field. AES-GCM is the one
+        // primitive the shared module cannot reach on its own — CryptoKit is
+        // Swift-only — so this hands it down through the seam. There is no
+        // default on the other side: a build that forgot this line fails
+        // loudly on the first sealed field rather than inventing a cipher.
+        Aead_iosKt.installAppleAead(aead: CryptoKitAead())
+
+        #if DEBUG
+        // The B4 known-answer vector, checked against the constants the browser
+        // produced, at the one moment AES-GCM is actually available. The
+        // derived-key and additional-data halves are asserted in `commonTest`
+        // and run natively; this is the envelope half, which needs the bridge
+        // installed above and therefore cannot live in a test binary.
+        print("--- almira zk self-test (iOS) ---")
+        print(ZkSelfTest_iosKt.zkSelfTest())
+        // The Keychain and LocalAuthentication actuals, exercised rather than
+        // assumed: both are C APIs that fail by returning a status, so the
+        // only way to know they work is to make them work once.
+        print(SecuritySelfTest_iosKt.securitySelfTest())
+        print("--- end zk self-test ---")
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView(lockState: lockState)

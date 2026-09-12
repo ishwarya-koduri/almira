@@ -15,13 +15,13 @@ import kotlin.test.assertTrue
  */
 class SealedValueTest {
 
-    private fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
+    private fun hex(bytes: ByteArray) = hexOf(bytes)
 
     private fun roundTrip(text: String) = SealedValue.textOf(SealedValue.bytesOf(text))
 
     /** The one the whole ruling exists for. */
     @Test
-    fun `a value that looks like JSON is a string, not JSON`() {
+    fun `a value that looks like JSON is a string not JSON`() {
         val value = """{"a":1}"""
         assertEquals("7b2261223a317d", hex(SealedValue.bytesOf(value)))
         assertEquals(value, roundTrip(value))
@@ -47,7 +47,7 @@ class SealedValueTest {
      * standing between a note somebody wrote and a note we rewrote for them.
      */
     @Test
-    fun `a value is never normalised, unlike the passphrase`() {
+    fun `a value is never normalised unlike the passphrase`() {
         val decomposed = "café"
         assertEquals("63616665cc81", hex(SealedValue.bytesOf(decomposed)))
         assertNotEquals(hex(SealedValue.bytesOf("café")), hex(SealedValue.bytesOf(decomposed)))

@@ -46,7 +46,7 @@ class EnvelopeTest {
     }
 
     @Test
-    fun `what we build, we can parse`() {
+    fun `what we build we can parse`() {
         val iv = ByteArray(12) { (it * 3).toByte() }
         val body = ByteArray(20) { it.toByte() }
         val parsed = Envelope.parse(Envelope.build(7, iv, body))
@@ -83,7 +83,7 @@ class EnvelopeTest {
      * rather than an error.
      */
     @Test
-    fun `an unknown version is refused, not guessed at`() {
+    fun `an unknown version is refused not guessed at`() {
         val ours = Envelope.parse(fromWebV1)
         val future = Envelope.build(1, ours.iv, ours.body).let {
             // Flip the version byte to 2 and re-encode.

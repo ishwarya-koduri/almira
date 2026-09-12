@@ -22,7 +22,7 @@ import kotlin.test.assertEquals
  * uppercase, precisely because those are the three things that would otherwise
  * differ silently between two implementations.
  */
-class InteropKatTest {
+class InteropKatEnvelopeTest {
 
     private val passphrase = "correct horse battery staple "
     private val salt = ByteArray(16) { it.toByte() }
@@ -36,22 +36,9 @@ class InteropKatTest {
     private fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
 
     @Test
-    fun `the key, the AAD and the envelope all match the web client`() {
+    fun `the envelope matches the web client`() {
         val key = PassphraseKey.derive(passphrase, salt, iterations)
-        assertEquals(
-            "17c0b45fe7d3dcc10b70395e28a8cc533a0c8113691b174d39b8a205f2085f6f",
-            hex(key),
-            "the derived key drifted",
-        )
-
         val aad = Aad.of(household, "investment", record, fieldKey)
-        assertEquals(
-            "58276cae-2448-4d51-8c9d-29fefd3225d4|investment|" +
-                "167d9136-e238-48cf-b093-0f51d9a43c8d|locker_address",
-            aad.decodeToString(),
-            "the additional data drifted",
-        )
-
         val body = aesGcmSeal(key, iv, SealedValue.bytesOf(plaintext), aad)
         assertEquals(
             "AQAAAAGgoaKjpKWmp6ipqqvPXvr272LHpln2v1MfVTtWxjXLbZR0eNYAsS5bJYmnCrpDPstqzByPY2RZI1X1WKjF52IsjQ",

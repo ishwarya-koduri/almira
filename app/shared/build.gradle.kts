@@ -55,6 +55,12 @@ kotlin {
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
         }
+        commonTest.dependencies {
+            // The interop vectors live in commonTest so the same assertions run
+            // on the JVM and on Kotlin/Native. A constant asserted on one
+            // platform is a constant nobody has checked on the other.
+            implementation(kotlin("test"))
+        }
         androidUnitTest.dependencies {
             implementation(kotlin("test"))
         }

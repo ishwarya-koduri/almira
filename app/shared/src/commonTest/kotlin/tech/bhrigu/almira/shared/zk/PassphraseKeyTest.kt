@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
  */
 class PassphraseKeyTest {
 
-    private fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
+    private fun hex(bytes: ByteArray) = hexOf(bytes)
 
     private fun derive(passphrase: String, salt: String, iterations: Int) =
         hex(PassphraseKey.derive(passphrase, salt.encodeToByteArray(), iterations))
@@ -55,7 +55,7 @@ class PassphraseKeyTest {
      * `e2e.js` derivation against the running stack, not by reasoning about it.
      */
     @Test
-    fun `agrees with the web client, byte for byte`() {
+    fun `agrees with the web client byte for byte`() {
         val fromTheBrowser = "935d4178ee85ced91649775a7bd92ff5860c282c6454fac281867daea61333d3"
         assertEquals(fromTheBrowser, derive("café pass ", "almira-interop-salt", 1000))
         assertEquals(fromTheBrowser, derive("café pass ", "almira-interop-salt", 1000))
@@ -79,7 +79,7 @@ class PassphraseKeyTest {
      * green and the pair above red, which is exactly the alarm we want.
      */
     @Test
-    fun `without normalising, the same passphrase derives a different key`() {
+    fun `without normalising the same passphrase derives a different key`() {
         val withoutNfc = hex(
             pbkdf2HmacSha256(
                 password = "café pass ".encodeToByteArray(),

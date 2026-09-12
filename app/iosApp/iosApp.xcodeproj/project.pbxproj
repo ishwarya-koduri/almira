@@ -11,6 +11,8 @@
 		A1000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002 /* ContentView.swift */; };
 		A100010A /* CryptoKitAead.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100000A /* CryptoKitAead.swift */; };
 		A1000103 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000003 /* Assets.xcassets */; };
+		A1000120 /* ThinSliceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000020 /* ThinSliceUITests.swift */; };
+		A1000121 /* Screen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000021 /* Screen.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -20,10 +22,20 @@
 		A1000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1000005 /* Almira.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Almira.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000006 /* AlmiraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AlmiraUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000020 /* ThinSliceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinSliceUITests.swift; sourceTree = "<group>"; };
+		A1000021 /* Screen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screen.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A1000200 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1000201 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -37,6 +49,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000301 /* iosApp */,
+				A1000303 /* AlmiraUITests */,
 				A1000302 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -57,8 +70,18 @@
 			isa = PBXGroup;
 			children = (
 				A1000005 /* Almira.app */,
+				A1000006 /* AlmiraUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A1000303 /* AlmiraUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A1000020 /* ThinSliceUITests.swift */,
+				A1000021 /* Screen.swift */,
+			);
+			path = AlmiraUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -82,7 +105,42 @@
 			productReference = A1000005 /* Almira.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A1000401 /* AlmiraUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1000710 /* Build configuration list for PBXNativeTarget "AlmiraUITests" */;
+			buildPhases = (
+				A1000602 /* Sources */,
+				A1000201 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1000810 /* PBXTargetDependency */,
+			);
+			name = AlmiraUITests;
+			productName = AlmiraUITests;
+			productReference = A1000006 /* AlmiraUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXContainerItemProxy section */
+		A1000811 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1000800 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1000400;
+			remoteInfo = iosApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		A1000810 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1000400 /* iosApp */;
+			targetProxy = A1000811 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		A1000800 /* Project object */ = {
@@ -94,6 +152,10 @@
 				TargetAttributes = {
 					A1000400 = {
 						CreatedOnToolsVersion = 16.0;
+					};
+					A1000401 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A1000400;
 					};
 				};
 			};
@@ -111,6 +173,7 @@
 			projectRoot = "";
 			targets = (
 				A1000400 /* iosApp */,
+				A1000401 /* AlmiraUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -156,6 +219,15 @@
 				A1000102 /* ContentView.swift in Sources */,
 				A100010A /* CryptoKitAead.swift in Sources */,
 				A1000101 /* iOSApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1000602 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000120 /* ThinSliceUITests.swift in Sources */,
+				A1000121 /* Screen.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -258,6 +330,38 @@
 			};
 			name = Release;
 		};
+		A1000711 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.bhrigu.almira.uitests;
+				PRODUCT_NAME = AlmiraUITests;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = iosApp;
+			};
+			name = Debug;
+		};
+		A1000712 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.bhrigu.almira.uitests;
+				PRODUCT_NAME = AlmiraUITests;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = iosApp;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -275,6 +379,15 @@
 			buildConfigurations = (
 				A1000701 /* Debug */,
 				A1000702 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1000710 /* Build configuration list for PBXNativeTarget "AlmiraUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000711 /* Debug */,
+				A1000712 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

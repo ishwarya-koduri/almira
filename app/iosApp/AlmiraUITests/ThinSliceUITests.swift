@@ -15,6 +15,10 @@ final class ThinSliceUITests: XCTestCase {
     private let ishwarya = "9889190735"
     private let ravi = "8889190742"
 
+    /// Set the moment a holding might exist, so `tearDown` cleans up even when
+    /// the test fails in the middle of the form.
+    private var didCapture = false
+
     override func setUp() {
         continueAfterFailure = false
     }
@@ -60,14 +64,22 @@ final class ThinSliceUITests: XCTestCase {
     /// Adds a holding through the same schema-driven form the web client uses,
     /// and proves the dashboard moved by exactly its amount.
     ///
-    /// The amount is deliberately memorable — ₹7,777 — so that if the baseline
-    /// is ever left dirty by a failed run, the stray row says where it came
-    /// from. The row is removed after this test and the total re-checked.
+    /// The holding is named so that a row surviving a crashed run says where it
+    /// came from, and `tearDown` removes it through the product's own DELETE
+    /// endpoint. That matters more than it sounds: the acceptance figures in
+    /// docs are absolute — ₹33,35,000 over 7 holdings — so a test that adds an
+    /// eighth and walks away invalidates every later run and the document with
+    /// it.
     func test3_captureAHoldingAndSeeTheTotalMove() {
         let app = signedInAs(ishwarya)
         XCTAssertTrue(Screen.waitForText(app, "TRUE NET WORTH", timeout: 30), "no dashboard")
         XCTAssertTrue(Screen.showing(app, "₹33,35,000"), "the baseline is not where it should be")
 
+        let holdingsBefore = holdingCount(app)
+        XCTAssertEqual(holdingsBefore, 7, "the baseline holding count has moved")
+
+        // From here on there is a row to remove, whatever happens next.
+        didCapture = true
         XCTAssertTrue(Screen.tapText(app, "Add a holding"), "no Add a holding button")
         sleep(2)
         XCTAssertTrue(Screen.waitForText(app, "What are you adding?", timeout: 20), "no type picker")
@@ -111,8 +123,18 @@ final class ThinSliceUITests: XCTestCase {
         sleep(2)
         Screen.record(app, "3-dashboard-after", to: self)
 
-        // One more holding than the baseline, from a form the server described.
-        assertHoldingCount(app, "8")
+        // One more than the baseline, from a form the server described. Read
+        // relative to the count taken before the save rather than hardcoded,
+        // so the test survives a run that left litter behind.
+        assertHoldingCount(app, String(holdingsBefore + 1))
+    }
+
+    override func tearDown() {
+        if didCapture {
+            print("TEARDOWN \(Screen.cleanUpTestHoldings())")
+            didCapture = false
+        }
+        super.tearDown()
     }
 
     // MARK: - The lock
@@ -220,8 +242,6 @@ final class ThinSliceUITests: XCTestCase {
     }
 
     private func signIn(_ app: XCUIApplication, phone: String) {
-        Screen.clearBridgedCode()
-
         // Tap the field before typing, rather than trusting the focus the
         // launch screenshot appears to show. An earlier version of this test
         // typed blind and the digits landed somewhere else — which the backend
@@ -243,16 +263,16 @@ final class ThinSliceUITests: XCTestCase {
 
         XCTAssertTrue(Screen.tapText(app, "Send code"), "could not tap Send code")
 
-        guard let code = Screen.awaitBridgedCode() else {
+        XCTAssertTrue(Screen.waitForText(app, "Check your phone", timeout: 30), "no code step")
+        guard let code = Screen.readCodeOffScreen(app) else {
             Screen.record(app, "no-code", to: self)
-            return XCTFail("the backend never logged a code — is the watcher running?")
+            return XCTFail("the code step never showed a code")
         }
 
-        XCTAssertTrue(
-            Screen.waitForText(app, "Enter the 6-digit code", timeout: 25)
-                || Screen.waitForText(app, "code", timeout: 5),
-            "never reached the code step"
-        )
+        // The code field holds focus when the step appears, but tap it anyway —
+        // the same lesson as the phone field, and cheaper than learning it
+        // twice.
+        Screen.tapText(app, "It expires in 5 minutes")
         app.typeText(code)
     }
 
@@ -293,18 +313,20 @@ final class ThinSliceUITests: XCTestCase {
         _ = matchFaceId(app)
     }
 
-    /// The count sits next to the word "Holdings" in the summary, so the test
-    /// asserts the pair rather than the bare number — "7" on its own appears in
-    /// half a dozen places on that screen.
-    private func assertHoldingCount(_ app: XCUIApplication, _ expected: String) {
+    /// The count sits next to the word "Holdings" in the summary, so both of
+    /// these read the pair rather than the bare number — "7" on its own appears
+    /// in half a dozen places on that screen.
+    private func holdingCount(_ app: XCUIApplication) -> Int {
         let all = Screen.texts(app)
-        guard let index = all.firstIndex(where: { $0 == "Holdings" }) else {
-            return XCTFail("no Holdings line on the dashboard: \(all)")
-        }
-        let following = all[(index + 1)...].prefix(2)
-        XCTAssertTrue(
-            following.contains(expected),
-            "expected \(expected) holdings, saw \(Array(following))"
+        guard let index = all.firstIndex(where: { $0 == "Holdings" }) else { return -1 }
+        return all[(index + 1)...].prefix(2).compactMap(Int.init).first ?? -1
+    }
+
+    private func assertHoldingCount(_ app: XCUIApplication, _ expected: String) {
+        let actual = holdingCount(app)
+        XCTAssertEqual(
+            String(actual), expected,
+            "expected \(expected) holdings, the dashboard says \(actual)"
         )
     }
 }

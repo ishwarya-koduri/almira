@@ -282,3 +282,11 @@ design and nothing to plumb.
 the outside: someone who fat-fingers their number sees an app with none of their
 records and no way to try again. Not a privacy or correctness problem — the
 empty household is genuinely empty.
+
+**There is one such account in the personal dev stack.** `+919666873377`, made
+by the run described above. It is deliberately left in place: it belongs to no
+household and holds nothing, so it cannot affect a total or a privacy check, and
+hand-deleting a `users` row risks orphaning its sessions and audit entries for
+no gain. It is also the live case for reproducing this issue. It should go when
+there is a proper account-deletion flow to remove it with — not by row
+surgery.

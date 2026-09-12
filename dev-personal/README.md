@@ -213,3 +213,73 @@ xcrun simctl spawn <device> notifyutil -p com.apple.BiometricKit.enrollmentChang
 After which the lock reports `Biometric` and the biometric branch of
 `LAContext` is the one being exercised. This is the equivalent of the
 Simulator's Features → Face ID → Enrolled toggle.
+
+### Clearing the OTP throttle — and one silent failure to avoid
+
+Five codes an hour per phone, plus a tighter cap per source address, is right
+for production and far too few for a testing loop. To clear it:
+
+```
+./dev-personal/clear-otp-limits.sh                 # every counter
+./dev-personal/clear-otp-limits.sh 9889190735      # one number, plus addresses
+```
+
+**Do not reach for the obvious one-liner.** This one looks like it works:
+
+```
+docker exec almira-personal-redis sh -c \
+  'redis-cli --scan --pattern "otp:rate:*" | xargs -r redis-cli del'
+```
+
+It prints `SCAN error: NOAUTH Authentication required.` on stderr, **exits 0**,
+and deletes nothing — because this Redis runs with `requirepass`. Measured side
+by side with three counters planted:
+
+| | exit code | keys left |
+|---|---|---|
+| the one-liner above | 0 | 3 |
+| `clear-otp-limits.sh` | 0 | 0 |
+
+That mattered in practice: for a whole working session the throttle was reported
+as cleared each time and never was — the counters were only ever expiring on
+their own an hour later. Nothing was damaged, but the log said something untrue,
+and a maintenance command that cannot do what it says must fail rather than
+return quietly.
+
+So the script checks every step and exits non-zero with a message if any of them
+does not hold: the container missing, the password unreadable, Redis refusing
+it, a delete count that disagrees, or keys still present afterwards. Both
+failure paths verified:
+
+```
+$ ./clear-otp-limits.sh                    # container stopped
+almira-personal-redis is not running. Start the stack with ./dev-personal/up.sh   → exit 1
+
+$ ./clear-otp-limits.sh                    # wrong password
+Redis did not accept the password taken from the container: AUTH failed …        → exit 1
+```
+
+The password is read from the running container's own command line, which is
+where compose already resolved `${ALMIRA_REDIS_PASSWORD}`. Nothing is hardcoded
+and nothing duplicates the default: change it in the compose file and the script
+follows.
+
+### Running the iOS UI tests
+
+```
+./dev-personal/uitest/run.sh                                  # all of them
+./dev-personal/uitest/run.sh test3_captureAHoldingAndSeeTheTotalMove
+```
+
+The runner sets up the four things a run needs and each of which broke a run by
+being absent: the device booted, Face ID enrolled (enrolment does not survive
+the shutdown `xcodebuild test` performs, so the second run of a pair would
+otherwise meet a passcode-only device), iOS's first-run keyboard tutorials
+marked as seen (they float over the whole app, are invisible to its
+accessibility tree, and swallow every tap), and the OTP throttle cleared.
+
+It also starts `bridge.py`, which does the two things a test inside the
+simulator cannot do for itself: post the Face-ID-matched notification, and
+soft-delete the holding the capture test creates. The one-time code needs no
+bridge — the app prints it on screen when the server reports no SMS provider is
+configured.

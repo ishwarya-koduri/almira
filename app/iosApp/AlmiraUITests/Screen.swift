@@ -142,55 +142,31 @@ enum Screen {
         app.coordinate(withNormalizedOffset: CGVector(dx: x, dy: y)).tap()
     }
 
-    // MARK: - The OTP bridge
+    // MARK: - The one-time code
 
-    /// The six digits the backend just sent, as bridged in from the host.
+    /// The six digits, read off the app's own screen.
     ///
-    /// The app asks the real API for the code — that is the path under test —
-    /// and the backend's dev sender logs it. A script on the Mac tails that log
-    /// and writes the digits into a directory served on the Mac's loopback,
-    /// which the simulator reaches as `localhost`. Nothing in the app or the
-    /// API is changed or stubbed to make this work: the code still travels the
-    /// whole way round, app → API → sender → app.
+    /// The backend tells the client when no SMS provider is configured, and the
+    /// code step then says so in as many words — "No SMS provider is
+    /// configured, so the code is 838100." That is a deliberate development
+    /// affordance in the product, not a test hook, and reading it is both
+    /// simpler and more honest than the first two attempts:
     ///
-    /// Not the simulator's own `/tmp`, which was the first attempt: a UI test
-    /// process is itself a sandboxed app, so its `/tmp` is its own container
-    /// rather than the device-wide directory, and the file written by the host
-    /// was never visible to it.
-    static let otpURL = URL(string: "http://localhost:18099/almira-otp.txt")!
-
-    private static func fetchBridgedCode() -> String? {
-        var result: String?
-        let done = DispatchSemaphore(value: 0)
-        var request = URLRequest(url: otpURL)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        URLSession.shared.dataTask(with: request) { data, response, _ in
-            defer { done.signal() }
-            guard (response as? HTTPURLResponse)?.statusCode == 200,
-                  let data, let text = String(data: data, encoding: .utf8) else { return }
-            result = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        }.resume()
-        _ = done.wait(timeout: .now() + 5)
-        return result
-    }
-
-    /// Drops any code from an earlier step, so a stale one cannot be mistaken
-    /// for the one this sign-in asked for.
-    static func clearBridgedCode() {
-        var request = URLRequest(url: URL(string: "http://localhost:18099/clear")!)
-        request.httpMethod = "GET"
-        let done = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: request) { _, _, _ in done.signal() }.resume()
-        _ = done.wait(timeout: .now() + 5)
-    }
-
-    static func awaitBridgedCode(timeout: TimeInterval = 40) -> String? {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if let code = fetchBridgedCode(), code.count == 6 { return code }
-            usleep(500_000)
-        }
-        return nil
+    ///   - a host script writing the code into the simulator's device-wide
+    ///     `/tmp`, which a UI test cannot see because it is itself a sandboxed
+    ///     app with a `/tmp` of its own; then
+    ///   - the same script serving it over loopback, which worked but made the
+    ///     test depend on a second process tailing Docker logs.
+    ///
+    /// The code still travels the whole way round — app asks the real API, the
+    /// real sender produces it — and nothing outside the app is involved.
+    static func readCodeOffScreen(_ app: XCUIApplication, timeout: TimeInterval = 30) -> String? {
+        let marker = "so the code is"
+        guard waitForText(app, marker, timeout: timeout) else { return nil }
+        let line = texts(app).first { $0.contains(marker) } ?? ""
+        let digits = line.components(separatedBy: CharacterSet.decimalDigits.inverted)
+            .first { $0.count == 6 }
+        return digits
     }
 
     /// Asks the Mac to post the Face-ID-matched notification with `simctl`.
@@ -204,6 +180,25 @@ enum Screen {
         let done = DispatchSemaphore(value: 0)
         URLSession.shared.dataTask(with: request) { _, _, _ in done.signal() }.resume()
         _ = done.wait(timeout: .now() + 9)
+    }
+
+    /// Asks the host to soft-delete anything the capture test left behind,
+    /// through the product's own DELETE endpoint as a real user.
+    ///
+    /// A test that changes a household and walks away leaves the next run
+    /// asserting against a moved baseline — and the acceptance figures in
+    /// docs/ are absolute, so the litter would quietly invalidate them.
+    static func cleanUpTestHoldings() -> String {
+        var request = URLRequest(url: URL(string: "http://localhost:18099/cleanup")!)
+        request.timeoutInterval = 90
+        var result = "cleanup: no answer from the bridge"
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            if let data, let text = String(data: data, encoding: .utf8) { result = text }
+            done.signal()
+        }.resume()
+        _ = done.wait(timeout: .now() + 95)
+        return result
     }
 
     // MARK: - Evidence

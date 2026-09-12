@@ -77,9 +77,36 @@ In one line each:
    key** there rather than copying the private one. Two keys can be revoked
    independently; one cannot.
 
-There is **no release signing keystore yet** — nothing has been built for
-release on either platform. When one exists it outranks everything on this list:
-an Android app can only ever be updated by a build signed with the same key.
+---
+
+## The release keystore — the order matters, and it is easy to get wrong
+
+There is **no release signing keystore yet**, and it is deliberately **not**
+created on the old machine. It belongs on the personal machine, and it has to
+exist before a DLT template is registered, because the template contains the app
+hash and the app hash comes from the signing certificate.
+
+Do these five in this order. Doing 5 before 3 means registering a template
+against a hash that is about to change, and re-registering a DLT template is
+days, not minutes.
+
+1. **Be on the personal machine**, with the project verified there —
+   `./dev-personal/move/verify.sh` green.
+2. **Create the release keystore**, on that machine and nowhere else.
+3. **Back it up immediately** — password manager and one offline copy, before it
+   has signed anything. An Android app can only ever be updated by a build
+   signed with the same key; lose it and the listing cannot be updated by you,
+   by Google, or by anyone. The only path is a new listing with a new package
+   name and every existing install stranded.
+4. **Derive the release app hash** from that keystore — the eleven characters
+   SMS Retriever matches on, `base64(SHA-256(packageName + " " + certificate))`.
+   A release build prints its own hash on the sign-in screen.
+5. **Only then register the DLT template**, with that hash as literal text in
+   the body.
+
+Until step 2 happens, the only app hash in existence is the **debug** one, from
+`debug.keystore`. That is why the debug keystore still has to come across even
+though it will eventually be superseded — see `INVENTORY.md`.
 
 ---
 

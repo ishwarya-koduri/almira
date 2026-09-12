@@ -40,6 +40,7 @@ done
 BOLD=$'\033[1m'; DIM=$'\033[2m'; GREEN=$'\033[32m'; RED=$'\033[31m'; YELLOW=$'\033[33m'; OFF=$'\033[0m'
 STEP=0
 FAILED=()
+BOOTSTRAPPED=()
 
 step() { STEP=$((STEP + 1)); echo; echo "${BOLD}[$STEP] $1${OFF}"; }
 ok()   { echo "    ${GREEN}ok${OFF}   $1"; }
@@ -127,17 +128,30 @@ source "$HOME_DIR/env.sh" > /dev/null
 # -----------------------------------------------------------------------------
 step "The Gradle wrapper — see INVENTORY.md, the jars are not in the repository"
 # -----------------------------------------------------------------------------
-# `./gradlew` is a shell script that runs a 47 KB jar next to it, and that jar is
-# caught by a `*.jar` line in .gitignore whose exception is anchored to the repo
-# root. A fresh clone therefore has the script and not the jar, and fails with
-# "Could not find or load main class org.gradle.wrapper.GradleWrapperMain".
+# `./gradlew` is a shell script that runs a 47 KB jar next to it. Both jars are
+# committed, so this should find them and do nothing.
 #
-# Bootstrapping it needs no Gradle on the machine: download the distribution the
-# properties file already names, and let it regenerate its own wrapper.
+# It is kept because it once had to work: a `*.jar` line in .gitignore whose
+# exception was anchored to the repository root caught both, and a fresh clone
+# had the script and not the jar. If that ever happens again this bootstraps
+# around it — download the distribution the properties file already names, and
+# let it regenerate its own wrapper — but it says so loudly, because a silent
+# fallback is how a repository stays broken for months without anyone noticing.
 bootstrap_wrapper() {
   local project="$1"
   local jar="$project/gradle/wrapper/gradle-wrapper.jar"
   [ -f "$jar" ] && { ok "$(basename "$project")/gradle-wrapper.jar present"; return 0; }
+
+  # Not a note. This is a defect in the repository, and the run should say so
+  # in the summary rather than quietly papering over it.
+  echo
+  echo "    ${RED}${BOLD}the Gradle wrapper jar is missing from the clone${OFF}"
+  echo "    ${RED}  $jar${OFF}"
+  echo "    ${YELLOW}  It is supposed to be committed. Check .gitignore still has${OFF}"
+  echo "    ${YELLOW}    !**/gradle/wrapper/gradle-wrapper.jar${OFF}"
+  echo "    ${YELLOW}  and that both jars are tracked:  git ls-files '*gradle-wrapper.jar'${OFF}"
+  echo "    ${DIM}  Bootstrapping around it so this run can continue.${OFF}"
+  BOOTSTRAPPED+=("$jar")
 
   local url
   url=$(sed -n 's/^distributionUrl=//p' "$project/gradle/wrapper/gradle-wrapper.properties" | tr -d '\\')
@@ -284,6 +298,13 @@ fi
 step "Result"
 # -----------------------------------------------------------------------------
 echo
+if [ ${#BOOTSTRAPPED[@]} -gt 0 ]; then
+  echo "  ${YELLOW}${BOLD}The wrapper jar had to be bootstrapped for:${OFF}"
+  printf '    · %s\n' "${BOOTSTRAPPED[@]}"
+  echo "  ${YELLOW}That means the jars have fallen out of the repository again.${OFF}"
+  echo "  ${YELLOW}The build works, but a fresh clone does not without this script.${OFF}"
+  echo
+fi
 if [ ${#FAILED[@]} -eq 0 ]; then
   echo "  ${GREEN}${BOLD}Everything passed.${OFF}"
   echo "  Web app       http://localhost:$PORT"

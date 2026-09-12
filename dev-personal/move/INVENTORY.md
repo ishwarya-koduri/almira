@@ -29,6 +29,19 @@ means **the OTP SMS template no longer matches and autofill silently stops
 working** — the message still arrives, the code simply never fills itself in.
 Nothing errors. You would look at the app.
 
+**It is also the source of the only app hash that exists right now.** No release
+keystore has been created yet, so every app hash this project has ever used is
+derived from this debug certificate. It will eventually be superseded by the
+release one — and until that happens it is the only one there is, which is why
+it has to come across rather than being regenerated.
+
+The two are not interchangeable, and both will exist in the end: a debug build
+and a release build are signed by different certificates and therefore carry
+different hashes, so a DLT template registered against one does not match the
+other. `MOVE.md` records the order that keeps this straight — personal machine,
+release keystore, back it up, derive the release hash, and only then register
+the template.
+
 So: copy it, or accept that you must re-derive the hash on the new machine and
 update the SMS template to match. The app prints its own hash on the sign-in
 screen in debug builds, so re-deriving is easy — it is *remembering to* that is

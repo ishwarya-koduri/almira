@@ -120,51 +120,83 @@ we have not watched happen.
 
 ---
 
-## 5. The iOS half of the security seam is declared, not written
+## 5. iOS one-time-code autofill cannot be reached from Compose 1.8.2
 
-**Where** `app/shared/src/iosMain/.../security/Platform.ios.kt`.
+**Where** `app/shared/src/commonMain/.../signin/OtpKeyboard.kt` and its two
+actuals.
 
-**What** `PlatformHost`, `createTokenStore` and `createAppLock` exist for the
-iOS target so common code compiles against them, and the two factories throw.
-The Android implementations are real; the iOS ones are a Keychain store
-(`kSecClassGenericPassword`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`,
-`SecAccessControl` with `.biometryCurrentSet` to match the Android key's
-binding) and an `LAContext.evaluatePolicy(.deviceOwnerAuthentication)` lock,
-which is Face ID or Touch ID with the passcode behind it — the same pairing
-Android gets from `BIOMETRIC_STRONG or DEVICE_CREDENTIAL`.
+**What** iOS autofill is declarative: a field with
+`textContentType = .oneTimeCode` makes the keyboard offer the code from the most
+recent message, and no runtime API is called — which is why the iOS
+`OtpAutofill` actual is an honest no-op rather than a stub that throws.
 
-**Why it is still here** The iOS stage has not been opened, and nothing in
-`iosMain` has ever been compiled: that needs the Kotlin/Native toolchain, which
-is not installed on this machine by choice.
+The attribute itself cannot be set. Compose Multiplatform 1.8.2's iOS text input
+builds its traits in `androidx.compose.ui.platform.getUITextInputTraits`, whose
+only input is `ImeOptions`, and `ImeOptions` carries no content type. Read off
+the shipped klib rather than inferred:
 
-**When to fix** The iOS stage. Two files in `iosMain` and four lines in the
-Swift entry point; nothing above the seam moves.
+- the entire iOS Compose UI klib contains exactly three content-type constants —
+  `UITextContentTypePassword`, `UITextContentTypeEmailAddress` and
+  `UITextContentTypeTelephoneNumber`. There is no `OneTimeCode` anywhere in it.
+- `androidx.compose.ui.autofill.ContentType` *does* declare `SmsOtpCode`, but
+  the string appears in no file under `package_androidx.compose.ui.platform` —
+  the iOS text-input service never reads that semantics property.
 
-**Risk if left** None today — no iOS build exists to run it. The entry points
-throw with a message pointing here rather than failing silently.
+**What this found on the way** `KeyboardType.NumberPassword` maps to
+`UITextContentTypePassword`, so the six-cell code field was telling iOS it was a
+password field and iOS would have offered saved passwords and Strong Password
+over a one-time code. That is worse than offering nothing, and it is fixed:
+`otpKeyboardType` is now `expect`/`actual`, staying `NumberPassword` on Android
+(where it also keeps the code out of the keyboard's suggestions and dictionary)
+and becoming a plain `Number` on iOS, which claims no content type at all.
+
+**When to fix** Either a Compose version that maps `ContentType.SmsOtpCode`
+through to `textContentType`, or a `UIKitView`-hosted `UITextField` on iOS only.
+The second is available today and is deliberately not taken: it would replace
+the six-cell field on one platform, and a visible design divergence is a poor
+trade for one convenience.
+
+**Risk if left** iOS users type six digits by hand. No incorrect behaviour and
+no data risk now that the password claim is gone.
 
 ---
 
-## 6. iOS one-time-code autofill is one attribute, not yet applied
+## 6. AES-GCM on iOS comes from Swift, not from the shared module
 
-**Where** `app/shared/src/iosMain/.../signin/OtpAutofill.ios.kt`.
+**Where** `app/shared/src/iosMain/.../zk/Aead.ios.kt` and
+`app/iosApp/iosApp/CryptoKitAead.swift`.
 
-**What** iOS autofill is declarative: a text field with
-`textContentType = .oneTimeCode` makes the keyboard offer the code from the
-most recent message, and no runtime API is called. The iOS side of the seam is
-therefore an honest no-op rather than a throwing stub — crashing a future iOS
-build over a feature that needs no runtime code would be a bug we invented for
-ourselves.
+**What** Not a defect — a constraint worth recording, because it qualifies a
+claim earlier stages leaned on. Every other iOS-specific primitive in this app
+is C and is called from Kotlin directly: the Keychain and the random from
+Security, PBKDF2 and HMAC over CommonCrypto, the prompt from
+LocalAuthentication. AES-256-GCM is the exception:
 
-What is genuinely missing is the attribute itself on the code field. Compose
-Multiplatform's `BasicTextField` does not expose `textContentType`, so the OTP
-field will need either a Compose `KeyboardType`/semantics bridge that maps to
-it, or a small UIKit-backed field on iOS only.
+- CryptoKit is Swift-only and unreachable from Kotlin/Native.
+- the public CommonCrypto headers in the iOS SDK expose no GCM at all — not
+  `CCCryptorGCM*`, not `kCCModeGCM`. Those live in `CommonCryptorSPI.h`, which
+  the SDK does not ship.
 
-**When to fix** The iOS stage, with the rest of that target.
+So `AppleAead` is injected from Swift by `installAppleAead` before any Compose
+content exists. The seam holds — nothing above `Aead.kt` knows — but "iOS is a
+target-add, not a rewrite" is true with the qualification that the add includes
+about forty lines of Swift, and this is the whole reason any Swift beyond the
+app shell exists.
 
-**Risk if left** iOS users type six digits by hand. No incorrect behaviour, no
-data risk — only a missing convenience.
+Rolling GCM over CommonCrypto's AES-CTR by hand was considered and rejected: the
+authenticating half is GHASH, and a hand-written GHASH inside a product whose
+entire claim is that the server cannot read the data is not a trade worth
+making.
+
+**Consequence to keep in mind** A future iOS entry point that forgets
+`installAppleAead` fails loudly on the first sealed field — there is no default
+and no fallback, by design. And because the bridge only exists at runtime, the
+envelope third of the B4 vector cannot be asserted in a Kotlin/Native test; it
+is asserted at launch instead, by `zkSelfTest()`, against the same checked-in
+constant.
+
+**When to fix** Only if CryptoKit ever becomes reachable from Kotlin/Native, or
+if Apple ships GCM in the public CommonCrypto headers. Neither is expected.
 
 ---
 

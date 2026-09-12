@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import tech.bhrigu.almira.shared.theme.AlmiraMotion
@@ -63,7 +62,7 @@ fun OtpField(
         // second caret blinking behind them would be a puzzle.
         cursorBrush = SolidColor(Color.Transparent),
         keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.NumberPassword,
+            keyboardType = otpKeyboardType,
             imeAction = ImeAction.Done,
         ),
         decorationBox = {

@@ -168,3 +168,48 @@ application is **3.7 GB**; the bulk is the simulator runtime at 19 GB in
 `/Library/Developer/CoreSimulator`, which is a separate download and separately
 removable. The total is about 25 GB outside the project folder rather than 40,
 and the largest single piece is the easiest to delete.
+
+### After the iOS actuals stage — remeasured
+
+Nothing new went system-level in this stage; the numbers are here because the
+folder-local figure moved and because one thing about `xcode-select` changed.
+
+| Where | Size | Change |
+|---|---|---|
+| `~/Developer/almira-personal` | **13 GB** | unchanged in total; `xcode-derived` is 147 MB of it |
+| `/Library/Developer/CoreSimulator/Volumes` | **16 GB** | the iOS 26.5 runtime, as before |
+| `~/Library/Developer/CoreSimulator` | **2.2 GB** | the booted device's own data |
+| `/Applications/Xcode.app` | **3.7 GB** | unchanged |
+| `~/Library/Developer/Xcode` | 144 MB | unchanged |
+
+System-level total remains about **22 GB**, all of it still removable in the
+three separate pieces listed above. Xcode's build output is confined to
+`almira-personal/xcode-derived` via `-derivedDataPath`, which is why
+`~/Library/Developer/Xcode` has stayed at 144 MB rather than growing per build.
+
+**`xcode-select` is now pointed at Xcode.** `xcode-select -p` returns
+`/Applications/Xcode.app/Contents/Developer`, where earlier in this work it
+returned the standalone Command Line Tools. Recorded because the earlier note
+here said the link was deliberately left alone.
+
+`/var/db/xcode_select_link` still does not exist on this macOS version — the
+selection is recorded elsewhere. That matters for one thing only: the native
+iOS-simulator panel checks for that link specifically and therefore still
+reports "Xcode is installed but not selected", which on this machine is a false
+negative rather than a real misconfiguration. `xcode-select -p` and
+`xcrun --find simctl` both resolve to Xcode. Everything in this project is
+driven through `xcrun simctl` directly, which does not consult the link.
+
+### Enrolling Face ID on the simulator
+
+The lock reports `DeviceCredentialOnly` on a fresh simulator, because no face is
+enrolled. Two commands, no admin, nothing persisted outside the simulator:
+
+```
+xcrun simctl spawn <device> notifyutil -s com.apple.BiometricKit.enrollmentChanged 1
+xcrun simctl spawn <device> notifyutil -p com.apple.BiometricKit.enrollmentChanged
+```
+
+After which the lock reports `Biometric` and the biometric branch of
+`LAContext` is the one being exercised. This is the equivalent of the
+Simulator's Features → Face ID → Enrolled toggle.

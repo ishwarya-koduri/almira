@@ -10,7 +10,13 @@ target/
 .gradle/
 *.class
 *.jar
-!gradle/wrapper/gradle-wrapper.jar
+# The wrapper jar is meant to be committed — Gradle's own documentation says so
+# — because ./gradlew cannot start without it, and a fresh clone would otherwise
+# have the script and not the jar. The exception has to be double-starred:
+# anchored as `!gradle/wrapper/...` it matches only the repository root, which is
+# neither app/ nor backend/, and both jars were missing from the repository
+# until it was noticed.
+!**/gradle/wrapper/gradle-wrapper.jar
 
 # Secrets — never commit. Copy .env.example -> .env locally, and
 # .env.production.example -> .env.production on a server.

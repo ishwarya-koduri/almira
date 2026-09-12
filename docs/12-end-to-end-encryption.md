@@ -25,6 +25,30 @@ Not sealed: the record's title, its value, its type, who owns it. Those drive
 totals, search and reports, and pretending otherwise would produce an app that
 appears to work and quietly cannot.
 
+**Concretely**, a sealed value is a row in `sealed_values`, addressed by four
+components and nothing else:
+
+| | | |
+|---|---|---|
+| `householdId` | uuid | the household the record belongs to |
+| `recordType` | one of `investment`, `liability`, `account`, `member`, `estate_document` | a closed vocabulary the server enforces |
+| `recordId` | uuid | the record |
+| `fieldKey` | 1–64 characters, non-blank | chosen by the client, not by the server |
+
+There is no registry of sealable field names. `fieldKey` is whatever the client
+calls it — `locker_address`, `who_holds_it` — and the server stores it without
+opinion. That is deliberate: a server-side list of sealable fields would be a
+server-side statement about what the sealed data *is*, which is the property
+being sold.
+
+Two limits apply to the ciphertext:
+
+- **64 000 characters** of base64url, enforced by the server. That is 47 967
+  plaintext bytes once the header, tag and base64 expansion are taken off — the
+  number the acceptance matrix in §9 exercises exactly.
+- **17 bytes decoded minimum**, so that a client which posts plain text where
+  ciphertext belongs is rejected rather than stored.
+
 The consequences are stated in the UI, not buried:
 
 - a sealed field **cannot be searched, sorted or OCR'd** on the server;
@@ -106,6 +130,13 @@ byte layout, **base64url without padding**:
 - **iv** is 12 random bytes per encryption. Never reused.
 - AES-GCM with a **128-bit tag**, which is what WebCrypto produces by default.
 
+**The smallest legal envelope is 33 bytes** — 1 + 4 + 12 header, plus a 16-byte
+tag and no ciphertext at all. That is what sealing an **empty string** produces,
+and it is legal: an empty sealed value is a value. A reader that requires the
+body to be *longer* than the tag rejects it, which looks exactly like corruption
+and is not. This is not hypothetical — it is the bug the iOS bridge shipped with
+for an hour, caught only because the acceptance matrix carries an empty value.
+
 **What the plaintext is.** A sealed value is the **raw UTF-8 bytes of a
 string** — no JSON, no object, no key ordering, and therefore no canonical-form
 problem to get wrong. A value that looks like `{"a":1}` is stored as those seven
@@ -129,6 +160,23 @@ Every **field** ciphertext is bound to the exact place it lives:
 ```
 AAD = "{householdId}|{recordType}|{recordId}|{fieldKey}"   (UTF-8)
 ```
+
+**The two uuids are lowercased, on seal and on open, whatever case they arrive
+in.** `household_id` and `record_id` are Postgres `uuid` columns, so the server
+echoes them lowercase regardless of what it was sent. A client that seals with
+an uppercase id it happens to be holding, and opens with the server's echo,
+produces a value that will not open **in the client that wrote it**, with
+nothing to explain why. Lowercase with the locale-independent mapping: on a
+Turkish device the locale-sensitive one is a different answer.
+
+`recordType` and `fieldKey` are used **verbatim** — not lowercased, not trimmed.
+
+**No component may contain `|` (U+007C).** The separator is not escaped, so a
+component holding one would make the AAD ambiguous. Both clients refuse at AAD
+construction. The server does **not** enforce this on `fieldKey` — see
+`docs/known-issues.md` — which is unexploitable today only because the three
+components before it cannot contain a pipe, and stops being unexploitable the
+day a fifth component is added.
 
 Without this, anyone able to write the database could move a ciphertext to
 another record and have the client decrypt it there — the same reasoning as the
@@ -179,15 +227,31 @@ progress rather than pretending to be instant.
 
 WebCrypto (browser), and the equivalents on Android and iOS:
 
-| Step | WebCrypto | Kotlin/JVM | Swift |
+| Step | WebCrypto | Kotlin/JVM & Android | Kotlin/Native (iOS) |
 |---|---|---|---|
-| Derive | `deriveBits({name:'PBKDF2', hash:'SHA-256', salt, iterations})` | `SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")` | `CryptoKit` + `CommonCrypto` PBKDF2 |
-| Encrypt | `encrypt({name:'AES-GCM', iv, additionalData}, key, data)` | `Cipher.getInstance("AES/GCM/NoPadding")` + `updateAAD` | `AES.GCM.seal(_:using:authenticating:)` |
-| Random | `crypto.getRandomValues` | `SecureRandom` | `SystemRandomNumberGenerator` |
+| Derive | `deriveBits({name:'PBKDF2', hash:'SHA-256', salt, iterations})` | **RFC 8018 §5.2 over `Mac("HmacSHA256")`** | **RFC 8018 §5.2 over `CCHmac`** (`platform.CoreCrypto`) |
+| Encrypt | `encrypt({name:'AES-GCM', iv, additionalData}, key, data)` | `Cipher.getInstance("AES/GCM/NoPadding")` + `updateAAD` | **Swift `AES.GCM.seal(_:using:nonce:authenticating:)`, injected** |
+| Random | `crypto.getRandomValues` | `SecureRandom` | `SecRandomCopyBytes` |
 
-The backend test suite (`E2eApiTest`) implements the client half on the JVM and
-round-trips it through the real API — so the Kotlin column above is not a
-suggestion, it is running code you can copy.
+Three of those cells are not the obvious answer, and each was a finding:
+
+- **Not `SecretKeyFactory`/`PBEKeySpec`.** Its char-to-byte step belongs to the
+  platform provider and is not the same on Android as on the JVM — which would
+  put the one step that decides whether two clients agree outside our control.
+  §2 says this; an earlier version of this table contradicted it.
+- **Not `CCKeyDerivationPBKDF`** on iOS. Its password parameter maps to a Kotlin
+  `String?`, which hands the same text-to-bytes decision to the interop layer
+  and cannot carry a NUL besides.
+- **AES-GCM on iOS cannot come from Kotlin at all.** CryptoKit is Swift-only and
+  unreachable from Kotlin/Native, and the public CommonCrypto headers in the iOS
+  SDK expose no GCM whatsoever — the entry points people remember are in
+  `CommonCryptorSPI.h`, which the SDK does not ship. So it is injected from
+  Swift at startup. Anyone implementing a fourth client on Apple platforms will
+  meet this and should not spend the afternoon we spent.
+
+The backend suite (`E2eApiTest`) implements the client half on the JVM and
+round-trips it through the real API, and `app/shared` implements it for real on
+both mobile targets — so none of the columns above is a suggestion.
 
 **Key storage on a device.** The web client holds the content key in memory for
 the session only and never writes it to `localStorage`; the passphrase is asked
@@ -211,7 +275,120 @@ storage.
 
 ---
 
-## 8. What this does not defend against
+## 8. Acceptance — what must be true, and how it is proved
+
+This section is the contract for cross-client interop. It is normative: a client
+that does not satisfy it is not a client, however plausible its output looks.
+
+### 8.1 The conformance vector
+
+Every value fixed, so the answer is a constant rather than a round trip. These
+bytes were produced by the shipped web client in a browser and are asserted
+against, unchanged, by every other implementation.
+
+| | |
+|---|---|
+| passphrase | `correct horse battery staple ` — **with the trailing space** |
+| salt | the 16 bytes `00 01 02 … 0f` |
+| iterations | 600 000 |
+| iv | the 12 bytes `a0 a1 a2 … ab` |
+| householdId | `58276CAE-2448-4D51-8C9D-29FEFD3225D4` — **supplied uppercase on purpose** |
+| recordType | `investment` |
+| recordId | `167D9136-E238-48CF-B093-0F51D9A43C8D` — likewise |
+| fieldKey | `locker_address` |
+| plaintext | `Locker 12, ఖజానా, Kakinada ` — Telugu, and a trailing space |
+
+must produce
+
+```
+derived key  17c0b45fe7d3dcc10b70395e28a8cc533a0c8113691b174d39b8a205f2085f6f
+AAD          58276cae-2448-4d51-8c9d-29fefd3225d4|investment|167d9136-e238-48cf-b093-0f51d9a43c8d|locker_address
+envelope     AQAAAAGgoaKjpKWmp6ipqqvPXvr272LHpln2v1MfVTtWxjXLbZR0eNYAsS5bJYmnCrpDPstqzByPY2RZI1X1WKjF52IsjQ
+```
+
+One value, and it pins all of it: NFC on the passphrase, UTF-8 after it, the
+trailing space surviving both, PBKDF2-HMAC-SHA256 at 600 000 rounds, the AAD
+field order, **the uuids lowercased inside it**, AES-256-GCM with a 128-bit tag,
+the envelope byte layout, big-endian key version, and base64url without padding.
+
+**Assert against these constants, never against a fresh round trip of your
+own.** A round trip proves a client agrees with itself, which is exactly the
+failure being looked for: two implementations can each be internally consistent
+and disagree with each other. If a round trip passes while this vector fails,
+something is compensating, and a compensating difference in key derivation is
+the one failure that cannot be recovered from.
+
+### 8.2 The value shapes that must survive
+
+Not a sample. Each of these has broken a real implementation:
+
+| Shape | Why it is in the list |
+|---|---|
+| Telugu with a trailing space | NFC on the value would silently rewrite it; a trim would lose the space |
+| an emoji | a client that counts UTF-16 units instead of bytes truncates it |
+| `{"a":1}` | a client that parses values would turn seven characters into an object |
+| **the empty string** | a 33-byte envelope; a body-longer-than-tag check rejects it |
+| three spaces | a trim would turn it into the empty string |
+| 47 967 bytes | exactly 64 000 base64 characters — the server's ceiling |
+
+### 8.3 The failure cases, and exactly what each must do
+
+Nothing here may throw past the caller and take a screen down: one unreadable
+value is one unreadable value.
+
+| Case | What the client must do |
+|---|---|
+| **Wrong passphrase** | The verifier fails to decrypt. Report *"That passphrase doesn't open this. Nothing has been changed."* Nothing is fetched, nothing is written, and the content key is not set. A passphrase differing by one byte — the same words without the trailing space — must fail here. |
+| **Truncated or corrupt payload** | `parse` refuses: fewer than 33 bytes, not base64, or a `keyVersion` of 0 or negative. Surface as unreadable, in caution colour, beside the field. Never as a decryption success. |
+| **Moved ciphertext** | A byte-identical row under a different `recordId` or `fieldKey` fails the AAD and must refuse. This is the only thing that distinguishes a working AAD from one being silently ignored, so it is a required test and not an optional one. |
+| **Unknown envelope version** | The version byte is not `1`. Refuse, and say *"sealed by a newer version of Almira"* — a thing to explain, not a thing to apologise for. |
+
+**"A field written by an older client" needs splitting in two, because the two
+halves behave oppositely and conflating them produces a wrong test:**
+
+- **An older *envelope version*** — does not exist. Version `1` is the first and
+  only format. There is nothing older to read, and the only defined behaviour is
+  the refusal above for versions it does not know. A test that claims to
+  exercise "an older client" by writing version `0` is testing the malformed
+  path, and should say so.
+- **An older *`keyVersion`*** — **opens normally, and must.** Rotating a
+  passphrase rewraps the *same* content key under a new wrapping key and
+  increments `key_version`; it does not re-encrypt a single field. So values
+  written before a rotation carry a lower `keyVersion` and decrypt with the
+  current content key exactly as they always did. `keyVersion` is carried so a
+  client can *tell*, never so it can *choose* — a reader that selects a key on
+  this field is a reader that breaks on the first rotation.
+
+  The test that matters: seal a value, rotate the passphrase, and open that
+  value with the new passphrase. It must open, and its `keyVersion` must still
+  be the old number.
+
+### 8.4 And the server holds none of it
+
+After any acceptance run, the plaintext of every sealed value must appear in
+**zero** rows of `sealed_values`, and no row of `e2e_keys` may contain the
+passphrase or a plaintext verifier. This is a grep against the live database,
+not an inspection of the code.
+
+### 8.5 What has been proved, and on what
+
+| | |
+|---|---|
+| web → Android, all six shapes, live API | done |
+| Android → web | done |
+| web → iOS, all six shapes, live API | done |
+| iOS → web | done |
+| the vector in 9.1 on JVM, Android, Kotlin/Native and the browser | done, byte-identical |
+| moved ciphertext refused, both clients | done |
+| wrong passphrase refused, both clients | done |
+| **truncated payload** | asserted in unit tests; **not** yet against the live API |
+| **an older `keyVersion` after a real rotation** | **not proved on any client** |
+
+The last two are the outstanding work for this item.
+
+---
+
+## 9. What this does not defend against
 
 Stated plainly, because a security feature that oversells itself is worse than
 none:

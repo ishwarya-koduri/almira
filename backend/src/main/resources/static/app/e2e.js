@@ -87,9 +87,31 @@ async function open(key, envelopeText, aad) {
  * Binds a ciphertext to the exact field it was written for, so a value moved to
  * another record fails to open rather than decrypting somewhere it does not
  * belong (docs/12 §4).
+ *
+ * **UUIDs are lowercased here, always.** `household_id` and `record_id` are
+ * Postgres `uuid` columns, so the server echoes them lowercase whatever it was
+ * sent — and this function is called with the id the client happens to hold
+ * when sealing, and with the server's echo when opening. Anything that
+ * uppercases a UUID between those two moments produces a value that will not
+ * open *in the client that wrote it*. Canonicalising at construction is what
+ * makes the two calls agree.
+ *
+ * `toLowerCase` and not `toLocaleLowerCase`: this has to be the same mapping on
+ * every device, and a locale-sensitive one is not.
  */
-const aadFor = (householdId, recordType, recordId, fieldKey) =>
-  encoder.encode(`${householdId}|${recordType}|${recordId}|${fieldKey}`);
+function aadFor(householdId, recordType, recordId, fieldKey) {
+  const parts = [householdId.toLowerCase(), recordType, recordId.toLowerCase(), fieldKey];
+
+  // The separator has to stay a separator. Nothing that reaches here can
+  // contain one today — two of these are uuid columns and the third is a fixed
+  // vocabulary — so this is about the field key, and about the day someone adds
+  // a fifth component and the "nothing contains a pipe" reasoning stops being
+  // true. Refusing costs nothing; discovering it later costs a silent collision.
+  if (parts.some((part) => part.includes("|"))) {
+    throw new Error("A record id or field name may not contain the | character.");
+  }
+  return encoder.encode(parts.join("|"));
+}
 
 /**
  * The passphrase, as bytes, canonically.

@@ -165,3 +165,28 @@ it, or a small UIKit-backed field on iOS only.
 
 **Risk if left** iOS users type six digits by hand. No incorrect behaviour, no
 data risk — only a missing convenience.
+
+---
+
+## 7. The server allows `|` in a sealed field's key
+
+**Where** `backend/.../e2e/SealedFieldService.kt` — `fieldKey` is checked for
+non-blank and a 64-character ceiling, and nothing else.
+
+**What** `|` U+007C separates the four components of the zero-knowledge AAD and
+is not escaped, so no component may contain one (docs/zk-interop-acceptance.md
+A0, B3). Both clients now enforce that at AAD construction. The server does not,
+so a third client — or a direct database write — could still store a key holding
+one.
+
+**Is it exploitable today?** No. Of the four components, two are Postgres `uuid`
+columns and one is a five-word vocabulary, so none of the three that precede the
+free one can hold a pipe; the first three separators always delimit exactly and a
+key full of pipes still parses unambiguously. It becomes exploitable the day a
+fifth component joins the AAD.
+
+**When to fix** The next backend pass: reject `|` in `fieldKey` alongside the
+existing blank and length checks. Additive, and no client sends one.
+
+**Risk if left** None reachable now. The cost is that a rule the clients enforce
+is not enforced where the data actually lands.

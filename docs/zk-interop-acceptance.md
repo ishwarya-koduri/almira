@@ -12,8 +12,8 @@ derives the same key on both sides.
 **Settle order:** B1 + B2 together (they are one change) → B3 → B5 into docs/12
 → B6 / B7 → B4 / B8 / B9.
 
-**Landed so far:** B1 and B2, on both clients, with vectors — see the end of
-Part B.
+**Landed so far:** B1, B2 and B3, on both clients, with vectors and negatives —
+see the end of Part B.
 
 **What "done" means, in one sentence:** the Android app opens a field the web
 client sealed, and the web client opens a field the app sealed, with the same
@@ -218,7 +218,7 @@ running the shipped `e2e.js` derivation in a real browser proves the two clients
 correct and still disagree with its counterpart about what bytes the passphrase
 was.
 
-### B3 · UUID case in the AAD — **DECIDED**
+### B3 · UUID case in the AAD — **DECIDED, LANDED**
 
 > **UUIDs in the AAD are lowercased, on seal and on open, on both clients,
 > whatever the source.**
@@ -232,6 +232,19 @@ it**. Canonicalise at AAD construction.
 **Required negative:** seal with an uppercased UUID in the AAD and confirm it
 does not open against the lowercase echo — proving the canonicalisation is
 load-bearing rather than incidental.
+
+**The separator is enforced, not merely forbidden.** Both clients refuse any
+component containing `|` at AAD construction, before anything can be sealed
+with it.
+
+On whether a collision is reachable today: it is not. Of the four components,
+`householdId` and `recordId` are Postgres `uuid` columns and `recordType` is a
+five-word vocabulary, so none of the three that *precede* the free one can hold
+a pipe — the first three separators always delimit exactly, and a `fieldKey`
+full of pipes still parses unambiguously. The enforcement is for the day a
+fifth component is added and that reasoning quietly stops being true, and
+because a rule stated in A0 and checked nowhere is a rule that is already
+half-gone. See docs/known-issues.md for the server's side of this.
 
 ### B4 · `fieldKey` is byte-exact — **DECIDED**
 
@@ -296,8 +309,12 @@ unlocked, drop it on `onStop` exactly as the token data key is dropped, and
 re-derive on next use — matching the web's posture, so the two clients have the
 same security properties and not merely the same ciphertext.
 
-docs/12 §7's "hold it in the Keychain behind a biometric prompt" is superseded
-by this ruling and should be corrected there when B9 is implemented.
+**Definition of done for B9 includes the documentation fix.** docs/12 §7 still
+says "hold it in the Keychain or Keystore behind a biometric prompt, which is
+strictly better" — which this ruling makes wrong, because it would mean device
+plus biometric is enough to read sealed fields. Correcting that sentence is part
+of B9 landing, not a note attached to it: a spec that contradicts the document
+it was read from is a trap for whoever reads the document next.
 
 ---
 
@@ -326,6 +343,20 @@ Run on the emulator against Android's own provider as well as the JDK's, because
 "a different implementation of the same standard" is the exact shape of
 assumption that has cost this project time twice already. 600 000 iterations take
 **523 ms** on the emulator.
+
+**B3, on both clients.** Six more tests on the app and the same three checks run
+against the deployed `e2e.js` in a browser. Both produce the identical AAD from
+an uppercase id:
+
+```
+58276cae-2448-4d51-8c9d-29fefd3225d4|investment|167d9136-e238-48cf-b093-0f51d9a43c8d|locker_address
+```
+
+Proved with a real AEAD rather than string comparison — comparing two AAD byte
+arrays only shows that a file agrees with itself. A value sealed while holding
+an uppercase id **opens** against the server's lowercase echo; the AAD a
+non-canonicalising client would build **fails the GCM tag** against that same
+echo; a component carrying `|` is refused before anything is sealed.
 
 ---
 

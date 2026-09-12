@@ -248,3 +248,37 @@ staging post rather than the final shape.
 
 **Risk if left** No correctness or data risk. The capability exists and is
 proven; it is simply not offered.
+
+---
+
+## 9. A signed-in user with no household has no way out
+
+**Where** `app/shared/src/commonMain/.../App.kt` — the `household == null`
+branch of `SignedIn`.
+
+**What** When `households()` comes back empty the app renders one line,
+*"No household yet. The web client can create one."*, and nothing else. There is
+no sign-out, no back, no retry. The only way off that screen is to delete the
+app, because the session is in the Keychain and survives a relaunch straight
+back onto the same dead end.
+
+**How it was found** A UI test typed a phone number into an unfocused field, so
+ten digits landed somewhere unintended and were sent as a sign-in. Signing in
+creates the account when it does not exist — by design — so the run signed in as
+a person who had never existed, who therefore belonged to no household, and the
+app was stuck. A real person hits exactly this by mistyping their own number by
+one digit.
+
+**What it should be** The same escape the lock screen already has. That screen
+offers *"Sign in as someone else"* precisely because being unable to get past a
+gate must never be terminal, and this screen needs the same line for the same
+reason. An invitation hint would help too, but the sign-out is the bug.
+
+**When to fix** The next pass over `App.kt`. It is one `TextButton` calling the
+`onSignOut` that is already threaded into `SignedIn`, so there is nothing to
+design and nothing to plumb.
+
+**Risk if left** Low severity, high annoyance, and it looks like data loss from
+the outside: someone who fat-fingers their number sees an app with none of their
+records and no way to try again. Not a privacy or correctness problem — the
+empty household is genuinely empty.

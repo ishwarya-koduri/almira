@@ -42,10 +42,29 @@ data class OtpVerifyBody(
 data class LoginResponse(
     val accessToken: String,
     val refreshToken: String,
-    val expiresInSeconds: Int,
+    /** int64 in the contract, so Long here even though it will fit in an Int. */
+    val expiresInSeconds: Long,
     val tokenType: String,
     val isNewUser: Boolean,
     val user: Me,
+)
+
+/**
+ * What `/auth/refresh` answers with — and **not** a [LoginResponse].
+ *
+ * Signing in tells you who you are; refreshing does not, because you already
+ * know. So there is no `user` and no `isNewUser` here, and decoding a refresh
+ * into [LoginResponse] fails on the missing fields. It failed silently for two
+ * stages, because nothing refreshed until an access token had actually expired
+ * on a device — and then surfaced as "couldn't reach Almira", which was a lie
+ * about a server that had answered perfectly.
+ */
+@Serializable
+data class TokenPair(
+    val accessToken: String,
+    val refreshToken: String,
+    val expiresInSeconds: Long,
+    val tokenType: String,
 )
 
 @Serializable

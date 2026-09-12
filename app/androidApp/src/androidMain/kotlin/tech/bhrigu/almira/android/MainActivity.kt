@@ -24,6 +24,11 @@ class MainActivity : FragmentActivity() {
 
     private val lockState = LockState()
 
+    // Built once. Handing `setContent` a fresh host on every recomposition
+    // would key the remembered token store to a new object each time, and a
+    // rebuilt store is a store that has forgotten how to read the session.
+    private val host by lazy { PlatformHost(this) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -40,7 +45,7 @@ class MainActivity : FragmentActivity() {
             App(
                 apiBaseUrl = BuildConfig.API_BASE_URL,
                 platformName = platformName(),
-                host = PlatformHost(this),
+                host = host,
                 lockState = lockState,
             )
         }

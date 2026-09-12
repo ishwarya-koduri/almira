@@ -6,7 +6,6 @@ import android.content.SharedPreferences
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import android.security.keystore.UserNotAuthenticatedException
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -65,7 +64,7 @@ import javax.crypto.spec.SecretKeySpec
  * Ciphertext lives in ordinary SharedPreferences, because ciphertext is not a
  * secret. Each GCM IV is stored beside its own ciphertext, as GCM requires.
  */
-internal class KeystoreTokenStore(context: Context) : TokenStore {
+internal class KeystoreTokenStore private constructor(context: Context) : TokenStore {
 
     private val app: Context = context.applicationContext
 
@@ -91,7 +90,12 @@ internal class KeystoreTokenStore(context: Context) : TokenStore {
 
     override suspend fun save(access: String, refresh: String): Unit = withContext(Dispatchers.IO) {
         gate.withLock {
-            val key = usableDataKey() ?: return@withLock
+            // Never throws. A token that cannot be sealed is a session that
+            // will not survive a restart, which is a smaller problem than an
+            // exception surfacing to the user as "couldn't reach Almira" — a
+            // sentence that would be false and would send them looking at
+            // their wifi.
+            val key = runCatching { usableDataKey() }.getOrNull() ?: return@withLock
             // Both or neither. A half-written session is worse than none: it is
             // an access token that expires into a refresh that isn't there.
             val sealedAccess = seal(key, access)
@@ -123,13 +127,11 @@ internal class KeystoreTokenStore(context: Context) : TokenStore {
     private suspend fun read(name: String): String? = withContext(Dispatchers.IO) {
         gate.withLock {
             val stored = prefs.getString(name, null) ?: return@withLock null
-            val key = try {
-                usableDataKey()
-            } catch (_: UserNotAuthenticatedException) {
-                // The lock has not been passed, or its window expired. Nothing
-                // to repair — the caller's job is to ask for the lock.
-                return@withLock null
-            } ?: return@withLock null
+            // The lock has not been passed, its window expired, or the key is
+            // gone entirely. None of those is repairable here and none of them
+            // is a network problem, so none of them leaves this function as an
+            // exception — the caller's job is to ask for the lock.
+            val key = runCatching { usableDataKey() }.getOrNull() ?: return@withLock null
 
             try {
                 open(key, stored)
@@ -149,8 +151,9 @@ internal class KeystoreTokenStore(context: Context) : TokenStore {
 
     /**
      * The data key, unwrapping it first if this is the first read since the app
-     * was unlocked. Throws [UserNotAuthenticatedException] when the person has
-     * not authenticated recently enough — which is the lock doing its job.
+     * was unlocked. Throws when the person has not authenticated recently
+     * enough — which is the lock doing its job, and why both callers treat a
+     * failure here as "still locked" rather than as an error.
      */
     private fun usableDataKey(): SecretKey? {
         dataKey?.let { return it }
@@ -289,6 +292,15 @@ internal class KeystoreTokenStore(context: Context) : TokenStore {
     }
 
     companion object {
+        @Volatile
+        private var instance: KeystoreTokenStore? = null
+
+        /** The one store for this process. See [createTokenStore] for why. */
+        fun forApp(context: Context): KeystoreTokenStore =
+            instance ?: synchronized(this) {
+                instance ?: KeystoreTokenStore(context).also { instance = it }
+            }
+
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "almira.session.kek.v1"
         private const val RSA_TRANSFORMATION = "RSA/ECB/OAEPPadding"

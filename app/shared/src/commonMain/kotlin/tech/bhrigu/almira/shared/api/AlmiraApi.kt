@@ -76,7 +76,7 @@ class AlmiraApi(
                         onSessionLost()
                         return@refreshTokens null
                     }
-                    val fresh: LoginResponse = response.body()
+                    val fresh: TokenPair = response.body()
                     tokens.save(fresh.accessToken, fresh.refreshToken)
                     BearerTokens(fresh.accessToken, fresh.refreshToken)
                 }

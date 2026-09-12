@@ -98,6 +98,10 @@ services:
       ALMIRA_STORAGE_ROOT: /app/var/documents
       # The native app will hammer this from a simulator during development.
       ALMIRA_OTP_MAX_PER_IP_PER_HOUR: 500
+      # Fifteen minutes is the real value. It is passed through so that token
+      # expiry and refresh rotation can be exercised in minutes rather than
+      # quarter-hours: ALMIRA_JWT_ACCESS_TTL=60s ./dev-personal/up.sh
+      ALMIRA_JWT_ACCESS_TTL: ${ALMIRA_JWT_ACCESS_TTL:-15m}
     volumes:
       - documents:/app/var
     ports:

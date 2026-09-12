@@ -20,8 +20,18 @@ import kotlin.coroutines.resume
  */
 actual class PlatformHost(internal val activity: FragmentActivity)
 
+/**
+ * One store for the process, not one per screen.
+ *
+ * The unwrapped data key lives in this object, and that is the whole reason a
+ * refresh forty minutes into a session works. A store rebuilt because the
+ * activity was recreated — a rotation, a theme change, a recomposition that
+ * produced a new host — would come back with no data key and no way to mint
+ * one, because the Keystore's authentication window closed minutes ago. The
+ * session is the device's, not the Activity's, so it is held accordingly.
+ */
 actual fun createTokenStore(host: PlatformHost): TokenStore =
-    KeystoreTokenStore(host.activity)
+    KeystoreTokenStore.forApp(host.activity)
 
 actual fun createAppLock(host: PlatformHost): AppLock = AndroidAppLock(host.activity)
 

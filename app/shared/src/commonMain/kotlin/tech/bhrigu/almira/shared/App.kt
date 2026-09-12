@@ -139,10 +139,10 @@ fun App(
     // Ask as soon as the lock appears, rather than making someone tap Unlock to
     // be asked to unlock. The button stays for a second try.
     //
-    // Keyed on the foreground count as well as the lock: coming back from the
-    // home screen re-locks during `onStop` and recomposes before the activity
-    // has resumed, and a prompt raised then is silently dropped — no dialog, no
-    // callback, a button busy for ever. Waiting for the resume is the fix.
+    // Gated on actually being in the foreground, not only on being locked:
+    // leaving the app re-locks during `onStop`, and a prompt raised then is
+    // silently dropped — no dialog, no callback, a button busy for ever. It has
+    // to wait for the resume.
     LaunchedEffect(showLock, inForeground) {
         if (showLock && inForeground) attemptUnlock()
     }

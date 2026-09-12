@@ -1,0 +1,123 @@
+# =============================================================================
+# Almira — the personal development stack, isolated from everything else on
+# this machine.
+#
+#   ./dev-personal/up.sh        build and start
+#   ./dev-personal/down.sh      stop and delete every trace of it
+#
+# ISOLATION, stated precisely, because this machine also carries an office
+# setup that must not be disturbed:
+#
+#   · project name        almira-personal        (never the default, which is
+#                                                 derived from the directory)
+#   · containers          almira-personal-db | -redis | -app
+#   · network             almira-personal-net    (its own bridge; nothing is
+#                                                 attached to bhrigu-net)
+#   · volumes             almira-personal-dbdata | -redisdata | -documents
+#   · published ports     127.0.0.1:18080 only — the application, on loopback.
+#                         Postgres and Redis publish NOTHING: they are reachable
+#                         only from this network, so they cannot collide with
+#                         the 5432 that bhrigu-postgres already holds.
+#
+# This is a DEVELOPMENT stack: ALMIRA_ENV=development, so one-time codes are
+# echoed in responses and printed to the log, and the seeding script will agree
+# to run against it. deploy/docker-compose.prod.yml is the production one.
+# =============================================================================
+name: almira-personal
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: almira-personal-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: almira
+      POSTGRES_USER: almira
+      POSTGRES_PASSWORD: ${ALMIRA_DB_OWNER_PASSWORD:-personal_dev}
+      # Passed through to the init script below, which creates the non-owner
+      # runtime role. Two roles, because PostgreSQL lets a table's owner bypass
+      # its own row-level security — serving traffic as the owner would make
+      # every privacy policy in this product decorative.
+      ALMIRA_DB_APP_USER: ${ALMIRA_DB_APP_USER:-almira_app}
+      ALMIRA_DB_APP_PASSWORD: ${ALMIRA_DB_APP_PASSWORD:-personal_dev_app}
+      LANG: C.UTF-8
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    networks: [personal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U almira -d almira"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  redis:
+    image: redis:7-alpine
+    container_name: almira-personal-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --save 60 1
+      --requirepass ${ALMIRA_REDIS_PASSWORD:-personal_dev_redis}
+    volumes:
+      - redisdata:/data
+    networks: [personal]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${ALMIRA_REDIS_PASSWORD:-personal_dev_redis} ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: almira-personal:dev
+    container_name: almira-personal-app
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      # Development on purpose: the image defaults to production, and a
+      # production server would refuse to start without a real key, would not
+      # echo one-time codes, and would refuse the seeding script.
+      ALMIRA_ENV: development
+      ALMIRA_DB_URL: jdbc:postgresql://db:5432/almira
+      ALMIRA_DB_OWNER_USER: almira
+      ALMIRA_DB_OWNER_PASSWORD: ${ALMIRA_DB_OWNER_PASSWORD:-personal_dev}
+      ALMIRA_DB_APP_USER: ${ALMIRA_DB_APP_USER:-almira_app}
+      ALMIRA_DB_APP_PASSWORD: ${ALMIRA_DB_APP_PASSWORD:-personal_dev_app}
+      ALMIRA_REDIS_HOST: redis
+      ALMIRA_REDIS_PORT: 6379
+      ALMIRA_REDIS_PASSWORD: ${ALMIRA_REDIS_PASSWORD:-personal_dev_redis}
+      # A per-install development key is generated into the documents volume on
+      # first start. No key material is in this file or in the repository.
+      ALMIRA_DEV_KEY_FILE: /app/var/dev-kek
+      ALMIRA_STORAGE_ROOT: /app/var/documents
+      # The native app will hammer this from a simulator during development.
+      ALMIRA_OTP_MAX_PER_IP_PER_HOUR: 500
+    volumes:
+      - documents:/app/var
+    ports:
+      - "127.0.0.1:${ALMIRA_PERSONAL_PORT:-18080}:8080"
+    networks: [personal]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health | grep -q '\"rlsEnforced\":true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
+networks:
+  personal:
+    name: almira-personal-net
+
+volumes:
+  dbdata:
+    name: almira-personal-dbdata
+  redisdata:
+    name: almira-personal-redisdata
+  documents:
+    name: almira-personal-documents

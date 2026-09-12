@@ -1,0 +1,20 @@
+# Keep the Docker build context to what the build actually needs. Without this
+# it ships backend/build (about 90 MB of previous output) and the git history to
+# the daemon on every build, which is slow and can poison a layer cache with
+# stale artefacts.
+.git
+.github
+.idea
+*.iml
+
+backend/build/
+backend/.gradle/
+backend/var/
+
+docs/
+infra/
+dev-personal/
+.env
+.env.*
+!.env.example
+!.env.production.example

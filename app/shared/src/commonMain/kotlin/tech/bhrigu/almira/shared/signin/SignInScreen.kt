@@ -46,6 +46,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import tech.bhrigu.almira.shared.theme.AlmiraMotion
 import tech.bhrigu.almira.shared.theme.AlmiraTheme
+import tech.bhrigu.almira.shared.ui.PrimaryButton
 
 /**
  * Two steps, and nothing else on screen at either of them.
@@ -332,39 +333,4 @@ private fun HelperLine(message: String?, fallback: String) {
         color = if (message != null) colors.caution else colors.inkMuted,
         modifier = Modifier.height(38.dp),
     )
-}
-
-@Composable
-private fun PrimaryButton(
-    label: String,
-    enabled: Boolean,
-    busy: Boolean,
-    onClick: () -> Unit,
-) {
-    val colors = AlmiraTheme.colors
-    Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(52.dp),
-        enabled = enabled && !busy,
-        shape = RoundedCornerShape(AlmiraTheme.radii.md),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = colors.accent,
-            contentColor = colors.accentInk,
-            disabledContainerColor = colors.hairline,
-            disabledContentColor = colors.inkFaint,
-        ),
-    ) {
-        if (busy) {
-            // Same height, no reflow: the button does not change size when it
-            // starts working, which is what makes a tap feel answered rather
-            // than disruptive.
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = colors.accentInk,
-            )
-        } else {
-            Text(label, style = AlmiraTheme.typography.body)
-        }
-    }
 }

@@ -139,6 +139,32 @@ class AlmiraApi(
         client.get("$baseUrl/api/v1/households/$householdId/dashboard?scope=$scope")
     }
 
+    // --- capture ------------------------------------------------------------
+
+    /**
+     * Categories, their types, and each type's field schema — the definition
+     * the capture form is generated from. One call, because the picker needs
+     * every category and the form needs the schema of whichever type is picked.
+     */
+    suspend fun taxonomy(householdId: String): List<TaxonomyCategory> = request {
+        client.get("$baseUrl/api/v1/households/$householdId/taxonomy")
+    }
+
+    suspend fun members(householdId: String): List<Member> = request {
+        client.get("$baseUrl/api/v1/households/$householdId/members")
+    }
+
+    suspend fun institutions(householdId: String): List<Institution> = request {
+        client.get("$baseUrl/api/v1/households/$householdId/institutions")
+    }
+
+    suspend fun createInvestment(
+        householdId: String,
+        body: CreateInvestmentBody,
+    ): CreateInvestmentResponse = request {
+        client.post("$baseUrl/api/v1/households/$householdId/investments") { setBody(body) }
+    }
+
     // --- plumbing -----------------------------------------------------------
 
     private suspend inline fun <reified T> request(block: () -> HttpResponse): T {

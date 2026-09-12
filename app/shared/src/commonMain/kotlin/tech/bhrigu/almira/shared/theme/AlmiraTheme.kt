@@ -57,6 +57,12 @@ fun AlmiraTheme(
 
     // Material's slots, filled from ours. `background` is the canvas rather
     // than the surface, because the app sits on paper and cards sit on the app.
+    //
+    // The `surfaceContainer*` family matters more than it looks: menus, sheets
+    // and the date picker dialog take their background from it rather than from
+    // `surface`, so leaving it unset means a lavender Material dialog opening
+    // on top of an Almira screen. Filling it is what keeps every borrowed
+    // component inside the design system.
     val material = if (darkTheme) {
         darkColorScheme(
             primary = colors.accent,
@@ -76,6 +82,17 @@ fun AlmiraTheme(
             error = colors.caution,
             onError = colors.canvas,
             errorContainer = colors.cautionSoft,
+            surfaceContainerLowest = colors.canvas,
+            surfaceContainerLow = colors.surface,
+            surfaceContainer = colors.surface,
+            surfaceContainerHigh = colors.surface,
+            surfaceContainerHighest = colors.surfaceSunken,
+            surfaceBright = colors.surface,
+            surfaceDim = colors.canvas,
+            surfaceTint = colors.accent,
+            inverseSurface = colors.ink,
+            inverseOnSurface = colors.canvas,
+            inversePrimary = colors.accentSoft,
         )
     } else {
         lightColorScheme(
@@ -96,6 +113,17 @@ fun AlmiraTheme(
             error = colors.caution,
             onError = colors.accentInk,
             errorContainer = colors.cautionSoft,
+            surfaceContainerLowest = colors.surface,
+            surfaceContainerLow = colors.surface,
+            surfaceContainer = colors.surface,
+            surfaceContainerHigh = colors.surface,
+            surfaceContainerHighest = colors.surfaceSunken,
+            surfaceBright = colors.surface,
+            surfaceDim = colors.surfaceSunken,
+            surfaceTint = colors.accent,
+            inverseSurface = colors.ink,
+            inverseOnSurface = colors.canvas,
+            inversePrimary = colors.accentSoft,
         )
     }
 

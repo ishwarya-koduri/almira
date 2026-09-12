@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,8 @@ import kotlinx.coroutines.launch
 import tech.bhrigu.almira.shared.api.AlmiraApi
 import tech.bhrigu.almira.shared.api.ApiException
 import tech.bhrigu.almira.shared.api.Household
+import tech.bhrigu.almira.shared.capture.CaptureController
+import tech.bhrigu.almira.shared.capture.CaptureScreen
 import tech.bhrigu.almira.shared.api.InMemoryTokenStore
 import tech.bhrigu.almira.shared.api.Me
 import tech.bhrigu.almira.shared.signin.SignInController
@@ -122,6 +125,28 @@ private fun SignedIn(
 
     var households by remember { mutableStateOf<List<Household>?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
+    var capturingIn by remember { mutableStateOf<Household?>(null) }
+    val scope = rememberCoroutineScope()
+
+    // Capture takes the whole screen while it is open, and its controller lives
+    // exactly as long as it does: closing it drops the loaded taxonomy and the
+    // half-filled form together, so reopening starts clean.
+    capturingIn?.let { household ->
+        val capture = remember(household.id) {
+            CaptureController(
+                api = api,
+                householdId = household.id,
+                scope = scope,
+                defaultVisibility = household.defaultVisibility,
+            )
+        }
+        CaptureScreen(
+            controller = capture,
+            onClose = { capturingIn = null },
+            onSaved = { capturingIn = null },
+        )
+        return
+    }
 
     LaunchedEffect(api) {
         try {
@@ -196,6 +221,7 @@ private fun SignedIn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(colors.surface, RoundedCornerShape(AlmiraTheme.radii.lg))
+                            .clickable { capturingIn = household }
                             .padding(space.x4),
                         verticalArrangement = Arrangement.spacedBy(space.x1),
                     ) {
@@ -205,6 +231,7 @@ private fun SignedIn(
                             style = type.caption,
                             color = colors.inkMuted,
                         )
+                        Text("Add a holding →", style = type.caption, color = colors.accent)
                     }
                 }
             }

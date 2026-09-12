@@ -14,3 +14,5 @@ actual fun createPlatformHttpClient(configure: HttpClientConfig<*>.() -> Unit): 
     }
 
 actual fun deviceName(): String = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
+
+actual fun currentTimeMillis(): Long = System.currentTimeMillis()

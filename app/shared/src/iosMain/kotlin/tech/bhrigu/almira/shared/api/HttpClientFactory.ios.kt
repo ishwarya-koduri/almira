@@ -11,3 +11,6 @@ actual fun createPlatformHttpClient(configure: HttpClientConfig<*>.() -> Unit): 
     }
 
 actual fun deviceName(): String = UIDevice.currentDevice.name
+
+actual fun currentTimeMillis(): Long =
+    (platform.Foundation.NSDate().timeIntervalSince1970 * 1000).toLong()

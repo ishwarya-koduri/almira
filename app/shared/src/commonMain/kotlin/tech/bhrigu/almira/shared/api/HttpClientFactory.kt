@@ -15,3 +15,13 @@ expect fun createPlatformHttpClient(configure: HttpClientConfig<*>.() -> Unit): 
 
 /** Named on the sign-in screen and in the session list, so it must read well. */
 expect fun deviceName(): String
+
+/**
+ * Wall-clock milliseconds since the epoch.
+ *
+ * Here rather than from `kotlin.time.Clock` because that is still experimental
+ * on this compiler, and rather than from kotlinx-datetime because one function
+ * is not worth a dependency that has to be version-matched to the Kotlin this
+ * project is pinned to.
+ */
+expect fun currentTimeMillis(): Long

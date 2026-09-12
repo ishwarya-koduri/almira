@@ -8,7 +8,9 @@ import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
@@ -168,6 +170,44 @@ class AlmiraApi(
         body: CreateInvestmentBody,
     ): CreateInvestmentResponse = request {
         client.post("$baseUrl/api/v1/households/$householdId/investments") { setBody(body) }
+    }
+
+    // --- zero knowledge -----------------------------------------------------
+
+    suspend fun e2eStatus(householdId: String): E2eStatus = request {
+        client.get("$baseUrl/api/v1/households/$householdId/e2e")
+    }
+
+    suspend fun putE2eKey(householdId: String, envelope: E2eKeyEnvelope): E2eKeyEnvelope = request {
+        client.put("$baseUrl/api/v1/households/$householdId/e2e/key") { setBody(envelope) }
+    }
+
+    suspend fun sealedValues(
+        householdId: String,
+        recordType: String,
+        recordId: String,
+    ): List<SealedField> = request {
+        client.get("$baseUrl/api/v1/households/$householdId/e2e/values") {
+            parameter("recordType", recordType)
+            parameter("recordId", recordId)
+        }
+    }
+
+    suspend fun putSealedValue(
+        householdId: String,
+        recordType: String,
+        recordId: String,
+        fieldKey: String,
+        ciphertext: String,
+        keyVersion: Int,
+    ): SealedField = request {
+        client.put(
+            "$baseUrl/api/v1/households/$householdId/e2e/values/$recordType/$recordId/$fieldKey",
+        ) { setBody(PutSealedValueBody(ciphertext, keyVersion)) }
+    }
+
+    suspend fun investments(householdId: String): List<InvestmentRow> = request {
+        client.get("$baseUrl/api/v1/households/$householdId/investments")
     }
 
     // --- plumbing -----------------------------------------------------------

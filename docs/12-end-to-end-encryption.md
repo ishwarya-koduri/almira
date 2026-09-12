@@ -191,9 +191,23 @@ suggestion, it is running code you can copy.
 
 **Key storage on a device.** The web client holds the content key in memory for
 the session only and never writes it to `localStorage`; the passphrase is asked
-for again after a reload. A native app should hold it in the Keychain or
-Keystore behind a biometric prompt, which is strictly better and is the reason
-[Doc 05 §2](05-security-and-privacy.md) treats the browser as the weaker surface.
+for again after a reload. **A native app does the same, and must not do better.**
+
+An earlier version of this document suggested keeping it in the Keychain or
+Keystore behind a biometric prompt, on the grounds that hardware-backed storage
+is stronger than a variable. That was wrong, and wrong in the way that quietly
+removes the feature: it would make *device compromise plus a biometric* enough
+to read sealed fields. The passphrase is a **second secret the device never
+holds** — that is the whole difference between "sealed" and "stored somewhere
+convenient", and it is why a phone that can restore the session with a
+fingerprint still cannot show a sealed note.
+
+So on every client the content key lives in memory while the app is in front,
+is dropped when it leaves, and is derived again from the passphrase next time.
+The two clients then have the same security posture and not merely the same
+ciphertext. [Doc 05 §2](05-security-and-privacy.md) still treats the browser as
+the weaker surface, for the delivery reason in §8 below rather than for key
+storage.
 
 ---
 

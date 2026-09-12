@@ -110,6 +110,11 @@ object Envelope {
         )
     }
 
+    /** The salt is base64url too, and deserves the same reader as everything else. */
+    fun decodeBase64Url(text: String): ByteArray = DECODER.decode(text)
+
+    fun encodeBase64Url(bytes: ByteArray): String = ENCODER.encode(bytes)
+
     private val ENCODER = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
     private val DECODER = Base64.UrlSafe.withPadding(Base64.PaddingOption.PRESENT_OPTIONAL)
 }

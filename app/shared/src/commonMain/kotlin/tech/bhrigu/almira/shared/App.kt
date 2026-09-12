@@ -49,6 +49,9 @@ import tech.bhrigu.almira.shared.security.createAppLock
 import tech.bhrigu.almira.shared.security.createTokenStore
 import tech.bhrigu.almira.shared.signin.SignInController
 import tech.bhrigu.almira.shared.signin.createOtpAutofill
+import tech.bhrigu.almira.shared.zk.ZkController
+import tech.bhrigu.almira.shared.zk.ZkScreen
+import tech.bhrigu.almira.shared.zk.ZkVault
 import tech.bhrigu.almira.shared.signin.SignInScreen
 import tech.bhrigu.almira.shared.theme.AlmiraTheme
 
@@ -98,6 +101,7 @@ fun App(
         )
     }
     val controller = remember(api) { SignInController(api, scope, autofill) }
+    val vault = remember(api) { ZkVault(api) }
     val state by controller.state.collectAsState()
 
     LaunchedEffect(signedOutAt) {
@@ -110,8 +114,17 @@ fun App(
     // Locking has to reach the store, not just the screen. Dropping the
     // in-memory data key is what makes the lock a lock: after this, reading the
     // session needs the device's own authentication again.
+    //
+    // The zero-knowledge content key goes at the same moment, and for a
+    // stronger reason: it is never written anywhere, so leaving the foreground
+    // really does mean the passphrase has to be typed again. A biometric brings
+    // back the session; only the passphrase brings back the sealed fields, and
+    // that is the whole difference between the two secrets (B9).
     LaunchedEffect(locked) {
-        if (locked) tokens.forget()
+        if (locked) {
+            tokens.forget()
+            vault.forget()
+        }
     }
 
     val showLock = haveSession == true && locked && availability != LockAvailability.None
@@ -199,6 +212,7 @@ fun App(
                 else -> SignedIn(
                     me = state.signedIn!!,
                     api = api,
+                    vault = vault,
                     apiBaseUrl = apiBaseUrl,
                     platformName = platformName,
                     onSignOut = {
@@ -218,6 +232,7 @@ fun App(
 private fun SignedIn(
     me: Me,
     api: AlmiraApi,
+    vault: ZkVault,
     apiBaseUrl: String,
     platformName: String,
     onSignOut: () -> Unit,
@@ -229,6 +244,7 @@ private fun SignedIn(
     var households by remember { mutableStateOf<List<Household>?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
     var capturing by remember { mutableStateOf(false) }
+    var sealing by remember { mutableStateOf(false) }
     // Bumped after a save, so the dashboard is rebuilt and asks the server
     // again rather than showing a total that is one holding out of date.
     var savedAt by remember { mutableStateOf(0) }
@@ -247,6 +263,12 @@ private fun SignedIn(
     // Capture takes the whole screen while it is open, and its controller lives
     // exactly as long as it does: closing it drops the loaded taxonomy and the
     // half-filled form together, so reopening starts clean.
+    if (sealing && household != null) {
+        val zk = remember(household.id, api) { ZkController(api, household.id, vault, scope) }
+        ZkScreen(controller = zk, onBack = { sealing = false })
+        return
+    }
+
     if (capturing && household != null) {
         val capture = remember(household.id) {
             CaptureController(
@@ -285,6 +307,7 @@ private fun SignedIn(
                 controller = dashboard,
                 householdName = household.name,
                 onAdd = { capturing = true },
+                onSealed = { sealing = true },
                 onSignOut = onSignOut,
                 footnote = "${me.phone?.let(::formatIndianPhone) ?: me.id} · $platformName · $apiBaseUrl",
             )

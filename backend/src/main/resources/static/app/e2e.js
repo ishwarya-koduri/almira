@@ -313,3 +313,77 @@ export async function readSealed(householdId, recordType, recordId) {
 
 export const unsealField = (householdId, recordType, recordId, fieldKey) =>
   api.unsealValue(householdId, recordType, recordId, fieldKey);
+
+/* -----------------------------------------------------------------------------
+   The interop known answer (docs/zk-interop-acceptance.md B4)
+   ----------------------------------------------------------------------------- */
+
+/**
+ * One fixed value that pins the whole chain, asserted identically in the app's
+ * `InteropKatTest`.
+ *
+ * Everything is fixed — passphrase, salt, iterations, IV, the four AAD
+ * components, the plaintext — so the envelope is a constant. A single value,
+ * but it covers NFC on the passphrase and UTF-8 after it, the trailing space
+ * surviving both, PBKDF2-HMAC-SHA256 at 600 000 rounds, the AAD field order
+ * with its UUIDs lowercased, AES-256-GCM with a 128-bit tag, the envelope byte
+ * layout, the big-endian key version, and base64url without padding. Any one of
+ * those drifting from the app turns this red.
+ *
+ * Run it from the console — `import('/app/e2e.js').then(m => m.selfTest())` —
+ * or from anywhere that wants to know the two clients still agree.
+ */
+export async function selfTest() {
+  const PASSPHRASE = "correct horse battery staple ";
+  const SALT = new Uint8Array(16).map((_, i) => i);
+  const ITERATIONS = 600000;
+  const IV = new Uint8Array(12).map((_, i) => 0xA0 + i);
+  const HOUSEHOLD = "58276CAE-2448-4D51-8C9D-29FEFD3225D4";
+  const RECORD = "167D9136-E238-48CF-B093-0F51D9A43C8D";
+  const FIELD_KEY = "locker_address";
+  const PLAINTEXT = "Locker 12, ఖజానా, Kakinada ";
+
+  const EXPECTED_KEY = "17c0b45fe7d3dcc10b70395e28a8cc533a0c8113691b174d39b8a205f2085f6f";
+  const EXPECTED_AAD =
+    "58276cae-2448-4d51-8c9d-29fefd3225d4|investment|167d9136-e238-48cf-b093-0f51d9a43c8d|locker_address";
+  const EXPECTED_ENVELOPE =
+    "AQAAAAGgoaKjpKWmp6ipqqvPXvr272LHpln2v1MfVTtWxjXLbZR0eNYAsS5bJYmnCrpDPstqzByPY2RZI1X1WKjF52IsjQ";
+
+  const hex = (bytes) =>
+    [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  const base = await crypto.subtle.importKey(
+    "raw", passphraseBytes(PASSPHRASE), "PBKDF2", false, ["deriveBits"],
+  );
+  const keyBits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt: SALT, iterations: ITERATIONS }, base, 256,
+  );
+  const key = await crypto.subtle.importKey("raw", keyBits, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+
+  const aad = aadFor(HOUSEHOLD, "investment", RECORD, FIELD_KEY);
+  const body = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: IV, additionalData: aad }, key, valueBytes(PLAINTEXT),
+  ));
+  const envelope = new Uint8Array(17 + body.length);
+  envelope[0] = 1;
+  new DataView(envelope.buffer).setUint32(1, 1, false);
+  envelope.set(IV, 5);
+  envelope.set(body, 17);
+
+  const checks = [
+    ["derived key", hex(keyBits), EXPECTED_KEY],
+    ["additional data", decoder.decode(aad), EXPECTED_AAD],
+    ["envelope", toBase64Url(envelope), EXPECTED_ENVELOPE],
+    // And back again, which is the half a person actually experiences.
+    ["round trip", await open(key, EXPECTED_ENVELOPE, aad), PLAINTEXT],
+  ];
+
+  const failed = checks.filter(([, actual, expected]) => actual !== expected);
+  if (failed.length) {
+    throw new Error(
+      "The two clients no longer agree:\n" +
+        failed.map(([what, actual, expected]) => `  ${what}\n    got      ${actual}\n    expected ${expected}`).join("\n"),
+    );
+  }
+  return { agreed: checks.map(([what]) => what) };
+}

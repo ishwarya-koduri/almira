@@ -12,8 +12,9 @@ derives the same key on both sides.
 **Settle order:** B1 + B2 together (they are one change) → B3 → B5 into docs/12
 → B6 / B7 → B4 / B8 / B9.
 
-**Landed so far:** B1, B2, B3, B5, B6 and B7. Remaining: B4, B8 and B9, which
-all need the seal-and-open path and land with it.
+**Landed:** all nine. The seal-and-open path is built and the cross-client round
+trip has been run in both directions on a real device — see "The first real
+fields" at the end of Part B.
 
 **What "done" means, in one sentence:** the Android app opens a field the web
 client sealed, and the web client opens a field the app sealed, with the same
@@ -246,7 +247,7 @@ fifth component is added and that reasoning quietly stops being true, and
 because a rule stated in A0 and checked nowhere is a rule that is already
 half-gone. See docs/known-issues.md for the server's side of this.
 
-### B4 · `fieldKey` is byte-exact — **DECIDED**
+### B4 · `fieldKey` is byte-exact — **DECIDED, LANDED**
 
 `field_key` is `text`: echoed verbatim and inside the AAD, so `Locker` and
 `locker` are different fields that cannot open each other. Convention: lowercase
@@ -310,14 +311,14 @@ the rewrap, and the verifier still opens. All ten zero-knowledge backend tests
 pass. `Envelope.Parsed.keyVersion` on the app is documented as something a
 client may *read* and never something it may select on.
 
-### B8 · Empty, whitespace, and the ceiling — **DECIDED**
+### B8 · Empty, whitespace, and the ceiling — **DECIDED, LANDED**
 
 Add to the value matrix alongside the Telugu, emoji and trailing-space cases:
 the empty string, a whitespace-only string, and a value at the 64000-base64-
 character ceiling. Empty and maximum are where off-by-one envelope arithmetic
 lives.
 
-### B9 · Where the content key lives on the device — **DECIDED: memory only**
+### B9 · Where the content key lives on the device — **DECIDED: memory only. LANDED**
 
 > **Session-scoped, in memory, re-derived from the passphrase. Never persisted —
 > not even Keystore-wrapped.**
@@ -331,12 +332,11 @@ unlocked, drop it on `onStop` exactly as the token data key is dropped, and
 re-derive on next use — matching the web's posture, so the two clients have the
 same security properties and not merely the same ciphertext.
 
-**Definition of done for B9 includes the documentation fix.** docs/12 §7 still
-says "hold it in the Keychain or Keystore behind a biometric prompt, which is
-strictly better" — which this ruling makes wrong, because it would mean device
-plus biometric is enough to read sealed fields. Correcting that sentence is part
-of B9 landing, not a note attached to it: a spec that contradicts the document
-it was read from is a trap for whoever reads the document next.
+**Definition of done for B9 included the documentation fix, and it is done.**
+docs/12 §7 said "hold it in the Keychain or Keystore behind a biometric prompt,
+which is strictly better". It has been rewritten to say the opposite and to say
+why, because a spec that contradicts the document it was read from is a trap for
+whoever reads the document next.
 
 ---
 
@@ -396,6 +396,46 @@ That last row is the mirror of B1 and the reason both rules are written down:
 the passphrase folds to one form, a value never does. Seven values round-trip
 unchanged through the **deployed** browser envelope — including the empty
 string and the whitespace-only one — and five app tests assert the same bytes.
+
+---
+
+### The first real fields
+
+Run against the live stack: the web client sealed six values onto *Wedding
+coins*, the app opened all six, the app sealed a seventh, and the web opened
+that. Same user, same household, one passphrase — `correct horse battery
+staple ` — with a trailing space on purpose.
+
+| Field | What it holds | Web → app | App → web |
+|---|---|---|---|
+| `where_it_is` | `Locker 12, ఖజానా, Kakinada ` | 27 chars, trailing space kept | ✓ |
+| `who_holds_it` | `🔐 Meera has the spare ` | emoji and trailing space kept | ✓ |
+| `looks_like_json` | `{"a":1}` | seven characters, unparsed | ✓ |
+| `nothing_here` | *(empty)* | 0 bytes, shown as "(empty)" not blank | ✓ |
+| `just_spaces` | `"   "` | 3 bytes | ✓ |
+| `the_long_one` | 15 989 × `ఖ` | **47 967 bytes**, ciphertext exactly 64 000 base64 characters — the server's ceiling | ✓ |
+| `sealed_from_the_phone` | `Sealed on Android ` | — | sealed on the emulator, opened in the browser |
+
+**The negatives, both refused by both clients.** The `where_it_is` ciphertext
+was copied onto another holding with a direct database insert. Byte-identical
+row; the web reports *"This one couldn't be opened."* and the app renders the
+same sentence in caution colour, while the original still opens. That is the
+only thing that distinguishes a working AAD from one being ignored.
+
+A passphrase differing by exactly one byte — the same words without the trailing
+space — is refused with *"That passphrase doesn't open this. Nothing has been
+changed."* No partial plaintext, no field list, nothing written; and the correct
+passphrase works immediately afterwards. That refusal is also the whitespace
+half of B1, demonstrated end to end.
+
+**And the server holds none of it.** `Locker 12`, `Meera`, `Kakinada` and
+`Sealed on Android` each appear in **0** rows of `sealed_values`; no row of
+`e2e_keys` contains the passphrase or a plaintext verifier.
+
+**B9 on a real device.** Force-stop, relaunch, pass the device PIN: the session
+comes back and the dashboard renders — and the sealed fields are locked again,
+asking for the passphrase. A biometric restores the session; only the passphrase
+restores what was sealed. That is the property, on the device, not in a comment.
 
 ---
 

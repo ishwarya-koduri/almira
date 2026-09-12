@@ -55,6 +55,7 @@ fun DashboardScreen(
     controller: DashboardController,
     householdName: String,
     onAdd: () -> Unit,
+    onSealed: () -> Unit,
     onSignOut: () -> Unit,
     footnote: String,
 ) {
@@ -120,6 +121,7 @@ fun DashboardScreen(
         }
 
         PrimaryButton(label = "Add a holding", enabled = true, busy = false, onClick = onAdd)
+        SecondaryButton(label = "Sealed fields", enabled = true, onClick = onSealed)
 
         Text(footnote, style = type.caption, color = colors.inkFaint)
         Spacer(Modifier.height(space.x8))

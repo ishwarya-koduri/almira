@@ -50,6 +50,7 @@ const messages = {
     "nav.family": "Family",
     "nav.continuity": "For my family",
     "nav.settings": "Settings",
+    "nav.more": "More",
 
     "home.netWorth": "True net worth",
     "home.assets": "Assets",
@@ -158,6 +159,7 @@ const messages = {
     "nav.family": "కుటుంబం",
     "nav.continuity": "నా కుటుంబం కోసం",
     "nav.settings": "సెట్టింగ్‌లు",
+    "nav.more": "మరిన్ని",
 
     "home.netWorth": "నికర ఆస్తి",
     "home.assets": "ఆస్తులు",
@@ -266,6 +268,7 @@ const messages = {
     "nav.family": "परिवार",
     "nav.continuity": "मेरे परिवार के लिए",
     "nav.settings": "सेटिंग्स",
+    "nav.more": "और",
 
     "home.netWorth": "वास्तविक कुल संपत्ति",
     "home.assets": "संपत्ति",

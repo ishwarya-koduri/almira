@@ -95,6 +95,118 @@ a { color: var(--accent); text-underline-offset: 2px; }
 }
 
 main { flex: 1; width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--space-6) var(--space-5) var(--space-24); }
+
+/* =============================================================================
+   Navigation — a rail on a desktop, a tab bar on a phone
+
+   Ten destinations in one horizontal strip is a desktop idea. At 375px it ran
+   off the right edge and there was no way to reach what was past it, which is
+   how a section quietly stops existing. Both navigations are always rendered
+   and this is the only thing that decides between them, so a rotate or a
+   resize never needs a redraw.
+   ============================================================================= */
+
+
+/* Absent by default. The phone block at the end of this section is the only
+   place that turns it on, and it comes last so it actually wins — a media
+   query adds no specificity, so an unconditional rule written below it would
+   quietly hide the bar at every width. */
+.tabbar {
+  display: none;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: end;
+  gap: var(--space-1);
+  padding: 6px var(--space-2) calc(6px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--canvas) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px);
+  border-top: 1px solid var(--hairline);
+}
+
+.tabbar .tab {
+  appearance: none; border: 0; background: transparent; font: inherit;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 6px 2px 4px; border-radius: var(--radius-md);
+  color: var(--ink-faint); cursor: pointer;
+  /* A touch target that is honest about its size even though the label is small. */
+  min-height: 52px;
+  transition: color var(--fast) var(--ease);
+}
+.tabbar .tab-label {
+  font-size: 11px; font-weight: 500; letter-spacing: 0.01em;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tabbar .tab-icon {
+  display: grid; place-items: center;
+  width: 44px; height: 28px; border-radius: var(--radius-full);
+  transition: background var(--base) var(--spring);
+}
+.tabbar .tab-icon svg { width: 20px; height: 20px; display: block; }
+
+/* The selected destination, said twice — colour for everyone, and a soft pill
+   behind the icon so it reads at a glance without needing to compare labels. */
+.tabbar .tab[aria-pressed="true"] { color: var(--accent); }
+.tabbar .tab[aria-pressed="true"] .tab-icon { background: var(--accent-soft); }
+.tabbar .tab[aria-pressed="true"] .tab-label { font-weight: 600; }
+
+/* Capture is the hero (docs/03 §3): on a phone it is not one more label in a
+   row, it is the single raised control, sitting where a thumb already is. */
+.tabbar .tab-add {
+  appearance: none; border: 0; font: inherit; cursor: pointer;
+  justify-self: center; align-self: center;
+  width: 52px; height: 52px; margin-bottom: 4px;
+  border-radius: var(--radius-full);
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 24px; line-height: 1;
+  display: grid; place-items: center;
+  box-shadow: var(--e2);
+  transition: transform var(--fast) var(--spring), filter var(--fast) var(--ease);
+}
+.tabbar .tab-add:active { transform: scale(0.94); }
+.tabbar .tab:active { opacity: 0.7; }
+
+/* Everything that did not fit, one tap away and still reachable. */
+.more-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.more-item {
+  appearance: none; font: inherit; text-align: left; cursor: pointer;
+  min-height: 56px; padding: 0 var(--space-4);
+  border: 1px solid var(--hairline); border-radius: var(--radius-md);
+  background: var(--surface); color: var(--ink);
+  font-size: var(--text-sm); font-weight: 500;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.more-item[aria-current="page"] {
+  background: var(--accent-soft); border-color: var(--accent); font-weight: 600;
+}
+.more-item:active { background: var(--surface-sunken); }
+
+@media (max-width: 760px) {
+  .only-wide { display: none !important; }
+  .tabbar { display: grid; }
+
+  /* The bar stops being a shelf for navigation and becomes just the name. */
+  .topbar { padding: var(--space-3) var(--space-4); }
+
+  /* Room for the tab bar plus whatever the device keeps below it. */
+  main {
+    padding: var(--space-5) var(--space-4)
+             calc(var(--space-24) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The scope switcher is the same shape of problem the navigation had: it
+     holds one button per household member, and a family of six overflows a
+     phone exactly the way ten sections did. Let it scroll rather than clip,
+     and keep the bar itself full-bleed so the last member is reachable. */
+  .segmented {
+    display: flex; max-width: 100%;
+    overflow-x: auto; scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .segmented::-webkit-scrollbar { display: none; }
+  .segmented button { flex: none; }
+}
+
 .narrow { max-width: var(--reading-max); }
 
 .stack   { display: flex; flex-direction: column; gap: var(--space-6); }

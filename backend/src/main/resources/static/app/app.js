@@ -3,7 +3,7 @@
    ============================================================================= */
 
 import { api, auth, ApiError } from "./api.js";
-import { el, mount, toast, segmented } from "./ui.js";
+import { el, mount, toast, segmented, sheet } from "./ui.js";
 import { state, update } from "./state.js";
 import { authScreen } from "./screens/auth.js";
 import { onboardingScreen } from "./screens/onboarding.js";
@@ -57,7 +57,10 @@ function topbar(active) {
       el("span.brand-mark", { "aria-hidden": "true" }, "A"),
       t("app.name"),
     ),
-    el("nav.segmented", { "aria-label": "Sections" },
+    // The full rail, for screens wide enough to hold ten destinations. On a
+    // phone CSS hides it and [tabbar] takes over; both are rendered so that
+    // rotating or resizing never needs a redraw.
+    el("nav.segmented.only-wide", { "aria-label": "Sections" },
       ...Object.entries(routes).map(([name, route]) =>
         el("button", {
           type: "button",
@@ -66,12 +69,86 @@ function topbar(active) {
           onclick: () => navigate(name),
         }, t(route.label))),
     ),
-    el("button.btn.btn-primary.btn-sm", {
+    el("button.btn.btn-primary.btn-sm.only-wide", {
       type: "button",
       onclick: () => openCapture(),
       title: "Add something",
     }, t("app.add")),
   );
+}
+
+/* -----------------------------------------------------------------------------
+   The phone's navigation.
+
+   Ten destinations in one horizontal strip is a desktop idea, and on a 375px
+   screen it simply ran off the edge with no way to reach what was past it. So
+   the phone gets the three places people actually live in, the thing this whole
+   product exists to make easy in the middle where a thumb already rests, and
+   everything else one tap away behind More.
+
+   Both navigations are always in the DOM and CSS chooses; there is no width
+   listener and no redraw on rotate.
+   ----------------------------------------------------------------------------- */
+
+const PHONE_TABS = ["home", "investments", "liabilities"];
+const PHONE_MORE = ["accounts", "goals", "tax", "reports", "continuity", "family", "settings"];
+
+// Drawn rather than borrowed: a 20px stroke set costs nothing, matches the
+// hairline weight the rest of the interface uses, and takes its colour from
+// the tab, so there is no icon font and no request.
+const ICONS = {
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/>',
+  investments: '<path d="M3 17.5 9 11l4 4 7.5-8"/><path d="M15.5 3H21v5.5"/>',
+  liabilities: '<path d="M12 3v12"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M4 20h16"/>',
+  more: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
+};
+
+const icon = (name) => el("span.tab-icon", {
+  "aria-hidden": "true",
+  html: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+              stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`,
+});
+
+function tabbar(active) {
+  const tab = (name) => el("button.tab", {
+    type: "button",
+    "aria-pressed": name === active,
+    "aria-current": name === active ? "page" : null,
+    onclick: () => navigate(name),
+  }, icon(name), el("span.tab-label", {}, t(routes[name].label)));
+
+  return el("nav.tabbar", { "aria-label": "Sections" },
+    tab(PHONE_TABS[0]),
+    tab(PHONE_TABS[1]),
+    // Capture is the hero (docs/03 §3), so on a phone it is not a link in a
+    // bar — it is the one raised control, in the easiest place to reach.
+    el("button.tab-add", {
+      type: "button",
+      "aria-label": "Add something",
+      onclick: () => openCapture(),
+    }, el("span", { "aria-hidden": "true" }, "＋")),
+    tab(PHONE_TABS[2]),
+    el("button.tab", {
+      type: "button",
+      "aria-pressed": PHONE_MORE.includes(active),
+      "aria-haspopup": "dialog",
+      onclick: () => openMore(active),
+    }, icon("more"), el("span.tab-label", {}, t("nav.more"))),
+  );
+}
+
+function openMore(active) {
+  const modal = sheet({
+    title: t("nav.more"),
+    body: el("div.more-grid", {},
+      ...PHONE_MORE.map((name) => el("button.more-item", {
+        type: "button",
+        "aria-current": name === active ? "page" : null,
+        onclick: () => { modal.close(); navigate(name); },
+      }, t(routes[name].label))),
+    ),
+  });
+  return modal;
 }
 
 async function render() {
@@ -97,7 +174,7 @@ async function render() {
 
   const name = currentRoute();
   const view = el("main", {});
-  mount(root, el("div.app", {}, topbar(name), view));
+  mount(root, el("div.app", {}, topbar(name), view, tabbar(name)));
   try {
     await routes[name].render(view);
   } catch (error) {

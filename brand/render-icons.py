@@ -63,7 +63,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from pngprobe import drawn_extent  # noqa: E402
+from pngprobe import centre_column_gaps, drawn_extent  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 MASTER = Path(__file__).resolve().parent / "almira-mark.svg"
@@ -86,14 +86,27 @@ RENDER = 1024
 MASKABLE_RADIUS = 0.40
 ADAPTIVE_RADIUS = 72 / 108 / 2
 
-# A hair off the derived scale, for the antialiased edge rather than for the
-# geometry. A rounded stroke cap fades out over about a pixel whatever the
-# output size, and the measurement below counts a pixel as drawn once it is
-# roughly a tenth ink — so a mark sized to exactly the limit measures a
-# fraction over it. Seen: 0.4001 against 0.4000 at 512px, which is one pixel of
-# fringe and not a plinth outside the mask. One percent covers it at every size
-# the manifests ask for.
-FRINGE_MARGIN = 0.99
+# How much of the guaranteed radius to actually use. The remaining 4% is
+# clearance, and it is geometry rather than a rasteriser fudge: the art is
+# sized to sit inside a circle smaller than the one the platform promises, so
+# the antialiased edge of a rounded cap — about a pixel at any output size — is
+# covered by daylight instead of by a rounding allowance.
+#
+# The previous version of this file leant on a 1% fringe margin instead, which
+# left the maskable icon measuring 0.3960 against a 0.4000 limit: compliant,
+# and with almost nothing in hand.
+SAFE_HEADROOM = 0.96
+
+# In the themed icon only, the door seam stops here instead of at its drawn
+# end. Flattened to one colour the seam runs into the keyhole and the mark
+# reads as a plain arch with a bar across it — the lock, which is the whole
+# idea, disappears. Ending the seam at 29 leaves the gap below to do the work
+# that colour does everywhere else.
+#
+# 29 plus the seam's own 3.75-unit round cap is 32.75; the keyhole circle
+# begins at 45 - 7.6 = 37.4. Four and a half units of clear ground, asserted
+# after rendering rather than assumed.
+MONOCHROME_SEAM_END = 29.0
 
 # Android's five density buckets, as a multiple of the 48dp baseline.
 DENSITIES = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
@@ -143,6 +156,7 @@ class Master:
         children = list(self.root)
         self.ground = self._find_ground(children)
         self.wordmark = self._find_wordmark(children)
+        self.seam = self._find_seam(children)
         drop = {id(self.ground)} | {
             id(c) for c in children if tag_of(c) == "metadata"
         }
@@ -172,6 +186,24 @@ class Master:
         ]
         return max(outlines, key=lambda c: len(c.get("d", ""))) if outlines else None
 
+    def _find_seam(self, children: list[ET.Element]) -> ET.Element | None:
+        """The door seam: the one path that is a single vertical line.
+
+        Found by shape, like the others. Nothing else in the mark is one — the
+        rail and the plinth are horizontal, the arch is a long curve, the
+        keyhole stem is a closed polygon and the wordmark is outlines — so
+        `M x y V y2` identifies it without an id and without a name.
+        """
+        for child in children:
+            if child.get("id") == "seam":
+                return child
+        for child in children:
+            if tag_of(child) != "path":
+                continue
+            if SEAM_SHAPE.match(child.get("d", "")):
+                return child
+        return None
+
     def compose(
         self,
         *,
@@ -179,6 +211,8 @@ class Master:
         ground: bool,
         flatten: str | None = None,
         wordmark: bool = True,
+        seam_end: float | None = None,
+        shift: tuple[float, float] = (0.0, 0.0),
     ) -> str:
         """One variant, as SVG text ready to rasterise.
 
@@ -199,16 +233,24 @@ class Master:
         if ground and self.ground is not None:
             svg.append(copy.deepcopy(self.ground))
 
+        # Scale about the canvas centre, after an optional nudge that puts the
+        # *drawn* art in the middle rather than the master's canvas. For a mask
+        # what matters is being centred in the hole, and the art sits a little
+        # low in its own square — so this buys back most of what the headroom
+        # above costs, instead of simply shrinking the mark.
         centre = self.min_x + self.extent / 2
-        shift = centre * (1 - scale)
+        offset_x = centre * (1 - scale) + scale * shift[0]
+        offset_y = centre * (1 - scale) + scale * shift[1]
         group = ET.SubElement(
             svg, f"{{{SVG_NS}}}g",
-            {"transform": f"translate({_trim(shift)} {_trim(shift)}) scale({scale:.6f})"},
+            {"transform": f"translate({offset_x:.5f} {offset_y:.5f}) scale({scale:.6f})"},
         )
         for child in self.mark:
             if not wordmark and self.wordmark is not None and child is self.wordmark:
                 continue
             element = copy.deepcopy(child)
+            if seam_end is not None and self.seam is not None and child is self.seam:
+                _shorten_seam(element, seam_end)
             if flatten:
                 _recolour(element, flatten)
             group.append(element)
@@ -217,6 +259,18 @@ class Master:
 
 def _trim(value: float) -> str:
     return f"{value:g}"
+
+
+SEAM_SHAPE = re.compile(r"^\s*M\s*([\d.]+)[\s,]+([\d.]+)\s*V\s*([\d.]+)\s*$")
+
+
+def _shorten_seam(element: ET.Element, end: float) -> None:
+    """Rewrites the seam's end point, leaving everything else about it alone."""
+    found = SEAM_SHAPE.match(element.get("d", ""))
+    if not found:
+        die("the seam stopped looking like a vertical line; cannot shorten it")
+    x, y = found.group(1), found.group(2)
+    element.set("d", f"M{x} {y} V{_trim(end)}")
 
 
 def _recolour(element: ET.Element, colour: str) -> None:
@@ -253,14 +307,19 @@ def rasterise(svg_text: str, sizes, name, out_dir: Path) -> list[Path]:
     return written
 
 
-def measure(svg_text: str, ground: tuple[int, int, int] | None) -> float:
-    """The furthest drawn pixel from the canvas centre, as a fraction of width."""
+def extent_of(svg_text: str, ground: tuple[int, int, int] | None) -> dict:
+    """Rasterises a variant and measures what it actually drew."""
     with tempfile.TemporaryDirectory() as tmp:
         source = Path(tmp) / "m.svg"
         source.write_text(svg_text)
         png = Path(tmp) / "m.png"
         run(["sips", "-s", "format", "png", str(source), "--out", str(png)])
-        return drawn_extent(png, ground)["radius_fraction"]
+        return drawn_extent(png, ground)
+
+
+def measure(svg_text: str, ground: tuple[int, int, int] | None) -> float:
+    """The furthest drawn pixel from the canvas centre, as a fraction of width."""
+    return extent_of(svg_text, ground)["radius_fraction"]
 
 
 def rgb(colour: str) -> tuple[int, int, int]:
@@ -346,20 +405,53 @@ def main() -> None:
           f"   wordmark path {'found' if master.wordmark is not None else 'ABSENT'}"
           f" ({len(master.wordmark.get('d', '')) if master.wordmark is not None else 0} chars)")
 
-    # --- the two scales, derived from the artwork rather than assumed --------
-    at_full = measure(master.compose(scale=1.0, ground=False), None)
-    maskable_scale = min(1.0, MASKABLE_RADIUS / at_full * FRINGE_MARGIN)
-    adaptive_scale = min(1.0, ADAPTIVE_RADIUS / at_full * FRINGE_MARGIN)
-    print(f"  drawn radius at full size {at_full:.4f} of the canvas")
-    print(f"  -> maskable scale {maskable_scale:.3f} (limit {MASKABLE_RADIUS:.3f})")
-    print(f"  -> adaptive scale {adaptive_scale:.3f} (limit {ADAPTIVE_RADIUS:.3f})")
+    # --- the two scales, derived from the art that is actually used ---------
+    #
+    # From the symbol, because every cropped icon is now symbol-only. Worth
+    # saying that this changed nothing: measured both ways the radius is
+    # 0.5618, because the wordmark is nowhere near the edge. What sets it is
+    # the plinth — a wide pill at the very bottom whose round end-caps reach
+    # x=88, y=93 of a 100 canvas — so dropping the wordmark buys no room at
+    # all, and the headroom below had to come from somewhere else.
+    symbol_art = master.compose(scale=1.0, ground=False, wordmark=False)
+    at_full = measure(symbol_art, None)
 
-    full = master.compose(scale=1.0, ground=True)
-    maskable = master.compose(scale=maskable_scale, ground=True)
+    # Where the drawn art actually sits in its square, so it can be centred in
+    # the mask rather than in the master's canvas.
+    box = extent_of(symbol_art, None)["box_fraction"]
+    shift = (
+        (0.5 - (box[0] + box[2]) / 2) * master.extent,
+        (0.5 - (box[1] + box[3]) / 2) * master.extent,
+    )
+    at_centred = measure(
+        master.compose(scale=1.0, ground=False, wordmark=False, shift=shift), None
+    )
+
+    maskable_scale = min(1.0, MASKABLE_RADIUS * SAFE_HEADROOM / at_centred)
+    adaptive_scale = min(1.0, ADAPTIVE_RADIUS * SAFE_HEADROOM / at_centred)
+    print(f"  drawn radius, symbol only, as drawn  {at_full:.4f} of the canvas")
+    print(f"  drawn radius, symbol only, recentred {at_centred:.4f}"
+          f"   (nudged by {shift[0]:+.3f} {shift[1]:+.3f} master units)")
+    print(f"  headroom {SAFE_HEADROOM:.2f} of the guaranteed radius")
+    print(f"  -> maskable scale {maskable_scale:.3f}"
+          f"  (target {MASKABLE_RADIUS * SAFE_HEADROOM:.4f}, limit {MASKABLE_RADIUS:.4f})")
+    print(f"  -> adaptive scale {adaptive_scale:.3f}"
+          f"  (target {ADAPTIVE_RADIUS * SAFE_HEADROOM:.4f}, limit {ADAPTIVE_RADIUS:.4f})")
+
+    # The lockup survives in exactly one place: icon-512, which is the size an
+    # install dialog and a splash screen use, and the only one where six serif
+    # letters are letters rather than a grey smudge. Everywhere else — the
+    # 192, the maskables, apple-touch, both launcher icons, the favicon and the
+    # shell mark — is symbol-only.
+    lockup = master.compose(scale=1.0, ground=True)
     symbol = master.compose(scale=1.0, ground=True, wordmark=False)
-    foreground = master.compose(scale=adaptive_scale, ground=False)
+    maskable = master.compose(scale=maskable_scale, ground=True, wordmark=False, shift=shift)
+    foreground = master.compose(
+        scale=adaptive_scale, ground=False, wordmark=False, shift=shift
+    )
     monochrome = master.compose(
-        scale=adaptive_scale, ground=False, flatten="#FFFFFF", wordmark=False
+        scale=adaptive_scale, ground=False, flatten="#FFFFFF", wordmark=False,
+        shift=shift, seam_end=MONOCHROME_SEAM_END,
     )
 
     written: list[Path] = []
@@ -369,14 +461,14 @@ def main() -> None:
     before = fingerprint(shell_assets)
 
     # --- the web client -----------------------------------------------------
-    written += rasterise(full, [192], "icon-192.png", WEB_ICONS)
-    written += rasterise(full, [512], "icon-512.png", WEB_ICONS)
+    written += rasterise(symbol, [192], "icon-192.png", WEB_ICONS)
+    written += rasterise(lockup, [512], "icon-512.png", WEB_ICONS)
     written += rasterise(maskable, [192], "icon-maskable-192.png", WEB_ICONS)
     written += rasterise(maskable, [512], "icon-maskable-512.png", WEB_ICONS)
     # iOS home-screen bookmarks crop to a rounded rectangle rather than a
     # circle, and Apple composites on white if there is any transparency — so
     # this one is full bleed.
-    written += rasterise(full, [180], "apple-touch-icon.png", WEB_ICONS)
+    written += rasterise(symbol, [180], "apple-touch-icon.png", WEB_ICONS)
     (WEB_ICONS / "favicon.svg").write_text(symbol)
     written.append(WEB_ICONS / "favicon.svg")
 
@@ -385,7 +477,7 @@ def main() -> None:
     # --- Android ------------------------------------------------------------
     for bucket, factor in DENSITIES.items():
         written += rasterise(
-            full, [round(48 * factor)], "ic_launcher.png", ANDROID_RES / f"mipmap-{bucket}"
+            symbol, [round(48 * factor)], "ic_launcher.png", ANDROID_RES / f"mipmap-{bucket}"
         )
         written += rasterise(
             foreground, [round(108 * factor)],
@@ -434,7 +526,7 @@ def main() -> None:
     # One 1024 image. Since Xcode 14 a single-size app icon is the whole set:
     # the system renders every other size, and listing twenty slots only
     # creates twenty ways to be inconsistent.
-    written += rasterise(full, [1024], "icon-1024.png", IOS_ICONS)
+    written += rasterise(symbol, [1024], "icon-1024.png", IOS_ICONS)
     (IOS_ICONS / "Contents.json").write_text(
         '{\n  "images" : [\n    {\n      "filename" : "icon-1024.png",\n'
         '      "idiom" : "universal",\n      "platform" : "ios",\n'
@@ -447,26 +539,85 @@ def main() -> None:
     for path in written:
         print(f"  {path.relative_to(ROOT)}  ({path.stat().st_size:,} bytes)")
 
-    # --- and prove the safe zones hold, on the files actually written -------
-    print("\nsafe zones, measured on what was written:")
-    checks = [
-        ("icon-maskable-512.png", WEB_ICONS / "icon-maskable-512.png", ground_rgb, MASKABLE_RADIUS),
+    # --- and prove it, on the files actually written ------------------------
+    #
+    # Every file with a circular guarantee is measured, not a sample of them:
+    # the densities are separate renders and a downsample is where a rounded
+    # cap grows a pixel.
+    print("\nsafe zones, measured on every file that has one:")
+    limited: list[tuple[str, Path, tuple[int, int, int] | None, float]] = [
         ("icon-maskable-192.png", WEB_ICONS / "icon-maskable-192.png", ground_rgb, MASKABLE_RADIUS),
-        ("ic_launcher_foreground (xhdpi)",
-         ANDROID_RES / "mipmap-xhdpi/ic_launcher_foreground.png", None, ADAPTIVE_RADIUS),
-        ("ic_launcher_monochrome (xhdpi)",
-         ANDROID_RES / "mipmap-xhdpi/ic_launcher_monochrome.png", None, ADAPTIVE_RADIUS),
+        ("icon-maskable-512.png", WEB_ICONS / "icon-maskable-512.png", ground_rgb, MASKABLE_RADIUS),
     ]
-    failures = []
-    for label, path, ground, limit in checks:
+    for bucket in DENSITIES:
+        for layer in ("foreground", "monochrome"):
+            limited.append((
+                f"ic_launcher_{layer} ({bucket})",
+                ANDROID_RES / f"mipmap-{bucket}/ic_launcher_{layer}.png",
+                None,
+                ADAPTIVE_RADIUS,
+            ))
+
+    failures: list[str] = []
+    for label, path, ground, limit in limited:
         radius = drawn_extent(path, ground)["radius_fraction"]
-        verdict = "ok  " if radius <= limit else "FAIL"
-        if radius > limit:
-            failures.append(f"{label}: {radius:.4f} > {limit:.4f}")
-        print(f"  {verdict} {label:32s} radius {radius:.4f}  limit {limit:.4f}")
+        headroom = (limit - radius) / limit
+        ok = radius <= limit
+        if not ok:
+            failures.append(f"{label}: radius {radius:.4f} > limit {limit:.4f}")
+        print(f"  {'ok  ' if ok else 'FAIL'} {label:34s} radius {radius:.4f}"
+              f"  limit {limit:.4f}  ({headroom * 100:+.1f}% in hand)")
+
+    # --- and that the lock survives being flattened -------------------------
+    #
+    # In one colour the seam runs into the keyhole and the mark reads as an
+    # arch with a bar. The seam is shortened for that variant alone, so the
+    # check has two halves: the gap is there in the themed icon, and it is
+    # *not* there anywhere else — which is what makes the change scoped rather
+    # than merely intended.
+    print("\nthe keyhole gap, down the centre column:")
+    themed = ANDROID_RES / "mipmap-xxxhdpi/ic_launcher_monochrome.png"
+    plain = ANDROID_RES / "mipmap-xxxhdpi/ic_launcher_foreground.png"
+
+    themed_gaps = centre_column_gaps(themed, None)
+    plain_gaps = centre_column_gaps(plain, None)
+
+    # Both variants already have gaps below the keyhole — one between its stem
+    # and the rail, one between the rail and the plinth. So the discriminator
+    # is not "does it have a gap", which was the first attempt and passed on
+    # the wrong gap: it is that the themed icon has exactly one *more* gap than
+    # the plain one, and that the extra one is above the rest.
+    for label, gaps in (("themed  ", themed_gaps), ("plain fg", plain_gaps)):
+        rendered = ", ".join(f"{(b - a) * 100:.2f}% at y={a:.3f}" for a, b in gaps) or "none"
+        print(f"  {label} {len(gaps)} interior gap(s): {rendered}")
+
+    # From the geometry: 37.4 - (29 + 3.75) = 4.65 master units, scaled, over a
+    # 100-unit canvas.
+    expected = (37.4 - (MONOCHROME_SEAM_END + 3.75)) / 100 * adaptive_scale
+    opened = (themed_gaps[0][1] - themed_gaps[0][0]) if themed_gaps else 0.0
+    print(f"  the gap the shortening opens: {opened * 100:.2f}% of height"
+          f"   (geometry predicts {expected * 100:.2f}%)")
+
+    if len(themed_gaps) != len(plain_gaps) + 1:
+        failures.append(
+            f"the themed icon has {len(themed_gaps)} interior gaps and the plain foreground "
+            f"{len(plain_gaps)}; shortening the seam should open exactly one more"
+        )
+    elif opened < expected * 0.6:
+        failures.append(
+            f"the gap above the keyhole is {opened * 100:.2f}% of height against "
+            f"{expected * 100:.2f}% predicted — the lock has merged into the seam"
+        )
+    elif plain_gaps and themed_gaps[0][0] >= plain_gaps[0][0]:
+        failures.append(
+            "the themed icon's extra gap is not above the plain one's first — the seam "
+            "shortening has landed somewhere other than between the seam and the keyhole"
+        )
+
     if failures:
-        die("a variant overflows the area its platform guarantees:\n  " + "\n  ".join(failures))
-    print("\nevery variant fits the circle its platform guarantees.")
+        die("measured on the rendered files:\n  " + "\n  ".join(failures))
+    print("\nevery variant fits the circle its platform guarantees,"
+          " and the lock survives the flattening.")
 
 
 if __name__ == "__main__":

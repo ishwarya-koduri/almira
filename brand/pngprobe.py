@@ -87,6 +87,48 @@ def read_rgba(path: Path) -> tuple[int, int, bytearray]:
     return width, height, out
 
 
+def centre_column_gaps(path: Path, ground: tuple[int, int, int] | None) -> list[tuple[float, float]]:
+    """Interior blank runs down the middle of the image, as fractions of height.
+
+    Written for one question: in the themed icon, is there clear ground between
+    the door seam and the keyhole, or have they merged into one shape? In a
+    single flat colour that gap is the only thing that still reads as a lock,
+    so it is worth asserting rather than eyeballing.
+
+    Only runs with drawn pixels both above and below are returned, so the empty
+    margins at the top and bottom of the canvas are not mistaken for a gap.
+    """
+    width, height, rgba = read_rgba(path)
+    column = width // 2
+
+    drawn = []
+    for y in range(height):
+        index = (y * width + column) * 4
+        if rgba[index + 3] <= 16:
+            drawn.append(False)
+            continue
+        if ground is not None and all(
+            abs(rgba[index + channel] - ground[channel]) < 12 for channel in range(3)
+        ):
+            drawn.append(False)
+            continue
+        drawn.append(True)
+
+    if True not in drawn:
+        return []
+    first, last = drawn.index(True), len(drawn) - 1 - drawn[::-1].index(True)
+
+    gaps = []
+    run_start = None
+    for y in range(first, last + 1):
+        if not drawn[y] and run_start is None:
+            run_start = y
+        elif drawn[y] and run_start is not None:
+            gaps.append((run_start / height, y / height))
+            run_start = None
+    return gaps
+
+
 def drawn_extent(path: Path, ground: tuple[int, int, int] | None) -> dict:
     """How far the drawn artwork reaches from the canvas centre, as a fraction.
 

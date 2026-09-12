@@ -8,7 +8,7 @@ it, so changing the mark is one edit and one command:
 python3 brand/render-icons.py
 ```
 
-It writes 26 files, prints each one, and then measures what it wrote. All of
+It writes 29 files, prints each one, and then measures what it wrote. All of
 them are committed, so no build ever depends on the script running.
 
 | | |
@@ -25,13 +25,21 @@ A square logo cannot be dropped into a round hole. Each platform crops
 differently, and each variant exists because of a specific crop rather than for
 taste.
 
-| Variant | Scale | Ground | Used for |
-|---|---|---|---|
-| full | 100% | teal | web `purpose: any`, `apple-touch-icon`, the iOS app icon |
-| maskable | **derived** | teal | web `purpose: maskable` |
-| foreground | **derived** | transparent | Android adaptive icon, front layer |
-| monochrome | **derived** | transparent, one colour, no wordmark | Android 13 themed icons |
-| symbol | 100% | teal, no wordmark | the favicon and the web shell's 22px mark |
+| Variant | Scale | Ground | Wordmark | Used for |
+|---|---|---|---|---|
+| lockup | 100% | teal | yes | **`icon-512.png`, and nothing else** |
+| symbol | 100% | teal | no | `icon-192`, `apple-touch-icon`, the Android legacy launcher icon, the iOS app icon, the favicon and the shell mark |
+| maskable | **derived** | teal | no | web `purpose: maskable` |
+| foreground | **derived** | transparent | no | Android adaptive icon, front layer |
+| monochrome | **derived** | transparent, one colour | no | Android 13 themed icons — and the only variant with a shortened seam |
+
+### The wordmark appears in exactly one icon
+
+`icon-512.png` is the size an install dialog and a splash screen use, and the
+only one where six serif letters are letters. Everywhere else — including the
+iOS app icon and the Android launcher icon, both of which looked acceptable at
+a desk and turned out to be an illegible smudge under the shelf on a real
+launcher — the mark is symbol-only.
 
 ### The two derived scales are measured, not chosen
 
@@ -43,36 +51,55 @@ of them overflows.
 For the current artwork:
 
 ```
-drawn radius at full size 0.5618 of the canvas
- -> maskable scale 0.705 (limit 0.400)
- -> adaptive scale 0.587 (limit 0.333)
+drawn radius, symbol only, as drawn  0.5618 of the canvas
+drawn radius, symbol only, recentred 0.5553   (nudged by +0.000 -0.879 master units)
+headroom 0.96 of the guaranteed radius
+ -> maskable scale 0.692  (target 0.3840, limit 0.4000)
+ -> adaptive scale 0.576  (target 0.3200, limit 0.3333)
 ```
 
-This is not ceremony. The previous version of this script asserted 80% for
-maskable, because 80% is the guarantee — but 80% is the guarantee for the
-*circle*, and scaling square artwork to 80% leaves its corners outside it.
-Measured, that icon reached **0.451** against a 0.400 limit, so a round mask was
-shaving the ends off the plinth. It looked fine by eye, which is exactly why it
-needed measuring. The plinth is what drives both numbers: it is a wide pill at
-the very bottom, so its end-caps are the furthest drawn points from the centre
-and the first thing a round mask takes.
+**The wordmark is not what sets the radius.** Measured both ways it is 0.5618
+either way, because the wordmark sits nowhere near the edge. What sets it is
+the plinth: a wide pill at the very bottom whose round end-caps reach x=88,
+y=93 of a 100-unit canvas, making them the furthest drawn points from the
+centre and the first thing a round mask takes. So dropping the wordmark buys no
+room at all, and the clearance has to come from somewhere else.
 
-The `FRINGE_MARGIN` of 1% is for the antialiased edge, not the geometry. A
-rounded stroke cap fades out over about a pixel at any output size and the
-measurement counts a pixel as drawn once it is roughly a tenth ink, so a mark
-sized to exactly the limit measures a hair over — 0.4001 against 0.4000 at
-512px, seen and dealt with rather than rounded away.
+It comes from two places:
 
-### Two variants drop the wordmark
+- **`SAFE_HEADROOM`, 0.96.** The art is sized into a circle 4% smaller than the
+  one the platform promises. That 4% is geometry — daylight — rather than a
+  rounding allowance, which is what the previous version used: a 1%
+  `FRINGE_MARGIN` that left the maskable icon at 0.3960 against a 0.4000 limit.
+  Compliant, and with almost nothing in hand.
+- **Recentring.** The drawn art sits a little low in its own square, so for the
+  cropped variants it is nudged up by 0.879 units to put the *art* in the
+  middle of the mask rather than the master's canvas. That drops the radius
+  from 0.5618 to 0.5553 and buys back most of what the headroom costs, so the
+  mark ends up essentially the size it was with four times the clearance
+  instead of a fringe allowance.
 
-**The themed icon**, because a themed icon is a silhouette in one flat colour:
-the letters have no band behind them to sit on and become mud at launcher size.
+Before this, the script asserted 80% for maskable because 80% is the guarantee
+— but 80% is the guarantee for the *circle*, and square artwork at 80% leaves
+its corners outside it. Measured, that icon reached **0.451** against 0.400: a
+round mask was shaving the ends off the plinth. It looked fine by eye, which is
+exactly why it needed measuring.
 
-**The symbol**, for the favicon and the 22px shell mark. Rendered at 16, 22 and
-32 beside the full lockup, the wordmark is a grey smear at all three while the
-symbol stays clean — below roughly 48px the letters are not a wordmark, they are
-dirt. Everything 180px and up gets the full lockup, so the two app icons are
-identical.
+### The themed icon gets a shortened seam
+
+Flattened to one colour the door seam runs into the keyhole, and the mark reads
+as a plain arch with a bar across it — the lock, which is the whole idea,
+disappears. So in that variant alone the seam ends at y=29 instead of its drawn
+38. Its 3.75-unit round cap puts it at 32.75; the keyhole circle begins at
+45 − 7.6 = 37.4. Four and a half units of clear ground, and the gap does the
+work that colour does everywhere else.
+
+Asserted in both directions, because "intended to be scoped" and "is scoped"
+are different claims: the themed icon must have exactly **one more** interior
+gap down its centre column than the plain foreground, and that extra gap must
+sit above the others. Both variants already have gaps below the keyhole — stem
+to rail, rail to plinth — so merely checking that a gap exists passes on the
+wrong one. That was the first attempt, and it did.
 
 ### One size for iOS
 

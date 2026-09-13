@@ -485,8 +485,9 @@ marker on each. What matters at deploy time, beyond the four secrets in §1:
   compose file, because an empty value overrides the default:**
   `ALMIRA_OTP_MAX_PER_IP_PER_HOUR`, `ALMIRA_OTP_MAX_VERIFY_FAILURES_PER_IP_PER_HOUR`,
   `ALMIRA_SIGN_IN_CHANNELS` (default `phone`), the per-provider
-  `ALMIRA_PROVIDER_*_MAX_ATTEMPTS` / `_RETRY_BACKOFF`, and the
-  `ALMIRA_PROVIDER_EMAIL_*` group.
+  `ALMIRA_PROVIDER_*_MAX_ATTEMPTS` / `_RETRY_BACKOFF`, the
+  `ALMIRA_PROVIDER_EMAIL_*` group, `ALMIRA_OTP_SEND_TIMEOUT` (default `5s`, must
+  be >0 and ≤15s) and `ALMIRA_OUTBOX_POLL_INTERVAL` (default `PT2S`).
 - **The one footgun:** enabling the email channel
   (`ALMIRA_SIGN_IN_CHANNELS` including `email`) with an **empty**
   `ALMIRA_ALPHA_EMAIL_ALLOWLIST` **refuses to start**, by design — an open email

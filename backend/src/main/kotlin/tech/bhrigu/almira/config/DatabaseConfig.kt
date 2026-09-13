@@ -66,7 +66,9 @@ class DatabaseConfig(private val props: AlmiraProperties) {
      *
      * The name is deliberately unpleasant. Anything injecting this is opting out
      * of the privacy model and has to justify itself; request-handling code must
-     * never use it. Today its only consumer is ReminderWorker.
+     * never use it. Its consumers are ReminderWorker, the NotificationOutbox
+     * worker, AlphaAllowlistAccess, and KeyEncryptionKeyCheck — all code that
+     * runs without a request user.
      */
     @Bean("systemJdbcBypassingRls")
     fun systemJdbc(@Qualifier("ownerDataSource") ownerDataSource: HikariDataSource) =

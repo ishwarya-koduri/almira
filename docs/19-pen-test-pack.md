@@ -106,6 +106,9 @@ the case at hand.
 | sealed overwrite is refused | yes | overwriting another member's sealed value returns 409 (master) |
 | readiness cannot be gamed | yes | continuity readiness caps at 99 while any record is left out; `leftOut` field; per-viewer (master) |
 | StillTrue sweep runs as owner+user | yes | `@Qualifier("ownerDataSource")` and `app.user_id` set per person, each watched failing when removed (master) |
+| outbox survives a worker takeover | yes | two workers, one claim; `NotificationOutboxTest` watched failing with the `claim_token` stamp binding removed (the outcome-write binding is noted as not-yet-watched) (master) |
+| tests can't touch a non-test DB | yes | `TestDatabaseGuard` refuses any Spring context whose DB URL isn't `TestInfra.dbUrl` before it connects — the guard for the 09-13 incident where a test migrated the dev DB (master) |
+| the frozen spec catches additions | yes | `OpenApiContractTest` now fails when the live server serves a path/operation/schema the frozen file omits, not only when it drops one (master) |
 
 **For a tester reading this:** the honest summary is that the checks have been
 adversarially tested more carefully than the product has. Treat the table above
@@ -221,9 +224,12 @@ watched failing).
   attacker's title, and the FK doubles as an existence oracle.
 - **Definer functions with no authorisation:** `record_guest_view`,
   `record_outbound_message`, `document_links_of`, `record_holder_member_ids`,
-  `record_created_by` — `execute` is granted to the app role with no
-  `revoke … from public`. Reachable only through code today; a SQL-injection
-  anywhere turns them into read/insert primitives.
+  `record_created_by`, and now `enqueue_outbound_message` / `record_in_app_message`
+  (V32/V35) — `execute` is granted to the app role with no `revoke … from public`.
+  They take a user id and a body as arguments and insert on the caller's behalf
+  with no policy check, because the outbox worker has no request user; reachable
+  only through code today, but a SQL-injection foothold turns them into a
+  write-a-notification-as-anyone primitive.
 - **The reminder sweep silently did nothing** until this item: its "owner"
   template resolved to the runtime pool (both are `HikariDataSource`, `@Primary`
   won the unqualified inject), so it ran under RLS with no user and found no
@@ -248,7 +254,16 @@ plaintext location columns — `investments.storage_location`,
 `estate_documents.location`, `investment_templates.storage_location` — remain;
 the web client no longer writes them, and the sealed `original_location` /
 `key_holder` fields (V28) are their zero-knowledge replacement, but a dump still
-reads whatever the old rows hold.
+reads whatever the old rows hold — until V33/V34, which drop those columns and
+refuse to run while any non-empty value remains (so the drop is never silent).
+
+One new plaintext exposure to weigh: the notification outbox (V32) keeps a
+message's rendered body in `outbound_message_bodies` **only while it is queued**,
+deleting it on send. A backup taken mid-drain therefore carries the in-flight
+bodies of pending sms/email/push notifications in plaintext — bounded (queued
+rows only) but real. The table has RLS enabled with **no policy**, so only the
+owner connection and the definer function reach it; a dump-holder (T5) reads it
+regardless.
 
 This is by design — the product encrypts the fields whose exposure is
 individually catastrophic, not the whole database — but a tester and a privacy
@@ -410,9 +425,9 @@ trade.
   challenge is untouched (`ALMIRA_OTP_MAX_VERIFY_FAILURES_PER_IP_PER_HOUR`,
   master `2b0ca3f`), closing the earlier gap where the only verify-side limit was
   five tries per individual code.
-- **A malformed JSON body still returns 500**, not a 400 envelope
-  (known-issues #2) — noise that also means the generic handler is on the auth
-  path.
+- **Malformed and wrong-type request bodies now return 400/415**
+  (`malformed_request` / `validation_failed` / `unsupported_media_type`), logged
+  at INFO, not the old 500 — so any alert keyed on 500s for these will go quiet.
 - **Swagger UI and the full OpenAPI spec are `permitAll` in production.** Not a
   hole by itself; it hands an attacker the exact shape of every endpoint.
 - **Removal doesn't revoke.** `removeMember` soft-deletes the `members` row but
@@ -432,7 +447,7 @@ are the shape of work to come, from the provider pages under `docs/providers/`.
 | Provider | State, and what a tester should know |
 |---|---|
 | DigiLocker | No separate sandbox; API Setu needs GSTN verification; the server must sit in India. Known-issues #10: OAuth `state` is not checked and the token would land plaintext in `external_ref`. Setting it live with no adapter fails startup. |
-| Account Aggregator | No adapter; a production FIU needs RBI/SEBI/IRDAI/PFRDA regulation; recommended cut from v1; `mode=off`, and any other value fails startup (known-issues #11). |
+| Account Aggregator | **Cut from v1.** Defaults to `disabled` and hidden; its endpoints answer `409 provider_disabled`; `mode=off` (and any value other than `disabled`/`off`) is refused at startup. |
 | iOS APNs / Android FCM | No adapter, no Apple membership, no Firebase account, and **no device-token registration anywhere** — so push cannot be tested end to end yet (known-issues #13). |
 | Real SMS | No live sender; needs a DLT header and a verbatim-registered template (GST-gated), unregistered templates dropped silently; release-keystore → app-hash → template ordering (MOVE.md); `ALMIRA_OTP_PROVIDER` other than `log` fails startup (known-issues #12). |
 | WhatsApp | Signature verification is a stub — **the sandbox accepts every payload**. First thing to fix before any inbound webhook is trusted. |
@@ -450,19 +465,32 @@ means a slow provider ties up a request thread and a duplicate text is possible
 
 Endpoints, all behind auth unless noted: `GET /me/messages` (RLS-isolated —
 marked not-watched-failing), `GET /auth/otp/channels`,
-`POST /auth/otp/email/request|verify`, `GET /households/{id}/where-and-who`,
+`POST /auth/otp/email/request|verify`,
+`GET /auth/otp/email/delivery/{requestId}` (polled ~1/s for 30s; `404
+otp_request_unknown` for an unknown id), `GET /households/{id}/where-and-who`,
 `GET /households/{id}/still-true`,
 `POST …/still-true/{type}/{id}/confirm|snooze`,
 `GET /households/{id}/continuity/readiness`.
+
+An email-only account is signed out — at startup, on each request, and on
+refresh — whenever email sign-in is off or its address is no longer allowlisted
+(audit `auth.session_ended_not_allowlisted`, `via startup/request/refresh`), so
+ending the alpha or dropping a tester revokes access rather than merely hiding
+the channel. A phone-only server re-reads each signed-in account about once a
+minute.
 
 App-generated status codes a tester will meet, and which the **reverse proxy
 must pass through** rather than replacing with its own error page:
 `otp_delivery_delayed` 504, `otp_delivery_failed` 422,
 `otp_provider_unavailable` 503, `otp_service_unavailable` 503,
 `provider_timeout` 504, `provider_unavailable` 503, `provider_rejected` 422,
-`provider_account_unavailable` 503, `sign_in_channel_disabled` 403. Two operator
-alert lines exist: `ERROR 'PROVIDER ACCOUNT PROBLEM: …'` and
-`WARN 'one-time code by email not confirmed sent'`.
+`provider_account_unavailable` 503, `sign_in_channel_disabled` 403,
+`provider_disabled` 409, `plaintext_location_retired` 400, and the malformed-body
+`malformed_request` / `validation_failed` 400 and `unsupported_media_type` 415.
+Operator alert lines: `ERROR 'PROVIDER ACCOUNT PROBLEM: …'`,
+`ERROR 'EMAIL ALLOWLIST SWEEP FAILED'`, `WARN 'one-time code by email not
+confirmed sent'`, `WARN 'outbox: a <channel> send was started by a worker that
+stopped…'`, and `WARN 'notification outbox drain failed'`.
 
 ---
 

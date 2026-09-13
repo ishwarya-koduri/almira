@@ -83,7 +83,7 @@ add "{\"typeId\":\"$(typeid fd)\",\"title\":\"SBI FD — 5 years\",\"investedAmo
      \"maturityDate\":\"2029-03-31\",\"accountId\":\"$SBI\",\"visibility\":\"household\",
      \"attributes\":{\"interest_rate\":\"7.1\",\"payout\":\"cumulative\",\"receipt_no\":\"FD-88213\"}}"
 add "{\"typeId\":\"$(typeid gold_physical)\",\"title\":\"Wedding coins\",\"investedAmount\":100000,
-     \"quantity\":6.3,\"unit\":\"g\",\"storageLocation\":\"Home locker\",\"visibility\":\"household\",
+     \"quantity\":6.3,\"unit\":\"g\",\"visibility\":\"household\",
      \"attributes\":{\"purity\":\"22k\",\"making_charges\":\"4500\"}}"
 add "{\"typeId\":\"$(typeid mf_sip)\",\"title\":\"Parag Parikh Flexi Cap\",\"investedAmount\":420000,
      \"accountId\":\"$ZERODHA\",\"visibility\":\"household\",

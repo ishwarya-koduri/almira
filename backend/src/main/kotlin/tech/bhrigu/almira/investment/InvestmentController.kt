@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import tech.bhrigu.almira.common.IndianNumbers
+import tech.bhrigu.almira.e2e.RetiredPlaintextLocation
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -32,6 +33,7 @@ data class CreateInvestmentBody(
     val unit: String? = null,
     val startDate: LocalDate? = null,
     val maturityDate: LocalDate? = null,
+    /** Retired (V33, docs/20 §1). Text here is refused; see [RetiredPlaintextLocation]. */
     val storageLocation: String? = null,
     val institutionId: UUID? = null,
     val accountId: UUID? = null,
@@ -93,7 +95,8 @@ data class InvestmentResponse(
     val valuedOn: LocalDate?,
     val startDate: LocalDate?,
     val maturityDate: LocalDate?,
-    val storageLocation: String?,
+    /** Retired (V33, docs/20 §1): always absent. Kept because v1 is additive-only. */
+    val storageLocation: String? = null,
     val institutionId: UUID?,
     val institutionName: String?,
     val accountId: UUID?,
@@ -144,6 +147,7 @@ class InvestmentController(private val service: InvestmentService) {
         @PathVariable householdId: UUID,
         @RequestBody @Valid body: CreateInvestmentBody,
     ): CreateInvestmentResponse {
+        RetiredPlaintextLocation.refuseIfSent("storageLocation", body.storageLocation)
         val created = service.create(
             householdId,
             CreateInvestment(
@@ -151,7 +155,6 @@ class InvestmentController(private val service: InvestmentService) {
                 investedAmount = body.investedAmount, currency = body.currency,
                 quantity = body.quantity, unit = body.unit,
                 startDate = body.startDate, maturityDate = body.maturityDate,
-                storageLocation = body.storageLocation,
                 institutionId = body.institutionId, accountId = body.accountId,
                 attributes = body.attributes, owners = body.owners,
                 visibility = body.visibility, visibleToMemberIds = body.visibleToMemberIds,
@@ -294,7 +297,7 @@ internal fun InvestmentRow.toResponse() = InvestmentResponse(
     value = effectiveValue,
     valueFormatted = effectiveValue?.let { IndianNumbers.rupees(it) },
     valueBasis = valueBasis, valuedOn = valuedOn,
-    startDate = startDate, maturityDate = maturityDate, storageLocation = storageLocation,
+    startDate = startDate, maturityDate = maturityDate,
     institutionId = institutionId, institutionName = institutionName,
     accountId = accountId, accountLabel = accountLabel,
     attributes = attributes, notes = notes,

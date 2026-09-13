@@ -27,7 +27,8 @@ data class HandbookEntry(
     val value: BigDecimal?,
     val valueFormatted: String?,
     val valueBasis: String,
-    val whereItIsKept: String?,
+    /** Retired (V33, docs/20 §1): always absent. Where it is kept is sealed, and the server cannot print it. */
+    val whereItIsKept: String? = null,
     val reference: String?,
     val nominees: List<String>,
     val contacts: List<TransmissionContact>,
@@ -49,7 +50,8 @@ data class HandbookInstrument(
     val kind: String,
     val title: String,
     val forMember: String?,
-    val location: String?,
+    /** Retired (V33, docs/20 §1): always absent. Where it is kept is sealed, and the server cannot print it. */
+    val location: String? = null,
     val executedOn: LocalDate?,
     val executors: List<String>,
 )
@@ -97,7 +99,7 @@ class HandbookService(
 
         val entries = jdbc.query(
             """
-            select i.id, i.title, i.storage_location, i.attributes,
+            select i.id, i.title, i.attributes,
                    t.code as type_code, t.label as type_label, c.code as category_code,
                    coalesce(inst.name, acct_inst.name) as institution_name,
                    acct.label as account_label,
@@ -141,7 +143,6 @@ class HandbookService(
                 value = rs.getBigDecimal("effective_value"),
                 valueFormatted = rs.getBigDecimal("effective_value")?.let(IndianNumbers::rupees),
                 valueBasis = rs.getString("value_basis"),
-                whereItIsKept = rs.getString("storage_location"),
                 reference = referenceFrom(rs.getString("attributes")),
                 nominees = emptyList(),
                 contacts = emptyList(),
@@ -181,7 +182,7 @@ class HandbookService(
 
         val instruments = jdbc.query(
             """
-            select e.kind, e.title, e.location, e.executed_on, m.display_name as member_name,
+            select e.kind, e.title, e.executed_on, m.display_name as member_name,
                    coalesce(array_agg(coalesce(rm.display_name, rc.name, r.person_name))
                             filter (where r.id is not null), '{}') as executors
             from estate_documents e
@@ -191,7 +192,7 @@ class HandbookService(
             left join members rm on rm.id = r.member_id
             left join contacts rc on rc.id = r.contact_id
             where e.household_id = :hid and e.deleted_at is null and e.status = 'executed'
-            group by e.kind, e.title, e.location, e.executed_on, m.display_name
+            group by e.kind, e.title, e.executed_on, m.display_name
             order by e.executed_on desc nulls last
             """.trimIndent(),
             mapOf("hid" to householdId),
@@ -200,7 +201,6 @@ class HandbookService(
                 kind = rs.getString("kind"),
                 title = rs.getString("title"),
                 forMember = rs.getString("member_name"),
-                location = rs.getString("location"),
                 executedOn = rs.getDate("executed_on")?.toLocalDate(),
                 executors = (rs.getArray("executors").array as Array<*>).map { it.toString() },
             )
@@ -335,7 +335,6 @@ class HandbookService(
             entry.institutionName?.let { line("  Held at: $it") }
             entry.reference?.let { line("  Reference: $it") }
             entry.valueFormatted?.let { line("  Value: $it (${basisInWords(entry.valueBasis)})") }
-            entry.whereItIsKept?.let { line("  Kept at: $it") }
             if (entry.nominees.isNotEmpty()) line("  Nominee: ${entry.nominees.joinToString(", ")}")
             else line("  Nominee: none recorded")
             entry.contacts.forEach { line("  Call: ${it.name}${it.phone?.let { p -> " — $p" } ?: ""}") }
@@ -364,7 +363,6 @@ class HandbookService(
                 line("")
                 line("${instrument.title} (${instrument.kind})", true)
                 instrument.forMember?.let { line("  For: $it") }
-                instrument.location?.let { line("  The original is: $it") }
                 if (instrument.executors.isNotEmpty()) {
                     line("  Executor: ${instrument.executors.joinToString(", ")}")
                 }

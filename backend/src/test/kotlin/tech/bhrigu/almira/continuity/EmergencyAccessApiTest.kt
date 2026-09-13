@@ -184,7 +184,6 @@ class EmergencyAccessApiTest : ApiTestBase() {
             "/api/v1/households/$householdId/estate/documents", owner,
             mapOf(
                 "memberId" to ownerMemberId, "kind" to "will", "title" to "Ishwarya's will",
-                "location" to "Home locker",
                 "beneficiaries" to listOf(mapOf("memberId" to trustedMemberId, "sharePct" to 100)),
             ),
         )
@@ -199,8 +198,9 @@ class EmergencyAccessApiTest : ApiTestBase() {
         assertThat(handbook.path("instruments").map { it.path("title").asText() })
             .describedAs("an instrument nobody can read is one nobody can act on")
             .containsExactly("Ishwarya's will")
-        assertThat(handbook.path("instruments").first().path("location").asText())
-            .isEqualTo("Home locker")
+        assertThat(handbook.path("instruments").first().has("location"))
+            .describedAs("where the original is is sealed, and the server has no copy to print (docs/20 §1)")
+            .isFalse()
     }
 
     /**

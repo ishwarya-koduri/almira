@@ -76,7 +76,6 @@ class SearchService(
               and ( i.title ilike '%' || :q || '%'
                  or t.label ilike '%' || :q || '%'
                  or coalesce(inst.name, '') ilike '%' || :q || '%'
-                 or coalesce(i.storage_location, '') ilike '%' || :q || '%'
                  or i.attributes::text ilike '%' || :q || '%' )
             order by i.title
             limit :limit

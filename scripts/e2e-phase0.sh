@@ -190,8 +190,7 @@ GOLD=$(api "$ISH" POST "/api/v1/households/$HID/investments" "{
   \"typeId\":\"$TYPE_GOLD\",\"title\":\"Wedding coins\",
   \"investedAmount\":100000,\"quantity\":6.3,\"unit\":\"g\",
   \"visibility\":\"household\",
-  \"attributes\":{\"purity\":\"22k\",\"making_charges\":\"4500\"},
-  \"storageLocation\":\"Home locker\"}")
+  \"attributes\":{\"purity\":\"22k\",\"making_charges\":\"4500\"}}")
 GOLD_ID=$(echo "$GOLD" | jq_ "['id']")
 isnt "household-shared gold is captured" "$GOLD_ID" ""
 

@@ -67,7 +67,8 @@ data class EstateDocumentResponse(
     val kind: String,
     val title: String,
     val executedOn: LocalDate?,
-    val location: String?,
+    /** Retired (V33, docs/20 §1): always absent. Kept because v1 is additive-only. */
+    val location: String? = null,
     val registered: Boolean,
     val status: String,
     val notes: String?,
@@ -93,7 +94,7 @@ internal fun ContactRow.toResponse() = ContactResponse(
 
 internal fun EstateDocumentRow.toResponse() = EstateDocumentResponse(
     id = id, memberId = memberId, memberName = memberName, kind = kind, title = title,
-    executedOn = executedOn, location = location, registered = registered, status = status,
+    executedOn = executedOn, registered = registered, status = status,
     notes = notes, documentId = documentId, visibility = visibility,
     roles = roles.map { EstateRoleResponse(it.id, it.role, it.memberId, it.contactId, it.name, it.note) },
     beneficiaries = beneficiaries.map {

@@ -4,6 +4,7 @@
 
 import { api } from "../api.js";
 import { el, mount, field, textInput, withBusy } from "../ui.js";
+import { privacyLink } from "../privacy.js";
 
 export function onboardingScreen(onDone) {
   const host = el("main.narrow", {});
@@ -73,6 +74,8 @@ export function onboardingScreen(onDone) {
         field({ label: "What should we call you?", control: displayInput, help: "Shown next to the things you own." }),
         el("div.row", {}, submit),
       ),
+
+      el("div.row", {}, privacyLink()),
     ));
   }
 

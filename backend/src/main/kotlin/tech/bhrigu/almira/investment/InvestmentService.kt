@@ -9,6 +9,7 @@ import tech.bhrigu.almira.catalog.CatalogRepository
 import tech.bhrigu.almira.catalog.CatalogService
 import tech.bhrigu.almira.catalog.FieldOption
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.e2e.RetiredPlaintextLocation
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.security.RequestUserContext
 import java.math.BigDecimal
@@ -57,7 +58,6 @@ data class CreateInvestment(
     val unit: String? = null,
     val startDate: LocalDate? = null,
     val maturityDate: LocalDate? = null,
-    val storageLocation: String? = null,
     val institutionId: UUID? = null,
     val accountId: UUID? = null,
     val attributes: Map<String, Any?> = emptyMap(),
@@ -108,6 +108,7 @@ data class UpdateInvestment(
     val unit: String? = null,
     val startDate: LocalDate? = null,
     val maturityDate: LocalDate? = null,
+    /** Retired (V33, docs/20 §1). Text here is refused; see [RetiredPlaintextLocation]. */
     val storageLocation: String? = null,
     val institutionId: UUID? = null,
     val accountId: UUID? = null,
@@ -182,7 +183,6 @@ class InvestmentService(
                 investedAmount = input.investedAmount, currency = input.currency ?: household.baseCurrency,
                 quantity = input.quantity, unit = input.unit,
                 startDate = input.startDate, maturityDate = input.maturityDate,
-                storageLocation = input.storageLocation,
                 institutionId = input.institutionId, accountId = input.accountId,
                 attributes = attributes, notes = input.notes,
                 visibility = visibility, isInContinuity = input.isInContinuity,
@@ -242,7 +242,6 @@ class InvestmentService(
                 startDate = input.startDate ?: source.startDate,
                 maturityDate = input.maturityDate
                     ?: source.maturityDate.takeIf { input.carryMaturityDate },
-                storageLocation = source.storageLocation,
                 institutionId = source.institutionId,
                 accountId = source.accountId,
                 attributes = source.attributes,
@@ -308,7 +307,7 @@ class InvestmentService(
         val previous = repo.update(
             id = id, version = source.version, status = "matured",
             title = null, investedAmount = null, quantity = null, unit = null,
-            startDate = null, maturityDate = null, storageLocation = null,
+            startDate = null, maturityDate = null,
             institutionId = null, accountId = null, attributes = null, notes = null,
             isInContinuity = null,
         )
@@ -344,6 +343,7 @@ class InvestmentService(
     fun update(householdId: UUID, id: UUID, input: UpdateInvestment): InvestmentRow {
         val userId = userContext.require()
         val household = households.get(householdId)
+        RetiredPlaintextLocation.refuseIfSent("storageLocation", input.storageLocation)
         val current = get(householdId, id)
         input.status?.let(::requireStatus)
 
@@ -357,7 +357,7 @@ class InvestmentService(
             id = id, version = input.version, title = input.title?.trim(),
             investedAmount = input.investedAmount, quantity = input.quantity, unit = input.unit,
             startDate = input.startDate, maturityDate = input.maturityDate,
-            storageLocation = input.storageLocation, institutionId = input.institutionId,
+            institutionId = input.institutionId,
             accountId = input.accountId, attributes = attributes, notes = input.notes,
             status = input.status, isInContinuity = input.isInContinuity,
         )

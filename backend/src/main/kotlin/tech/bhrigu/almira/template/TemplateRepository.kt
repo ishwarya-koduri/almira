@@ -28,7 +28,6 @@ data class TemplateRow(
     val currency: String,
     val quantity: BigDecimal?,
     val unit: String?,
-    val storageLocation: String?,
     val attributes: Map<String, Any?>,
     val notes: String?,
     val visibility: String,
@@ -51,10 +50,10 @@ class TemplateRepository(
         """
         insert into investment_templates
           (id, household_id, name, type_id, institution_id, account_id, title,
-           invested_amount, currency, quantity, unit, storage_location,
+           invested_amount, currency, quantity, unit,
            attributes, notes, visibility, source_visibility, created_by)
         values (:id, :hid, :name, :typeId, :institutionId, :accountId, :title,
-                :amount, :currency, :quantity, :unit, :storage,
+                :amount, :currency, :quantity, :unit,
                 cast(:attributes as jsonb), :notes, :visibility, :sourceVisibility, :createdBy)
         """.trimIndent(),
         MapSqlParameterSource()
@@ -63,7 +62,6 @@ class TemplateRepository(
             .addValue("accountId", row.accountId).addValue("title", row.title)
             .addValue("amount", row.investedAmount).addValue("currency", row.currency)
             .addValue("quantity", row.quantity).addValue("unit", row.unit)
-            .addValue("storage", row.storageLocation)
             .addValue("attributes", mapper.writeValueAsString(row.attributes))
             .addValue("notes", row.notes).addValue("visibility", row.visibility)
             .addValue("sourceVisibility", row.sourceVisibility)
@@ -78,7 +76,6 @@ class TemplateRepository(
         investedAmount: BigDecimal?,
         quantity: BigDecimal?,
         unit: String?,
-        storageLocation: String?,
         institutionId: UUID?,
         accountId: UUID?,
         attributes: Map<String, Any?>?,
@@ -92,7 +89,6 @@ class TemplateRepository(
           invested_amount  = coalesce(:amount, invested_amount),
           quantity         = coalesce(:quantity, quantity),
           unit             = coalesce(:unit, unit),
-          storage_location = coalesce(:storage, storage_location),
           institution_id   = coalesce(:institutionId, institution_id),
           account_id       = coalesce(:accountId, account_id),
           attributes       = coalesce(cast(:attributes as jsonb), attributes),
@@ -105,7 +101,7 @@ class TemplateRepository(
             .addValue("id", id).addValue("version", version).addValue("name", name)
             .addValue("title", title).addValue("amount", investedAmount)
             .addValue("quantity", quantity).addValue("unit", unit)
-            .addValue("storage", storageLocation).addValue("institutionId", institutionId)
+            .addValue("institutionId", institutionId)
             .addValue("accountId", accountId)
             .addValue("attributes", attributes?.let { mapper.writeValueAsString(it) })
             .addValue("notes", notes).addValue("visibility", visibility),
@@ -156,7 +152,6 @@ class TemplateRepository(
             currency = rs.getString("currency"),
             quantity = rs.getBigDecimal("quantity"),
             unit = rs.getString("unit"),
-            storageLocation = rs.getString("storage_location"),
             attributes = this.mapper.readValue(rs.getString("attributes")),
             notes = rs.getString("notes"),
             visibility = rs.getString("visibility"),
@@ -196,7 +191,6 @@ data class NewTemplate(
     val currency: String,
     val quantity: BigDecimal?,
     val unit: String?,
-    val storageLocation: String?,
     val attributes: Map<String, Any?>,
     val notes: String?,
     val visibility: String,

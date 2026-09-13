@@ -187,7 +187,7 @@ private fun Unlocked(state: ZkState, controller: ZkController) {
                     .padding(space.x3),
                 verticalArrangement = Arrangement.spacedBy(space.x1),
             ) {
-                Text(field.fieldKey, style = type.caption, color = colors.inkMuted)
+                Text(WhereAndWhoWording.labelFor(field.fieldKey), style = type.caption, color = colors.inkMuted)
                 when (val outcome = field.outcome) {
                     is OpenOutcome.Opened -> Text(
                         // An empty sealed value is a real value, and saying so
@@ -220,7 +220,13 @@ private fun Unlocked(state: ZkState, controller: ZkController) {
                 textStyle = type.body,
             )
         }
-        FieldShell(label = "What to seal", error = state.message) {
+        // Under "who holds the key", the guidance docs/23 asks for: a role, not
+        // a full name, address or phone number, and that Almira cannot read it.
+        FieldShell(
+            label = "What to seal",
+            help = WhereAndWhoWording.helpFor(state.newFieldKey),
+            error = state.message,
+        ) {
             OutlinedTextField(
                 value = state.newValue,
                 onValueChange = controller::onValueChanged,

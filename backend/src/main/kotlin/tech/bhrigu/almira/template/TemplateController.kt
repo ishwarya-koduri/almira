@@ -36,7 +36,8 @@ data class TemplateResponse(
     val currency: String,
     val quantity: BigDecimal?,
     val unit: String?,
-    val storageLocation: String?,
+    /** Retired (V33, docs/20 §1): always absent. Kept because v1 is additive-only. */
+    val storageLocation: String? = null,
     val attributes: Map<String, Any?>,
     val notes: String?,
     val visibility: String,
@@ -53,7 +54,7 @@ private fun TemplateRow.toResponse() = TemplateResponse(
     accountId = accountId, accountLabel = accountLabel,
     title = title, investedAmount = investedAmount,
     investedAmountFormatted = investedAmount?.let { IndianNumbers.rupees(it) },
-    currency = currency, quantity = quantity, unit = unit, storageLocation = storageLocation,
+    currency = currency, quantity = quantity, unit = unit,
     attributes = attributes, notes = notes, visibility = visibility, mine = mine,
     useCount = useCount, version = version,
 )

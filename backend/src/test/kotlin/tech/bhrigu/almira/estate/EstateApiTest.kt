@@ -107,7 +107,7 @@ class EstateApiTest : ApiTestBase() {
     // --- estate documents -----------------------------------------------------
 
     @Test
-    fun `a will records where the original is, who executes it, and who inherits`() {
+    fun `a will records who executes it and who inherits, and where the original is only sealed`() {
         val flat = capture(
             owner, householdId, "property", "Flat, Kakinada", BigDecimal("6000000"),
             visibility = "household", attributes = mapOf("address" to "Kakinada"),
@@ -119,7 +119,6 @@ class EstateApiTest : ApiTestBase() {
                 "kind" to "will",
                 "title" to "Ishwarya's will",
                 "executedOn" to "2024-06-12",
-                "location" to "Home locker, second shelf",
                 "registered" to true,
                 "roles" to listOf(mapOf("role" to "executor", "memberId" to spouseMemberId)),
                 "beneficiaries" to listOf(
@@ -130,9 +129,9 @@ class EstateApiTest : ApiTestBase() {
         assertThat(created.status()).isEqualTo(HttpStatus.CREATED)
 
         val document = created.json()
-        assertThat(document.path("location").asText())
-            .describedAs("a will nobody can find is a will that does not exist")
-            .isEqualTo("Home locker, second shelf")
+        assertThat(document.has("location"))
+            .describedAs("where the original is is a sealed value on the will, never a plain field (docs/20 §1)")
+            .isFalse()
         assertThat(document.path("roles").first().path("name").asText()).isEqualTo("Ravi")
         assertThat(document.path("beneficiaries").first().path("investmentTitle").asText())
             .isEqualTo("Flat, Kakinada")

@@ -185,18 +185,18 @@ class HandoverReadinessApiTest : ApiTestBase() {
     }
 
     @Test
-    fun `an unsealed note is not a location, so the score cannot reach 100`() {
+    fun `without a sealed location the score cannot reach 100, and there is no unsealed note to count`() {
         val id = policy()
         nominee(id)
         scan("investment", id)
-        edit(id, mapOf("storageLocation" to "Steel almirah, second shelf"))
         nameTrusted()
 
         val body = readiness(owner)
         assertThat(body.path("complete").asBoolean()).isFalse()
         assertThat(body.path("score").asInt()).isEqualTo(75)
-        assertThat(gaps(body)).containsExactly(Triple("location", "location_unsealed", id))
-        assertThat(body.toString()).describedAs("the note itself is never echoed").doesNotContain("almirah")
+        // The plaintext note is retired (V33, docs/20 §1): the only gap is the
+        // sealed location, and `location_unsealed` can no longer be said.
+        assertThat(gaps(body)).containsExactly(Triple("location", "no_location", id))
     }
 
     @Test

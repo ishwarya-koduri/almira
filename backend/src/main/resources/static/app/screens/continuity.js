@@ -152,7 +152,6 @@ function handbookCard(handbook, host) {
           [
             entry.institutionName,
             entry.reference,
-            entry.whereItIsKept && `${t("continuity.keptAt")} ${entry.whereItIsKept}`,
             entry.nominees.length ? `${t("continuity.nominee")}: ${entry.nominees.join(", ")}`
               : t("continuity.noNominee"),
           ].filter(Boolean).join(" · "),
@@ -249,8 +248,6 @@ function estateCard(documents, host) {
               onclick: () => openWhere(document, host),
             }, t("where.cardTitle")),
           ),
-          document.location && el("div.caption.muted", {},
-            `${t("estate.location")}: ${document.location}`),
           document.roles.length > 0 && el("div.caption.muted", {},
             `${t("estate.executor")}: ${document.roles.map((r) => r.name).join(", ")}`),
           document.beneficiaries.length > 0 && el("div.caption.muted", {},
@@ -262,25 +259,13 @@ function estateCard(documents, host) {
 
 /**
  * A will's location is the line the family needs most and the line a hostile
- * relative wants most, so it is recorded sealed (docs/20). The old unsealed
- * `location` is shown as a warning with a way to move it across.
+ * relative wants most, so it is recorded sealed, and only sealed (docs/20).
  */
 function openWhere(document, host, onClose) {
-  const modal = sheet({
+  sheet({
     title: document.title,
     onClose,
-    body: whereWhoCard("estate_document", document.id, {
-      legacy: {
-        text: document.location || null,
-        clear: async () => {
-          await api.updateEstateDocument(state.household.id, document.id, {
-            version: document.version, location: "",
-          });
-          modal.close();
-          await continuityScreen(host);
-        },
-      },
-    }),
+    body: whereWhoCard("estate_document", document.id),
   });
 }
 

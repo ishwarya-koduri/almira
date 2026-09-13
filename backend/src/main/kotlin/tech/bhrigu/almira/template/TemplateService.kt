@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.catalog.CatalogService
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.e2e.RetiredPlaintextLocation
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.investment.CreateInvestment
 import tech.bhrigu.almira.investment.CreatedInvestment
@@ -31,6 +32,7 @@ data class CreateTemplate(
     val investedAmount: BigDecimal? = null,
     val quantity: BigDecimal? = null,
     val unit: String? = null,
+    /** Retired (V33, docs/20 §1). Text here is refused; see [RetiredPlaintextLocation]. */
     val storageLocation: String? = null,
     val attributes: Map<String, Any?>? = null,
     val notes: String? = null,
@@ -44,6 +46,7 @@ data class UpdateTemplate(
     val investedAmount: BigDecimal? = null,
     val quantity: BigDecimal? = null,
     val unit: String? = null,
+    /** Retired (V33, docs/20 §1). Text here is refused; see [RetiredPlaintextLocation]. */
     val storageLocation: String? = null,
     val institutionId: UUID? = null,
     val accountId: UUID? = null,
@@ -92,6 +95,7 @@ class TemplateService(
     @Transactional
     fun create(householdId: UUID, input: CreateTemplate): TemplateRow {
         val userId = userContext.require()
+        RetiredPlaintextLocation.refuseIfSent("storageLocation", input.storageLocation)
         val household = households.get(householdId)
         if (input.name.isBlank()) {
             throw ApiException.badRequest("name_required", "Give the template a name you'll recognise.")
@@ -126,8 +130,8 @@ class TemplateService(
                     currency = source?.currency ?: household.baseCurrency,
                     quantity = input.quantity ?: source?.quantity,
                     unit = input.unit ?: source?.unit,
-                    storageLocation = input.storageLocation ?: source?.storageLocation,
-                    attributes = input.attributes ?: source?.attributes ?: emptyMap(),
+                    attributes = RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes)
+                        ?: source?.attributes ?: emptyMap(),
                     notes = input.notes ?: source?.notes,
                     visibility = input.visibility,
                     sourceVisibility = source?.visibility,
@@ -161,6 +165,7 @@ class TemplateService(
 
     @Transactional
     fun update(householdId: UUID, id: UUID, input: UpdateTemplate): TemplateRow {
+        RetiredPlaintextLocation.refuseIfSent("storageLocation", input.storageLocation)
         val current = get(householdId, id)
         input.visibility?.let(::requireVisibility)
 
@@ -168,8 +173,10 @@ class TemplateService(
             repo.update(
                 id = id, version = input.version, name = input.name?.trim(), title = input.title,
                 investedAmount = input.investedAmount, quantity = input.quantity, unit = input.unit,
-                storageLocation = input.storageLocation, institutionId = input.institutionId,
-                accountId = input.accountId, attributes = input.attributes, notes = input.notes,
+                institutionId = input.institutionId,
+                accountId = input.accountId,
+                attributes = RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes),
+                notes = input.notes,
                 visibility = input.visibility,
             )
         } catch (e: DataIntegrityViolationException) {
@@ -227,7 +234,6 @@ class TemplateService(
                 unit = template.unit,
                 startDate = input.startDate,
                 maturityDate = input.maturityDate,
-                storageLocation = template.storageLocation,
                 institutionId = template.institutionId,
                 accountId = template.accountId,
                 attributes = template.attributes + (input.attributes ?: emptyMap()),

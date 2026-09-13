@@ -266,11 +266,9 @@ export function captureForm(type, onSaved, prefill = null) {
   const more = el("div.stack-3", {});
 
   /* --- first-class columns, relabelled by the type ------------------------- */
-  // storage_location is deliberately not one of them. Where the original is
-  // gets recorded sealed, on the saved record (docs/20 §1); this form posts in
-  // plain text, so asking here would put the most damaging sentence in the
-  // database somewhere the server can read it. The API still accepts the
-  // column (v1 is additive-only); this client simply never sends it.
+  // There is no location column any more (V33, docs/20 §1). Where the original
+  // is gets recorded sealed, on the saved record; this form posts in plain
+  // text, so it never asks, and the server refuses the old field if sent.
   const columnOrder = ["invested_amount", "quantity", "start_date", "maturity_date"];
   for (const key of columnOrder) {
     const def = schema.common?.[key];
@@ -279,12 +277,6 @@ export function captureForm(type, onSaved, prefill = null) {
     controls.set(key, control);
     (def.group === "essential" ? essentials : more).append(control.field);
   }
-  if (schema.common?.storage_location) {
-    const def = schema.common.storage_location;
-    (def.group === "essential" ? essentials : more).append(
-      el("p.caption.muted", { "data-sealed-pointer": "storage_location" },
-        t("where.captureNote", { label: def.label })));
-  }
 
   /* --- type-specific attributes -------------------------------------------- */
   for (const def of schema.fields || []) {
@@ -292,6 +284,10 @@ export function captureForm(type, onSaved, prefill = null) {
     controls.set(`attr:${def.key}`, control);
     (def.group === "essential" ? essentials : more).append(control.field);
   }
+  // Every holding can have an original somewhere, so every form says where
+  // that gets recorded — sealed, on the saved record (docs/20 §1).
+  essentials.append(el("p.caption.muted", { "data-sealed-pointer": "original_location" },
+    t("where.captureNote")));
 
   /* --- title, institution, ownership, visibility ---------------------------- */
   const titleInput = textInput({ placeholder: titlePlaceholder(type), "aria-label": "Name" });

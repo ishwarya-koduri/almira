@@ -37,7 +37,8 @@ data class TransmissionGuide(
     /** People this household has recorded for this holding. */
     val contacts: List<TransmissionContact>,
     val nominees: List<String>,
-    val whereItIsKept: String?,
+    /** Retired (V33, docs/20 §1): always absent. Where it is kept is sealed, and the server cannot print it. */
+    val whereItIsKept: String? = null,
     val disclaimer: String = DISCLAIMER,
 )
 
@@ -114,7 +115,6 @@ class TransmissionService(
             typicalDays = playbook.typicalDays,
             contacts = contacts,
             nominees = record.nominees.map { it.name },
-            whereItIsKept = record.storageLocation,
         )
     }
 

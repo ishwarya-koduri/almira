@@ -41,7 +41,6 @@ data class InvestmentRow(
     val costBasisMethod: String,
     val startDate: LocalDate?,
     val maturityDate: LocalDate?,
-    val storageLocation: String?,
     val institutionId: UUID?,
     val institutionName: String?,
     val accountId: UUID?,
@@ -122,7 +121,6 @@ class InvestmentRepository(
         unit: String?,
         startDate: LocalDate?,
         maturityDate: LocalDate?,
-        storageLocation: String?,
         institutionId: UUID?,
         accountId: UUID?,
         attributes: Map<String, Any?>,
@@ -135,11 +133,11 @@ class InvestmentRepository(
             """
             insert into investments
               (id, household_id, type_id, title, invested_amount, currency, quantity, unit,
-               start_date, maturity_date, storage_location, institution_id, account_id,
+               start_date, maturity_date, institution_id, account_id,
                attributes, notes, visibility, is_in_continuity, created_by)
             values
               (:id, :hid, :typeId, :title, :amount, :currency, :quantity, :unit,
-               :startDate, :maturityDate, :storage, :institutionId, :accountId,
+               :startDate, :maturityDate, :institutionId, :accountId,
                cast(:attributes as jsonb), :notes, :visibility, :continuity, :createdBy)
             """.trimIndent(),
             MapSqlParameterSource()
@@ -153,7 +151,6 @@ class InvestmentRepository(
                 .addValue("unit", unit)
                 .addValue("startDate", startDate)
                 .addValue("maturityDate", maturityDate)
-                .addValue("storage", storageLocation)
                 .addValue("institutionId", institutionId)
                 .addValue("accountId", accountId)
                 .addValue("attributes", mapper.writeValueAsString(attributes))
@@ -217,7 +214,6 @@ class InvestmentRepository(
         unit: String?,
         startDate: LocalDate?,
         maturityDate: LocalDate?,
-        storageLocation: String?,
         institutionId: UUID?,
         accountId: UUID?,
         attributes: Map<String, Any?>?,
@@ -233,7 +229,6 @@ class InvestmentRepository(
           unit             = coalesce(:unit, unit),
           start_date       = coalesce(:startDate, start_date),
           maturity_date    = coalesce(:maturityDate, maturity_date),
-          storage_location = coalesce(:storage, storage_location),
           institution_id   = coalesce(:institutionId, institution_id),
           account_id       = coalesce(:accountId, account_id),
           attributes       = coalesce(cast(:attributes as jsonb), attributes),
@@ -251,7 +246,6 @@ class InvestmentRepository(
             .addValue("unit", unit)
             .addValue("startDate", startDate)
             .addValue("maturityDate", maturityDate)
-            .addValue("storage", storageLocation)
             .addValue("institutionId", institutionId)
             .addValue("accountId", accountId)
             .addValue("attributes", attributes?.let { mapper.writeValueAsString(it) })
@@ -543,7 +537,6 @@ class InvestmentRepository(
             costBasisMethod = rs.getString("cost_basis_method") ?: "fifo",
             startDate = rs.getDate("start_date")?.toLocalDate(),
             maturityDate = rs.getDate("maturity_date")?.toLocalDate(),
-            storageLocation = rs.getString("storage_location"),
             institutionId = rs.getObject("institution_id", UUID::class.java),
             institutionName = rs.getString("institution_name"),
             accountId = rs.getObject("account_id", UUID::class.java),

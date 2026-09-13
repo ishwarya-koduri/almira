@@ -168,7 +168,7 @@ api "$ISH" PUT "/api/v1/households/$HID/investments/$POLICY_ID/nominees" \
   '{"nominees":[{"name":"Mohan (brother)","sharePct":100}]}' >/dev/null
 api "$ISH" POST "/api/v1/households/$HID/estate/documents" \
   "{\"memberId\":\"$ISH_MEM\",\"kind\":\"will\",\"title\":\"Ishwarya's will\",
-    \"location\":\"Home locker, second shelf\",\"visibility\":\"household\",
+    \"visibility\":\"household\",
     \"beneficiaries\":[{\"investmentId\":\"$POLICY_ID\",\"memberId\":\"$RAVI_MEM\",\"sharePct\":100}]}" >/dev/null
 
 MISMATCH=$(api "$ISH" GET "/api/v1/households/$HID/estate/mismatches")

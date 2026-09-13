@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.e2e.RetiredPlaintextLocation
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.security.RequestUserContext
 import java.time.LocalDate
@@ -42,6 +43,7 @@ data class CreateEstateDocument(
     val kind: String,
     val title: String,
     val executedOn: LocalDate? = null,
+    /** Retired (V33, docs/20 §1). Text here is refused; see [RetiredPlaintextLocation]. */
     val location: String? = null,
     val registered: Boolean = false,
     val status: String = "executed",
@@ -56,6 +58,7 @@ data class UpdateEstateDocument(
     val version: Int,
     val title: String? = null,
     val executedOn: LocalDate? = null,
+    /** Retired (V33, docs/20 §1). Text here is refused; see [RetiredPlaintextLocation]. */
     val location: String? = null,
     val registered: Boolean? = null,
     val status: String? = null,
@@ -180,6 +183,7 @@ class EstateService(
     @Transactional
     fun createDocument(householdId: UUID, input: CreateEstateDocument): EstateDocumentRow {
         val userId = userContext.require()
+        RetiredPlaintextLocation.refuseIfSent("location", input.location)
         households.get(householdId)
         if (input.title.isBlank()) {
             throw ApiException.badRequest("title_required", "Give it a name — “Ishwarya's will” is fine.")
@@ -196,7 +200,7 @@ class EstateService(
 
         estates.insert(
             id = id, householdId = householdId, memberId = input.memberId, kind = input.kind,
-            title = input.title.trim(), executedOn = input.executedOn, location = input.location,
+            title = input.title.trim(), executedOn = input.executedOn,
             registered = input.registered, status = input.status, notes = input.notes,
             documentId = input.documentId, visibility = input.visibility, createdBy = userId,
         )
@@ -226,13 +230,14 @@ class EstateService(
     @Transactional
     fun updateDocument(householdId: UUID, id: UUID, input: UpdateEstateDocument): EstateDocumentRow {
         val userId = userContext.require()
+        RetiredPlaintextLocation.refuseIfSent("location", input.location)
         val current = getDocument(householdId, id)
         input.visibility?.let(::requireVisibility)
         input.status?.let(::requireStatus)
 
         val updated = estates.update(
             id = id, version = input.version, title = input.title?.trim(),
-            executedOn = input.executedOn, location = input.location, registered = input.registered,
+            executedOn = input.executedOn, registered = input.registered,
             status = input.status, notes = input.notes, documentId = input.documentId,
             visibility = input.visibility,
         )

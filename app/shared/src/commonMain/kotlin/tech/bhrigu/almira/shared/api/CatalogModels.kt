@@ -119,7 +119,6 @@ data class CreateInvestmentBody(
     val quantity: String? = null,
     val startDate: String? = null,
     val maturityDate: String? = null,
-    val storageLocation: String? = null,
     val institutionId: String? = null,
     val notes: String? = null,
     val visibility: String? = null,

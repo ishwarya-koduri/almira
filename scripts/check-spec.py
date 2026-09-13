@@ -130,9 +130,8 @@ def main() -> None:
     want("docs/20 says search is client-side and the web client does not send the query anywhere",
          "no server-side search" in doc20.lower() and "api.search" not in code_only(where_web))
 
-    # docs/20 §1: no plaintext fallback. The two older columns stay in the v1
-    # API, but the web client's own forms must not ask for them, or new records
-    # keep writing the sentence where the server can read it.
+    # docs/20 §1: no plaintext fallback. The capture form and the new-will form
+    # must not ask; the rest of "nothing can write it" is check_plaintext_location_retired.
     capture_web = code_only(read("backend/src/main/resources/static/app/screens/capture.js"))
     column_order = re.search(r"columnOrder\s*=\s*\[(.*?)\]", capture_web, flags=re.S)
     want("the capture form does not ask for storage_location in plain text",
@@ -142,9 +141,6 @@ def main() -> None:
     create_estate = re.search(r"api\.createEstateDocument\((.*?)\}\);", continuity_web, flags=re.S)
     want("the new-estate-document form does not post location in plain text",
          create_estate is not None and not re.search(r"\blocation\s*:", create_estate.group(1)))
-    want("the seal-and-clear button asks where-legacy.js whether clearing is safe",
-         "legacyMoveAction(" in code_only(where_web)
-         and "export function legacyMoveAction" in read("backend/src/main/resources/static/app/where-legacy.js"))
 
     # docs/api/README.md: a delayed code still opens the code step, a refused
     # channel switches to the one the server named, and the three ways of not
@@ -218,6 +214,9 @@ def main() -> None:
     want("the doc says AES-GCM on iOS is injected from Swift",
          "injected from" in doc and "CryptoKit is Swift-only" in doc)
 
+    check_plaintext_location_retired()
+    check_privacy_notice()
+
     print()
     print(f"{CHECKS} checks")
     if FAILURES:
@@ -226,6 +225,133 @@ def main() -> None:
             print(f"  · {failure}")
         sys.exit(1)
     print("docs/12 and the code agree.")
+
+
+# ---------------------------------------------------------------------------
+# docs/20 §1 and V33: the plaintext location is retired. No SQL, Kotlin or JS
+# may read or write it again — not the three columns, not a type or attribute
+# that asks for it, not a server copy into a duplicate or a template, not a
+# handbook or guide that prints it, not a client that sends it.
+# ---------------------------------------------------------------------------
+
+RETIRED_ALLOWED_KOTLIN = {
+    # The v1 schema keeps the request and response fields (additive-only). A
+    # request field exists to be refused; a response field is always absent.
+    "val storageLocation: String? = null,",
+    "val location: String? = null,",
+    "val whereItIsKept: String? = null,",
+    'RetiredPlaintextLocation.refuseIfSent("storageLocation", body.storageLocation)',
+    'RetiredPlaintextLocation.refuseIfSent("storageLocation", input.storageLocation)',
+    'RetiredPlaintextLocation.refuseIfSent("location", input.location)',
+}
+
+
+def sql_only(source: str) -> str:
+    return "\n".join(line.split("--", 1)[0] for line in source.splitlines())
+
+
+def migration_version(path: Path) -> int:
+    match = re.match(r"V(\d+)__", path.name)
+    return int(match.group(1)) if match else 0
+
+
+def check_plaintext_location_retired() -> None:
+    print()
+    print("RETIRED — the plaintext location (docs/20 §1, V33)")
+
+    migration = sql_only(read("db/migrations/V33__retire_plaintext_locations.sql"))
+    want("V33 refuses, and changes nothing, while any plaintext location is non-empty",
+         "raise exception" in migration
+         and "length(storage_location) > 0" in migration
+         and "length(location) > 0" in migration
+         and "row_security_active" in migration
+         and migration.index("raise exception") < migration.index("drop column"))
+    want("V33 drops the three columns and takes the field out of every type",
+         all(f"alter table {table} drop column {column};" in re.sub(r"\s+", " ", migration)
+             for table, column in (("investments", "storage_location"),
+                                   ("investment_templates", "storage_location"),
+                                   ("estate_documents", "location")))
+         and "#- '{common,storage_location}'" in migration)
+
+    offenders: list[str] = []
+
+    # Later migrations: nothing may bring a column or a schema entry back.
+    for path in sorted((ROOT / "db/migrations").glob("V*.sql")):
+        if migration_version(path) <= 33:
+            continue
+        body = sql_only(path.read_text())
+        if "storage_location" in body or re.search(r"\badd\s+column\s+(if\s+not\s+exists\s+)?location\b", body, re.I):
+            offenders.append(f"db/migrations/{path.name}")
+
+    # The server.
+    estate_like = ("/estate/", "HandbookService.kt", "TransmissionService.kt")
+    for path in sorted((ROOT / "backend/src/main/kotlin").rglob("*.kt")):
+        relative = str(path.relative_to(ROOT))
+        for number, line in enumerate(code_only(path.read_text()).splitlines(), 1):
+            stripped = line.strip()
+            if stripped in RETIRED_ALLOWED_KOTLIN:
+                continue
+            if path.name == "RetiredPlaintextLocation.kt" and stripped == 'const val ATTRIBUTE_KEY = "storage_location"':
+                continue
+            if ("storage_location" in stripped or "storageLocation" in stripped or "whereItIsKept" in stripped
+                    or re.search(r"(?<![\w.])[a-z]{1,3}\.location\b", stripped)
+                    or (any(part in relative for part in estate_like) and re.search(r"\blocation\b", stripped))):
+                offenders.append(f"{relative}: {stripped}")
+
+    # The web client and the native app.
+    for root in ("backend/src/main/resources/static", "app/shared/src/commonMain"):
+        for path in sorted((ROOT / root).rglob("*")):
+            if path.suffix not in (".js", ".kt"):
+                continue
+            relative = str(path.relative_to(ROOT))
+            for line in code_only(path.read_text()).splitlines():
+                stripped = line.strip()
+                # Quoted text is a message key or a label ("where.location"), not a
+                # field; template literals are kept, because they print values.
+                unquoted = re.sub(r'"(?:[^"\\]|\\.)*"', '""', stripped)
+                if ("storage_location" in stripped or "storageLocation" in stripped
+                        or "whereItIsKept" in stripped
+                        or (path.suffix == ".js" and re.search(r"\.location\b(?!\.)|\blocation\s*:", unquoted)
+                            and "self.location" not in unquoted)):
+                    offenders.append(f"{relative}: {stripped}")
+
+    # Scripts that post fixtures through the API.
+    for path in sorted((ROOT / "scripts").glob("*.sh")):
+        body = path.read_text()
+        if "storageLocation" in body or re.search(r'\\"location\\"\s*:', body):
+            offenders.append(f"scripts/{path.name}")
+
+    want("no SQL, Kotlin, JS or fixture reads or writes a plaintext location",
+         not offenders, "; ".join(offenders[:8]))
+
+    web_where = code_only(read("backend/src/main/resources/static/app/where.js"))
+    want("the web editor gives both sealed lines their guidance",
+         't("where.keyHolderHelp")' in web_where and 't("where.locationHelp")' in web_where)
+
+
+def check_privacy_notice() -> None:
+    print()
+    print("PRIVACY NOTICE — the key holder paragraph (docs/23)")
+    notice_doc = read("docs/23-privacy-notice.md")
+    i18n_web = read("backend/src/main/resources/static/app/i18n.js")
+    for key in ("where.keyHolderHelp", "where.locationHelp", "privacy.keyHolder.body",
+                "privacy.keyHolder.sealed", "privacy.keyHolder.guidance", "privacy.keyHolder.pending",
+                "privacy.status"):
+        want(f"{key} is written in English, Telugu and Hindi", i18n_web.count(f'"{key}":') == 3,
+             f"found {i18n_web.count(chr(34) + key + chr(34) + ':')}")
+    english = i18n_web[:i18n_web.index("  te: {")]
+    for word in ("“Amma”", "“the CA”", "end-to-end encrypted"):
+        want(f"the English key-holder guidance says {word}", word.lower() in english.lower())
+    want("docs/23 says legal review of a key holder's consent is pending, without a conclusion",
+         "legal review" in notice_doc and "pending" in notice_doc and "“Amma”" in notice_doc)
+    native_wording = read("app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/zk/WhereAndWhoWording.kt")
+    want("the native app shows the same key-holder guidance under the sealed field",
+         "WhereAndWhoWording.helpFor(state.newFieldKey)"
+         in code_only(read("app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/zk/ZkScreen.kt"))
+         and all(word in native_wording for word in ("“Amma”", "“the CA”", "End-to-end encrypted")))
+    want("the notice is reachable from Settings and from onboarding",
+         "privacyLink()" in code_only(read("backend/src/main/resources/static/app/screens/settings.js"))
+         and "privacyLink()" in code_only(read("backend/src/main/resources/static/app/screens/onboarding.js")))
 
 
 if __name__ == "__main__":

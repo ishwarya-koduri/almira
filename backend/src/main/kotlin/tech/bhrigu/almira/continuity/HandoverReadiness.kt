@@ -221,7 +221,6 @@ class HandoverReadinessService(
                 hasNominee = rs.getBoolean("has_nominee"),
                 hasDocument = rs.getBoolean("has_document"),
                 hasSealedLocation = rs.getBoolean("has_sealed_location"),
-                hasUnsealedNote = rs.getBoolean("has_unsealed_note"),
             )
         }
         val instruments = jdbc.query(ESTATE_DOCUMENTS, params) { rs, _ ->
@@ -234,7 +233,6 @@ class HandoverReadinessService(
                 hasNominee = false,
                 hasDocument = rs.getBoolean("has_document"),
                 hasSealedLocation = rs.getBoolean("has_sealed_location"),
-                hasUnsealedNote = rs.getBoolean("has_unsealed_note"),
             )
         }
 
@@ -264,13 +262,10 @@ class HandoverReadinessService(
             }
             if (row.applies.location) {
                 location = location.first + (if (row.hasSealedLocation) 1 else 0) to location.second + 1
-                when {
-                    row.hasSealedLocation -> sealedLocationCounted = true
-                    // The unsealed note is the sentence docs/20 is retiring. It
-                    // does not count, and the fix is one tap on the same card.
-                    row.hasUnsealedNote ->
-                        gaps += row.gap(HandoverChecks.LOCATION, "location_unsealed", FIX_LOCATION_UNSEALED)
-                    else -> gaps += row.gap(HandoverChecks.LOCATION, "no_location", FIX_LOCATION)
+                if (row.hasSealedLocation) {
+                    sealedLocationCounted = true
+                } else {
+                    gaps += row.gap(HandoverChecks.LOCATION, "no_location", FIX_LOCATION)
                 }
             }
         }
@@ -373,7 +368,6 @@ class HandoverReadinessService(
         val hasNominee: Boolean,
         val hasDocument: Boolean,
         val hasSealedLocation: Boolean,
-        val hasUnsealedNote: Boolean,
     ) {
         fun gap(check: String, reason: String, fix: String) =
             ReadinessGap(check, reason, recordType, recordId, title, fix)
@@ -390,8 +384,7 @@ class HandoverReadinessService(
                            where dl.entity_type = 'investment' and dl.entity_id = i.id) as has_document,
                    exists (select 1 from sealed_values sv
                            where sv.household_id = i.household_id and sv.record_type = 'investment'
-                             and sv.record_id = i.id and sv.field_key = :fieldKey) as has_sealed_location,
-                   coalesce(btrim(i.storage_location), '') <> '' as has_unsealed_note
+                             and sv.record_id = i.id and sv.field_key = :fieldKey) as has_sealed_location
             from investments i
             join investment_types t on t.id = i.type_id
             join asset_categories c on c.id = t.category_id
@@ -412,8 +405,7 @@ class HandoverReadinessService(
                               where dl.entity_type = 'estate' and dl.entity_id = e.id) as has_document,
                    exists (select 1 from sealed_values sv
                            where sv.household_id = e.household_id and sv.record_type = 'estate_document'
-                             and sv.record_id = e.id and sv.field_key = :fieldKey) as has_sealed_location,
-                   coalesce(btrim(e.location), '') <> '' as has_unsealed_note
+                             and sv.record_id = e.id and sv.field_key = :fieldKey) as has_sealed_location
             from estate_documents e
             where e.household_id = :hid
               and e.deleted_at is null
@@ -436,8 +428,6 @@ class HandoverReadinessService(
             "Record who the institution pays. A nominee is not the same as who inherits it."
         const val FIX_DOCUMENT = "Attach a scan, so nobody has to hunt for the paper."
         const val FIX_LOCATION = "Say where the original is. It is sealed with your passphrase."
-        const val FIX_LOCATION_UNSEALED =
-            "Where it is is written in an unsealed note. Seal it on the record, so only you can read it."
         const val FIX_TRUSTED =
             "Name someone who can ask to see what's marked for the family if you can't be reached."
         const val FIX_TRUSTED_CANNOT_ASK =

@@ -8,6 +8,7 @@ import { state, update } from "../state.js";
 import { reload, redraw } from "../app.js";
 import { t, language, LANGUAGES } from "../i18n.js";
 import { e2e, enable as enableE2e, unlock as unlockE2e } from "../e2e.js";
+import { privacyLink } from "../privacy.js";
 
 export async function settingsScreen(host) {
   // Settings is a stack of independent things, and it used to be an
@@ -23,6 +24,7 @@ export async function settingsScreen(host) {
     safely(() => connectCard(host)),
     safely(() => trashCard()),
     safely(() => sessionsCard()),
+    safely(() => privacyCard()),
     safely(() => aboutCard()),
   ]);
 
@@ -399,6 +401,14 @@ async function sessionsCard() {
         onclick: async () => { await api.signOut(); location.reload(); },
       }, "Sign out here"),
     ),
+  );
+}
+
+function privacyCard() {
+  return el("div.card.stack-3", {},
+    el("h4", {}, t("privacy.title")),
+    el("p.caption.muted", { style: { margin: 0 } }, t("privacy.summary")),
+    el("div.row", {}, privacyLink()),
   );
 }
 

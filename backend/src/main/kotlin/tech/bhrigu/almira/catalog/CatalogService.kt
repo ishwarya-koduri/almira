@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.e2e.RetiredPlaintextLocation
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.security.RequestUserContext
 import java.util.Locale
@@ -123,6 +124,16 @@ class CatalogService(
                 "field_key_invalid",
                 "“${field.key}” can't be used as a field name — use lowercase letters, " +
                     "numbers and underscores.",
+            )
+        }
+        if (field.key == RetiredPlaintextLocation.ATTRIBUTE_KEY) {
+            // The retired column, back under its own name as a custom field,
+            // would be the same plaintext sentence (V33, docs/20 §1).
+            throw ApiException.badRequest(
+                RetiredPlaintextLocation.CODE,
+                "Where it is kept is recorded sealed, on the record's “Where the original is” " +
+                    "card, so it can't be a field. Choose another name for this one.",
+                mapOf("field" to "key"),
             )
         }
         if (DataType.from(field.dataType) == null) {

@@ -64,7 +64,6 @@ export async function openDetail(id, onChanged) {
       record.quantity && row("Quantity", `${record.quantity} ${record.unit || ""}`.trim()),
       record.startDate && row(schema.common?.start_date?.label || "Started", formatDate(record.startDate)),
       record.maturityDate && row(schema.common?.maturity_date?.label || "Matures", formatDate(record.maturityDate)),
-      record.storageLocation && row(schema.common?.storage_location?.label || "Kept at", record.storageLocation),
       ...attributeRows(record, schema),
       row("Added", formatDate(record.createdAt)),
       row("Last confirmed", record.lastVerifiedAt ? formatDate(record.lastVerifiedAt) : "Never"),
@@ -72,18 +71,8 @@ export async function openDetail(id, onChanged) {
 
     returnsCard(),
     nomineeCard(),
-    // Sealed, and separate from the "Kept at" note above, which is not (docs/20 §1).
-    whereWhoCard("investment", id, {
-      legacy: {
-        text: record.storageLocation || null,
-        clear: async () => {
-          record = await api.updateInvestment(state.household.id, id, {
-            version: record.version, storageLocation: "",
-          });
-          draw();
-        },
-      },
-    }),
+    // The only place where the original is gets recorded: sealed (docs/20 §1).
+    whereWhoCard("investment", id),
 
     el("div.row.wrap", { style: { gap: "8px" } },
       el("button.btn", { type: "button", onclick: () => duplicate() }, "Duplicate"),

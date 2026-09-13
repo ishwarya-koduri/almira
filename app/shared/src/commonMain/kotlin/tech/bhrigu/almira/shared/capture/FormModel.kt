@@ -69,13 +69,17 @@ data class FormField(
  *
  * These are fixed by the database, not by the schema — the schema only supplies
  * the wording ("Principal", "Amount paid") and whether the field is essential.
+ *
+ * "Where it's kept" is not one of them. That column is retired (V33, docs/20
+ * §1): where the original is gets recorded sealed, and the server refuses the
+ * old plain-text field. A schema from an older server that still names it is
+ * simply not rendered, because anything not listed here is skipped.
  */
 private val COLUMN_KINDS: Map<String, FieldKind> = mapOf(
     "invested_amount" to FieldKind.Money,
     "quantity" to FieldKind.Number,
     "start_date" to FieldKind.Date,
     "maturity_date" to FieldKind.Date,
-    "storage_location" to FieldKind.Text,
 )
 
 /**
@@ -179,7 +183,6 @@ fun buildCreateBody(
         quantity = columns["quantity"],
         startDate = columns["start_date"],
         maturityDate = columns["maturity_date"],
-        storageLocation = columns["storage_location"],
         institutionId = institutionId,
         notes = notes?.trim()?.takeIf { it.isNotEmpty() },
         visibility = visibility,

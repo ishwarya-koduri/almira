@@ -37,7 +37,6 @@ data class EstateDocumentRow(
     val kind: String,
     val title: String,
     val executedOn: LocalDate?,
-    val location: String?,
     val registered: Boolean,
     val status: String,
     val notes: String?,
@@ -66,7 +65,6 @@ class EstateRepository(private val jdbc: NamedParameterJdbcTemplate) {
         kind: String,
         title: String,
         executedOn: LocalDate?,
-        location: String?,
         registered: Boolean,
         status: String,
         notes: String?,
@@ -76,15 +74,15 @@ class EstateRepository(private val jdbc: NamedParameterJdbcTemplate) {
     ) = jdbc.update(
         """
         insert into estate_documents (id, household_id, member_id, kind, title, executed_on,
-                                      location, registered, status, notes, document_id,
+                                      registered, status, notes, document_id,
                                       visibility, created_by)
-        values (:id, :hid, :memberId, :kind, :title, :executedOn, :location, :registered,
+        values (:id, :hid, :memberId, :kind, :title, :executedOn, :registered,
                 :status, :notes, :documentId, :visibility, :createdBy)
         """.trimIndent(),
         MapSqlParameterSource()
             .addValue("id", id).addValue("hid", householdId).addValue("memberId", memberId)
             .addValue("kind", kind).addValue("title", title).addValue("executedOn", executedOn)
-            .addValue("location", location).addValue("registered", registered)
+            .addValue("registered", registered)
             .addValue("status", status).addValue("notes", notes).addValue("documentId", documentId)
             .addValue("visibility", visibility).addValue("createdBy", createdBy),
     )
@@ -94,7 +92,6 @@ class EstateRepository(private val jdbc: NamedParameterJdbcTemplate) {
         version: Int,
         title: String?,
         executedOn: LocalDate?,
-        location: String?,
         registered: Boolean?,
         status: String?,
         notes: String?,
@@ -105,7 +102,6 @@ class EstateRepository(private val jdbc: NamedParameterJdbcTemplate) {
         update estate_documents set
           title       = coalesce(:title, title),
           executed_on = coalesce(:executedOn, executed_on),
-          location    = coalesce(:location, location),
           registered  = coalesce(:registered, registered),
           status      = coalesce(:status, status),
           notes       = coalesce(:notes, notes),
@@ -116,7 +112,7 @@ class EstateRepository(private val jdbc: NamedParameterJdbcTemplate) {
         """.trimIndent(),
         MapSqlParameterSource()
             .addValue("id", id).addValue("version", version).addValue("title", title)
-            .addValue("executedOn", executedOn).addValue("location", location)
+            .addValue("executedOn", executedOn)
             .addValue("registered", registered).addValue("status", status)
             .addValue("notes", notes).addValue("documentId", documentId)
             .addValue("visibility", visibility),
@@ -266,7 +262,6 @@ class EstateRepository(private val jdbc: NamedParameterJdbcTemplate) {
             kind = rs.getString("kind"),
             title = rs.getString("title"),
             executedOn = rs.getDate("executed_on")?.toLocalDate(),
-            location = rs.getString("location"),
             registered = rs.getBoolean("registered"),
             status = rs.getString("status"),
             notes = rs.getString("notes"),

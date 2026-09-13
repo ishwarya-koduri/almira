@@ -28,7 +28,6 @@ import { el, mount, sheet, field, textInput, withBusy, toast, skeletonRows } fro
 import { state } from "./state.js";
 import { t, language } from "./i18n.js";
 import { e2e, unlock as unlockE2e, sealField, unsealField, openSealedValue } from "./e2e.js";
-import { legacyMoveAction } from "./where-legacy.js";
 
 /** The contract with every other client, and with the server's index. */
 export const FIELD = {
@@ -112,11 +111,10 @@ function unlockForm(onUnlocked) {
    ----------------------------------------------------------------------------- */
 
 /**
- * @param legacy  an unsealed "kept at" note the record already carries, if any,
- *                and how to clear it — see docs/20 §1. Shown as a warning, with
- *                a way to move it into the sealed field.
+ * There is no unsealed note to warn about or move any more: the plaintext
+ * columns are gone (V33, docs/20 §1), and the server refuses them if sent.
  */
-export function whereWhoCard(recordType, recordId, { legacy } = {}) {
+export function whereWhoCard(recordType, recordId) {
   const host = el("div.card.card-tight.stack-2", {},
     el("div.overline", {}, t("where.cardTitle")),
     el("div.skeleton", { style: { height: "40px" } }),
@@ -143,34 +141,9 @@ export function whereWhoCard(recordType, recordId, { legacy } = {}) {
       el("span", { style: { textAlign: "right" } }, slotText(opened.opened[slot]) || t("where.notRecorded")),
     ));
 
-    const canEdit = status.enabled && e2e.isUnlocked;
-    // Only when this person can still read a location once the note is gone:
-    // see where-legacy.js. A co-owner's seal or one that won't open keeps the
-    // note, because clearing it would seal nothing and lose the only copy.
-    const moveAction = canEdit ? legacyMoveAction(opened.opened.originalLocation.state) : null;
     mount(host,
       el("div.overline", {}, t("where.cardTitle")),
       ...rows,
-      legacy?.text && el("div.banner", {},
-        el("p", {}, t("where.legacy", { text: legacy.text })),
-        canEdit && !moveAction && el("p.caption", {}, t("where.legacyKept")),
-        moveAction && legacy.clear && el("button.btn.btn-sm", {
-          type: "button",
-          onclick: (event) => withBusy(event.currentTarget, async () => {
-            // Never over a location already sealed: that one is the person's
-            // later word, and the unsealed note is the thing being retired.
-            // sealField throws on refusal (a 409 if someone sealed it
-            // meanwhile), so the note is never cleared after a failed seal.
-            if (moveAction === "seal-then-clear") {
-              await sealField(state.household.id, recordType, recordId, FIELD.originalLocation, legacy.text);
-            }
-            await legacy.clear();
-            legacy.text = null;
-            toast(t("where.legacyMoved"));
-            await draw();
-          }),
-        }, t("where.legacyMove")),
-      ),
       !status.enabled
         ? el("p.caption.muted", {}, t("where.needsPassphrase"))
         : !e2e.isUnlocked
@@ -250,7 +223,7 @@ export async function openEditor(record, onSaved) {
     body: el("div.stack-3", {},
       el("p.caption.muted", {}, t("where.editorIntro")),
       field({ label: t("where.location"), control: location,
-        help: theirs("originalLocation") ? t("where.theirs") : "" }),
+        help: theirs("originalLocation") ? t("where.theirs") : t("where.locationHelp") }),
       field({ label: t("where.keyHolder"), control: holder,
         help: theirs("keyHolder") ? t("where.theirs") : t("where.keyHolderHelp") }),
       people,

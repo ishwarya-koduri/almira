@@ -15,7 +15,7 @@ end to end on both platforms as a thin slice.
 
 | | |
 |---|---|
-| **API** | Frozen at v1. 109 paths, 152 operations, 164 schemas, in [`docs/api/openapi-v1.json`](api/openapi-v1.json). Additive-only, enforced by a contract test that fails the build. |
+| **API** | Frozen at v1. 120 paths, 163 operations, 179 schemas, in [`docs/api/openapi-v1.json`](api/openapi-v1.json). Additive-only, enforced by a contract test that fails the build. |
 | **Web client** | Framework-free ES modules, installable as a PWA, English/Telugu/Hindi. It exercises every flow the native app will need. |
 | **Privacy** | Per-record visibility enforced in PostgreSQL, with the application connecting as a role that cannot bypass it. |
 | **Tests** | 375 unit and full-stack, 59 SQL privacy assertions, 151 end-to-end checks over real HTTP. |

@@ -227,8 +227,14 @@ class StillTrueController(private val service: StillTrueService) {
         @PathVariable recordId: UUID,
     ): StillTrueItem = service.confirm(householdId, recordType, recordId)
 
+    /**
+     * Not `snooze`: springdoc names operations after the handler, and
+     * ReminderController's `snooze` was frozen in v1 as that operationId. A
+     * second `snooze` renamed the reminder's to `snooze_1`, which is a method
+     * rename in every generated client.
+     */
     @PostMapping("/{recordType}/{recordId}/snooze")
-    fun snooze(
+    fun snoozeStillTrue(
         @PathVariable householdId: UUID,
         @PathVariable recordType: String,
         @PathVariable recordId: UUID,

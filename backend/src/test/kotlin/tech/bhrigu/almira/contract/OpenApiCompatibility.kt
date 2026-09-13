@@ -25,6 +25,11 @@ import com.fasterxml.jackson.databind.JsonNode
  *     · changing a property's type or format
  *     · removing an enum value the client may still send or receive
  *     · adding a required query parameter
+ *     · changing an operation's operationId — "generate a typed client from
+ *       it" makes that id a method name, so a rename is a compile error in
+ *       every client regenerated against the new file. springdoc derives it
+ *       from the Kotlin function name and suffixes collisions (`snooze_1`), so
+ *       a new endpoint whose handler shares a name can rename an old one.
  */
 object OpenApiCompatibility {
 
@@ -57,6 +62,14 @@ object OpenApiCompatibility {
                 if (operation.isMissingNode) {
                     out += Breakage("${method.uppercase()} $path", "the operation is gone")
                     return@forEach
+                }
+                val wasId = basePaths.path(path).path(method).path("operationId").asText("")
+                val nowId = operation.path("operationId").asText("")
+                if (wasId.isNotEmpty() && wasId != nowId) {
+                    out += Breakage(
+                        "${method.uppercase()} $path",
+                        "operationId changed: $wasId -> $nowId (a generated client's method name)",
+                    )
                 }
                 checkParameters(
                     "${method.uppercase()} $path",

@@ -87,7 +87,7 @@ class OpenApiContractTest : ApiTestBase() {
     /**
      * Guards the guard. If the comparison always returned "compatible" — an
      * empty baseline, a silent parse failure, a rule that never fires — the test
-     * above would pass for ever while the contract rotted. These are the four
+     * above would pass for ever while the contract rotted. These are the five
      * changes it must never miss.
      */
     @Test
@@ -123,6 +123,15 @@ class OpenApiContractTest : ApiTestBase() {
         }
         assertThat(OpenApiCompatibility.check(baseline, newlyRequired))
             .describedAs("a request field that became required").isNotEmpty()
+
+        val renamedOperation = baseline.deepCopy().apply {
+            val snooze = get("paths").get("/api/v1/households/{householdId}/reminders/{id}/snooze")
+                .get("post") as ObjectNode
+            snooze.put("operationId", "snooze_1")
+        }
+        assertThat(OpenApiCompatibility.check(baseline, renamedOperation))
+            .describedAs("an operationId that changed, which renames a generated client's method")
+            .isNotEmpty()
     }
 
     /** Additive changes are the whole point of the rule — they must pass. */

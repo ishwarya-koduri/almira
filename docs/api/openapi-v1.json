@@ -704,6 +704,12 @@
             "format": "int32",
             "type": "integer"
           },
+          "scoreEarned": {
+            "type": "boolean"
+          },
+          "scoreExplanation": {
+            "type": "string"
+          },
           "scoreLabel": {
             "type": "string"
           }
@@ -713,6 +719,7 @@
           "note",
           "recordCount",
           "score",
+          "scoreEarned",
           "scoreLabel"
         ],
         "type": "object"
@@ -2066,6 +2073,41 @@
         ],
         "type": "object"
       },
+      "EmailOtpRequestBody": {
+        "properties": {
+          "email": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "EmailOtpVerifyBody": {
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{4,8}$",
+            "type": "string"
+          },
+          "deviceName": {
+            "type": "string"
+          },
+          "email": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "email"
+        ],
+        "type": "object"
+      },
       "EmergencyRequestRow": {
         "properties": {
           "accessExpiresAt": {
@@ -2823,6 +2865,63 @@
         ],
         "type": "object"
       },
+      "HandoverReadiness": {
+        "properties": {
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ReadinessCheck"
+            },
+            "type": "array"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/ReadinessGap"
+            },
+            "type": "array"
+          },
+          "leftOut": {
+            "items": {
+              "$ref": "#/components/schemas/LeftOutRecord"
+            },
+            "type": "array"
+          },
+          "leftOutCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "recordCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "score": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "scoreExplanation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "caveats",
+          "checks",
+          "complete",
+          "gaps",
+          "leftOut",
+          "leftOutCount",
+          "recordCount",
+          "scoreExplanation"
+        ],
+        "type": "object"
+      },
       "HolderInput": {
         "properties": {
           "holderType": {
@@ -3325,6 +3424,26 @@
         ],
         "type": "object"
       },
+      "LeftOutRecord": {
+        "properties": {
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "recordId",
+          "recordType",
+          "title"
+        ],
+        "type": "object"
+      },
       "LiabilityHolderResponse": {
         "properties": {
           "holderType": {
@@ -3778,6 +3897,9 @@
       },
       "OtpChallengeResponse": {
         "properties": {
+          "channel": {
+            "type": "string"
+          },
           "developmentCode": {
             "type": "string"
           },
@@ -3797,6 +3919,31 @@
           "expiresInSeconds",
           "requestId",
           "resendAfterSeconds"
+        ],
+        "type": "object"
+      },
+      "OtpDeliveryResponse": {
+        "properties": {
+          "failure": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "resendAfterSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "status"
         ],
         "type": "object"
       },
@@ -3832,6 +3979,53 @@
         "required": [
           "code",
           "phone"
+        ],
+        "type": "object"
+      },
+      "OutboundMessageResponse": {
+        "properties": {
+          "attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "failure": {
+            "type": "string"
+          },
+          "failureMessage": {
+            "type": "string"
+          },
+          "householdId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempts",
+          "channel",
+          "createdAt",
+          "id",
+          "status",
+          "template"
         ],
         "type": "object"
       },
@@ -3985,7 +4179,8 @@
             "enum": [
               "OFF",
               "SANDBOX",
-              "LIVE"
+              "LIVE",
+              "DISABLED"
             ],
             "type": "string"
           },
@@ -4036,6 +4231,64 @@
           "quote",
           "rate",
           "source"
+        ],
+        "type": "object"
+      },
+      "ReadinessCheck": {
+        "properties": {
+          "applicable": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "code": {
+            "type": "string"
+          },
+          "done": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          },
+          "percent": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "applicable",
+          "code",
+          "done",
+          "label"
+        ],
+        "type": "object"
+      },
+      "ReadinessGap": {
+        "properties": {
+          "check": {
+            "type": "string"
+          },
+          "fix": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "check",
+          "fix",
+          "reason"
         ],
         "type": "object"
       },
@@ -4594,6 +4847,20 @@
         ],
         "type": "object"
       },
+      "SignInChannelsResponse": {
+        "properties": {
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "channels"
+        ],
+        "type": "object"
+      },
       "SnoozeBody": {
         "properties": {
           "until": {
@@ -4634,6 +4901,83 @@
         },
         "required": [
           "code"
+        ],
+        "type": "object"
+      },
+      "StillTrueItem": {
+        "properties": {
+          "dueOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "isDue": {
+            "type": "boolean"
+          },
+          "keyDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "lastConfirmedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "periodMonths": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "snoozedUntil": {
+            "format": "date",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dueOn",
+          "isDue",
+          "lastConfirmedAt",
+          "periodMonths",
+          "reason",
+          "recordId",
+          "recordType",
+          "title"
+        ],
+        "type": "object"
+      },
+      "StillTrueList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StillTrueItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "StillTrueSnoozeBody": {
+        "properties": {
+          "until": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "until"
         ],
         "type": "object"
       },
@@ -5752,6 +6096,9 @@
           "reply": {
             "type": "string"
           },
+          "replyFailure": {
+            "type": "string"
+          },
           "understood": {
             "type": "boolean"
           }
@@ -5760,6 +6107,85 @@
           "fields",
           "reply",
           "understood"
+        ],
+        "type": "object"
+      },
+      "WhereAndWhoIndex": {
+        "properties": {
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fieldKeys": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/WhereAndWhoRecord"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "caveats",
+          "fieldKeys",
+          "records"
+        ],
+        "type": "object"
+      },
+      "WhereAndWhoRecord": {
+        "properties": {
+          "keyHolder": {
+            "$ref": "#/components/schemas/WhereAndWhoValue"
+          },
+          "originalLocation": {
+            "$ref": "#/components/schemas/WhereAndWhoValue"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "recordId",
+          "recordType",
+          "title"
+        ],
+        "type": "object"
+      },
+      "WhereAndWhoValue": {
+        "properties": {
+          "ciphertext": {
+            "type": "string"
+          },
+          "keyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sealedByMe": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ciphertext",
+          "keyVersion",
+          "sealedByMe",
+          "updatedAt"
         ],
         "type": "object"
       }
@@ -5789,6 +6215,116 @@
         "operationId": "logout",
         "responses": {
           "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/otp/channels": {
+      "get": {
+        "operationId": "signInChannels",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInChannelsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/otp/email/delivery/{requestId}": {
+      "get": {
+        "operationId": "emailDelivery",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/OtpDeliveryResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/otp/email/request": {
+      "post": {
+        "operationId": "requestEmailOtp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailOtpRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/OtpChallengeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/otp/email/verify": {
+      "post": {
+        "operationId": "verifyEmailOtp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailOtpVerifyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
             "description": "OK"
           }
         },
@@ -6663,6 +7199,40 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/connect/digilocker/documents": {
+      "get": {
+        "operationId": "digiLockerDocuments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VaultDocument"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "connect-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/connect/digilocker/import": {
       "post": {
         "operationId": "importDocuments",
@@ -7193,6 +7763,37 @@
         },
         "tags": [
           "continuity-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/continuity/readiness": {
+      "get": {
+        "operationId": "readiness",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoverReadiness"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "handover-readiness-controller"
         ]
       }
     },
@@ -11352,6 +11953,143 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/still-true": {
+      "get": {
+        "operationId": "due",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/StillTrueList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "still-true-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/still-true/{recordType}/{recordId}/confirm": {
+      "post": {
+        "operationId": "confirm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/StillTrueItem"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "still-true-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/still-true/{recordType}/{recordId}/snooze": {
+      "post": {
+        "operationId": "snoozeStillTrue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StillTrueSnoozeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/StillTrueItem"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "still-true-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/tax/capital-gains": {
       "get": {
         "operationId": "capitalGains",
@@ -11937,6 +12675,54 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/where-and-who": {
+      "get": {
+        "operationId": "index",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recordType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recordId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhereAndWhoIndex"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "where-and-who-controller"
+        ]
+      }
+    },
     "/api/v1/invitations/accept": {
       "post": {
         "operationId": "accept",
@@ -12015,6 +12801,29 @@
         },
         "tags": [
           "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/me/messages": {
+      "get": {
+        "operationId": "mine",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OutboundMessageResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "messages-controller"
         ]
       }
     },

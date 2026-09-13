@@ -463,23 +463,34 @@ transition), and every probe spends the prober's per-network allowance. The oper
 
 ## 16. The frozen v1 contract does not describe email sign-in yet
 
-**Where** `docs/api/openapi-v1.json`, against the live `/v3/api-docs`.
+**Resolved** (2026-09-14, "Re-freeze spec"). Kept as a stub so the number still
+means something where it is cited.
 
-**What** `GET /auth/otp/channels`, `POST /auth/otp/email/request`,
-`POST /auth/otp/email/verify`, `GET /auth/otp/email/delivery/{requestId}`
-(with `OtpDeliveryResponse`) and the `channel` field on `OtpChallengeResponse`
-are additive, so `OpenApiContractTest` passes — but the committed contract the
-apps are built against does not list them. The stage that added them did not
-re-freeze the file.
+Owner's decision: "regenerate the frozen spec to include the new endpoints.
+They're additive, and endpoints outside the contract test are how drift starts."
+`docs/api/openapi-v1.json` was regenerated with `scripts/freeze-api-spec.sh`
+from a development server built from the commit before this one, and now holds
+120 paths, 163 operations and 179 schemas (was 109, 152, 164).
 
-**Which is right** Re-freeze deliberately with `./scripts/freeze-api-spec.sh`
-once the owner has looked at the new endpoints, so the handoff artefact matches
-the server.
+It had drifted by more than email sign-in: eleven paths were outside the file —
+`GET /auth/otp/channels`, `POST /auth/otp/email/request`,
+`POST /auth/otp/email/verify`, `GET /auth/otp/email/delivery/{requestId}`,
+`GET …/connect/digilocker/documents`, `GET …/continuity/readiness`,
+`GET …/still-true`, `POST …/still-true/{recordType}/{recordId}/confirm`,
+`POST …/still-true/{recordType}/{recordId}/snooze`, `GET …/where-and-who` and
+`GET /me/messages` — with fifteen new schemas. Four existing schemas grew:
+`OtpChallengeResponse.channel` (optional), `WhatsAppCapture.replyFailure`
+(optional), `Completeness.scoreEarned` (required, response only) and
+`scoreExplanation` (optional), and `ProviderStatus.mode` gained `DISABLED`.
+Nothing was removed, renamed or retyped; the old file is a strict subset by
+`OpenApiCompatibility.check(old, new)`.
 
-**When to fix** Before anyone builds a third client from the JSON alone.
-docs/api/README.md already describes the endpoints.
-
-**Risk if left** None for the two existing clients, which were changed alongside.
+One real break was found on the way and fixed rather than frozen: the still-true
+snooze handler was also named `snooze`, so springdoc renamed the frozen
+`POST …/reminders/{id}/snooze` operationId from `snooze` to `snooze_1` — a method
+rename in every generated client, which the contract test did not look at. The
+handler is now `snoozeStillTrue`, and `OpenApiCompatibility` now reports a
+changed operationId (watched failing against the old file before the rename).
 
 ---
 

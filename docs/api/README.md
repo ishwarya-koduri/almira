@@ -1,12 +1,33 @@
 # Building a client against Almira v1
 
-The contract is [`openapi-v1.json`](openapi-v1.json) — 109 paths, 152 operations,
-164 schemas. Generate a typed client from it; do not hand-write one.
+The contract is [`openapi-v1.json`](openapi-v1.json) — 120 paths, 163 operations,
+179 schemas. Generate a typed client from it; do not hand-write one.
 
 **v1 is additive-only.** New endpoints and new optional fields may appear; nothing
 will be removed, renamed or retyped. A breaking change goes to `/api/v2` and v1
 stays as it is for as long as a released app depends on it. `OpenApiContractTest`
 fails the backend build if that promise is broken, so a client can rely on it.
+**Operation ids are part of the promise**: a generated client names its methods
+after them, so a changed `operationId` fails the build too.
+
+**Added at the 2026-09-14 re-freeze** — built before it, and described below, but
+only now in the file:
+
+| Endpoint | Described in |
+|---|---|
+| `GET /auth/otp/channels` | [Authentication](#authentication) |
+| `POST /auth/otp/email/request`, `POST /auth/otp/email/verify` | [Authentication](#authentication) |
+| `GET /auth/otp/email/delivery/{requestId}` | [Authentication](#authentication) |
+| `GET /me/messages` | [Authentication](#authentication), after the provider failures |
+| `GET /households/{householdId}/connect/digilocker/documents` | [Authentication](#authentication), after the provider failures |
+| `GET /households/{householdId}/where-and-who` | [Phase 3 and 4](#phase-3-and-4-the-parts-that-decide-who-sees-what) |
+| `GET /households/{householdId}/still-true`, `POST …/still-true/{recordType}/{recordId}/confirm`, `POST …/snooze` | [Phase 3 and 4](#phase-3-and-4-the-parts-that-decide-who-sees-what) |
+| `GET /households/{householdId}/continuity/readiness` | [Phase 3 and 4](#phase-3-and-4-the-parts-that-decide-who-sees-what) |
+
+Existing schemas grew in the same freeze: `OtpChallengeResponse.channel`,
+`WhatsAppCapture.replyFailure`, `Completeness.scoreEarned` (always present) and
+`scoreExplanation`, and `ProviderStatus.mode` gained `DISABLED`. A client that
+maps enums strictly must accept a value it does not know.
 
 A response the contract never declared, which reports a server fault for input the server rejected, may be corrected to the 4xx the API README already documents. Record each such correction in the API README's changelog.
 
@@ -118,6 +139,9 @@ Connecting DigiLocker or the Account Aggregator fails the same four ways, as
 `provider_timeout` (504), `provider_unavailable` (503), `provider_rejected` (422)
 and `provider_account_unavailable` (503), with `details.provider`. The WhatsApp
 webhook still answers 200 and sets `replyFailure` to one of those codes.
+When `POST …/connect/digilocker/complete` connected but could not list
+(`details.connected = true`), the code is spent: list with
+`GET …/connect/digilocker/documents`, which needs none.
 
 A provider this server does not offer is not a failure: `GET …/connect/providers`
 reports it with `mode: DISABLED`, and every call to it — DigiLocker, Account

@@ -152,8 +152,8 @@ registration, and email sign-in does not exist yet —
 ## The v1 API contract
 
 The API is **frozen at v1** and lives at `/api/v1/**`. The contract is committed
-as [`docs/api/openapi-v1.json`](docs/api/openapi-v1.json) — 109 paths, 152
-operations, 164 schemas — and that file is the handoff artefact the mobile app is
+as [`docs/api/openapi-v1.json`](docs/api/openapi-v1.json) — 120 paths, 163
+operations, 179 schemas — and that file is the handoff artefact the mobile app is
 built against.
 
 **The rule for the life of v1 is additive-only.** New endpoints, new optional

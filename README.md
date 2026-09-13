@@ -214,7 +214,33 @@ Postgres on **55432** and Redis on **56379** — offset so Almira never collides
 cd backend && ./gradlew bootRun
 ```
 
-Flyway migrates on startup. Then:
+Flyway migrates on startup. `bootRun` sets `ALMIRA_ENV=development` for you
+unless your shell already sets it.
+
+### Running from an IDE, or with `java -jar`
+
+**Set `ALMIRA_ENV=development` in the run configuration**, or the application
+will refuse to start. That is deliberate, and it is not something to work
+around by adding a default back.
+
+An unset `ALMIRA_ENV` used to mean development, which relaxed the checks that
+refuse a published JWT secret and a missing key-encryption key. Any way of
+starting the jar that forgot the variable — an IDE run button, a hand-written
+service file — therefore accepted the development JWT secret committed to this
+repository, and a token signed with it was accepted as a real user. Reproduced,
+then fixed, then documented in [docs/17 §3](docs/17-deploying.md).
+
+So the refusal you see is the protection working. Against the development
+database you will typically get one of:
+
+- `ALMIRA_JWT_SECRET is still the development default …` — then `ALMIRA_ENV is not set`
+- `ALMIRA_KMS_MASTER_KEY is not set …`
+- `Refusing to start — Postgres data_checksums is off, and ALMIRA_ENV is not set …`
+
+All three have the same fix: `ALMIRA_ENV=development` in the run configuration.
+In IntelliJ that is *Run → Edit Configurations → Environment variables*.
+
+Then:
 
 Then open <http://localhost:8080> — the web client is served by the backend as
 part of the same artifact. API documentation is at <http://localhost:8080/docs>,

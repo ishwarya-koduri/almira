@@ -55,6 +55,25 @@ class LocalKeyManagementTest {
             .isFalse()
     }
 
+    /**
+     * The hole: an unset ALMIRA_ENV used to resolve to development, so a
+     * deployment that forgot the variable silently generated a key here. Seen
+     * on the real jar before the fix, as a log line reading "Generated a
+     * development key-encryption key" on a run with no environment at all.
+     */
+    @Test
+    fun `an unset environment is not development and never generates a key`() {
+        val keyFile = tempDir.resolve("must-not-appear")
+        assertThatThrownBy { LocalKeyManagement(props("", "", keyFile.toString())) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("refusing to start")
+            .describedAs("the refusal names the actual fix, not only the symptom")
+            .hasMessageContaining("ALMIRA_ENV is not set")
+        assertThat(java.nio.file.Files.exists(keyFile))
+            .describedAs("and no development key is left behind")
+            .isFalse()
+    }
+
     @Test
     fun `development generates its own key, once, per install`() {
         val keyFile = tempDir.resolve("dev-kek")

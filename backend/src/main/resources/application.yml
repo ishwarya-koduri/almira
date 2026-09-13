@@ -37,10 +37,22 @@ server:
   shutdown: graceful
 
 almira:
-  # Anything other than "development" makes the encryption checks strict: a real
-  # key-encryption key becomes mandatory and the published development key is
-  # refused. Set ALMIRA_ENV=production in every deployed environment.
-  environment: ${ALMIRA_ENV:development}
+  # Anything other than "development" makes every startup check strict: a real
+  # key-encryption key becomes mandatory, the published JWT secret is refused,
+  # and a database without page checksums is refused.
+  #
+  # There is deliberately NO default. It used to be `${ALMIRA_ENV:development}`,
+  # which meant a jar started without the variable decided it was a development
+  # machine — and so accepted the development JWT secret published in this
+  # repository. Reproduced before this changed: with ALMIRA_ENV unset, a token
+  # signed with that secret, for a session the server never issued, returned
+  # 200 from /api/v1/me as a real user. A missing value now counts as "not
+  # development", so every check applies.
+  #
+  # Every intended launcher sets it: dev-personal and bootRun to development,
+  # the Dockerfile and the production compose file to production, the test
+  # suite to development. Anything else has to choose.
+  environment: ${ALMIRA_ENV:}
   encryption:
     provider: ${ALMIRA_KMS_PROVIDER:local}
     # Base64, 32 bytes: openssl rand -base64 32

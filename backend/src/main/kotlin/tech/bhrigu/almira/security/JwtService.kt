@@ -25,15 +25,22 @@ class JwtService(props: AlmiraProperties) {
         // looks entirely healthy and will mint tokens anybody who has read this
         // repository can forge — which is worse than not starting, because
         // nothing about it looks wrong.
-        val isDevelopment = props.environment.equals("development", ignoreCase = true)
+        //
+        // "Development" means chosen, not defaulted. Until this was fixed a
+        // missing ALMIRA_ENV resolved to development and both checks below were
+        // skipped — a real hole, reproduced: a token signed with the published
+        // secret for a session the server never issued was accepted as a real
+        // user. docs/17 §3.
+        val isDevelopment = props.isDevelopment
+        val hint = if (props.environment.isBlank()) AlmiraProperties.MISSING_ENVIRONMENT_HINT else ""
         require(isDevelopment || jwt.secret != AlmiraProperties.DEVELOPMENT_JWT_SECRET) {
             "ALMIRA_JWT_SECRET is still the development default. Outside development " +
                 "a signing secret must be supplied deliberately — refusing to start " +
-                "rather than sign sessions with a public value."
+                "rather than sign sessions with a public value." + hint
         }
         require(isDevelopment || jwt.secret.length >= 32) {
             "ALMIRA_JWT_SECRET is too short to sign anything with: use at least 32 " +
-                "characters (openssl rand -base64 48)."
+                "characters (openssl rand -base64 48)." + hint
         }
     }
 

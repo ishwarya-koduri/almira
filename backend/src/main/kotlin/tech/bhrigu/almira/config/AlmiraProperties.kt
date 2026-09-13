@@ -13,9 +13,14 @@ data class AlmiraProperties(
     val providers: Providers = Providers(),
     /**
      * Gates the checks that must not be bypassable by forgetting a flag:
-     * anything other than "development" requires a real key-encryption key.
+     * anything other than exactly "development" makes them strict.
+     *
+     * Empty by default, not "development". A default of development is a
+     * default of "relax every protection", and it applied precisely when
+     * somebody had forgotten to say what they were running — see
+     * application.yml for what that allowed.
      */
-    val environment: String = "development",
+    val environment: String = "",
 ) {
     /**
      * Two sets of credentials against the same database, on purpose.
@@ -148,7 +153,21 @@ data class AlmiraProperties(
         val isOff: Boolean get() = mode.equals("off", ignoreCase = true)
     }
 
+    /** True only when development was chosen, never when nothing was said. */
+    val isDevelopment: Boolean get() = environment.equals("development", ignoreCase = true)
+
     companion object {
+        /**
+         * Said once, so every check that refuses because nothing was chosen
+         * explains the same way. Without it the message would describe the
+         * symptom — "the JWT secret is the development default" — to someone
+         * whose actual fix is one environment variable.
+         */
+        const val MISSING_ENVIRONMENT_HINT =
+            " ALMIRA_ENV is not set, and an unset environment is not treated as " +
+                "development. For a local run set ALMIRA_ENV=development; for anything " +
+                "else set ALMIRA_ENV=production and supply the value above."
+
         /**
          * The value in application.yml, so that JwtService can recognise it and
          * refuse to run with it anywhere but development. It is a placeholder,

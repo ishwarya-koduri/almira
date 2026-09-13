@@ -71,7 +71,7 @@ enforced end to end. It writes data, and prints the SQL to remove it afterwards.
 
 ## 3 · What refuses to start, and why
 
-Two checks fire before the first request, both for the same reason: a
+Three checks fire before the first request, all for the same reason: a
 deployment that runs with a development placeholder looks entirely healthy, and
 nothing about it appears wrong.
 
@@ -79,10 +79,73 @@ nothing about it appears wrong.
 |---|---|
 | `ALMIRA_KMS_MASTER_KEY` | Refuses to start. Data encrypted with a key nobody chose, kept nowhere durable, is worse than an application that will not boot. |
 | `ALMIRA_JWT_SECRET` still the development value, or shorter than 32 characters | Refuses to start. The default is printed in this repository; anybody could mint a session with it. |
-| **Postgres `data_checksums` is `off`** | **Refuses to start.** *(decided; lands with the item-4 artefacts — see below)* |
+| Postgres `data_checksums` is `off` | Refuses to start. See below. |
 
 All three are relaxed in `development` so the app runs out of the box with no
 configuration — which is exactly why the environment flag has to be right.
+
+### Correction: "never on a missing value" was false for two of these three
+
+Until 2026-09-13 this document said the checks relax only on an **explicit**
+`development`, and never on a missing value. That was true of the page-checksum
+check and **false for the other two**. It is recorded here rather than quietly
+made true, because a security document that was wrong for a stretch should say
+so, and because anyone who deployed from a copy of this file in that window
+should know what they were relying on.
+
+**What was wrong.** `application.yml` read `environment: ${ALMIRA_ENV:development}`.
+A jar started without `ALMIRA_ENV` therefore decided it was a development
+machine, and the JWT and KMS checks — each correct for the environment it was
+handed — were handed `development` and relaxed. The page-checksum check was not
+affected, because it reads `ALMIRA_ENV` directly and requires it to be set.
+
+**What that allowed, reproduced rather than inferred.** Against a server started
+with `ALMIRA_ENV` unset and no secrets configured:
+
+- it reported `"environment":"development"`;
+- it **generated a development key-encryption key** on disk, silently;
+- a token signed with the development JWT secret — which is committed to this
+  repository — for a session id the server had never issued, returned **200**
+  from `/api/v1/me` as a real user. A token signed with a wrong secret returned
+  401, so signatures were being checked; the secret was simply public.
+
+**Who was exposed.** Nobody, in practice: nothing has been deployed, and every
+launcher this project ships sets the variable — the Dockerfile and production
+compose file to `production`, `dev-personal` and `bootRun` to `development`.
+The exposure was any other way of starting the jar.
+
+**What changed.** `application.yml` no longer has a default, so a missing
+`ALMIRA_ENV` resolves to an empty value, and empty is not development. Each
+check now applies its strict rule unless `development` was actually chosen, and
+the refusal names `ALMIRA_ENV` rather than only the symptom. Proved on the real
+jar across five boots:
+
+| `ALMIRA_ENV` | Other configuration | Result |
+|---|---|---|
+| unset | none | **refuses** — names `ALMIRA_ENV`; no key file generated |
+| `development` | none | starts |
+| `production` | real JWT secret and KMS key | starts |
+| `production` | published JWT secret | refuses |
+| unset | real JWT secret and KMS key | **starts**, reporting `"environment":""` |
+
+The last row is deliberate and worth being clear about: **each check fails
+closed, rather than the whole application refusing on a missing variable.** An
+unset environment never unlocks a relaxation, but when everything a strict run
+requires has been supplied, no check has anything to object to. Nothing in the
+application gates a protection on `== "production"` — every one is
+`!= development` — so an empty value runs everything strict.
+
+Pinned by `EnvironmentDefaultTest`, which reads the packaged `application.yml`
+itself with the operating-system environment removed, and was watched failing
+with the old default restored.
+
+### What this breaks, on purpose
+
+Running the application from an IDE's run button, or `java -jar` by hand,
+without `ALMIRA_ENV` now refuses to start against a development setup — no JWT
+secret, no key, and a development database without page checksums. That is the
+check working. Set `ALMIRA_ENV=development` in the run configuration; see the
+repository README.
 
 ### Page checksums: decided, and why it is a refusal rather than a warning
 

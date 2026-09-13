@@ -44,6 +44,32 @@ class JwtStartupGuardTest {
             .hasMessageContaining("at least 32")
     }
 
+    /**
+     * The hole this exists for. With ALMIRA_ENV unset, application.yml used to
+     * resolve the environment to development, both checks above were skipped,
+     * and the published secret signed sessions. Reproduced on the real jar
+     * before the fix: a token signed with that secret, for a session id the
+     * server never issued, returned 200 from /api/v1/me as a real user.
+     */
+    @Test
+    fun `an unset environment is not development and refuses the published secret`() {
+        assertThatThrownBy { JwtService(properties("", AlmiraProperties.DEVELOPMENT_JWT_SECRET)) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("refusing to start")
+            .hasMessageContaining("ALMIRA_ENV is not set")
+    }
+
+    /**
+     * Failing closed per check, not refusing everything: with no environment
+     * but a real secret, this check has nothing to object to. The environment
+     * being unset is only dangerous because it used to unlock a relaxation.
+     */
+    @Test
+    fun `an unset environment with a real secret passes this check`() {
+        val service = JwtService(properties("", "K".repeat(48)))
+        assertThat(service.accessTtlSeconds).isEqualTo(900)
+    }
+
     @Test
     fun `production starts with a real secret`() {
         val service = JwtService(properties("production", "K".repeat(48)))

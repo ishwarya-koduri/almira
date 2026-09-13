@@ -50,7 +50,11 @@ class LocalKeyManagement(props: AlmiraProperties) : KeyManagementService {
 
     init {
         val configured = props.encryption.masterKey.trim()
-        val isDevelopment = props.environment.equals("development", ignoreCase = true)
+        // Chosen, not defaulted: an unset ALMIRA_ENV used to count as development
+        // and silently generate a key here, in a deployment nobody had called
+        // development. Reproduced before the fix — the log said "Generated a
+        // development key-encryption key" on a run with no environment at all.
+        val isDevelopment = props.isDevelopment
 
         val material: ByteArray = when {
             configured.isNotEmpty() -> decode(configured)
@@ -62,7 +66,8 @@ class LocalKeyManagement(props: AlmiraProperties) : KeyManagementService {
             !isDevelopment -> throw IllegalArgumentException(
                 "ALMIRA_KMS_MASTER_KEY is not set. Outside development a key-encryption " +
                     "key must be supplied before any sensitive field can be stored — " +
-                    "refusing to start rather than run without one.",
+                    "refusing to start rather than run without one." +
+                    if (props.environment.isBlank()) AlmiraProperties.MISSING_ENVIRONMENT_HINT else "",
             )
 
             else -> developmentKey(Path.of(props.encryption.devKeyFile))

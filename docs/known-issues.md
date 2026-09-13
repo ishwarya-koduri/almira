@@ -697,10 +697,14 @@ infra session's.
   at-most-once: the one send a worker had stamped as started when it died
   loses that message rather than risk a second (the rest of its batch is sent
   normally), and the in-app row is the only copy.
-- **Only reminders have a deterministic logical key.** Still-true nudges and
-  emergency-access notices get a random one per message; their own bookkeeping
-  decides whether a message exists, but two servers sweeping the same household
-  in the same instant could each queue a nudge. Harmless while one server runs.
+- **Logical keys cover reminders, still-true digests and emergency-access
+  notices** (`reminder:<id>:<firesOn>:<user>`, a digest key for the exact due
+  state, `emergency.named:<contactId>`, `emergency.requested:<requestId>`,
+  `emergency.vetoed:<requestId>`), and in-app rows are keyed too (V35), so a
+  repeated sweep or a second server queues nothing new. Only the reminder and
+  `emergency.named` keys were watched failing. One consequence to know: saving
+  the same emergency contact again — even with a changed wait — does not notify
+  the trusted member a second time; deleting and re-adding the contact does.
 
 **Risk if left** None while every provider is a sandbox. Live: a slow
 DigiLocker starving the app pool, WhatsApp webhooks captured twice, and — only

@@ -10,6 +10,7 @@ data class AlmiraProperties(
     val otp: Otp,
     val encryption: Encryption = Encryption(),
     val storage: Storage = Storage(),
+    val providers: Providers = Providers(),
     /**
      * Gates the checks that must not be bypassable by forgetting a flag:
      * anything other than "development" requires a real key-encryption key.
@@ -73,6 +74,79 @@ data class AlmiraProperties(
         val maxPerHour: Int = 5,
         val maxPerIpPerHour: Int = 20,
     )
+
+    /**
+     * Every outside service, and which of three states it is in.
+     *
+     * These modes were being read by `@ConditionalOnProperty` annotations and
+     * declared nowhere else — not here, not in application.yml, not in
+     * `.env.production.example`. That is why they are a typed block now: a
+     * switch nobody can find is a switch nobody can audit, and "flip one live
+     * with a config change" is not a claim you can make about a property that
+     * exists only inside an annotation.
+     *
+     * `sandbox` is the default for all of them, so a fresh checkout runs with
+     * no configuration and talks to nothing real.
+     */
+    data class Providers(
+        /** One-time codes for sign-in. See also [Otp.provider], which selects the sender. */
+        val sms: Provider = Provider(),
+        val email: Provider = Provider(),
+        val push: Provider = Provider(),
+        val digilocker: Provider = Provider(),
+        /** Account Aggregator, under the RBI framework. */
+        val aa: Provider = Provider(),
+        val whatsapp: Provider = Provider(),
+    ) {
+        /** Named so the startup report can print them without a `when`. */
+        fun all(): Map<String, Provider> = mapOf(
+            "sms" to sms, "email" to email, "push" to push,
+            "digilocker" to digilocker, "aa" to aa, "whatsapp" to whatsapp,
+        )
+    }
+
+    /**
+     * One outside service's configuration.
+     *
+     * Credentials live here and are read from the environment — never from
+     * code, never from a checked-in file. [baseUrl] is configurable because a
+     * provider's sandbox and production endpoints differ, and pointing at the
+     * wrong one should be a configuration mistake rather than a redeploy.
+     */
+    data class Provider(
+        /** `off`, `sandbox` or `live`. Anything else refuses to start. */
+        val mode: String = "sandbox",
+        val baseUrl: String = "",
+        val clientId: String = "",
+        val clientSecret: String = "",
+        /** A single token, where a provider uses one instead of a pair. */
+        val apiKey: String = "",
+        /** For verifying inbound webhooks. */
+        val webhookSecret: String = "",
+        /**
+         * India's DLT registration, for SMS. The sender id and template id are
+         * not secrets, but sending with the wrong ones means the operator drops
+         * the message silently — so they belong in configuration where they can
+         * be corrected without a build.
+         */
+        val senderId: String = "",
+        val templateId: String = "",
+        /**
+         * How long to wait before giving up on one call. Deliberately short:
+         * an outside service that has not answered in ten seconds is not going
+         * to, and a request thread held open is a request thread not serving
+         * somebody.
+         */
+        val timeout: Duration = Duration.ofSeconds(10),
+        /** Attempts in total, not retries after the first. 1 disables retrying. */
+        val maxAttempts: Int = 3,
+        /** Doubling from here, with jitter, between attempts. */
+        val retryBackoff: Duration = Duration.ofMillis(500),
+    ) {
+        val isLive: Boolean get() = mode.equals("live", ignoreCase = true)
+        val isSandbox: Boolean get() = mode.equals("sandbox", ignoreCase = true)
+        val isOff: Boolean get() = mode.equals("off", ignoreCase = true)
+    }
 
     companion object {
         /**

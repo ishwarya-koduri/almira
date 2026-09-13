@@ -1,0 +1,11 @@
+# Registered here and not in META-INF/spring/*.imports, which is where it was
+# first put and where it did nothing. Spring Boot 3 moved auto-configuration to
+# `.imports` files but still loads EnvironmentPostProcessors from this file —
+# and a misplaced registration is silent: the class compiles, its unit test
+# passes, and the running application never calls it.
+#
+# Found by starting the real jar with a provider set live and reading the
+# NoSuchBeanDefinitionException the check exists to replace, after the unit test
+# had already passed and been watched failing. See docs/19.
+org.springframework.boot.env.EnvironmentPostProcessor=\
+tech.bhrigu.almira.provider.ProviderModeCheck

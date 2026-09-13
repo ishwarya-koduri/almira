@@ -65,6 +65,51 @@ almira:
     issuer: almira
     access-ttl: ${ALMIRA_JWT_ACCESS_TTL:15m}
     refresh-ttl: ${ALMIRA_JWT_REFRESH_TTL:30d}
+  # Every outside service, and which of three states it is in: off, sandbox or
+  # live. All default to sandbox, so a fresh checkout talks to nothing real.
+  #
+  # These were previously read only by @ConditionalOnProperty and declared
+  # nowhere, which made them impossible to find and impossible to audit.
+  # Setting one to `live` refuses to start until a live adapter for it exists —
+  # see docs/13 for which of these can have one today.
+  providers:
+    sms:
+      mode: ${ALMIRA_PROVIDER_SMS_MODE:sandbox}
+      base-url: ${ALMIRA_PROVIDER_SMS_BASE_URL:}
+      api-key: ${ALMIRA_PROVIDER_SMS_API_KEY:}
+      sender-id: ${ALMIRA_PROVIDER_SMS_SENDER_ID:}
+      template-id: ${ALMIRA_PROVIDER_SMS_TEMPLATE_ID:}
+      timeout: ${ALMIRA_PROVIDER_SMS_TIMEOUT:10s}
+      max-attempts: ${ALMIRA_PROVIDER_SMS_MAX_ATTEMPTS:3}
+    email:
+      mode: ${ALMIRA_PROVIDER_EMAIL_MODE:sandbox}
+      base-url: ${ALMIRA_PROVIDER_EMAIL_BASE_URL:}
+      api-key: ${ALMIRA_PROVIDER_EMAIL_API_KEY:}
+      timeout: ${ALMIRA_PROVIDER_EMAIL_TIMEOUT:10s}
+    push:
+      mode: ${ALMIRA_PROVIDER_PUSH_MODE:sandbox}
+      base-url: ${ALMIRA_PROVIDER_PUSH_BASE_URL:}
+      api-key: ${ALMIRA_PROVIDER_PUSH_API_KEY:}
+      timeout: ${ALMIRA_PROVIDER_PUSH_TIMEOUT:10s}
+    digilocker:
+      mode: ${ALMIRA_PROVIDER_DIGILOCKER_MODE:sandbox}
+      base-url: ${ALMIRA_PROVIDER_DIGILOCKER_BASE_URL:}
+      client-id: ${ALMIRA_PROVIDER_DIGILOCKER_CLIENT_ID:}
+      client-secret: ${ALMIRA_PROVIDER_DIGILOCKER_CLIENT_SECRET:}
+      timeout: ${ALMIRA_PROVIDER_DIGILOCKER_TIMEOUT:15s}
+    aa:
+      mode: ${ALMIRA_PROVIDER_AA_MODE:sandbox}
+      base-url: ${ALMIRA_PROVIDER_AA_BASE_URL:}
+      client-id: ${ALMIRA_PROVIDER_AA_CLIENT_ID:}
+      client-secret: ${ALMIRA_PROVIDER_AA_CLIENT_SECRET:}
+      timeout: ${ALMIRA_PROVIDER_AA_TIMEOUT:20s}
+    whatsapp:
+      mode: ${ALMIRA_PROVIDER_WHATSAPP_MODE:sandbox}
+      base-url: ${ALMIRA_PROVIDER_WHATSAPP_BASE_URL:}
+      api-key: ${ALMIRA_PROVIDER_WHATSAPP_API_KEY:}
+      webhook-secret: ${ALMIRA_PROVIDER_WHATSAPP_WEBHOOK_SECRET:}
+      timeout: ${ALMIRA_PROVIDER_WHATSAPP_TIMEOUT:10s}
+
   otp:
     provider: ${ALMIRA_OTP_PROVIDER:log}
     ttl: 5m

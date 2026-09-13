@@ -61,6 +61,8 @@ model:
 
 The table below is the whole policy. `StillTrueDocTest` reads it back out of
 `app.still_true_period_months`, so this table and the code cannot disagree.
+It is also the only clock for "not confirmed lately" anywhere in the product:
+the Home dashboard's attention card reads the same view (§6, "On the dashboard").
 
 <!-- still-true-periods:start -->
 | record_type | subtype | months |
@@ -132,8 +134,9 @@ therefore never due. This is the cold-start lesson in docs/api/README: a new use
 is not greeted with a list of problems they have not had time to have.
 
 Confirming a holding also sets `investments.last_verified_at`. That keeps the
-detail sheet's "Last confirmed" line and the dashboard's freshness card in
-agreement with the answer.
+detail sheet's "Last confirmed" line in agreement with the answer. The
+dashboard's card needs no stamp of its own: it reads `still_true_records`
+directly (§6).
 
 ## 4. Who is asked
 
@@ -238,6 +241,29 @@ true" and "Ask me in a month" on each row, in English, Telugu and Hindi. It is a
 card and not a screen, because the answer should be one tap from the place
 people already look. If the list fails to load (for example, an older server
 with no endpoint), there is simply no card. Home does not fail with it.
+
+### On the dashboard
+
+`GET /api/v1/households/{householdId}/dashboard` carries an attention item with
+code `not_verified`, labelled "Due to be confirmed as still true". It counts the
+holdings for which `still_true_records.is_due` is true, read under the caller's
+row-level security, within the dashboard's scope. There is no second clock: the
+period per type, the key dates, a snooze and the household's time zone all come
+from the view. Until 2026-09-14 the card counted a flat six months since
+`last_verified_at` instead (known-issues 18).
+
+Two differences remain, and both are about *what*, not *when*:
+
+- The card counts every due holding the caller can **see**. The list above
+  shows only what the caller is **asked** about (§4). An admin can see a
+  household FD counted on the card that is not on their own list.
+- The card is for holdings only (it carries `investmentIds`). Due loans,
+  accounts and estate documents appear only in "Still true?".
+
+`DashboardStillTrueClockTest` holds this: a 4-month-old cash buffer, a
+13-month-old FD and a matured FD are counted, exactly the ids "Still true?"
+lists as due; a 7-month-old FD, a snoozed one and a new one are not; confirming
+clears the card. Watched failing against the flat six months.
 
 ### The nudge
 
@@ -423,6 +449,6 @@ reason, and passed again once it was restored):
   their toast. It was checked in English, Telugu and Hindi, and at phone width.
   `monthFromToday`'s end-of-month clamp has no test.
 
-**Known overlap:** the dashboard's "Not confirmed in over six months" attention
-card (`DashboardService`) predates this. It uses a flat 6 months for holdings
-only. The two now disagree about when a holding is stale. See known-issues 18.
+**Formerly a known overlap, now resolved:** the dashboard's attention card used
+a flat six months for holdings. Since 2026-09-14 it reads `still_true_records`
+(§6, "On the dashboard"; known-issues 18).

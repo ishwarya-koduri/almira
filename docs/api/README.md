@@ -271,8 +271,17 @@ superseded by a rollover stops counting toward net worth and goal funding — so
 the two never both count — while remaining visible as history.
 
 **Completeness is a measure of the records, not of the person.** Each check
-carries the ids to fix, so offer one tap. An empty household scores 100 with a
-`nextStep` inviting a first record; do not render 0%.
+carries the ids to fix, so offer one tap. The `score` is rounded down, so it is
+100 only when every check is done; one gap among a thousand items is 99. When
+`scoreEarned` is `false` (nothing recorded that the caller can see) there is no
+number: `score` is 0 only because v1 requires an integer there. Render
+`scoreExplanation` and the `nextStep` inviting a first record, and no
+percentage — neither 0% nor 100%. (Before 2026-09-14 an empty household scored
+100 and `scoreEarned` did not exist; known-issues 19.)
+
+**"Not confirmed lately" on the dashboard is the "Still true?" clock.** The
+`not_verified` attention item counts the holdings `still-true` considers due
+(per-type periods, key dates, snoozes; docs/21 §6), not a flat six months.
 
 ---
 

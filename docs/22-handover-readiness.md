@@ -61,7 +61,8 @@ Why this model and not the others:
 - **Rounded down, always.** If one gap remains, the score is at most 99. Take
   199 of 200 nominees with everything else complete: that is 99.875%. Rounding
   to the nearest whole number would show **100** with a policy still missing its
-  nominee. Completeness rounds that way today (see known-issues 19). Here,
+  nominee. Completeness used to round that way; it rounds down too since
+  2026-09-14 (known-issues 19). Here,
   `complete` is true only when there are no gaps at all and no record is left
   out of the family summary (§2). The pure function and the API are both tested
   for this (§8).
@@ -495,8 +496,9 @@ reason, and passed again once it was restored):
 
 **Known overlap:** the completeness card on Reports (`CompletenessService`)
 predates this and scores something related in a different way: it is weighted,
-it rounds to the nearest, it shows 100 when nothing is recorded, and it counts
-records outside continuity. Both are left as they are, because changing
-completeness changes a v1 response. See known-issues 19.
+and it counts records outside continuity. Since 2026-09-14 it follows this
+document's two honesty rules: it rounds down, so any gap stops it at 99, and
+with nothing recorded it has no number (`scoreEarned: false`, because its v1
+`score` cannot become null). See known-issues 19.
 
 [‹ Index](README.md)

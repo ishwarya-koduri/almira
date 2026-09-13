@@ -541,63 +541,77 @@ this build, which is the intended failure.
 
 ## 18. Two clocks for "not confirmed lately"
 
-**Where** `DashboardService.attention` (the "Not confirmed in over six months"
-card) and `app.still_true_period_months` / `still_true_records` (V29, [Doc 21](21-still-true.md)).
+**Resolved** (2026-09-14, "Honest completeness"). Kept as a stub so the number
+still means something where it is cited.
 
-**What** The dashboard card counts a holding as stale after a flat six months
-since `last_verified_at` (or creation). "Still true?" asks about a holding after
-12 months (3 for cash), or a week after a maturity or renewal date. The same
-holding can therefore sit on the Home attention list for six months before it is
-ever asked about, and the card's "Review" button leads to the holdings list, not
-to the question.
+Owner's decision: the dashboard card uses the same per-type periods as "Still
+true?", with no second clock. `DashboardService` now counts a holding in the
+`not_verified` attention item exactly when `still_true_records.is_due` is true
+for it, read under the caller's RLS from the same view the still-true list and
+sweep read. That brings along everything Doc 21 decides about *when*: the
+per-type period (3 months for cash, 12 otherwise), a maturity or renewal date a
+week past, a snooze, and the household's time zone (the card used the server's
+UTC date). The label is now "Due to be confirmed as still true". The code
+`not_verified` and the item's shape are unchanged. Proven by
+`DashboardStillTrueClockTest`, watched failing against the flat six months: a
+4-month-old cash buffer and a matured FD were missed, and a 7-month-old FD and a
+snoozed one were counted.
+Checked by hand on a development server: Home listed a 4-month-old cash buffer
+under "Still true?" and the card said "1 holding", with a 7-month-old gold
+holding in neither. The Reports card showed the sentence and no percentage for
+an empty household, and "37%" once three holdings existed.
 
-**Which is right** Doc 21's periods, which are argued per type; the card predates
-them. Confirming through "Still true?" already stamps `last_verified_at`, so
-answering the question does clear the card.
+**What is left, narrowed:**
 
-**Why it is still there** The dashboard response is part of frozen v1, and its
-label and count are something the native app renders. Changing what the card
-counts changes a v1 behaviour, which is the owner's call.
-
-**When to fix** When the native app gains the "Still true?" surface: the card can
-then read `still_true_items` (or be retired), and its button can open the list.
-
-**Risk if left** Two answers to one question on the same screen, which is how a
-freshness signal stops being believed.
+- **Who, not when.** The card counts every due holding the caller can *see*;
+  the still-true list shows only the ones the caller is *asked* about (owners,
+  or the recorder, Doc 21 §4). An admin can therefore see a household FD counted
+  on the card that is not on their own "Still true?" list. Both agree on whether
+  it is due.
+- **Holdings only.** The card carries `investmentIds`, so loans, accounts and
+  estate documents that are due appear only in "Still true?".
+- **The card's "Review" button** still opens the holdings list, not the
+  question. The native app renders neither the card nor the list.
 
 ## 19. The completeness score can say 100% with a gap still there
 
-**Where** `CompletenessService.report` (`GET /reports/completeness`, the card on
-Reports), compared with `HandoverReadinessService` ([Doc 22](22-handover-readiness.md)).
+**Resolved** (2026-09-14, "Honest completeness"). Kept as a stub so the number
+still means something where it is cited.
 
-**What** Three things, each found while designing readiness:
+Owner's decision: completeness never shows 100 while any gap exists.
 
-- It rounds half up: `earned × 100 ÷ possible`, `RoundingMode.HALF_UP`. In a
-  household of 200 active holdings where one has no nominee, 3 weighted points
-  are missing out of well over a thousand, so the score shows **100**.
-- With nothing recorded, it returns `score = 100` (the label says "Nothing to
-  check yet", but the number is still 100).
-- It weights each item and adds the items up, so a large household drowns out
-  any single gap. The two scores also count different records: completeness
-  counts `active` holdings, including ones left out of continuity, while
-  readiness counts `active` and `matured` holdings that are in continuity,
-  plus executed wills.
+- **Rounded down.** `CompletenessScore.of` is floor(100 × earned ÷ possible), in
+  integer arithmetic, so with anything outstanding it is at most 99. 250 complete
+  holdings with one left out of the family summary (1 item in 1000) is 99, not
+  100. `CompletenessScoreTest` checks every household size from 1 to 2000 with a
+  single gap; `ReportsApiTest` checks the 1-in-1000 case end to end.
+- **Nothing recorded is no number.** The response keeps `score` (v1 froze it as
+  a required integer, and `OpenApiContractTest` refuses un-requiring it), sets it
+  to 0, and adds `scoreEarned: false` and a `scoreExplanation` sentence. A client
+  shows the sentence and no percentage when `scoreEarned` is false. The web card
+  does (`static/app/completeness.js`, `scripts/check-completeness.js`). Before,
+  `score` was 100.
+- **Everything done is 100**, with `scoreEarned: true`.
 
-**Which is right** Doc 22 §1: round down, show no number when the data has not
-earned one, and give each check equal weight. Doc 18 §6 is the rule both
-features answer to.
+Watched failing: rounding half up again (unit and API tests get 100 for one gap
+in a thousand), returning 100 for nothing recorded (three tests), and the web
+helper ignoring `scoreEarned` (it shows "0%").
 
-**Why it is still there** The completeness response is frozen v1, and its
-`score` is an `Int` that clients render. Changing the rounding is small, but it
-is a v1 behaviour change, and so is making `score` nullable. That is the owner's
-call, and it was out of scope for the change that found it.
+**What is left, and deliberately not changed:**
 
-**When to fix** When Reports is next touched. The least disruptive fix is to
-round down, and to add an additive `scoreEarned: false` (or retire the card in
-favour of readiness) rather than change `score` to null.
-
-**Risk if left** Two percentages about the same household can disagree, and one
-of them can claim to be complete when it is not.
+- **Weighting.** Completeness still weights items and adds them up, so a large
+  household dilutes a single gap (to 99, never 100). Readiness (Doc 22) gives
+  each check equal weight. The two answer different questions; the owner's
+  decision was about the 100, not the model.
+- **Different records.** Completeness counts `active` holdings, including ones
+  left out of continuity; readiness counts `active`/`matured` holdings in
+  continuity, plus executed wills. The two percentages can still differ.
+- **A stale client.** An app shell cached from before this change prints
+  `score` for an empty household as "0%" (next to "Nothing to check yet") until
+  the service worker (v24) updates it. The native app has no completeness
+  screen.
+- **The `scoreLabel` bands** are unchanged: 90 to 99 still reads "Your family
+  could pick this up tomorrow", beside a `nextStep` naming the gap.
 
 ---
 

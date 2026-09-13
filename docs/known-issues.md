@@ -487,36 +487,39 @@ docs/api/README.md already describes the endpoints.
 
 ---
 
-## 17. Plaintext columns still hold "where the original is"
+## 17. Plaintext columns still hold "where the original is" — retired in V33
 
-**Where** `investments.storage_location` (V3, the "Kept at" / "Where it's kept"
-field in many investment type schemas), `estate_documents.location` (V18) and
-`investment_templates.storage_location` (V16). They are read by `SearchService`,
-`HandbookService` (including the PDF) and `TransmissionService`.
+**Where** `investments.storage_location` (V3), `investment_templates.storage_location`
+(V16), `estate_documents.location` (V18), and `storage_location` in eight seeded
+type schemas.
 
-**What** [Doc 20](20-where-and-who.md) seals the location of the original under
-the zero-knowledge scheme, with no plaintext fallback. These older columns hold
-the same sentence in plaintext. The server can read them, search them and print
-them. They cannot be removed while v1 is additive-only, and the server cannot
-migrate them itself, because it has no key.
+**What was wrong** [Doc 20](20-where-and-who.md) seals the location of the
+original, with no plaintext fallback. These columns held the same sentence in
+plain text, and the server still wrote it: into duplicates, between holdings and
+templates, and from any v1 client that sent it.
 
-**Which is right** The sealed field. The web client no longer asks for either
-column: the capture form and the new-will form show a pointer to the sealed card
-instead. On any record that still has a plaintext note, it shows a warning with a
-button that seals the note and clears the column. The button is offered only when
-the sealed slot is empty or the person's own. Three things still write plain
-text: whatever any other v1 client sends; the server's copy of `storage_location`
-when a holding is duplicated (`InvestmentService`); and template save and apply
-(`TemplateService`), which carry it between the holding and `investment_templates`.
+**What was done** On the owner's decision ("Do it before real users exist; it's a
+migration now and a data-migration problem later"), V33 drops the three columns,
+takes the field out of every type, and adds constraints so it cannot return. It
+**refuses** instead, and changes nothing, while any non-empty value exists, and
+its message says how many and how to seal and clear them (Doc 20 §1). Every
+server path that read, copied or printed a location is gone, and a request that
+still sends text gets `400 plaintext_location_retired` without an echo. The web
+client and the native app neither show nor send it.
 
-**When to fix** When there is a v2 contract. Sooner, the server could stop
-carrying the column into duplicates and templates, and a data migration could
-take `storage_location` out of the seeded type schemas, so that the native app
-stops being prompted for it. The native app needs the same warning and move.
+**What is left** Kept here, not deleted, because it is not finished everywhere:
 
-**Risk if left** People keep writing the most damaging sentence in the database
-into a field the server can read, next to a sealed field that exists for exactly
-that sentence.
+- Any database that still has notes must have them moved **with a build from
+  before V33** (for example `02a198d`), whose web client has the move button.
+  The owner's development database held one such holding when V33 was written.
+- The v1 schema still lists `storageLocation` / `location` / `whereItIsKept`
+  (always absent in responses, refused with text in requests). Removing them is
+  a v2 change.
+- `docs/19-pen-test-pack.md` still describes the columns as present; it belongs
+  to the infra session and was not edited in this change.
+
+**Risk if left** None on the server. A database that was not moved cannot start
+this build, which is the intended failure.
 
 ## 18. Two clocks for "not confirmed lately"
 

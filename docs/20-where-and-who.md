@@ -17,8 +17,9 @@ papers and keys are. And it names a third party, the key holder, who never
 agreed to be written down.
 
 This document is the spec, and it records the decisions made when the feature
-was built. Status: **built** (migration V28, backend, web client). Native app:
-**not built.** See §9.
+was built. Status: **built** (migration V28, backend, web client). The older
+plaintext columns are **retired** (migration V33, §1). Native app: **no editor**;
+it shows the key-holder guidance on its generic sealed-field screen. See §9.
 
 ---
 
@@ -44,43 +45,79 @@ Why:
 
 **Two reasons in the code that push against this, and what was done about each:**
 
-1. **Existing plaintext columns already hold this sentence.**
-   `investments.storage_location` ("Kept at", V3) and `estate_documents.location`
-   ("The original is", V18) are plain text. The server reads them. They appear in
-   server search (`SearchService` matches `storage_location`), in the continuity
-   handbook and its PDF (`HandbookService`), and in the transmission view. They
-   cannot be dropped, because v1 is additive-only. The server also cannot
-   encrypt them itself, because it does not have the key.
-   *What was done:* the web client no longer asks for either one. The capture
-   form used to offer `storage_location` in the "essential" group of every type
-   schema that lists it ("Where it's kept", "Where the deed is", "Where the
-   certificate is", and "Where it is / who holds it" on Anything Else), and the
-   new-will form offered `location`. Both posted plain text. Each field is now
-   replaced by a line that points to the sealed card on the saved record. The
-   API still accepts both fields, because v1 is additive-only, and this client
-   never sends them. `scripts/check-spec.py` fails if either form starts asking
-   again.
-   *What is still written in plain text, and by whom:* anything already in the
-   columns; any other v1 client that sends them; and the server's own copies.
-   When a holding is duplicated, `InvestmentService` carries `storage_location`
-   to the copy. When a template is saved from a holding or applied,
-   `TemplateService` carries it both ways through
-   `investment_templates.storage_location` (V16). The web client does not use
-   templates. The native app has not been checked for a location field.
-   Wherever the web client shows a record that still has a note, it also shows a
-   warning ("Anyone who can see the record can read it, and so can our server").
-   The warning has a button: **Seal it, and clear the unsealed note.** It is
-   offered only when this person can still read a location after the note is
-   gone. If the sealed slot is empty, the client seals the note first, and it
-   clears the column with a PATCH to `""` only after the seal is stored. If the
-   slot holds the person's own later value, the note is cleared and that value
-   stands. If a co-owner sealed the slot ("theirs"), or it will not open
-   ("unreadable"), there is no button. The note stays, with a line saying why.
-   Clearing in those cases would seal nothing and delete the only copy that this
-   person, and the family through the handbook, can read. An earlier version of
-   the button did exactly that. The rule is in `where-legacy.js` and is checked
-   by `scripts/check-where-legacy.js`. Retiring the columns is still to do:
-   [known-issues 17](known-issues.md).
+1. **Older plaintext columns held this sentence.** `investments.storage_location`
+   ("Kept at", V3), `investment_templates.storage_location` (V16) and
+   `estate_documents.location` ("The original is", V18) were plain text, and
+   eight seeded types asked for `storage_location` in their field schema. The
+   server read them in search, in the continuity handbook and its PDF, and in the
+   transmission guide, and copied `storage_location` into duplicates and between
+   holdings and templates. The server cannot encrypt them itself, because it does
+   not have the key.
+   *What was done first:* the web client stopped asking, and offered a
+   **Seal it, and clear the unsealed note** button on any record that still had
+   a note, only when the person could still read a location afterwards.
+   *What was done since, on the owner's decision* ("Right now 'no plain-text
+   fallback' isn't true — the server can still create one. Do it before real users
+   exist"): **V33 retires all of it.**
+
+   - **The migration refuses rather than destroys.** If any of the three columns,
+     or any `attributes.storage_location`, holds a non-empty value, in the trash
+     or not, V33 raises an error that says how many of each kind and changes
+     nothing. The server does not start until they are moved. It also refuses if
+     row-level security is active for the migrating role, because a count taken
+     under RLS could be zero while other people's notes exist.
+   - **Then it drops the columns**, strips the empty key from attributes, takes
+     `storage_location` out of every type's `field_schema` (`common` and
+     `fields`), deletes any custom field definition by that name, and adds check
+     constraints so a type, a custom field or an attributes object cannot carry
+     it again. *Dropped, not renamed and revoked:* after the refusal there is
+     nothing left to keep; a column-level `REVOKE` does not bind the table owner,
+     which is the role migrations, sweeps and restores use; and `select i.*`
+     would fail for the app role on a revoked column, so every read would have to
+     change anyway.
+   - **No server path reads or writes one.** Capture, edit, duplicate, rollover,
+     template save, template edit and template apply, will create and edit,
+     search, the handbook (JSON and PDF), the transmission guide and handover
+     readiness no longer mention the columns. The v1 schema keeps the request
+     fields and the response fields, because v1 is additive-only; response fields
+     are always absent now.
+   - **A request that still sends text is refused, not ignored:**
+     `400 plaintext_location_retired`, with `details.field` naming the field
+     (`storageLocation`, `location`, `attributes.storage_location` on a template,
+     or `key` for a custom field called `storage_location`). The message never
+     echoes the text. Ignoring it would answer 200 to a client that believes it
+     has recorded where the will is. Null and blank carry no location, so they are
+     accepted and do nothing, which keeps an older client that sends `""` working.
+   - **The clients.** The web client no longer shows or sends either field; the
+     warning and the move button are gone with the data they moved, and every
+     capture form ends with a line pointing to the sealed card. The native app
+     no longer renders `storage_location` even if an older server's schema names
+     it, and never sends it. `scripts/check-spec.py` fails if any Kotlin, SQL
+     (in V34 onwards), JS or fixture script reads or writes a plaintext location.
+
+   **A database that still holds notes.** V33's message names the counts. To
+   move them, run a build from **before** V33 (for example commit `02a198d`)
+   against that database. In its web client, unlock, open each holding's detail
+   screen, or "Where the original is" on a will under *For my family*, and press
+   **Seal it, and clear the unsealed note**. Restore a trashed holding from
+   Settings → Trash first. Then start this build again. The rows are listed by:
+
+   ```sql
+   select 'investment', id, household_id, title, deleted_at is not null as trashed
+     from investments where length(storage_location) > 0
+   union all
+   select 'estate_document', id, household_id, title, deleted_at is not null
+     from estate_documents where length(location) > 0
+   union all
+   select 'template', id, household_id, name, deleted_at is not null
+     from investment_templates where length(storage_location) > 0;
+   ```
+
+   A note the button does not offer to move (a slot sealed by someone else, or
+   one that will not open), a template, a deleted will, or an
+   `attributes.storage_location` value has no button. Someone has to decide
+   about each on purpose: retype it into the sealed card and then set the column
+   to `''`, or clear it by hand. The migration never makes that decision.
 2. **Continuity.** The people who most need "where is the will" are the family,
    after a death or incapacity. Emergency access (V20) gives a trusted contact
    more *rows*. It cannot give them the passphrase. They will see that a location
@@ -157,8 +194,8 @@ search on the device:
 What that costs, without softening:
 
 - **No server-side search.** The global search bar (`GET /search`) never finds a
-  sealed location. It still finds the old plaintext `storage_location`, which is
-  one more reason to retire it (§1).
+  location. It used to match the old plaintext `storage_location`; that column is
+  gone (§1).
 - **No search while locked.** The locked screen shows only presence (§6) and an
   unlock form.
 - **Search cost grows with record count.** Every value is decrypted on each visit
@@ -200,6 +237,20 @@ Why a link was rejected:
   say it. It does not need a phone number, an address or an account. The editor
   offers names from members and contacts as **suggestions**. Choosing one copies
   the text and creates no link.
+- **The words ask for less than a name.** The owner's decision: *"Design
+  mitigation while you get [a legal answer] — the field is end-to-end encrypted
+  so we cannot read it, and the UI should guide people toward 'Amma' or 'the CA'
+  rather than full names and addresses."* The helper text under the key-holder
+  line says to write a role or a relationship ("Amma", "the CA", "my brother"),
+  not a full name, an address or a phone number; that it names another person,
+  so to say only what the family needs; and that it is end-to-end encrypted, so
+  Almira cannot read it. The placeholder is "Amma, the CA, my brother". The
+  location line has its own: enough for the family to find it, no street address
+  or locker number. Both are in English, Telugu and Hindi (`where.keyHolderHelp`,
+  `where.locationHelp`) and, in English, on the native sealed-field screen
+  (`WhereAndWhoWording`). The member and contact suggestions stay, because a
+  household often calls a member by a relationship already; picking one is still
+  the person's choice.
 
 **Consent and the DPDP Act.** The key holder is a data principal who has not
 consented. What this design does about that:
@@ -211,8 +262,11 @@ consented. What this design does about that:
 - Removing it is one action. Blank the line and the row is deleted.
 
 Whether a family recording "the key is with Amma" falls within the Act's
-personal or domestic purpose exemption is a question for counsel. It is not
-settled here. The design keeps the question small either way.
+personal or domestic purpose exemption is a question for counsel. **Legal review
+is pending, and nothing here or in the product states a conclusion.** The design
+keeps the question small either way. The privacy notice ([Doc 23](23-privacy-notice.md))
+says what is stored, that it names another person, that it is sealed, the
+guidance above, and that the consent question is with lawyers.
 
 ## 5. Decision (e): visibility
 
@@ -286,14 +340,15 @@ server release that accepts it. It would need coordinated client releases anyway
   result opens the editor. **Lock** drops the opened values.
 - **A card on each record** (holding detail, loan detail, account detail, and
   "Where the original is" on each will under *For my family*). It shows the two
-  lines once unlocked and "Recorded — locked" before that. It also shows the
-  legacy-note warning and its move-and-clear button, which is offered only when
-  the slot is empty or the person's own (§1).
+  lines once unlocked and "Recorded — locked" before that. There is no
+  legacy-note warning any more: the note cannot exist (§1).
 - **Capture and the new-will form** do not ask where the original is. Each shows
   a line pointing to the sealed card instead (§1).
 - **The editor** has two lines. Each is sealed on the device before it is sent,
   exactly as typed, with no trim. A blank line removes that field. Names are
-  suggested, never linked.
+  suggested, never linked. Each line has its guidance under it (§4).
+- **The privacy notice** (Settings, and the end of onboarding) carries the
+  key-holder paragraph ([Doc 23](23-privacy-notice.md)).
 - **Strings** are in English, Telugu and Hindi (`where.*`, `nav.where`). The
   caveats are server sentences, and they stay English (Doc 14).
 - The service worker version is bumped so the new modules are fetched.
@@ -332,17 +387,41 @@ sealed nothing, and the slot was still the other member's. With the fix, the sam
 card offers no button and says the note stays. On a private holding with an empty
 slot, the button is offered. Clicking it sealed the note as this member's value
 and emptied the column. The capture form for Physical Gold and the new-will form
-render the pointer line and no location input. `scripts/check-where-legacy.js`
-(run with `jsc -m`) asserts the rule for every slot state. It failed when the rule
-was put back to "clear whenever unlocked". The three `check-spec.py` checks for
-the two forms and the button failed against the previous commit's files.
+render the pointer line and no location input. A `scripts/check-where-legacy.js`
+harness asserted the button's rule for every slot state, and failed when the rule
+was put back to "clear whenever unlocked". The button, its rule and the harness
+were removed in V33's change, with the columns they moved notes out of; they are
+in the history at `02a198d` for anyone who has to move notes first (§1).
+
+**Verified for the retirement (V33).** `PlaintextLocationRetiredApiTest` covers
+each server path in §1: a holding, an edit, a template (field, attributes, edit),
+a will (create, edit) and a custom field or custom type sent with a location are
+refused with `plaintext_location_retired` and no echo, and nothing is saved; an
+empty value is accepted; a duplicate, a template saved from a holding and
+applied, the handbook and the transmission guide carry no location; no seeded
+type asks for it; the three columns do not exist; and the database refuses a type
+or an attributes object that tries to bring it back. The migration itself was run
+by hand against copies of the test database: with 13 holdings and 26 wills
+holding notes it refused, named the counts and changed nothing; with them
+emptied it dropped the columns and left every type's other fields in order. The
+built server was started against a copy holding one note: startup failed with
+the counts and the hint in the log, the log did not contain the note, and the
+database was still at V32 with the note intact. With the note emptied, the same
+jar migrated to V33 and started. In a browser against it, the Physical Gold
+capture form had no location input and ended with the pointer line, a holding's
+detail showed no "Kept at" row, the editor showed both helper texts in English,
+Telugu and Hindi, and a request with `storageLocation` got
+`400 plaintext_location_retired`. Which guarantees were watched failing is
+listed in the change's report, not repeated here.
 
 **Not verified:**
 
-- **The native app shows nothing of this.** It is not broken: the app only lists
+- **The native app has no editor for these two fields.** It is not broken: the app only lists
   and opens sealed values generically, and the only envelope rule tightened is
-  one its own writer already satisfies. But the app has no UI for these two
-  fields and was not run against this change.
+  one its own writer already satisfies. It has a generic sealed-field screen,
+  which now shows the key-holder and location guidance when those field keys are
+  typed; that screen was compiled for Android and the iOS simulator and its
+  wording unit-tested, but not run on a device.
 - The layout, by eye. The DOM was driven by script in a browser pane that was not
   on screen, so there are no screenshots, and nothing was seen at phone width.
 - Typing a passphrase into the unlock form. The vault was created and unlocked by

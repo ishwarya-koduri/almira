@@ -280,13 +280,11 @@ security. Nothing is read from the owner pool.
   The server never opens the value, because it cannot, and presence is what
   docs/20 §6 set aside for this. A value sealed by a co-owner counts, because
   the location is recorded.
-  - **An unsealed note does not count.** If the record has no sealed location
-    but does have `investments.storage_location` or `estate_documents.location`
-    filled in, the gap is `location_unsealed`: "Where it is is in an unsealed
-    note. Seal it on the record." That note is the sentence docs/20 calls the
-    most damaging in the database. If it counted, the score would reward
-    exactly what docs/20 is retiring, and the fix is one tap on the same
-    record's card.
+  - **An unsealed note never counted.** Until V33 a record could carry the old
+    plaintext `investments.storage_location` or `estate_documents.location`, and
+    such a record got the gap `location_unsealed` rather than credit. V33
+    retired those columns (docs/20 §1), so that gap can no longer occur and
+    the only location gap is `no_location`.
   - **What a sealed location does not prove.** The family can read it only with
     the passphrase (docs/20 §1.2). The server cannot know whether they have
     it. When any sealed location is counted, a caveat says so, in the same
@@ -399,8 +397,9 @@ API (`default-property-inclusion: non_null`).
   in check order. That makes the list read as a to-do list, one record at a
   time.
 - `reason` is one of `no_nominee`, `no_document`, `no_location`,
-  `location_unsealed`, `no_trusted_contact`, `trusted_contact_cannot_ask`,
-  `nobody_to_name`. Clients translate by `reason` and fall back to `fix`, which
+  `no_trusted_contact`, `trusted_contact_cannot_ask`, `nobody_to_name`.
+  (`location_unsealed` existed until V33 and can no longer be sent; a client
+  that still knows it loses nothing.) Clients translate by `reason` and fall back to `fix`, which
   is English (Doc 14).
 - `recordType` / `recordId` are the deep link. `investment` opens the holding,
   where the nominee card, the documents and the where-and-who card all are.
@@ -427,8 +426,9 @@ reason, and passed again once it was restored):
   199 of 200 in one check with the others complete, and gets 100.
 - A named trusted contact with no login counted as done: the API test for "a
   score cannot reach 100 with a gap present" gets 100 and `complete: true`.
-- An unsealed note counted as a location: the same kind of test reaches 100
-  with only an unsealed note.
+- An unsealed note counted as a location: the same kind of test reached 100
+  with only an unsealed note. (Before V33. The test now asserts the record's only
+  location gap is `no_location`, because the note cannot be written.)
 - The readiness queries run on the owner pool (no row-level security), with
   the ordinary-sight predicate also removed: the spouse's view counts the
   owner's private holdings (`recordCount` 2, `leftOutCount` 1) and names them.

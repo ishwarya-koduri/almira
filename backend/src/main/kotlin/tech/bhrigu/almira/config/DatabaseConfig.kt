@@ -6,6 +6,7 @@ import org.flywaydb.core.Flyway
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
+import org.springframework.core.env.Environment
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.transaction.PlatformTransactionManager
@@ -76,15 +77,20 @@ class DatabaseConfig(private val props: AlmiraProperties) {
      * Migrations run as the owner before the app serves anything. The repeatable
      * R__grants migration re-grants privileges to the runtime role each time it
      * changes, so a table added by a future migration is never unreachable.
+     *
+     * The page-checksum check runs first, so a database that would be refused
+     * has had nothing written to it. See [PageChecksumCheck].
      */
     @Bean(initMethod = "migrate")
-    fun flyway(ownerDataSource: HikariDataSource): Flyway =
-        Flyway.configure()
+    fun flyway(ownerDataSource: HikariDataSource, environment: Environment): Flyway {
+        PageChecksumCheck(environment).verify(ownerDataSource)
+        return Flyway.configure()
             .dataSource(ownerDataSource)
             .locations("classpath:db/migration")
             .baselineOnMigrate(true)
             .validateOnMigrate(true)
             .load()
+    }
 
     private fun hikari(user: String, password: String, poolName: String, maxPoolSize: Int) =
         HikariDataSource(

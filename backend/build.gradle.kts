@@ -64,6 +64,15 @@ val syncMigrations by tasks.registering(Sync::class) {
 sourceSets.main { resources.srcDir(layout.buildDirectory.dir("generated/migrations")) }
 tasks.named("processResources") { dependsOn(syncMigrations) }
 
+// `bootRun` is the development launcher, so it chooses development explicitly.
+// The checks that relax in development (docs/17 §3) refuse on a MISSING
+// ALMIRA_ENV, so a jar started anywhere without the variable fails closed —
+// but a developer running ./scripts/dev.sh should not have to know that.
+// An ALMIRA_ENV already in the shell wins.
+tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+    environment("ALMIRA_ENV", System.getenv("ALMIRA_ENV") ?: "development")
+}
+
 tasks.withType<Test> {
     useJUnitPlatform()
 
@@ -75,7 +84,7 @@ tasks.withType<Test> {
     listOf(
         "ALMIRA_TEST_DB_URL", "ALMIRA_TEST_DB_OWNER_USER", "ALMIRA_TEST_DB_OWNER_PASSWORD",
         "ALMIRA_TEST_DB_APP_USER", "ALMIRA_TEST_DB_APP_PASSWORD",
-        "ALMIRA_TEST_REDIS_HOST", "ALMIRA_TEST_REDIS_PORT",
+        "ALMIRA_TEST_REDIS_HOST", "ALMIRA_TEST_REDIS_PORT", "ALMIRA_TEST_CHECKSUMS_DB_URL",
     ).forEach { name -> System.getenv(name)?.let { environment(name, it) } }
 
     if (System.getenv("DOCKER_HOST") == null) {

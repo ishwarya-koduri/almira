@@ -223,6 +223,10 @@ abstract class ApiTestBase {
             registry.add("spring.data.redis.host") { TestInfra.redisHost }
             registry.add("spring.data.redis.port") { TestInfra.redisPort }
             registry.add("almira.otp.provider") { "log" }
+            // Chosen explicitly: the test databases are created without page
+            // checksums, and PageChecksumCheck relaxes only on a development
+            // environment that was set, never on one that was defaulted.
+            registry.add("ALMIRA_ENV") { "development" }
             // Every test signs in from 127.0.0.1, so the per-IP hourly limit
             // (a real and wanted control) would throttle the suite itself.
             // Raised here, and exercised deliberately in OtpRateLimitTest.

@@ -36,7 +36,7 @@ class SecurityConfig(
         .authorizeHttpRequests { auth ->
             auth.requestMatchers(
                 "/api/v1/auth/otp/**", "/api/v1/auth/refresh",
-                "/actuator/health", "/health",
+                "/actuator/health", "/health", "/health/live", "/health/ready",
                 "/docs/**", "/swagger-ui/**", "/v3/api-docs/**",
             ).permitAll()
             // Redeeming a document ticket is unauthenticated ON PURPOSE: the

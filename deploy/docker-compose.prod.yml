@@ -6,25 +6,44 @@
 #
 # Deliberate choices, each of which has a reason:
 #
+#   · The project is `almira-prod` and every volume has an explicit, fixed name
+#     beginning `almira-prod-`. The development stack is project `almira` with
+#     project-scoped volumes (`almira_dbdata`), and this file used to share both
+#     names — so a command run in a shell without COMPOSE_PROJECT_NAME resolved
+#     to the development database's volume, and `down -v` would have destroyed
+#     it. Fixed names do not depend on the project name at all: even
+#     `-p almira` cannot point this file at `almira_dbdata`. Compose's own
+#     scoping always joins with an underscore, so a hyphenated fixed name can
+#     never be one it generated.
+#   · Nothing here sets `container_name:`. It ignores the project name, so two
+#     stacks from one file collide on it.
 #   · Postgres and Redis publish NO ports. They are reachable only from the
-#     compose network. The only thing exposed is the application, and in front
-#     of that belongs a reverse proxy that terminates TLS — Almira sets HSTS and
-#     assumes it is behind one (docs/17).
+#     compose network. The only thing exposed is the application, on loopback,
+#     and in front of that belongs a reverse proxy that terminates TLS — Almira
+#     sets HSTS and assumes it is behind one (docs/17).
+#   · The database is initialised with page checksums. The application refuses
+#     to start without them (docs/17 §3), and they cannot be turned on later
+#     without stopping the server, so this has to be right before there is data.
 #   · The database bootstrap is a separate one-shot service rather than an
 #     init script, because a managed Postgres has no init directory and the
 #     same command has to work in both places.
-#   · No `latest` tags: pin the images you actually tested.
+#   · Images are pinned by digest: the ones the restore drill actually ran
+#     (docs/17 §6). A tag can be re-pointed; a digest cannot.
 # =============================================================================
-name: almira
+name: almira-prod
 
 services:
   db:
-    image: postgres:16.4-alpine
+    # postgres 16.14, alpine
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${ALMIRA_DB_NAME:?set ALMIRA_DB_NAME}
       POSTGRES_USER: ${ALMIRA_DB_OWNER_USER:?set ALMIRA_DB_OWNER_USER}
       POSTGRES_PASSWORD: ${ALMIRA_DB_OWNER_PASSWORD:?set ALMIRA_DB_OWNER_PASSWORD}
+      # Read only by initdb, i.e. only when the volume is empty. On an existing
+      # volume it does nothing — which is why the application checks as well.
+      POSTGRES_INITDB_ARGS: --data-checksums
       LANG: C.UTF-8
     command: >
       postgres
@@ -40,10 +59,12 @@ services:
       timeout: 5s
       retries: 12
     # Never publish this. If you need psql, go through the host:
-    #   docker compose -f deploy/docker-compose.prod.yml exec db psql -U "$ALMIRA_DB_OWNER_USER"
+    #   docker compose -f deploy/docker-compose.prod.yml --env-file .env.production \
+    #     exec db psql -U "$ALMIRA_DB_OWNER_USER" -d "$ALMIRA_DB_NAME"
 
   redis:
-    image: redis:7.4-alpine
+    # redis 7.4.11, alpine
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     restart: unless-stopped
     command: >
       redis-server
@@ -53,7 +74,7 @@ services:
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD:-$$ALMIRA_REDIS_PASSWORD} ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$ALMIRA_REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -66,15 +87,19 @@ services:
   #   docker compose -f deploy/docker-compose.prod.yml --env-file .env.production \
   #     run --rm db-bootstrap
   db-bootstrap:
-    image: postgres:16.4-alpine
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     profiles: ["bootstrap"]
     depends_on:
       db:
         condition: service_healthy
     environment:
       PGPASSWORD: ${ALMIRA_DB_OWNER_PASSWORD}
-      ALMIRA_DB_APP_USER: ${ALMIRA_DB_APP_USER}
-      ALMIRA_DB_APP_PASSWORD: ${ALMIRA_DB_APP_PASSWORD}
+      # Passed in explicitly. It used to be read with a default of `almira`
+      # while never being set in this container, so an owner with any other
+      # name made the bootstrap connect as a role that did not exist.
+      ALMIRA_DB_OWNER_USER: ${ALMIRA_DB_OWNER_USER}
+      ALMIRA_DB_APP_USER: ${ALMIRA_DB_APP_USER:?set ALMIRA_DB_APP_USER}
+      ALMIRA_DB_APP_PASSWORD: ${ALMIRA_DB_APP_PASSWORD:?set ALMIRA_DB_APP_PASSWORD}
       ALMIRA_DB_NAME: ${ALMIRA_DB_NAME}
     volumes:
       - ./bootstrap-db.sql:/bootstrap-db.sql:ro
@@ -82,7 +107,7 @@ services:
       - sh
       - -c
       - >
-        psql -h db -U "$${ALMIRA_DB_OWNER_USER:-almira}" -d "$${ALMIRA_DB_NAME}"
+        psql -h db -U "$${ALMIRA_DB_OWNER_USER}" -d "$${ALMIRA_DB_NAME}"
         -v ON_ERROR_STOP=1
         -v app_user="$${ALMIRA_DB_APP_USER}"
         -v app_password="$${ALMIRA_DB_APP_PASSWORD}"
@@ -92,13 +117,17 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: almira:${ALMIRA_IMAGE_TAG:-latest}
+    image: almira:${ALMIRA_IMAGE_TAG:?set ALMIRA_IMAGE_TAG — the git commit you built, never latest}
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # A small VPS runs Postgres, Redis and this on one box. Without a limit the
+    # JVM sizes its heap from the HOST's memory (MaxRAMPercentage=70 in the
+    # Dockerfile), which on a 4 GB machine leaves Postgres to the OOM killer.
+    mem_limit: ${ALMIRA_APP_MEMORY:-1536m}
     environment:
       ALMIRA_ENV: production
       ALMIRA_DB_URL: jdbc:postgresql://db:5432/${ALMIRA_DB_NAME}
@@ -121,11 +150,14 @@ services:
     volumes:
       - documents:/app/var
     ports:
-      # Bound to the loopback interface: the reverse proxy in front of this is
-      # what the internet talks to, and it is what holds the certificate.
-      - "127.0.0.1:8080:8080"
+      # Loopback only: the reverse proxy in front of this is what the internet
+      # talks to, and it is what holds the certificate. The host port is a
+      # variable so a second stack (a restore drill) can sit beside the first.
+      - "127.0.0.1:${ALMIRA_HOST_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health | grep -q '\"rlsEnforced\":true'"]
+      # Readiness, not liveness: database reachable as the runtime role with
+      # row-level security in force, and Redis answering. See docs/17 §2.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -133,5 +165,8 @@ services:
 
 volumes:
   dbdata:
+    name: almira-prod-dbdata
   redisdata:
+    name: almira-prod-redisdata
   documents:
+    name: almira-prod-documents

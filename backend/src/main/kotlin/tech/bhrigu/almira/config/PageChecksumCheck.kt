@@ -89,6 +89,15 @@ class PageChecksumCheck(private val environment: Environment) {
         const val ENV_VARIABLE = "ALMIRA_ENV"
 
         /**
+         * Development was CHOSEN: the variable says so and the property agrees.
+         * Missing, empty, mistyped or disagreeing all mean no. Shared with the
+         * other startup checks that relax in development, so there is one rule.
+         */
+        fun developmentChosen(explicitEnv: String?, resolvedEnv: String?): Boolean =
+            explicitEnv.equals("development", ignoreCase = true) &&
+                resolvedEnv.equals("development", ignoreCase = true)
+
+        /**
          * The whole decision, with no database and no Spring, so every branch
          * can be tested directly. [checksums] is the raw `show data_checksums`
          * value, or null if it could not be read.
@@ -96,10 +105,7 @@ class PageChecksumCheck(private val environment: Environment) {
         fun decide(checksums: String?, explicitEnv: String?, resolvedEnv: String?): Verdict {
             if (checksums == "on") return Verdict.Protected
 
-            val developmentChosen =
-                explicitEnv.equals("development", ignoreCase = true) &&
-                    resolvedEnv.equals("development", ignoreCase = true)
-            if (developmentChosen) return Verdict.DevelopmentWarning
+            if (developmentChosen(explicitEnv, resolvedEnv)) return Verdict.DevelopmentWarning
 
             val state = when (checksums) {
                 null -> "could not be read"

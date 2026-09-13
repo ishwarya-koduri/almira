@@ -304,61 +304,171 @@ provider account, then a live email adapter watched failing all four ways.
 [Doc 13 §5](13-providers-and-going-live.md) has the design and
 [Doc 18 §3](18-handover.md) the alpha sequence.
 
-## 6 · Backups
+## 6 · Backups, and restores that prove themselves
 
-Two things, and they must be taken together:
+A backup is two things taken together, and there are scripts so nobody has to
+remember the flags:
 
 ```bash
-# The database
-docker compose -f deploy/docker-compose.prod.yml --env-file .env.production \
-  exec -T db pg_dump -U "$ALMIRA_DB_OWNER_USER" -Fc almira > almira-$(date +%F).dump
+# Take one: database, documents, and a manifest that a restore checks against.
+./scripts/backup.sh --project almira-prod --env-file .env.production --out /srv/backups
 
-# The documents (encrypted at rest; useless without the key, and equally
-# useless if you lose them)
-docker run --rm -v almira_documents:/var -v "$PWD":/backup alpine \
-  tar czf /backup/almira-documents-$(date +%F).tgz -C /var .
+# Prove it, into an EMPTY stack — this is the half people skip.
+./scripts/restore.sh --project almira-prod-drill --env-file .env.drill \
+  --from /srv/backups/almira-<timestamp>
 ```
 
-A database restored without the documents leaves every holding pointing at a
-missing scan. Documents restored without the key are ciphertext. **Test a
-restore before you need one** — an untested backup is a hope.
+`backup.sh` writes `database.dump` (pg_dump custom format), `documents.tgz`
+(the documents volume), and `manifest.json` — the sha256 of both files, the row
+count of every table *as it is in the dump*, the migration version, and the
+server's checksum setting. It takes the database first and the documents second,
+because documents are only ever added or soft-deleted, so every document row in
+the dump has its file in a tarball taken just after.
 
-### Verifying a restore, not just taking one
+**The key-encryption key is deliberately not in the backup.** Account numbers
+and documents are unreadable without it, so a backup that carried it would be a
+backup that carried the data in the clear. Keep `ALMIRA_KMS_MASTER_KEY` somewhere
+that is neither this host nor these files (§4). A database restored without the
+documents leaves every holding pointing at a missing scan; documents restored
+without the key are ciphertext; a restore with the wrong key now refuses to
+start (below). **An untested backup is a hope, not a backup.**
 
-*Decided; lands with the item-4 artefacts.* A backup that restores is not the
-same as a backup that restored **correctly**, and for sealed fields the
-difference is invisible: the server cannot read them, so a truncated or
-corrupted ciphertext restores without complaint and fails months later in front
-of the one person who needed it.
+### The restore refuses to lie to you
 
-Two checks, in this order.
+`restore.sh` stops at the first thing that is wrong, in this order:
 
-**A structural sweep, after every restore.** Every row in `sealed_values` must
-carry a ciphertext that is valid base64url, at least 33 bytes decoded, with
-version byte `1` and a key version of at least 1. Every row in `e2e_keys` must
-have a salt of at least 16 bytes and a wrapped key and verifier that parse the
-same way. No schema change and no new column — it reads what is already there,
-and it catches truncation and header damage, which are what a bad restore
-actually looks like.
+1. **The files match the manifest's sha256.** A single flipped byte in the dump
+   or the tarball stops it here.
+2. **The target is empty and has page checksums on.** It will not restore over a
+   database that already has tables — that is a merge nobody designed — and it
+   will not restore onto a volume without `--data-checksums`, because the
+   application would refuse to start on it anyway (§3) and learning that after a
+   two-hour restore is worse than learning it now.
+3. **The runtime role**, created by the same idempotent bootstrap as a fresh
+   install, so the dump's grants have a role to land on.
+4. **pg_restore**, stopping on the first error.
+5. **The documents volume**, which must also be empty.
+6. **Verify** — the part that makes it a proven restore rather than a completed
+   one:
+   a. every table has the row count the manifest recorded;
+   b. the **structural sweep** (below);
+   c. the **stored-digest check** (below).
 
-It names the exact row. A sweep that says "something is wrong" is a sweep that
-sends someone to read a million rows by hand.
+### Two ciphertext checks, cheap one first
 
-And it is proved the way everything else here is proved: by deliberately
-corrupting a ciphertext in a **restored copy**, confirming the sweep names that
-row and no other, and restoring it. A sweep nobody has watched fail is a sweep
-nobody should trust.
+A backup that restores is not the same as a backup that restored **correctly**,
+and for sealed fields the difference is invisible: the server cannot read them,
+so a truncated or bit-flipped ciphertext restores without complaint and fails
+months later in front of the one person who needed it.
 
-**Then a stored digest — after the sweep works, not before.** A server-computed
-SHA-256 of each ciphertext, written beside it and compared during restore
-verification. Internal, additive, no change to the frozen v1 API. It closes the
-one case the sweep cannot see: a flipped bit *inside* the body, which parses
-perfectly and simply will not open.
+**The structural sweep** (`deploy/restore/sweep.sql`). Every `sealed_values`
+ciphertext must be valid base64url, at least 33 bytes decoded, version byte `1`,
+envelope key version ≥ 1; every `e2e_keys` row must have a salt of at least 16
+bytes and a wrapped key and verifier that parse the same way, and iterations
+≥ 100 000. It applies the **client's** parse rules, which are stricter than what
+the server accepts on write — so a row that fails here is one no conforming
+client could open, whether a restore damaged it or it was written malformed. No
+schema change; it reads what is already there and catches truncation and header
+damage, which is what a bad restore actually looks like. It names the exact row,
+because a sweep that only says "something is wrong" sends someone to read a
+million rows by hand.
 
-It is deliberately last. It is the only one of the three that needs a schema
-change, and it is worth nothing until the two cheaper checks are running — see
-[Doc 12 §9](12-end-to-end-encryption.md) for why it is not an integrity control
-against an attacker and why verifying it on write buys nothing.
+**The stored digest** (`V31`, checked by `deploy/restore/digest-check.sql`). A
+server-computed SHA-256 of each ciphertext, written beside it by a trigger and
+compared on restore. It closes the one case the sweep cannot see: a flipped bit
+*inside* a well-formed envelope, which parses perfectly and simply will not
+open. It is last because it is the only one needing a schema change, and it is
+meaningful only after a **whole** restore — pg_dump loads data before it creates
+triggers, so the digests come back as they were written; a data-only restore
+would recompute them from the restored bytes and pass on anything. It is **not**
+an integrity control against an attacker (anyone who can change a ciphertext
+through SQL fires the trigger too); see [Doc 12 §9](12-end-to-end-encryption.md).
+It catches accidental damage between a write and a restore, and nothing else.
+
+When a row is named, `./scripts/restore-row.sh --table … --id …` copies that one
+row's ciphertext back from the backup — triggers suppressed, so it does not
+stamp a new digest over damaged bytes — and re-runs both checks. If the backup's
+copy is also bad, that is an older-backup problem, and the script says so rather
+than pretending.
+
+### Watched failing, not just watched passing
+
+Every check above was watched failing before it was trusted (docs/19), on a real
+restored copy on this machine:
+
+- a `sealed_values` ciphertext **truncated** to 30 bytes: the sweep named that
+  row (`decodes to 30 bytes; the smallest envelope is 33`) and no other, the
+  restore stopped, `restore-row.sh` put it back byte-for-byte, and the field
+  opened again;
+- a **single body byte flipped** through a trigger-suppressing write: the sweep
+  passed (the envelope is still well-formed) and the **digest check** caught it;
+  the same flip through an ordinary `UPDATE` did *not* trip it, because the
+  trigger recomputed the digest — the documented limit, not a bug;
+- one **on-disk page byte flipped** in the stopped database's volume: Postgres
+  refused the page with `invalid page in block 0` and `page verification
+  failed`, which is the checksum layer (§3) doing the job the digest sits behind;
+- a **whole-application round trip**: seed two members with a private holding, a
+  stored account number, an uploaded document and three sealed values (including
+  an empty one), back up, restore into an empty stack, start the app, and read
+  every piece back *through the API* — the second member still saw a different
+  total (RLS survived), the account number decrypted, the document downloaded
+  byte-for-byte, and each sealed value opened with its passphrase in an
+  independent implementation of the client envelope
+  (`deploy/restore/drill/`, checked against docs/12's fixed vector).
+
+### One more refusal the drill turned up
+
+Starting a restored copy with the **wrong** `ALMIRA_KMS_MASTER_KEY` used to boot,
+report ready, and fail only when someone revealed an account number — as a 500.
+That is the likeliest mistake in a restore, since the key lives somewhere else on
+purpose, and it looked like a healthy deployment. The application now checks at
+startup that the loaded key opens the household keys already in the database, and
+**refuses** if it does not, naming the key it has and the key the data expects.
+An empty database passes; a key that matches some households and not others warns
+rather than taking the matching ones down. Reproduced both ways in a container:
+the right key logs `opens all N household key(s)` and serves; the wrong key logs
+`Refusing to start — ALMIRA_KMS_MASTER_KEY is not the key this database was
+encrypted with` and does not.
+
+### The single small VPS this assumes
+
+One box runs Postgres, Redis and the application (§1). The compose file caps the
+app container's memory, because the JVM otherwise sizes its heap from the host's
+total and leaves Postgres to the OOM killer on a 4 GB machine. A restore drill
+brings up a **second** stack beside the live one; it must use a different project
+name, its own volumes and a different host port (`deploy/restore/drill/` shows
+the overlay). DigiLocker requires a server located in India, so the region is
+constrained to an Indian one rather than free — say so to whoever provisions the
+box. None of this has run on a real VPS yet; it has run only in matching
+containers on one developer machine, and the first real deploy should expect to
+correct a line.
+
+### The environment-variable contract
+
+`.env.production.example` is the authoritative list, with a REQUIRED/optional
+marker on each. What matters at deploy time, beyond the four secrets in §1:
+
+- **Required, no safe default:** `ALMIRA_DB_NAME`, `ALMIRA_DB_OWNER_USER`,
+  `ALMIRA_DB_APP_USER` and the passwords; `ALMIRA_JWT_SECRET`,
+  `ALMIRA_KMS_MASTER_KEY`, `ALMIRA_REDIS_PASSWORD`. `ALMIRA_IMAGE_TAG` is
+  required by the compose file — the git commit you built, never `latest`.
+- **Compose-only knobs, with defaults:** `ALMIRA_HOST_PORT` (loopback port,
+  default 8080, so a second stack can sit beside the first) and
+  `ALMIRA_APP_MEMORY` (container cap, default 1536m).
+- **Optional, with application defaults — do NOT stub these as empty in the
+  compose file, because an empty value overrides the default:**
+  `ALMIRA_OTP_MAX_PER_IP_PER_HOUR`, `ALMIRA_OTP_MAX_VERIFY_FAILURES_PER_IP_PER_HOUR`,
+  `ALMIRA_SIGN_IN_CHANNELS` (default `phone`), the per-provider
+  `ALMIRA_PROVIDER_*_MAX_ATTEMPTS` / `_RETRY_BACKOFF`, and the
+  `ALMIRA_PROVIDER_EMAIL_*` group.
+- **The one footgun:** enabling the email channel
+  (`ALMIRA_SIGN_IN_CHANNELS` including `email`) with an **empty**
+  `ALMIRA_ALPHA_EMAIL_ALLOWLIST` **refuses to start**, by design — an open email
+  sign-in is a sign-in for anyone. Set the allowlist, or leave email off. Email
+  still cannot deliver outside development until a live adapter exists (§5).
+
+The compose file passes only the required set and the two knobs; the optional
+variables are left to the application's own defaults for the reason above.
 
 ## 7 · The web client is installable
 

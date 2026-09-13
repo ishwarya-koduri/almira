@@ -3,6 +3,7 @@ package tech.bhrigu.almira.config
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import org.flywaydb.core.Flyway
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
@@ -20,6 +21,15 @@ class DatabaseConfig(private val props: AlmiraProperties) {
      * Schema owner. Used only to run migrations at startup, never to serve a
      * request — it can bypass row-level security, which is exactly what we do
      * not want anywhere near user traffic.
+     */
+    /*
+     * Every consumer of this pool names it with @Qualifier. Both pools are
+     * HikariDataSource at runtime, so a parameter typed HikariDataSource matches
+     * both once they exist, and @Primary wins over the parameter's name. That
+     * silently wired `systemJdbcBypassingRls` to the RUNTIME pool: the reminder
+     * sweep ran under row-level security with no user and found nothing, every
+     * hour, with no error. Flyway escaped only because it happened to be created
+     * before the runtime pool. See ReminderSweepTest and docs/19.
      */
     @Bean(destroyMethod = "close")
     fun ownerDataSource(): HikariDataSource = hikari(
@@ -59,7 +69,8 @@ class DatabaseConfig(private val props: AlmiraProperties) {
      * never use it. Today its only consumer is ReminderWorker.
      */
     @Bean("systemJdbcBypassingRls")
-    fun systemJdbc(ownerDataSource: HikariDataSource) = NamedParameterJdbcTemplate(ownerDataSource)
+    fun systemJdbc(@Qualifier("ownerDataSource") ownerDataSource: HikariDataSource) =
+        NamedParameterJdbcTemplate(ownerDataSource)
 
     /**
      * Stamps the caller's identity onto each transaction for RLS. See
@@ -82,7 +93,7 @@ class DatabaseConfig(private val props: AlmiraProperties) {
      * has had nothing written to it. See [PageChecksumCheck].
      */
     @Bean(initMethod = "migrate")
-    fun flyway(ownerDataSource: HikariDataSource, environment: Environment): Flyway {
+    fun flyway(@Qualifier("ownerDataSource") ownerDataSource: HikariDataSource, environment: Environment): Flyway {
         PageChecksumCheck(environment).verify(ownerDataSource)
         return Flyway.configure()
             .dataSource(ownerDataSource)

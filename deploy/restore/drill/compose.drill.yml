@@ -1,0 +1,33 @@
+# =============================================================================
+# Overlay for a restore DRILL: the real production file, with its volumes
+# renamed so a drill can never touch a production volume, and two drills (a
+# source and an empty restore target) can run side by side.
+#
+#   docker compose -p almira-drill-source \
+#     -f deploy/docker-compose.prod.yml -f deploy/restore/drill/compose.drill.yml \
+#     --env-file drill-source.env up -d
+#
+# ALMIRA_DRILL_ID names the drill (`source`, `restore`) and is required, so the
+# names cannot default into each other. `almira-drill-` is a prefix no other
+# stack uses, and a hyphenated name is never one Compose generated.
+# Set ALMIRA_HOST_PORT in the env file to keep the two apps apart.
+# =============================================================================
+volumes:
+  dbdata:
+    name: almira-drill-${ALMIRA_DRILL_ID:?set ALMIRA_DRILL_ID}-dbdata
+  redisdata:
+    name: almira-drill-${ALMIRA_DRILL_ID:?set ALMIRA_DRILL_ID}-redisdata
+  documents:
+    name: almira-drill-${ALMIRA_DRILL_ID:?set ALMIRA_DRILL_ID}-documents
+
+# The drill is a data-integrity rig, not a deployment: it signs test users in
+# and reads their data back through the API. The OTP `log` sender is off outside
+# development (docs/17 §5), so the SOURCE and restored stacks run development
+# here to let the harness authenticate. This relaxes only the OTP echo and turns
+# the checksum/KEK startup refusals into warnings — none of which the
+# backup→restore→read-back integrity claim depends on. The production-mode
+# refusals are proven separately, in production mode, without this overlay.
+services:
+  app:
+    environment:
+      ALMIRA_ENV: development

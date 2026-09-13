@@ -70,6 +70,10 @@ login() { # login <phone> <code-var-name> <label>
 
   case "$requested" in
     *rate_limited*) echo "${RED}Sign-in is rate limited for this network.${OFF}" >&2; exit 2;;
+    # Expected on any real deployment: the only OTP sender is `log`, which is
+    # off outside development, so no code can be requested until a real SMS
+    # sender exists (docs/17 §5). Signal it distinctly rather than as a failure.
+    *otp_unavailable*) return 3;;
   esac
 
   # A development server hands the code back; a real one does not.
@@ -120,7 +124,19 @@ STAMP=$(date +%s)
 PHONE_A="9$(printf '%09d' $(( (STAMP % 900000000) + 100000 )))"
 PHONE_B="8$(printf '%09d' $(( (STAMP % 900000000) + 200000 )))"
 
-A=$(login "$PHONE_A" SMOKE_CODE_A "the owner")
+A=$(login "$PHONE_A" SMOKE_CODE_A "the owner"); login_rc=$?
+if [ "$login_rc" = 3 ]; then
+  echo "  ${DIM}—${OFF} sign-in is not available on this deployment yet:"
+  echo "     ${DIM}the only OTP sender is 'log', which is off outside development, so no"
+  echo "     code can be requested until a real SMS sender exists (docs/17 §5).${OFF}"
+  echo
+  echo "  ${BOLD}The unauthenticated checks above passed.${OFF} The two-member privacy"
+  echo "  property cannot be exercised from outside until sign-in works — it is"
+  echo "  covered meanwhile by PrivacyIsolationTest and db/tests/rls_privacy_test.sql,"
+  echo "  and by the restore drill's through-the-API read-back (docs/17 §6)."
+  echo "  ${DIM}To run this half against a real deploy, add SMS and re-run.${OFF}"
+  exit 0
+fi
 isnt "the first person can sign in" "$A" ""
 [ -n "$A" ] || { echo "${RED}Cannot continue without a session.${OFF}"; exit 1; }
 

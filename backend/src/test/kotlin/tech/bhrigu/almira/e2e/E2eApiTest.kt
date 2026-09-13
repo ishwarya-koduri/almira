@@ -218,12 +218,18 @@ class E2eApiTest : ApiTestBase() {
             "select ciphertext from sealed_values where record_id = ?::uuid", id,
         ).single()["ciphertext"] as String
         assertThat(stored).doesNotContain("Locker").doesNotContain("Karur").doesNotContain("Meera")
-        assertThat(
-            db.queryForObject(
-                "select count(*) from sealed_values where ciphertext like '%Locker%'",
-                Int::class.java,
-            ),
-        ).isZero()
+        // Every row this household has, not only the one we expect: a server
+        // that also wrote the words somewhere beside the envelope is caught.
+        // Scoped to this test's household, because the table is shared and
+        // other tests deliberately send (and are refused) text of this shape.
+        for (fragment in listOf("Locker", "Karur", "Meera")) {
+            assertThat(
+                db.queryForObject(
+                    "select count(*) from sealed_values where household_id = ?::uuid and ciphertext like ?",
+                    Int::class.java, householdId, "%$fragment%",
+                ),
+            ).describedAs("'$fragment' in this household's sealed_values").isZero()
+        }
 
         // And the client can still read it back, which is the other half of the
         // claim — unreadable to the server is worthless if it is unreadable

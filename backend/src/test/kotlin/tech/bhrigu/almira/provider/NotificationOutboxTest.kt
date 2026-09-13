@@ -77,6 +77,19 @@ class NotificationOutboxTest : ApiTestBase() {
         ),
     )
 
+    /**
+     * The same rows [nameEmergencyContact] queues, written from this thread.
+     * Used while the worker is paused: an HTTP request made while this thread
+     * holds the worker's lock would deadlock the moment a regression made the
+     * request drain inline — the suite would hang instead of failing.
+     */
+    private fun queueDirectly() = notifier.deliver(
+        OutboundNotification(
+            userId = UUID.fromString(ownerUserId), householdId = UUID.fromString(householdId), reminderId = null,
+            template = "emergency.named", title = "You've been named as an emergency contact", body = "Nothing changes today.",
+        ),
+    )
+
     private data class Row(
         val id: String, val channel: String, val status: String, val failure: String?,
         val attempts: Int, val key: String?,
@@ -155,7 +168,7 @@ class NotificationOutboxTest : ApiTestBase() {
 
         val misWired = NotificationOutbox(runtimeDataSource, channels, calls, props)
         outbox.whilePaused {
-            nameEmergencyContact()
+            queueDirectly()
             val queued = rows().filter { it.channel != "in_app" }
             assertThat(queued.map { it.status }).containsOnly("queued").hasSize(3)
 
@@ -181,7 +194,7 @@ class NotificationOutboxTest : ApiTestBase() {
         ).apply { afterSendBeforeRecord = { throw Crash() } }
 
         outbox.whilePaused {
-            nameEmergencyContact()
+            queueDirectly()
             // One row per drain: each is sent, and then the worker dies.
             repeat(3) { assertThat(runCatching { dying.drain() }.exceptionOrNull()).isInstanceOf(Crash::class.java) }
         }

@@ -46,38 +46,34 @@ change.
 
 ## 2. `POST /api/v1/auth/otp/verify` returns 500 for a missing `phone`
 
-**Where** `backend/.../auth/AuthController.kt` (`OtpVerifyBody`).
+**Resolved** (2026-09-13, "Malformed bodies"). Kept as a stub so the number
+still means something where it is cited.
 
-**What** Omitting the `phone` field returns
+Owner's decision: a request the server cannot read is answered as the caller's
+mistake. `ApiErrorHandler` now maps each of these, which all used to reach the
+catch-all as `500 internal_error` with an ERROR log:
 
-```
-500  {"error":{"code":"internal_error","message":"Something went wrong on our side…"}}
-```
+- a required body field missing or `null` → `400 validation_failed`,
+  `details.fields.<name>` = "This is required" (the declared name or path, e.g.
+  `owners[0].memberId`; a map key the caller wrote is shown as `[*]`);
+- JSON that does not parse, a field of the wrong type, an empty body →
+  `400 malformed_request`, "We couldn't read that request.";
+- a body in a content type the endpoint does not read → `415 unsupported_media_type`;
+- a path or query parameter that does not convert (a non-UUID household id), a
+  missing required query parameter, a missing multipart part →
+  `400 malformed_request` with `details.parameter` naming it.
 
-The cause is `HttpMessageNotReadableException` wrapping Jackson's
-`MissingKotlinParameterException` for a non-nullable Kotlin constructor
-parameter. It escapes the validation handler and lands in the generic 500 path.
+Each is logged once at INFO with the method, the route **pattern** and the
+exception type, never the message or the concrete URL. `UnreadableBodyMessages`
+still strips Jackson's message where it is made, and keeps only a missing
+field's declared name. The correction is recorded in the API README's
+changelog, under the freeze rule added for it.
 
-The same path used to log Jackson's message at ERROR, and for some malformed
-bodies that message quotes the input — `Unrecognized token 'x27020424'` — so a
-one-time code could reach the production log. That part is fixed
-(`UnreadableBodyMessages`, proved by `OtpCodeNeverLeaksTest`); the status is
-still 500, and still wrong.
-
-**What it should be** A 400 naming the field, like every other bad request the
-API answers.
-
-**Why it is still here** v1 is frozen, and no client hits this: both the web
-client and the app always send `phone`. Found by a hand-written curl probe.
-
-**When to fix** The next backend pass. Adding an
-`@ExceptionHandler(HttpMessageNotReadableException::class)` that maps a missing
-or unreadable body to a 400 would cover this and every sibling body type at
-once. It is additive — a status changing from 500 to 400 on a malformed request
-is not a v1 contract break.
-
-**Risk if left** Low. It misreports a client error as a server error, which
-costs someone debugging time and makes a genuine outage harder to spot in logs.
+Proven by `MalformedRequestTest` (every input above over HTTP: status, code,
+envelope, no ERROR from any logger, the one INFO line, and a marker sent in the
+bad part never in the response or any log at INFO or above),
+`MissingRequiredFieldTest` (names come from declarations, never map keys) and
+`OtpCodeNeverLeaksTest` (statuses now 400; still every logger at DEBUG).
 
 ---
 

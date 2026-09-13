@@ -8,6 +8,8 @@ will be removed, renamed or retyped. A breaking change goes to `/api/v2` and v1
 stays as it is for as long as a released app depends on it. `OpenApiContractTest`
 fails the backend build if that promise is broken, so a client can rely on it.
 
+A response the contract never declared, which reports a server fault for input the server rejected, may be corrected to the 4xx the API README already documents. Record each such correction in the API README's changelog.
+
 Everything below is behaviour the schema cannot express. It is short, and every
 line of it will otherwise be learned the hard way.
 
@@ -202,6 +204,16 @@ displayed without its basis is a claim about the market that nobody made.
 - Errors are `{ error: { code, message, details } }`. `code` is stable and safe
   to branch on. `message` is written for a person and safe to show as-is.
   `details.fields` maps field names to messages for inline form errors.
+- **A request the server cannot read** is a 4xx, never a 500. A required body
+  field that is missing or `null` is `400 validation_failed` with
+  `details.fields.<name>: "This is required"` (a nested field by its path,
+  `owners[0].memberId`). A body that is not JSON, has a field of the wrong type,
+  or is empty is `400 malformed_request`. A path or query parameter that does
+  not convert (a household id that is not a UUID), or a required query
+  parameter or upload part that is missing, is `400 malformed_request` with
+  `details.parameter`. A body in a content type the endpoint does not read is
+  `415 unsupported_media_type`. None of these repeats the value that was sent;
+  they are programming errors in a client, so log them, don't retry them.
 
 ---
 
@@ -407,3 +419,32 @@ test would have. Two things follow for the app:
 | Design system | `backend/src/main/resources/static/app/tokens.css` — colours, type scale, spacing, motion, dark mode. Each token maps to one in the Compose theme. |
 | A working client | `backend/src/main/resources/static/app/` — small, framework-free, and it exercises every flow the app needs. |
 | Product docs | [`docs/`](../README.md) |
+
+---
+
+## Changelog
+
+Corrections made under the freeze rule at the top of this file: responses the
+contract never declared, that reported a server fault for input the server
+rejected, corrected to a documented 4xx. Newest first. Additive changes to the
+contract itself are in `openapi-v1.json` and are not listed here.
+
+### 2026-09-13 — a request the server cannot read is a 4xx
+
+Every one of these used to answer `500 internal_error` ("Something went wrong on
+our side") and write an ERROR log. The error envelope is unchanged; nothing the
+caller sent is repeated in the new responses.
+
+| Input | Was | Now |
+|---|---|---|
+| A required body field missing (e.g. `phone` on `POST /auth/otp/verify`) | `500 internal_error` | `400 validation_failed`, `details.fields.<name>: "This is required"` |
+| A required body field sent as `null` | `500 internal_error` | `400 validation_failed`, `details.fields.<name>: "This is required"` |
+| A required field missing inside a list item | `500 internal_error` | `400 validation_failed`, `details.fields["owners[0].memberId"]` |
+| A body that is not valid JSON (unterminated, bad token) | `500 internal_error` | `400 malformed_request` |
+| A body field of the wrong type (an array for a string, a non-UUID for a UUID) | `500 internal_error` | `400 malformed_request` |
+| An empty body where one is required | `500 internal_error` | `400 malformed_request` |
+| A body in a content type the endpoint does not read (text to a JSON endpoint, JSON to an upload endpoint) | `500 internal_error` | `415 unsupported_media_type` |
+| A path variable that does not convert (a household id that is not a UUID) | `500 internal_error` | `400 malformed_request`, `details.parameter` |
+| A query parameter that does not convert (`limit=abc`) | `500 internal_error` | `400 malformed_request`, `details.parameter` |
+| A required query parameter missing (`q` on search) | `500 internal_error` | `400 malformed_request`, `details.parameter` |
+| A required multipart part missing (`file` on a document upload) | `500 internal_error` | `400 malformed_request`, `details.parameter` |

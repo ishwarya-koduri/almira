@@ -1,6 +1,7 @@
 package tech.bhrigu.almira.common
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.MissingKotlinParameterException
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpInputMessage
@@ -25,6 +26,12 @@ import java.lang.reflect.Type
  * treats it exactly as before, but the message names only what kind of
  * failure it was and the cause is dropped. Replacing Boot's converter bean keeps
  * Boot's configured ObjectMapper; nothing else about how JSON is read changes.
+ *
+ * The one thing kept from Jackson's exception is the NAME of a required field
+ * that was missing (or sent as null), so [ApiErrorHandler] can answer
+ * validation_failed for it. A name comes from the Kotlin class, never from the
+ * input — except a map key, which the caller wrote, so a key is replaced with
+ * `[*]` and never carried. The value is never looked at.
  */
 @Configuration
 class UnreadableBodyMessages {
@@ -48,9 +55,45 @@ class UnreadableBodyMessages {
         }
 
     private fun withoutInput(e: HttpMessageNotReadableException, input: HttpInputMessage) =
-        HttpMessageNotReadableException(
+        UnreadableBodyException(
             "Request body could not be read as JSON (${(e.cause ?: e).javaClass.simpleName}); " +
                 "its content is deliberately not repeated here",
             input,
+            missingRequiredField(e.cause),
+            (e.cause ?: e).javaClass.simpleName,
         )
+}
+
+/**
+ * The same type Spring throws, so every handler treats it as before, carrying
+ * only a declared field path when the failure was a missing required field.
+ */
+class UnreadableBodyException(
+    message: String,
+    input: HttpInputMessage,
+    val missingField: String?,
+    /** The simple class name of what Jackson threw — a kind, never content. */
+    val failure: String,
+) : HttpMessageNotReadableException(message, input)
+
+/**
+ * `owners[0].memberId` for a missing (or null) non-nullable constructor
+ * parameter, in the form field validation uses; null for any other failure.
+ * Map keys are the caller's text and are written as `[*]`.
+ */
+internal fun missingRequiredField(cause: Throwable?): String? {
+    if (cause !is MissingKotlinParameterException) return null
+    val path = StringBuilder()
+    for (ref in cause.path) {
+        when {
+            ref.from is Map<*, *> -> path.append("[*]")
+            ref.index >= 0 -> path.append('[').append(ref.index).append(']')
+            ref.fieldName != null -> {
+                if (path.isNotEmpty()) path.append('.')
+                path.append(ref.fieldName)
+            }
+            else -> return null
+        }
+    }
+    return path.toString().ifEmpty { null }
 }

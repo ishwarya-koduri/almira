@@ -177,16 +177,19 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
         assertThat(capture.texts).anyMatch { it.startsWith("DEBUG | org.springframework.web") }
         assertThat(capture.texts.size).isGreaterThan(20)
         // ...and the paths that used to leak were really walked: the unreadable
-        // bodies reached the catch-all's ERROR log, and the validation failures
+        // bodies reached ApiErrorHandler's refusal line (INFO since 2026-09-13;
+        // before that they reached the catch-all's ERROR, which is where a
+        // quoted code would have been written), and the validation failures
         // reached the exception resolver's DEBUG line. A change that stopped
         // them getting that far would otherwise pass this test by not trying.
-        assertThat(capture.texts.count { it.startsWith("ERROR") && "HttpMessageNotReadableException" in it })
+        assertThat(capture.texts.count { it.startsWith("INFO | tech.bhrigu.almira.common.ApiErrorHandler") && "HttpMessageNotReadableException" in it })
             .isEqualTo(9)
+        assertThat(capture.texts.filter { it.startsWith("ERROR") }).describedAs("ERROR log events").isEmpty()
         assertThat(capture.texts.count { it.startsWith("DEBUG") && "Resolved [org.springframework.web.bind.MethodArgumentNotValidException" in it })
             .isEqualTo(2)
         assertThat(responses.map { it.statusCode.value() }).containsExactly(
-            200, 429, 400, 500, 500, 500, 400, 500, 500, 200, 400,
-            200, 400, 500, 500, 500, 400, 500, 200, 400,
+            200, 429, 400, 400, 400, 400, 400, 400, 400, 200, 400,
+            200, 400, 400, 400, 400, 400, 400, 200, 400,
         )
 
         for (c in codes) {
@@ -265,16 +268,18 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
         val codes = emailCodes.map { it.second }
         assertThat(emailCodes.map { it.first }).containsExactly(listed, listed)
         // The harness really walked the paths that log: the sandbox channel spoke
-        // for both codes, the unreadable bodies reached the catch-all, the
-        // validation failures reached the resolver.
+        // for both codes, the unreadable bodies reached ApiErrorHandler's
+        // refusal line (INFO; it was the catch-all's ERROR before 2026-09-13),
+        // the validation failures reached the resolver.
         assertThat(capture.texts.count { "sandbox email: template=otp_email" in it }).isEqualTo(2)
-        assertThat(capture.texts.count { it.startsWith("ERROR") && "HttpMessageNotReadableException" in it })
+        assertThat(capture.texts.count { it.startsWith("INFO | tech.bhrigu.almira.common.ApiErrorHandler") && "HttpMessageNotReadableException" in it })
             .isEqualTo(9)
+        assertThat(capture.texts.filter { it.startsWith("ERROR") }).describedAs("ERROR log events").isEmpty()
         assertThat(capture.texts.count { it.startsWith("DEBUG") && "Resolved [org.springframework.web.bind.MethodArgumentNotValidException" in it })
             .isEqualTo(2)
         assertThat(responses.map { it.statusCode.value() }).containsExactly(
-            200, 429, 200, 400, 500, 500, 500, 400, 500, 500, 200, 400,
-            200, 400, 500, 500, 500, 400, 500, 200, 400,
+            200, 429, 200, 400, 400, 400, 400, 400, 400, 400, 200, 400,
+            200, 400, 400, 400, 400, 400, 400, 200, 400,
         )
 
         for (c in codes) {

@@ -120,6 +120,98 @@ class ApiErrorHandler {
             ApiErrorEnvelope(ApiErrorBody("method_not_allowed", "That isn't something you can do here.")),
         )
 
+    /**
+     * A request the server cannot read is the caller's mistake, answered as one.
+     *
+     * These all used to fall through to the catch-all: a 500 internal_error and
+     * an ERROR log for input we had correctly refused (docs/api/README.md,
+     * changelog 2026-09-13). Logged at INFO by exception type and route
+     * pattern only — the exception messages quote the rejected value, and a
+     * concrete URL can carry it in a path segment. Nothing the caller sent is
+     * repeated in the response: a field or parameter NAME at most, which comes
+     * from our own declarations.
+     */
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException::class)
+    fun handleUnreadableBody(
+        e: org.springframework.http.converter.HttpMessageNotReadableException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ApiErrorEnvelope> {
+        logRefused(e, request)
+        val missing = (e as? UnreadableBodyException)?.missingField
+            ?: return malformed()
+        return ResponseEntity.badRequest().body(
+            ApiErrorEnvelope(
+                ApiErrorBody(
+                    "validation_failed",
+                    "Some details need a second look.",
+                    mapOf("fields" to mapOf(missing to "This is required")),
+                ),
+            ),
+        )
+    }
+
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException::class)
+    fun handleParameterType(
+        e: org.springframework.web.method.annotation.MethodArgumentTypeMismatchException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ApiErrorEnvelope> {
+        logRefused(e, request)
+        return malformed(e.name)
+    }
+
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException::class)
+    fun handleMissingParameter(
+        e: org.springframework.web.bind.MissingServletRequestParameterException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ApiErrorEnvelope> {
+        logRefused(e, request)
+        return malformed(e.parameterName)
+    }
+
+    @ExceptionHandler(org.springframework.web.multipart.support.MissingServletRequestPartException::class)
+    fun handleMissingPart(
+        e: org.springframework.web.multipart.support.MissingServletRequestPartException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ApiErrorEnvelope> {
+        logRefused(e, request)
+        return malformed(e.requestPartName)
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException::class)
+    fun handleMediaType(
+        e: org.springframework.web.HttpMediaTypeNotSupportedException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ApiErrorEnvelope> {
+        logRefused(e, request)
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(
+            ApiErrorEnvelope(
+                ApiErrorBody("unsupported_media_type", "We couldn't read that request in the format it was sent."),
+            ),
+        )
+    }
+
+    private fun logRefused(e: Exception, request: HttpServletRequest) {
+        val route = request.getAttribute(
+            org.springframework.web.servlet.HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE,
+        ) ?: "(no route matched)"
+        val type = when (e) {
+            is UnreadableBodyException -> "HttpMessageNotReadableException (${e.failure})"
+            else -> e.javaClass.simpleName
+        }
+        log.info("request refused as unreadable on {} {}: {}", request.method, route, type)
+    }
+
+    private fun malformed(parameter: String? = null): ResponseEntity<ApiErrorEnvelope> =
+        ResponseEntity.badRequest().body(
+            ApiErrorEnvelope(
+                ApiErrorBody(
+                    "malformed_request",
+                    "We couldn't read that request.",
+                    parameter?.let { mapOf("parameter" to it) },
+                ),
+            ),
+        )
+
     @ExceptionHandler(Exception::class)
     fun handleUnexpected(e: Exception, request: HttpServletRequest): ResponseEntity<ApiErrorEnvelope> {
         log.error("unhandled error on {} {}", request.method, request.requestURI, e)

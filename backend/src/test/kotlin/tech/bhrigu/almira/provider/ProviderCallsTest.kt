@@ -158,7 +158,7 @@ class ProviderCallsTest {
         val started = System.nanoTime()
         val failure = gaveUp {
             calls(props(timeout = Duration.ofMillis(100), maxAttempts = 2))
-                .call("sms", "notify") { sender.send(notification, null) }
+                .call("sms", "notify") { sender.send(notification, null, "test-key") }
         }
         val elapsed = Duration.ofNanos(System.nanoTime() - started)
 
@@ -189,5 +189,31 @@ class ProviderCallsTest {
     fun `an unknown provider name is a bug, not a silent default policy`() {
         assertThatThrownBy { calls().call("carrier-pigeon", "send") { "ok" } }
             .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `callOnce makes one attempt under its own timeout, whatever the provider allows`() {
+        for (kind in FailureKind.entries) {
+            val counted = java.util.concurrent.atomic.AtomicInteger()
+            val calls = calls(props(timeout = Duration.ofSeconds(60), maxAttempts = 5))
+            val failure = runCatching {
+                calls.callOnce("sms", "otp", Duration.ofMillis(200)) {
+                    counted.incrementAndGet()
+                    throw ProviderFailure(kind, "scripted")
+                }
+            }.exceptionOrNull() as ProviderCallFailed
+            assertThat(failure.kind).isEqualTo(kind)
+            assertThat(failure.attempts).isEqualTo(1)
+            assertThat(counted.get()).describedAs(kind.code).isEqualTo(1)
+        }
+
+        val started = System.nanoTime()
+        val hung = runCatching {
+            calls(props(timeout = Duration.ofSeconds(60), maxAttempts = 5))
+                .callOnce("sms", "otp", Duration.ofMillis(200)) { Thread.sleep(5_000) }
+        }.exceptionOrNull() as ProviderCallFailed
+        assertThat(hung.kind).isEqualTo(FailureKind.TIMEOUT)
+        assertThat(Duration.ofNanos(System.nanoTime() - started))
+            .describedAs("its own 200ms, not the provider's 60s").isLessThan(Duration.ofSeconds(2))
     }
 }

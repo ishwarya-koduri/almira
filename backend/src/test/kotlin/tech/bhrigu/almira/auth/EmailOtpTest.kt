@@ -136,7 +136,8 @@ class EmailOtpTest {
         val live = object : ChannelSender {
             override val channel = "email"
             override val mode = ProviderMode.LIVE
-            override fun send(notification: OutboundNotification, recipientHint: String?) = "live"
+            override val honoursIdempotencyKey = true
+            override fun send(notification: OutboundNotification, recipientHint: String?, idempotencyKey: String) = "live"
         }
         val sender = ChannelEmailOtpSender(props("production"), listOf(live))
         assertThat(sender.available).isTrue()
@@ -149,7 +150,8 @@ class EmailOtpTest {
         val capture = object : ChannelSender {
             override val channel = "email"
             override val mode = ProviderMode.SANDBOX
-            override fun send(notification: OutboundNotification, recipientHint: String?): String {
+            override val honoursIdempotencyKey = true
+            override fun send(notification: OutboundNotification, recipientHint: String?, idempotencyKey: String): String {
                 seen += notification to recipientHint
                 return "capture"
             }
@@ -314,6 +316,23 @@ class EmailOtpTest {
             assertThat(e.message + e.details).doesNotContain(email.lastCode())
             assertThat(keysFor(a).filter { "rate" !in it }).describedAs(fault.name).isEmpty()
             assertThat(redis.opsForValue().get("otp:rate:email:$a")).describedAs(fault.name).isEqualTo("0")
+        }
+    }
+
+    @Test
+    fun `an email code is one send, reported or not, whatever the failure and the provider's attempts`() {
+        val generous = AlmiraProperties.Provider(timeout = java.time.Duration.ofSeconds(60), maxAttempts = 5)
+        val quick = AlmiraProperties.Otp(maxPerHour = 1_000, maxPerIpPerHour = 1_000, sendTimeout = java.time.Duration.ofMillis(200))
+        val props = props(otp = quick).copy(providers = AlmiraProperties.Providers(sms = generous, email = generous))
+        for (fault in SandboxFault.entries) {
+            for (delivery in listOf(OtpDelivery.REPORTED, OtpDelivery.UNREPORTED)) {
+                val email = RecordingEmailSender(faults = SandboxFaults(java.time.Duration.ofSeconds(2)))
+                    .apply { faults.always("email", fault) }
+                val otp = service(email = email, props = props)
+                val purpose = if (delivery == OtpDelivery.REPORTED) OtpService.STEP_UP else login
+                runCatching { otp.requestByEmail(address(), ip(), purpose, delivery) }
+                assertThat(email.sent).describedAs("$fault / $delivery").hasSize(1)
+            }
         }
     }
 

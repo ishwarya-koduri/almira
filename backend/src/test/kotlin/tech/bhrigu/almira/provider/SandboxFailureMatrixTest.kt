@@ -64,13 +64,13 @@ class SandboxFailureMatrixTest {
             val sender = LoggingOtpSender(props(), f); { sender.send("+919000000000", "123456") }
         },
         Operation("sms", "sms", "notify", true) { f ->
-            val sender = SandboxSmsSender(f); { sender.send(notification, null) }
+            val sender = SandboxSmsSender(f); val key = "matrix:${UUID.randomUUID()}"; { sender.send(notification, null, key) }
         },
         Operation("email", "email", "notify", true) { f ->
-            val sender = SandboxEmailSender(f); { sender.send(notification, null) }
+            val sender = SandboxEmailSender(f); val key = "matrix:${UUID.randomUUID()}"; { sender.send(notification, null, key) }
         },
         Operation("push", "push", "notify", true) { f ->
-            val sender = SandboxPushSender(f); { sender.send(notification, null) }
+            val sender = SandboxPushSender(f); val key = "matrix:${UUID.randomUUID()}"; { sender.send(notification, null, key) }
         },
         Operation("digilocker", "digilocker", "exchange", false) { f ->
             val vault = SandboxDocumentVault(f); { vault.exchange(household, "code") }

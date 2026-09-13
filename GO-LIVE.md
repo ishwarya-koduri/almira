@@ -68,10 +68,14 @@ Read these once; each provider page assumes them.
    provider's documented responses — success, and one per failure kind —
    before it is ever pointed at the real thing. That test is what gets watched
    failing; the real provider cannot be made to fail on demand.
-7. **Delivery is still synchronous.** Worst case per call is
-   `max-attempts × timeout` plus backoff (≈31 s for SMS at the defaults).
-   Before a notification channel goes live, move delivery onto the reminder
-   worker or lower its attempts ([Doc 13](docs/13-providers-and-going-live.md#when-a-provider-fails)).
+7. **Interactive or background is already decided**
+   ([Doc 13, "Interactive and background"](docs/13-providers-and-going-live.md#interactive-and-background)).
+   A one-time code is one attempt under `almira.otp.send-timeout`, never retried.
+   A notification is sent by the outbox worker, never in a request, and a
+   notification channel's adapter must pass the idempotency key to its provider
+   and declare `honoursIdempotencyKey` truthfully: `true` only if the provider
+   drops repeats of a key, which makes the channel at-least-once; otherwise
+   `false`, at-most-once.
 
 ---
 

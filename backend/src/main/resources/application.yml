@@ -77,6 +77,13 @@ almira:
     max-file-bytes: 20971520
   notifications:
     provider: ${ALMIRA_NOTIFY_PROVIDER:log}
+  # Notifications are queued by the request or sweep that causes them and sent
+  # by a background worker (docs/13 "Interactive and background"). It is woken
+  # after each commit that queues something, and polls at this interval for
+  # anything missed. ISO-8601, because @Scheduled reads it.
+  outbox:
+    poll-interval: ${ALMIRA_OUTBOX_POLL_INTERVAL:PT2S}
+    batch-size: 50
   db:
     url: ${ALMIRA_DB_URL:jdbc:postgresql://localhost:55432/almira}
     owner-user: ${ALMIRA_DB_OWNER_USER:almira}
@@ -168,6 +175,10 @@ almira:
     max-attempts: 5
     resend-cooldown: 30s
     max-per-hour: 5
+    # One attempt per code request, under this timeout, never retried: a person
+    # is waiting and can press resend. Not the SMS provider's timeout, which is
+    # for background delivery. 0 < value <= 15s. See AlmiraProperties.Otp.
+    send-timeout: ${ALMIRA_OTP_SEND_TIMEOUT:5s}
     # Per network, per hour. The default protects a real deployment, where one
     # address making dozens of sign-in attempts is an attack. On a laptop every
     # request comes from 127.0.0.1, so running the three end-to-end suites back

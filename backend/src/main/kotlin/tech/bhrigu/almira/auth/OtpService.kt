@@ -53,9 +53,10 @@ enum class OtpDelivery {
     /**
      * Answer at once; send afterwards. The answer cannot depend on the send,
      * so it is the same whether or not it would have failed, and it takes the
-     * same time as [DECOY] — no provider round trip inside the request. A
-     * failure is still classified, retried and alarmed by ProviderCalls; it just
-     * is not reported to the caller. See [OtpService.deliverInBackground].
+     * same time as [DECOY] — no provider round trip inside the request. The
+     * send is still one attempt under the one-time-code timeout, classified
+     * and alarmed by ProviderCalls; its failure just is not reported to the
+     * caller. See [OtpService.deliverInBackground].
      */
     UNREPORTED,
 
@@ -99,6 +100,8 @@ enum class OtpDelivery {
  *    per-network hourly cap on wrong codes across all numbers;
  *  - lifetime, length and attempts are bounded, so configuration cannot quietly
  *    turn a six-digit five-minute code into something guessable;
+ *  - a send is ONE attempt under its own short timeout, never retried, so one
+ *    request can never become two texts (see [request]);
  *  - a send that fails says which way it failed, and a failure that is ours
  *    does not lock the person out (see [request]);
  *  - the same, per channel, for email (EmailOtpTest).
@@ -108,7 +111,10 @@ class OtpService(
     private val redis: StringRedisTemplate,
     private val sender: OtpSender,
     props: AlmiraProperties,
-    /** SMS's timeout and retry policy. One-time codes go out through the SMS provider's account. */
+    /**
+     * Only for its single-attempt call ([ProviderCalls.callOnce]): the SMS or
+     * email provider's account, the OTP timeout, and none of its retry policy.
+     */
     private val calls: ProviderCalls = ProviderCalls(props),
     private val emailSender: EmailOtpSender = EmailOtpSender.NONE,
     /** Where [OtpDelivery.UNREPORTED] sends run. A seam so a test can run them inline. */
@@ -153,17 +159,35 @@ class OtpService(
         require(cfg.maxAttempts in 1..10) {
             "almira.otp.max-attempts must be 1 to 10 (is ${cfg.maxAttempts})."
         }
+        require(!cfg.sendTimeout.isNegative && !cfg.sendTimeout.isZero && cfg.sendTimeout <= MAX_SEND_TIMEOUT) {
+            "almira.otp.send-timeout must be more than zero and at most $MAX_SEND_TIMEOUT (is ${cfg.sendTimeout}). " +
+                "Somebody is waiting for this answer."
+        }
     }
 
     /**
+     * A send is **interactive**: somebody is looking at the screen. So it is
+     * exactly one attempt, under [AlmiraProperties.Otp.sendTimeout] rather than
+     * the provider's timeout, with no retry and no backoff, whatever the
+     * provider's `max-attempts` says. The person's resend button is the retry.
+     * That is what removes duplicate texts: a timeout means "no answer", not
+     * "not delivered", and retrying one was how one request became up to three
+     * billed texts (known-issues 21).
+     *
      * When the send fails, what happens to the challenge, the cooldown and the
      * hourly counts depends on whether the text could have gone out — because
-     * two things must both hold: a person must not be locked out by our failure,
-     * and an attacker must not get unthrottled requests out of it.
+     * three things must hold: a person must not be locked out by our failure,
+     * an old code arriving late must not work once a newer one exists, and an
+     * attacker must not get unthrottled requests out of it.
      *
-     *  - **Timeout** (`otp_delivery_delayed`): it may still arrive. Everything
-     *    stands — the challenge, so a late text still works; the cooldown and
-     *    both counts, because as far as anyone can tell a text was sent.
+     *  - **Timeout** (`otp_delivery_delayed`): it may still arrive. The
+     *    challenge stands, so a late text still works — until a resend
+     *    replaces it, when the late code stops matching. The cooldown is
+     *    **lifted** (`resendAfterSeconds: 0`), so the person can press resend
+     *    at once instead of waiting out a timer for a text that may never come.
+     *    Both hourly counts stand, because as far as anyone can tell a text was
+     *    sent — so repeated timeouts still run into the per-number and
+     *    per-network caps.
      *  - **Rejected** (`otp_delivery_failed`), **unavailable**
      *    (`otp_provider_unavailable`), **insufficient balance**
      *    (`otp_service_unavailable`): nothing was delivered. The challenge is
@@ -221,9 +245,13 @@ class OtpService(
 
         when (delivery) {
             OtpDelivery.REPORTED -> try {
-                calls.call(channel.provider, "otp") { send(channel, address, code) }
+                calls.callOnce(channel.provider, "otp", cfg.sendTimeout) { send(channel, address, code) }
             } catch (failure: ProviderCallFailed) {
-                if (failure.kind != FailureKind.TIMEOUT) {
+                if (failure.kind == FailureKind.TIMEOUT) {
+                    // The person may press resend now. The new challenge
+                    // overwrites this one, so a late text stops working then.
+                    redis.delete(cooldownKey(channel, address, purpose))
+                } else {
                     // CONSUME removes it only if it is still this request's challenge.
                     redis.execute(CONSUME, listOf(key), requestId)
                     redis.delete(cooldownKey(channel, address, purpose))
@@ -249,8 +277,9 @@ class OtpService(
     /**
      * The send, after the answer has gone.
      *
-     * Still through ProviderCalls — the same timeout, the same retries, the same
-     * ERROR line when the account is empty. What changes is what a failure does:
+     * The same single attempt under the same one-time-code timeout as a
+     * reported send, and the same ERROR line when the account is empty. What
+     * changes is what a failure does:
      *
      *  - **Timeout**: nothing. It may still arrive, and then it must work.
      *  - **Anything else**: the challenge is made unusable in place (its stored
@@ -272,7 +301,7 @@ class OtpService(
     ) {
         background.execute {
             val outcome = try {
-                calls.call(channel.provider, "otp") { send(channel, address, code) }
+                calls.callOnce(channel.provider, "otp", cfg.sendTimeout) { send(channel, address, code) }
                 null
             } catch (failure: ProviderCallFailed) {
                 log.warn(
@@ -393,11 +422,12 @@ class OtpService(
             FailureKind.TIMEOUT -> ApiException(
                 HttpStatus.GATEWAY_TIMEOUT, "otp_delivery_delayed",
                 "Your code is taking longer than usual to send. If it arrives, it will work. " +
-                    "If it doesn't, you can ask for another in ${cfg.resendCooldown.seconds} seconds.",
+                    "If it doesn't, you can ask for a new one now.",
                 mapOf(
                     "requestId" to requestId,
                     "expiresInSeconds" to cfg.ttl.seconds,
-                    "resendAfterSeconds" to cfg.resendCooldown.seconds,
+                    // The cooldown was lifted: resend is the retry, and it is the person's.
+                    "resendAfterSeconds" to 0L,
                 ),
             )
             FailureKind.REJECTED -> ApiException(
@@ -515,6 +545,12 @@ class OtpService(
 
         private const val HMAC = "HmacSHA256"
         private val MAX_TTL: Duration = Duration.ofMinutes(10)
+
+        /**
+         * The longest a person is kept looking at a spinner. Past this they have
+         * given up, and mobile clients and proxies start cutting the request.
+         */
+        val MAX_SEND_TIMEOUT: Duration = Duration.ofSeconds(15)
 
         private val CONSUME = DefaultRedisScript(
             """

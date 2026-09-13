@@ -95,6 +95,9 @@ class ChannelEmailOtpSender(
                     "If you didn't ask for it, you can ignore this email.",
             ),
             email,
+            // One attempt per code (OtpService), so the key only has to cover
+            // a provider's own internal retry of this one call.
+            "$TEMPLATE:${UUID.randomUUID()}",
         )
     }
 

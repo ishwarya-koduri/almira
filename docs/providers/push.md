@@ -26,7 +26,8 @@ interface as SMS and email:
 interface ChannelSender {
     val channel: String
     val mode: ProviderMode
-    fun send(notification: OutboundNotification, recipientHint: String?): String
+    val honoursIdempotencyKey: Boolean
+    fun send(notification: OutboundNotification, recipientHint: String?, idempotencyKey: String): String
 }
 ```
 
@@ -40,13 +41,24 @@ data class OutboundNotification(
     val template: String,
     val title: String,
     val body: String,
+    val idempotencyKey: String? = null,
 )
 ```
 
 A push sender has `channel = "push"`, returns the provider's name for the audit
-row, and is called by `RecordingNotifier.deliver` through `ProviderCalls` under
-the provider name `push` (operation `notify`). **Timeouts** 10 s × 3, 500 ms
-backoff. Callers today: `ReminderWorker` and `EmergencyService`.
+row, and is called by the `NotificationOutbox` worker through `ProviderCalls`
+under the provider name `push` (operation `notify`), from a row
+`RecordingNotifier.deliver` queued — never inside a request. **Timeouts** 10 s
+× 3, 500 ms backoff. Callers today: `ReminderWorker`, `StillTrueSweep` and
+`EmergencyService`.
+
+**`honoursIdempotencyKey = false`.** Neither APNs nor FCM drops a repeated send
+(a collapse id replaces a notification on screen; it does not stop a second
+one arriving), so push is **at-most-once**: a timeout is recorded, not retried,
+and a send cut off by a crash is recorded unconfirmed, never re-sent
+([Doc 13](../13-providers-and-going-live.md#idempotency-keys-and-what-they-guarantee)).
+A duplicate push is the nag the product promises not to be; a lost one is still
+in the in-app list.
 
 ### The gap: there is no recipient
 
@@ -131,8 +143,9 @@ removes a server-side APNs client; it does not remove the Apple membership.
 4. `ApnsPushSender` / `FcmPushSender` plus contract tests against a fake HTTP
    server replaying each row of the classification table, including the prune
    on a dead token. Each watched failing.
-5. Before the first live channel: move delivery off the request thread
-   ([Doc 13](../13-providers-and-going-live.md#when-a-provider-fails)).
+5. Delivery is already off the request thread (the notification outbox,
+   [Doc 13](../13-providers-and-going-live.md#interactive-and-background)); keep
+   `honoursIdempotencyKey = false` unless the chosen provider changes that.
 6. Add `push` to `ProviderModeCheck.implemented`; update this page and
    `GO-LIVE.md`.
 7. `ALMIRA_PROVIDER_PUSH_MODE=live` plus credentials.

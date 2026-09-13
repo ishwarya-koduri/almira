@@ -12,6 +12,13 @@ data class OutboundNotification(
     val template: String,
     val title: String,
     val body: String,
+    /**
+     * Names this logical message, so it is queued and sent once per channel
+     * however many times something asks (a sweep re-run after a crash, two
+     * workers). The channel is appended per row. Null means "a new message": a
+     * random key is made for it. Never personal data — it may be logged.
+     */
+    val idempotencyKey: String? = null,
 )
 
 /**

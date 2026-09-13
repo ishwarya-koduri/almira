@@ -28,12 +28,15 @@ import tech.bhrigu.almira.support.ApiTestBase
 class ProviderFailureApiTest : ApiTestBase() {
 
     @Autowired private lateinit var faults: SandboxFaults
+    @Autowired private lateinit var outbox: NotificationOutbox
 
     private lateinit var owner: String
     private lateinit var householdId: String
 
     @BeforeEach
     fun setUp() {
+        // Anything another test left queued goes out before this test's faults exist.
+        outbox.drain()
         faults.clear()
         owner = signIn()
         householdId = createHousehold(owner, "Koduri", "private", "Ishwarya").path("id").asText()
@@ -66,6 +69,7 @@ class ProviderFailureApiTest : ApiTestBase() {
         faults.always("email", SandboxFault.REJECTED)
         faults.always("push", SandboxFault.INSUFFICIENT_BALANCE)
         val (_, trusted) = nameEmergencyContact()
+        outbox.drain()
 
         val rows = db.queryForList(
             """
@@ -101,6 +105,7 @@ class ProviderFailureApiTest : ApiTestBase() {
     fun `a channel that recovers within its attempts is recorded as sent, with the attempts it took`() {
         faults.script("sms", SandboxFault.UNAVAILABLE, SandboxFault.TIMEOUT)
         nameEmergencyContact()
+        outbox.drain()
         val sms = db.queryForMap(
             """
             select status, failure, attempts from outbound_messages
@@ -147,11 +152,12 @@ class ProviderFailureApiTest : ApiTestBase() {
     }
 
     @Test
-    fun `a delayed code answers with its request id, because the challenge still stands`() {
+    fun `a delayed code answers with its request id, because the challenge still stands, and resend is open`() {
         faults.always("otp", SandboxFault.TIMEOUT)
         val delayed = requestCode().json().path("error").path("details")
         assertThat(delayed.path("requestId").asText()).isNotBlank()
-        assertThat(delayed.path("resendAfterSeconds").asInt()).isPositive()
+        assertThat(delayed.path("resendAfterSeconds").isInt).isTrue()
+        assertThat(delayed.path("resendAfterSeconds").asInt()).describedAs("one attempt; the person's resend is the retry").isZero()
     }
 
     // --- DigiLocker ------------------------------------------------------------

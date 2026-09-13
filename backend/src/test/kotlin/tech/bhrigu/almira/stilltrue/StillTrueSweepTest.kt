@@ -31,6 +31,7 @@ class StillTrueSweepTest : ApiTestBase() {
     @Autowired private lateinit var faults: SandboxFaults
     @Autowired private lateinit var notifiers: List<Notifier>
     @Autowired private lateinit var runtimeDataSource: DataSource
+    @Autowired private lateinit var outbox: tech.bhrigu.almira.provider.NotificationOutbox
 
     private lateinit var owner: String
     private lateinit var spouse: String
@@ -42,6 +43,7 @@ class StillTrueSweepTest : ApiTestBase() {
 
     @BeforeEach
     fun setUp() {
+        outbox.drain()
         faults.clear()
         owner = signIn()
         spouse = signIn()
@@ -267,7 +269,9 @@ class StillTrueSweepTest : ApiTestBase() {
         dueFd("SBI FD")
 
         sweep.run()
+        outbox.drain()
         sweep.run()
+        outbox.drain()
 
         val sent = sentTo(ownerUserId)
         assertThat(sent.filter { it.channel == "in_app" }.map { it.status }).containsExactly("sent")

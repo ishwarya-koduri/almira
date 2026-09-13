@@ -7,11 +7,14 @@
 
    Three outcomes, one per thing the person should see (docs/api/README.md):
 
-     · code   — 504 otp_delivery_delayed. The server kept the challenge and the
-                code may still arrive and will work, so go to the code step with
-                details.requestId and offer a resend after
-                details.resendAfterSeconds. Showing only an error here strands
-                someone whose text is thirty seconds late.
+     · code   — 504 otp_delivery_delayed. The server made ONE attempt, kept the
+                challenge and lifted the cooldown: the code may still arrive and
+                will work, so go to the code step with details.requestId and
+                offer a resend after details.resendAfterSeconds — which is 0, so
+                resend is open at once (docs/13 "Interactive and background").
+                A resend replaces the challenge, and the late code stops
+                working. Showing only an error here strands someone whose text
+                is thirty seconds late.
      · switch — 403 sign_in_channel_disabled naming details.enabledChannels.
                 The server's word beats whatever this screen assumed, including
                 the ["phone"] guess made when GET /auth/otp/channels failed.

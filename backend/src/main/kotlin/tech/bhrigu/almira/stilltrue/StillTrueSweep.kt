@@ -43,12 +43,13 @@ data class StillTrueSweepResult(
  * confirmed or snoozed and falls due again, or after thirty days ignored. One
  * message per person per run, carrying a count, never a title or an amount.
  *
- * **Failures.** The nudge is marked before anything is sent, then delivered
- * after the transaction commits, so no network call holds one of the owner
- * pool's two connections. Delivery goes through the notifiers, whose channels go
- * through ProviderCalls: a timeout or an outage is retried there and recorded in
- * outbound_messages, and is not re-sent by the next sweep — a timed-out push may
- * already have arrived, and the record is still in the in-app list either way.
+ * **Failures.** The nudge is marked, then handed to the notifiers after the
+ * transaction commits. Handing over is only queueing: the in-app row and one
+ * queued row per channel, each with its own idempotency key. The notification
+ * outbox sends them in the background (docs/13 "Interactive and background"),
+ * so the sweep never waits on a provider. A channel that fails is recorded on
+ * its row and is not re-sent by the next sweep — the record is already marked
+ * nudged, and a timed-out text may already have arrived.
  */
 @Component
 class StillTrueSweep(

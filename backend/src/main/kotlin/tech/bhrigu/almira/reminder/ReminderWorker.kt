@@ -21,6 +21,10 @@ import java.util.UUID
  * reminder attached to nothing. Privacy is enforced in WHO IS TOLD rather than
  * in what the job can read.
  *
+ * It queues; it does not send. Each notifier records the message and the
+ * notification outbox sends it in the background (docs/13 "Interactive and
+ * background"), so a slow provider never holds this transaction open.
+ *
  * "Due" is evaluated in the household's own time zone. A family in Kakinada
  * should not be told their premium is due tomorrow because a server in another
  * hemisphere has already turned the page.
@@ -65,12 +69,14 @@ class ReminderWorker(
         val kind: String,
         val title: String,
         val dueDate: java.time.LocalDate,
+        /** The date this reminder fires for: its snooze if it has one. Part of the message's identity. */
+        val firesOn: java.time.LocalDate,
     )
 
     private fun findDue(): List<DueReminder> = system.query(
         """
         select r.id, r.household_id, r.investment_id, r.liability_id,
-               r.kind, r.title, r.due_date
+               r.kind, r.title, r.due_date, coalesce(r.snoozed_until, r.due_date) as fires_on
         from reminders r
         join households h on h.id = r.household_id
         where r.deleted_at is null
@@ -91,6 +97,7 @@ class ReminderWorker(
             kind = rs.getString("kind"),
             title = rs.getString("title"),
             dueDate = rs.getDate("due_date").toLocalDate(),
+            firesOn = rs.getDate("fires_on").toLocalDate(),
         )
     }
 
@@ -156,6 +163,10 @@ class ReminderWorker(
                     reminderId = reminder.id, template = "reminder.${reminder.kind}",
                     title = reminder.title,
                     body = "Due ${reminder.dueDate}",
+                    // One message per reminder, per date it fires for, per person:
+                    // a sweep that runs again before the status update commits
+                    // (a crash, a second server) queues nothing new.
+                    idempotencyKey = "reminder:${reminder.id}:${reminder.firesOn}:$userId",
                 ),
             )
         }

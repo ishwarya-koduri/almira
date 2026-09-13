@@ -287,6 +287,8 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
             }
             assertThat(db.queryForObject("select count(*) from outbound_messages o where o::text like ?", Long::class.java, "%$c%"))
                 .describedAs("outbound_messages rows containing a real email code").isZero()
+            assertThat(db.queryForObject("select count(*) from outbound_message_bodies b where b::text like ?", Long::class.java, "%$c%"))
+                .describedAs("queued message bodies containing a real email code").isZero()
         }
         assertThat(db.queryForObject("select count(*) from outbound_messages where template = 'otp_email'", Long::class.java))
             .describedAs("a sign-in code is not a notification and is not recorded as one").isZero()

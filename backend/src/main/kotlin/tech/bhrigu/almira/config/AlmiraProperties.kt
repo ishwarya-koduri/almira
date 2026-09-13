@@ -12,6 +12,7 @@ data class AlmiraProperties(
     val storage: Storage = Storage(),
     val providers: Providers = Providers(),
     val auth: Auth = Auth(),
+    val outbox: Outbox = Outbox(),
     /**
      * Gates the checks that must not be bypassable by forgetting a flag:
      * anything other than exactly "development" makes them strict.
@@ -87,6 +88,36 @@ data class AlmiraProperties(
          * throttled by succeeding.
          */
         val maxVerifyFailuresPerIpPerHour: Int = 30,
+        /**
+         * How long one send of a code may take before the person is told it is
+         * delayed. One attempt, never retried: somebody is waiting, and their
+         * resend button is the retry (docs/13 "Interactive and background").
+         *
+         * Five seconds, because an SMS or email gateway's send API answers when
+         * it has ACCEPTED a message, not when it is delivered, and that answer
+         * normally takes well under a second — five is several times a normal
+         * slow answer, and still short enough that the person sees "delayed"
+         * and a working resend button while they are looking at the screen.
+         * The provider's own `timeout` (10s for SMS) is sized for a background
+         * job and is not used. Bounded to (0, 15s] at startup by OtpService.
+         */
+        val sendTimeout: Duration = Duration.ofSeconds(5),
+    )
+
+    /**
+     * The background worker that sends queued notifications
+     * (provider/NotificationOutbox.kt, docs/13 "Interactive and background").
+     */
+    data class Outbox(
+        /**
+         * How often it looks for queued rows, as well as being woken after each
+         * commit that queues one. Read by the @Scheduled annotation; ISO-8601
+         * (`PT2S`). It bounds how long a message a wake missed, or one left by a
+         * stopped worker, waits.
+         */
+        val pollInterval: Duration = Duration.ofSeconds(2),
+        /** Rows claimed per transaction. */
+        val batchSize: Int = 50,
     )
 
     /**

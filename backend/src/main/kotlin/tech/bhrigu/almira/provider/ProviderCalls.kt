@@ -118,7 +118,7 @@ class ProviderCalls(
         while (true) {
             attempt++
             try {
-                return ProviderResult(once(config.timeout, block), attempt)
+                return ProviderResult(runAttempt(config.timeout, block), attempt)
             } catch (failure: ProviderFailure) {
                 val retry = failure.kind.retryable &&
                     attempt < config.maxAttempts &&
@@ -138,6 +138,34 @@ class ProviderCalls(
     }
 
     /**
+     * Exactly one attempt, under [timeout] rather than the provider's, with no
+     * retry and no backoff — for a call a person is sitting in front of.
+     *
+     * A one-time code is the case (docs/13 "Interactive and background"): the
+     * person is looking at the screen and can press resend, so the server must
+     * answer quickly and must never send a second text on its own. A retried
+     * timeout was exactly how one request became two or three billed texts
+     * (known-issues 21). The provider's `max-attempts` and `retry-backoff` are
+     * ignored here on purpose; its account-problem ERROR and the give-up WARN
+     * are not.
+     *
+     * @throws ProviderCallFailed with `attempts = 1` when the attempt fails.
+     */
+    fun <T> callOnce(provider: String, operation: String, timeout: Duration, block: () -> T): T {
+        require(props.providers.all().containsKey(provider)) { "no provider configuration named '$provider'" }
+        require(!timeout.isNegative && !timeout.isZero && timeout <= MAX_TIMEOUT) {
+            "an interactive timeout must be more than zero and at most $MAX_TIMEOUT (is $timeout)"
+        }
+        try {
+            return runAttempt(timeout, block)
+        } catch (failure: ProviderFailure) {
+            gaveUp(provider, operation, failure.kind, 1)
+            if (failure.kind.accountLevel) raiseAccountProblem(provider, operation, failure)
+            throw ProviderCallFailed(provider, operation, failure.kind, 1, failure)
+        }
+    }
+
+    /**
      * Doubling, with "equal jitter": half the delay is fixed and half is random,
      * so retries spread out without ever collapsing to nothing.
      */
@@ -150,7 +178,7 @@ class ProviderCalls(
     /** When each provider last refused us on account grounds. For the operator, not for users. */
     fun accountProblems(): Map<String, Instant> = HashMap(problems)
 
-    private fun <T> once(timeout: Duration, block: () -> T): T {
+    private fun <T> runAttempt(timeout: Duration, block: () -> T): T {
         val future = pool.submit(Callable { block() })
         try {
             return future.get(timeout.toNanos(), TimeUnit.NANOSECONDS)

@@ -25,14 +25,15 @@ const apiError = (status, code, message, details) => ({ status, code, message, d
 
 // The exact shapes OtpService.sendFailed and SignInChannels answer with.
 const delayed = apiError(504, "otp_delivery_delayed",
-  "Your code is taking longer than usual to send. If it arrives, it will work.",
-  { requestId: "d6386b03-0000-4000-8000-000000000001", expiresInSeconds: 300, resendAfterSeconds: 30 });
+  "Your code is taking longer than usual to send. If it arrives, it will work. If it doesn't, you can ask for a new one now.",
+  // resendAfterSeconds is 0: one attempt, the cooldown lifted, resend open at once.
+  { requestId: "d6386b03-0000-4000-8000-000000000001", expiresInSeconds: 300, resendAfterSeconds: 0 });
 
 for (const channel of ["phone", "email"]) {
   expect(`${channel}: a delayed send opens the code step with the kept challenge`,
     signInOutcome(delayed, channel),
     { kind: "code", challenge: {
-      requestId: "d6386b03-0000-4000-8000-000000000001", expiresInSeconds: 300, resendAfterSeconds: 30,
+      requestId: "d6386b03-0000-4000-8000-000000000001", expiresInSeconds: 300, resendAfterSeconds: 0,
       channel, delayed: true } });
 
   expect(`${channel}: otp_delivery_failed is its own sentence, on the field, no code step`,

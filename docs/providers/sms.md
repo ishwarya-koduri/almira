@@ -11,7 +11,11 @@ code, and the only code sender, `LoggingOtpSender`, works only with
 page is done** ([Doc 17 §5](../17-deploying.md)).
 
 SMS carries two kinds of message through two interfaces, both on the `sms`
-provider's account, timeout and retry policy.
+provider's account — and they are called differently ([Doc 13, "Interactive and
+background"](../13-providers-and-going-live.md#interactive-and-background)): a
+one-time code is **interactive**, one attempt under `almira.otp.send-timeout`;
+a reminder is **background**, sent by the notification outbox under the `sms`
+provider's timeout and retry policy.
 
 ---
 
@@ -32,19 +36,20 @@ interface OtpSender {
   hashed and checked by `OtpService` — the adapter only delivers.
 - A live sender leaves `exposesCodeForDevelopment` false. `available` is true
   only when it is configured.
-- Called as `calls.call("sms", "otp") { sender.send(phone, code) }` — the same
-  path for sign-in and step-up; the sender cannot tell them apart, so one DLT
-  template serves both.
-- **A timeout is retried** (the operation is idempotent by default). The same
-  code may therefore arrive twice, and be billed twice. That is the intended
-  trade: the code is the same, and a person with no code is worse.
+- Called as `calls.callOnce("sms", "otp", otp.sendTimeout) { sender.send(phone, code) }`
+  — the same path for sign-in and step-up; the sender cannot tell them apart, so
+  one DLT template serves both.
+- **Exactly one attempt, never retried**, under `ALMIRA_OTP_SEND_TIMEOUT`
+  (5 s), whatever `ALMIRA_PROVIDER_SMS_MAX_ATTEMPTS` says. A person is looking
+  at the screen and presses resend; the server never sends a second text for
+  one request. The adapter must not retry either.
 
 What each outcome does, already implemented and tested in `OtpServiceTest` and
 `ProviderFailureApiTest` against `SandboxFaults`:
 
 | Kind | Response | Challenge / cooldown / per-number count | Per-network count |
 |---|---|---|---|
-| `TIMEOUT` | 504 `otp_delivery_delayed` | kept | kept |
+| `TIMEOUT` | 504 `otp_delivery_delayed`, `resendAfterSeconds: 0` | kept / **lifted** / kept | kept |
 | `UNAVAILABLE` | 503 `otp_provider_unavailable` | removed / lifted / given back | kept |
 | `REJECTED` | 422 `otp_delivery_failed` | removed / lifted / given back | kept |
 | `INSUFFICIENT_BALANCE` | 503 `otp_service_unavailable` + ERROR `PROVIDER ACCOUNT PROBLEM` | removed / lifted / given back | kept |
@@ -55,16 +60,30 @@ What each outcome does, already implemented and tested in `OtpServiceTest` and
 interface ChannelSender {
     val channel: String
     val mode: ProviderMode
-    fun send(notification: OutboundNotification, recipientHint: String?): String
+    val honoursIdempotencyKey: Boolean
+    fun send(notification: OutboundNotification, recipientHint: String?, idempotencyKey: String): String
 }
 ```
 
-`channel = "sms"`, provider `sms`, operation `notify`, result recorded in
-`outbound_messages`. See [push.md](push.md#a-the-interface-contract) for
+`channel = "sms"`, provider `sms`, operation `notify`, sent by
+`NotificationOutbox` from a `queued` row in `outbound_messages`, never inside a
+request. See [push.md](push.md#a-the-interface-contract) for
 `OutboundNotification`.
 
 **Timeouts** `ALMIRA_PROVIDER_SMS_TIMEOUT=10s`, `MAX_ATTEMPTS=3`,
-`RETRY_BACKOFF=500ms`: worst case ≈31 s inside the sign-in request.
+`RETRY_BACKOFF=500ms`: worst case ≈31 s, on the worker, not in a request.
+
+**The idempotency key is the live adapter's job.** It must pass
+`idempotencyKey` to the provider — a client reference or idempotency header the
+provider de-duplicates on — and may declare `honoursIdempotencyKey = true` only
+if the provider documents that it drops repeats of a key for longer than the
+worker's lease (≈3.5 min at the defaults). Then reminders are at-least-once to
+the provider and once to the person: a timeout or a crash between send and
+record is sent again with the same key. If the provider cannot, declare
+`false`: reminders by SMS become at-most-once, a timeout is recorded and not
+retried ([Doc 13](../13-providers-and-going-live.md#idempotency-keys-and-what-they-guarantee)).
+The sandbox declares `true` and drops repeats, so that path is what the suite
+exercises.
 
 ### How a live adapter classifies
 
@@ -109,8 +128,9 @@ Found reading the code in this stage.
 4. **No recipient for reminders.** `RecordingNotifier` calls
    `send(notification, null)`; there is no lookup from `userId` to a phone
    number. Sign-in is unaffected (`OtpSender` is given the phone).
-5. **Delivery is synchronous** — see `GO-LIVE.md`, "What every live adapter has
-   in common", item 7.
+5. **The provider's idempotency support is unknown** until one is chosen. It
+   decides whether SMS reminders are at-least-once or at-most-once (above).
+   Delivery itself is no longer synchronous: the notification outbox sends it.
 
 ---
 

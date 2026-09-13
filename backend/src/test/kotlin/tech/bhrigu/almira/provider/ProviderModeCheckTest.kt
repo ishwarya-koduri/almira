@@ -69,8 +69,39 @@ class ProviderModeCheckTest {
     }
 
     @Test
-    fun `the defaults are all sandbox, and start`() {
+    fun `the defaults start, and are sandbox for everything but aa, which is disabled`() {
         run()
+        assertThat(ProviderModeCheck.DEFAULT_MODES)
+            .describedAs("Account Aggregator is cut from v1; every other provider defaults to its sandbox")
+            .containsEntry("aa", "disabled")
+            .containsEntry("sms", "sandbox").containsEntry("email", "sandbox").containsEntry("push", "sandbox")
+            .containsEntry("digilocker", "sandbox").containsEntry("whatsapp", "sandbox")
+    }
+
+    /**
+     * The same defaults are written in four places, and a deployment reads
+     * whichever one it happens to hit: application.yml when nothing is set,
+     * AlmiraProperties when a property source has no application.yml,
+     * `.env.production.example` when an operator copies it, and the check's own
+     * fallback. Read them back rather than trust that they were edited together.
+     */
+    @Test
+    fun `the default modes agree across application yml, AlmiraProperties and the production example`() {
+        val root = java.nio.file.Path.of("..")
+        val yml = root.resolve("backend/src/main/resources/application.yml").toFile().readText()
+        val example = root.resolve(".env.production.example").toFile().readText()
+        val properties = tech.bhrigu.almira.config.AlmiraProperties.Providers().all()
+
+        ProviderModeCheck.providerNames().forEach { name ->
+            val expected = ProviderModeCheck.defaultMode(name)
+            val env = "ALMIRA_PROVIDER_${name.uppercase()}_MODE"
+            assertThat(yml).describedAs("application.yml default for $name")
+                .contains("mode: \${$env:$expected}")
+            assertThat(example).describedAs(".env.production.example default for $name")
+                .contains("# $env=$expected\n")
+            assertThat(properties.getValue(name).mode).describedAs("AlmiraProperties default for $name")
+                .isEqualTo(expected)
+        }
     }
 
     /**
@@ -106,9 +137,43 @@ class ProviderModeCheckTest {
             .hasMessageContaining("Refusing rather than guessing")
     }
 
+    /** Absent is a normal state: every provider can be disabled, alone or together. */
     @Test
-    fun `off is a legitimate mode and does not refuse`() {
-        run("almira.providers.whatsapp.mode" to "off")
+    fun `disabled is a legitimate mode for every provider, one at a time and all at once`() {
+        ProviderModeCheck.providerNames().forEach { name ->
+            run("almira.providers.$name.mode" to "disabled")
+            run("almira.providers.$name.mode" to "DISABLED")
+        }
+        run(*ProviderModeCheck.providerNames().map { "almira.providers.$it.mode" to "disabled" }.toTypedArray())
+    }
+
+    /**
+     * `off` used to pass here and then crash startup for three providers
+     * (known-issues 11). It is refused, by name, with the word to use instead —
+     * not accepted as a second spelling of `disabled`.
+     */
+    @Test
+    fun `off is refused with a sentence that names disabled`() {
+        ProviderModeCheck.providerNames().forEach { name ->
+            assertThatThrownBy { run("almira.providers.$name.mode" to "off") }
+                .describedAs(name)
+                .isInstanceOf(IllegalStateException::class.java)
+                .hasMessageContaining("almira.providers.$name.mode is 'off'")
+                .hasMessageContaining("write 'disabled'")
+        }
+    }
+
+    /**
+     * known-issues 12: any `almira.otp.provider` but `log` used to die on
+     * "required a bean of type OtpSender", which reads like a broken build.
+     */
+    @Test
+    fun `a one-time-code sender that does not exist is refused with a sentence`() {
+        run("almira.otp.provider" to "log")
+        assertThatThrownBy { run("almira.otp.provider" to "sms") }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("almira.otp.provider is 'sms'")
+            .hasMessageContaining("the only one-time-code sender that exists is 'log'")
     }
 
     /**

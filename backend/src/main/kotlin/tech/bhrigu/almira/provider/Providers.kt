@@ -22,8 +22,19 @@ import java.util.UUID
  * timeout and the retries. An adapter never retries on its own.
  */
 
-/** Where a provider is in its life: not configured, sandboxed, or actually live. */
-enum class ProviderMode { OFF, SANDBOX, LIVE }
+/**
+ * Where a provider is in its life: sandboxed, actually live, or not offered here.
+ *
+ * [DISABLED] is a normal state, not a fault: the provider is absent, startup
+ * succeeds, the status endpoint says so, and every call to it is refused with
+ * 409 `provider_disabled` ([ProviderErrors.disabled]).
+ *
+ * [OFF] is never reported. It is the old name, kept only because the frozen v1
+ * contract lists it and removing an enum value a client may receive is a
+ * breaking change; configuration that says `off` refuses to start and names
+ * `disabled` instead ([ProviderModeCheck]).
+ */
+enum class ProviderMode { OFF, SANDBOX, LIVE, DISABLED }
 
 data class ProviderStatus(
     val provider: String,

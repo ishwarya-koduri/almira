@@ -44,6 +44,23 @@ object ProviderErrors {
         }
     }
 
+    /**
+     * The provider is not offered on this server ([ProviderMode.DISABLED]).
+     *
+     * 409, not 503 and not 404. 503 is what a provider outage answers, and
+     * clients are told they may retry it; this will not change by retrying. 404
+     * is how this API says "no such household, or not yours" (docs/05 §3.3), and
+     * a client reading it would conclude the household had gone. 403 would say
+     * the person lacks a permission they could be given. What is true is that
+     * the request conflicts with how this server is configured — and the code,
+     * not the status, is what a client branches on.
+     */
+    fun disabled(provider: String): ApiException = ApiException(
+        HttpStatus.CONFLICT, "provider_disabled",
+        "${labelFor(provider)} isn't offered on this server.",
+        mapOf("provider" to provider),
+    )
+
     private fun labelFor(provider: String) = when (provider) {
         "digilocker" -> "DigiLocker"
         "aa" -> "The Account Aggregator"

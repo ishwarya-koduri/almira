@@ -126,7 +126,7 @@ class EmailOtpTest {
             assertThat(keysFor(email)).describedAs("nothing stored for '$environment'").isEmpty()
         }
 
-        // mode: off leaves no email ChannelSender at all.
+        // mode: disabled leaves no email ChannelSender at all.
         val off = ChannelEmailOtpSender(props("development"), listOf(SandboxSmsSender(SandboxFaults())))
         assertThat(off.available).isFalse()
     }

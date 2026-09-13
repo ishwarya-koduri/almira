@@ -45,8 +45,8 @@ interface EmailOtpSender {
  * explicitly chosen development, the same rule as [LoggingOtpSender]: the
  * sandbox sends nothing, so anywhere else a "sent" code would be a code nobody
  * can receive — and the request is refused with 503 `otp_unavailable` before a
- * code exists. With `mode: off` there is no email sender at all and the answer
- * is the same.
+ * code exists. With `mode: disabled` there is no email sender at all and the
+ * answer is the same.
  *
  * **Where the code goes.** Into the message body only. The subject a sandbox
  * logs, and the title `outbound_messages` would record, carry no code. This does
@@ -70,7 +70,9 @@ class ChannelEmailOtpSender(
     override val available: Boolean = when (email?.mode) {
         ProviderMode.LIVE -> true
         ProviderMode.SANDBOX -> development
-        ProviderMode.OFF, null -> false
+        // Disabled leaves no email sender, so null is what arrives; DISABLED and
+        // OFF are listed so a sender that ever reports them cannot deliver.
+        ProviderMode.DISABLED, ProviderMode.OFF, null -> false
     }
 
     /** Only the sandbox, and only in development: nothing real would arrive. */

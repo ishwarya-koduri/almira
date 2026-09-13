@@ -88,8 +88,16 @@ almira:
     issuer: almira
     access-ttl: ${ALMIRA_JWT_ACCESS_TTL:15m}
     refresh-ttl: ${ALMIRA_JWT_REFRESH_TTL:30d}
-  # Every outside service, and which of three states it is in: off, sandbox or
-  # live. All default to sandbox, so a fresh checkout talks to nothing real.
+  # Every outside service, and which of three states it is in: disabled, sandbox
+  # or live. All default to sandbox, so a fresh checkout talks to nothing real —
+  # except aa, which defaults to disabled: Account Aggregator is cut from v1,
+  # because production access needs an FIU regulated by RBI, SEBI, IRDAI or
+  # PFRDA (docs/providers/account-aggregator.md). Set it to sandbox to try it.
+  #
+  # disabled is a normal state: startup succeeds, the status endpoint reports
+  # DISABLED, and every call to that provider answers 409 provider_disabled. A
+  # disabled notification channel is skipped and records nothing. The old word
+  # `off` refuses to start and names `disabled`.
   #
   # These were previously read only by @ConditionalOnProperty and declared
   # nowhere, which made them impossible to find and impossible to audit.
@@ -128,7 +136,7 @@ almira:
       max-attempts: ${ALMIRA_PROVIDER_DIGILOCKER_MAX_ATTEMPTS:3}
       retry-backoff: ${ALMIRA_PROVIDER_DIGILOCKER_RETRY_BACKOFF:500ms}
     aa:
-      mode: ${ALMIRA_PROVIDER_AA_MODE:sandbox}
+      mode: ${ALMIRA_PROVIDER_AA_MODE:disabled}
       base-url: ${ALMIRA_PROVIDER_AA_BASE_URL:}
       client-id: ${ALMIRA_PROVIDER_AA_CLIENT_ID:}
       client-secret: ${ALMIRA_PROVIDER_AA_CLIENT_SECRET:}

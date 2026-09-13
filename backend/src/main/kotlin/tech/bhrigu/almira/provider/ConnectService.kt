@@ -89,9 +89,13 @@ class ConnectService(
         return listOf(
             ProviderStatus(
                 provider = "digilocker", label = "DigiLocker", mode = vault.mode,
-                connected = connections["digilocker"]?.first == "active",
-                sandboxNote = "Returns three sample documents — a PAN card, an LIC policy and a " +
-                    "driving licence — as real PDFs. They are nobody's records.",
+                connected = vault.mode != ProviderMode.DISABLED &&
+                    connections["digilocker"]?.first == "active",
+                sandboxNote = sandboxOnly(
+                    vault.mode,
+                    "Returns three sample documents — a PAN card, an LIC policy and a " +
+                        "driving licence — as real PDFs. They are nobody's records.",
+                ),
                 // Kept in step with docs/providers/digilocker.md, which has the reasons.
                 toGoLive = listOf(
                     "GST registration, so the organisation can be GSTN-verified on API Setu",
@@ -106,13 +110,17 @@ class ConnectService(
             ),
             ProviderStatus(
                 provider = "account_aggregator", label = "Account Aggregator", mode = aggregator.mode,
-                connected = connections["account_aggregator"]?.first == "active",
-                sandboxNote = "Returns a savings account, a fixed deposit and a fund folio, " +
-                    "shaped like real FI data. Consent is still asked for.",
+                connected = aggregator.mode != ProviderMode.DISABLED &&
+                    connections["account_aggregator"]?.first == "active",
+                sandboxNote = sandboxOnly(
+                    aggregator.mode,
+                    "Returns a savings account, a fixed deposit and a fund folio, " +
+                        "shaped like real FI data. Consent is still asked for.",
+                ),
                 // Kept in step with docs/providers/account-aggregator.md.
                 toGoLive = listOf(
                     "An entity regulated by RBI, SEBI, IRDAI or PFRDA — without one, production " +
-                        "access is not available, and cutting this from v1 is recommended",
+                        "access is not available, which is why it is cut from v1",
                     "A Company PAN and GSTIN, even for the sandbox",
                     "FIU registration with an Account Aggregator (Sahamati onboarding)",
                     "A signed client certificate for the AA's gateway",
@@ -123,9 +131,13 @@ class ConnectService(
             ),
             ProviderStatus(
                 provider = "whatsapp", label = "WhatsApp capture", mode = whatsApp.mode,
-                connected = connections["whatsapp"]?.first == "active",
-                sandboxNote = "Accepts a webhook payload shaped like Meta's and does NOT check " +
-                    "its signature. Never expose this to the internet in sandbox mode.",
+                connected = whatsApp.mode != ProviderMode.DISABLED &&
+                    connections["whatsapp"]?.first == "active",
+                sandboxNote = sandboxOnly(
+                    whatsApp.mode,
+                    "Accepts a webhook payload shaped like Meta's and does NOT check " +
+                        "its signature. Never expose this to the internet in sandbox mode.",
+                ),
                 toGoLive = listOf(
                     "A Meta business account with a verified WhatsApp number",
                     "A permanent access token and the app secret for signature checks",
@@ -143,6 +155,7 @@ class ConnectService(
     fun startDocumentVault(householdId: UUID): Map<String, String> {
         val userId = userContext.require()
         households.get(householdId)
+        requireEnabled(DIGILOCKER, vault.mode)
         val state = UUID.randomUUID().toString()
         upsertConnection(householdId, "digilocker", vault.mode, "pending", state, userId)
         return mapOf("authorizationUrl" to vault.authorizationUrl(householdId, state), "state" to state)
@@ -164,6 +177,7 @@ class ConnectService(
     fun completeDocumentVault(householdId: UUID, code: String): List<VaultDocument> {
         val userId = userContext.require()
         transactions.execute { households.get(householdId) }
+        requireEnabled(DIGILOCKER, vault.mode)
         // Not idempotent: an authorisation code redeems once, so a retry after a
         // timeout would come back "rejected" and blame the person for our wait.
         val session = provider(DIGILOCKER, "exchange", idempotent = false) { vault.exchange(householdId, code) }
@@ -191,6 +205,7 @@ class ConnectService(
     @Transactional
     fun listDocuments(householdId: UUID): List<VaultDocument> {
         households.get(householdId)
+        requireEnabled(DIGILOCKER, vault.mode)
         val session = activeSession(householdId, "digilocker", requireActive = true)
         return provider(DIGILOCKER, "list") { vault.list(session) }
     }
@@ -199,6 +214,7 @@ class ConnectService(
     fun importDocuments(householdId: UUID, uris: List<String>): ImportedFromProvider {
         val userId = userContext.require()
         households.get(householdId)
+        requireEnabled(DIGILOCKER, vault.mode)
         val session = activeSession(householdId, "digilocker")
         val available = provider(DIGILOCKER, "list") { vault.list(session) }.associateBy { it.uri }
 
@@ -246,6 +262,7 @@ class ConnectService(
     fun requestConsent(householdId: UUID): ConsentHandle {
         val userId = userContext.require()
         households.get(householdId)
+        requireEnabled(AA, aggregator.mode)
         val request = ConsentRequest(
             purpose = "Personal finance management",
             fiTypes = listOf("DEPOSIT", "TERM_DEPOSIT", "MUTUAL_FUNDS", "EQUITIES"),
@@ -264,6 +281,7 @@ class ConnectService(
     @Transactional
     fun consentStatus(householdId: UUID): ConsentHandle {
         households.get(householdId)
+        requireEnabled(AA, aggregator.mode)
         val handle = externalRef(householdId, "account_aggregator")
         val status = provider(AA, "consent-status") { aggregator.consentStatus(handle) }
         if (status.status == "ACTIVE") {
@@ -288,6 +306,7 @@ class ConnectService(
     fun importHoldings(householdId: UUID): ImportedFromProvider {
         val userId = userContext.require()
         households.get(householdId)
+        requireEnabled(AA, aggregator.mode)
         val handle = externalRef(householdId, "account_aggregator")
         // A provider failure is its own answer. Only the adapter's own refusal
         // (the consent is not active) means "approve it first" — reading a
@@ -443,6 +462,9 @@ class ConnectService(
         signature: String?,
         body: ByteArray,
     ): WhatsAppCapture {
+        // Before the signature: a disabled gateway refuses every signature, and
+        // "didn't come from where it claims to" would be the wrong thing to say.
+        requireEnabled(WHATSAPP, whatsApp.mode)
         if (!whatsApp.verify(signature, body)) {
             throw ApiException.forbidden("That message didn't come from where it claims to.")
         }
@@ -478,6 +500,20 @@ class ConnectService(
     }
 
     // --- plumbing --------------------------------------------------------------
+
+    /**
+     * A disabled provider is refused before anything is written or called — no
+     * pending connection row, no audit entry, no provider call — with 409
+     * `provider_disabled`. Checked after the household, so a caller who is not a
+     * member still gets the same 404 as for any other household.
+     */
+    private fun requireEnabled(name: String, mode: ProviderMode) {
+        if (mode == ProviderMode.DISABLED) throw ProviderErrors.disabled(name)
+    }
+
+    /** What the sandbox does is worth saying only when the sandbox is what is running. */
+    private fun sandboxOnly(mode: ProviderMode, note: String): String? =
+        note.takeIf { mode == ProviderMode.SANDBOX }
 
     /** Through the shared timeout and retry policy, with each failure turned into its own answer. */
     private fun <T> provider(name: String, operation: String, idempotent: Boolean = true, block: () -> T): T =

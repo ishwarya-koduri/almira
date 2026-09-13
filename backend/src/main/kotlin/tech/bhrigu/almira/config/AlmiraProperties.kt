@@ -119,7 +119,8 @@ data class AlmiraProperties(
     )
 
     /**
-     * Every outside service, and which of three states it is in.
+     * Every outside service, and which of three states it is in: `disabled`,
+     * `sandbox` or `live`.
      *
      * These modes were being read by `@ConditionalOnProperty` annotations and
      * declared nowhere else — not here, not in application.yml, not in
@@ -128,8 +129,12 @@ data class AlmiraProperties(
      * with a config change" is not a claim you can make about a property that
      * exists only inside an annotation.
      *
-     * `sandbox` is the default for all of them, so a fresh checkout runs with
-     * no configuration and talks to nothing real.
+     * `sandbox` is the default for all of them but `aa`, so a fresh checkout
+     * runs with no configuration and talks to nothing real. `aa` defaults to
+     * `disabled`: Account Aggregator is cut from v1, because production access
+     * needs an FIU regulated by RBI, SEBI, IRDAI or PFRDA (owner's decision,
+     * docs/providers/account-aggregator.md). Keep these defaults in step with
+     * application.yml, `.env.production.example` and ProviderModeCheck.DEFAULT_MODES.
      */
     data class Providers(
         /** One-time codes for sign-in. See also [Otp.provider], which selects the sender. */
@@ -137,8 +142,8 @@ data class AlmiraProperties(
         val email: Provider = Provider(),
         val push: Provider = Provider(),
         val digilocker: Provider = Provider(),
-        /** Account Aggregator, under the RBI framework. */
-        val aa: Provider = Provider(),
+        /** Account Aggregator, under the RBI framework. Cut from v1, so disabled unless asked for. */
+        val aa: Provider = Provider(mode = "disabled"),
         val whatsapp: Provider = Provider(),
     ) {
         /** Named so the startup report can print them without a `when`. */
@@ -157,7 +162,10 @@ data class AlmiraProperties(
      * wrong one should be a configuration mistake rather than a redeploy.
      */
     data class Provider(
-        /** `off`, `sandbox` or `live`. Anything else refuses to start. */
+        /**
+         * `disabled`, `sandbox` or `live`. Anything else refuses to start —
+         * including `off`, the old name for `disabled` (see ProviderModeCheck).
+         */
         val mode: String = "sandbox",
         val baseUrl: String = "",
         val clientId: String = "",
@@ -192,7 +200,7 @@ data class AlmiraProperties(
     ) {
         val isLive: Boolean get() = mode.equals("live", ignoreCase = true)
         val isSandbox: Boolean get() = mode.equals("sandbox", ignoreCase = true)
-        val isOff: Boolean get() = mode.equals("off", ignoreCase = true)
+        val isDisabled: Boolean get() = mode.equals("disabled", ignoreCase = true)
     }
 
     /** True only when development was chosen, never when nothing was said. */

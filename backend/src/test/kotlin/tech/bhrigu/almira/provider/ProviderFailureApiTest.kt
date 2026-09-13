@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpStatus
+import org.springframework.test.context.TestPropertySource
 import tech.bhrigu.almira.support.ApiTestBase
 
 /**
@@ -18,6 +19,11 @@ import tech.bhrigu.almira.support.ApiTestBase
  * empty balance are three different situations, and each gets its own outcome
  * rather than one generic error.
  */
+// Account Aggregator is cut from v1 and disabled by default. Its sandbox is
+// kept, and this suite is what keeps it honest, so it asks for it by name
+// (ProviderDisabledApiTest covers the default). One shared context for both
+// provider suites — the same properties are the same cache key.
+@TestPropertySource(properties = ["almira.providers.aa.mode=sandbox"])
 @DisplayName("Provider failures, end to end")
 class ProviderFailureApiTest : ApiTestBase() {
 

@@ -129,13 +129,12 @@ class SandboxDocumentVault(private val faults: SandboxFaults) : DocumentVaultPro
  * Live needs: an FIU registration with an AA (Sahamati onboarding), a signed
  * client certificate, and a published purpose code — and, before any of that,
  * an entity regulated by RBI, SEBI, IRDAI or PFRDA. See
- * docs/providers/account-aggregator.md, which records the recommendation to
- * cut this from v1.
+ * docs/providers/account-aggregator.md, which records the owner's decision to
+ * cut this from v1. Not the default any more: `aa` is `disabled` unless
+ * `sandbox` is asked for, and the suites that exercise this ask.
  */
 @Component
-@ConditionalOnProperty(
-    name = ["almira.providers.aa.mode"], havingValue = "sandbox", matchIfMissing = true,
-)
+@ConditionalOnProperty(name = ["almira.providers.aa.mode"], havingValue = "sandbox")
 class SandboxAccountAggregator(private val faults: SandboxFaults) : AccountAggregatorClient {
 
     override val mode = ProviderMode.SANDBOX

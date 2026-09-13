@@ -323,7 +323,12 @@ async function ratesCard(host) {
 }
 
 async function connectCard(host) {
-  const providers = await api.providers(state.household.id).catch(() => []);
+  // A provider the server reports as DISABLED is not offered here at all — not
+  // listed, not "not set up", no steps to switch it on. That is how Account
+  // Aggregator is cut from v1: by the server's configuration, not by this file,
+  // so a server that turns it back on shows it again with no client change.
+  const providers = (await api.providers(state.household.id).catch(() => []))
+    .filter((provider) => provider.mode !== "DISABLED");
   if (providers.length === 0) return null;
 
   return el("div.card.stack-3", {},

@@ -318,14 +318,29 @@ section "Providers, in sandbox"
 PROVIDERS=$(api "$ISH" GET "/api/v1/households/$HID/connect/providers")
 is "three providers are described" "$(echo "$PROVIDERS" | count)" "3"
 has "and each says what would make it real" \
-    "$(echo "$PROVIDERS" | jq_ "[0]['toGoLive'][0]")" "client id"
+    "$(echo "$PROVIDERS" | jq_ "[0]['toGoLive']")" "client id"
 
-api "$ISH" POST "/api/v1/households/$HID/connect/aa/consent" >/dev/null
-api "$ISH" GET  "/api/v1/households/$HID/connect/aa/consent" >/dev/null
-IMPORTED=$(api "$ISH" POST "/api/v1/households/$HID/connect/aa/import")
-is "approved holdings arrive as ordinary records" "$(echo "$IMPORTED" | jq_ "['imported']")" "3"
-is "at the household's own default visibility, not wider" \
-   "$(api "$RAVI" GET "/api/v1/households/$HID/investments" | titles)" "LIC term cover"
+# Account Aggregator is cut from v1: disabled unless the server was started with
+# ALMIRA_PROVIDER_AA_MODE=sandbox. Either way there is something to check, and
+# the server's own status says which.
+aa_field() { python3 -c "
+import sys, json
+print(next((str(p.get('$1')) for p in json.load(sys.stdin) if p.get('provider') == 'account_aggregator'), ''))
+" 2>/dev/null; }
+AA_MODE=$(echo "$PROVIDERS" | aa_field mode)
+if [ "$AA_MODE" = "DISABLED" ]; then
+  is "Account Aggregator is reported as disabled, not connected" \
+     "$(echo "$PROVIDERS" | aa_field connected)" "False"
+  is "and asking it for consent is refused plainly, not with a 500" \
+     "$(api "$ISH" POST "/api/v1/households/$HID/connect/aa/consent" | jq_ "['error']['code']")" "provider_disabled"
+else
+  api "$ISH" POST "/api/v1/households/$HID/connect/aa/consent" >/dev/null
+  api "$ISH" GET  "/api/v1/households/$HID/connect/aa/consent" >/dev/null
+  IMPORTED=$(api "$ISH" POST "/api/v1/households/$HID/connect/aa/import")
+  is "approved holdings arrive as ordinary records" "$(echo "$IMPORTED" | jq_ "['imported']")" "3"
+  is "at the household's own default visibility, not wider" \
+     "$(api "$RAVI" GET "/api/v1/households/$HID/investments" | titles)" "LIC term cover"
+fi
 
 section "Multi-currency"
 api "$ISH" POST "/api/v1/households/$HID/rates" \

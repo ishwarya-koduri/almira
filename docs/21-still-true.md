@@ -277,24 +277,30 @@ time zone. A question about a will at three in the morning is how a notification
 permission gets revoked. The sweep runs hourly, so every household is reached
 inside its day.
 
-### When delivery fails (docs/13, "When a provider fails")
+### When delivery fails (docs/13, "Interactive and background")
 
-The nudge rows are written and committed **before** anything is sent, and
-delivery happens after the commit:
+The nudge rows are written and committed **before** anything is handed over, and
+handing over happens after the commit. Handing over is only queueing: the sweep
+never calls a provider.
 
-- Each channel's send goes through `ProviderCalls`. `UNAVAILABLE` and `TIMEOUT`
-  are retried there, within the call. `REJECTED` and `INSUFFICIENT_BALANCE` are
-  not retried. The outcome is recorded in `outbound_messages.failure` with its
-  attempts.
-- **The next sweep does not resend.** A timed-out push may already have arrived,
-  and a second one is the nag. The record is still in the in-app list either way,
-  which is the surface that always works.
+- `RecordingNotifier` writes the `in_app` row as `sent` and one `queued` row per
+  channel, each with its own idempotency key. The notification outbox worker
+  sends them in the background with each provider's policy, and records the
+  outcome in `outbound_messages.failure` with its attempts.
+- On `sms` and `email`, whose providers must drop a repeated key, a timeout is
+  retried with the same key. On `push`, which cannot de-duplicate, it is not:
+  push is at most once.
+- **The next sweep does not resend.** The record is already marked nudged, and a
+  timed-out push may already have arrived; a second one is the nag. The record
+  is still in the in-app list either way, which is the surface that always works.
 - One notifier throwing does not stop the next notifier, or the next person.
-- No network call is made while holding one of the owner pool's two connections.
+- No network call is made by the sweep at all, so none holds one of the owner
+  pool's two connections.
 
-The trade-off is plain: delivery is **at most once** per nudge. If the process
-dies between the commit and the send, that person is not told this cycle. They
-see it in the app, and they are asked again after 30 days.
+The trade-off is plain: a nudge is queued **at most once**. If the process dies
+between the commit and the queueing, that person is not told this cycle. They
+see it in the app, and they are asked again after 30 days. Once queued, the
+outbox's guarantees apply (docs/13, "Idempotency keys, and what they guarantee").
 
 ## 7. The sweep, and the connection it runs on
 

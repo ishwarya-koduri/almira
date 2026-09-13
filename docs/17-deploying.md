@@ -198,6 +198,7 @@ application context exists. Each is `disabled`, `sandbox` or `live`
 | `live` | Refuses: no live adapter exists for any provider yet. |
 | anything else (`liev`) | Refuses rather than guessing. |
 | `ALMIRA_OTP_PROVIDER` other than `log` | Refuses: `log` is the only one-time-code sender that exists. |
+| `ALMIRA_OTP_SEND_TIMEOUT` zero, negative or over `15s` | Refuses. A code is sent once, under this timeout, with a person waiting; the default `5s` is right unless a provider measurably needs more ([Doc 13, "Interactive and background"](13-providers-and-going-live.md#interactive-and-background)). |
 
 Proven on the real application context, each provider disabled alone and all
 together (`ProviderDisabledStartupTest`), and once on the built jar with all six

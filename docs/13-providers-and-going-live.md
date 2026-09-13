@@ -261,8 +261,9 @@ ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
   allowlisted address's email is sent **after** the response
   (`OtpDelivery.UNREPORTED`) — otherwise the answer would take a provider round
   trip longer, and "we couldn't deliver" is a reply only a listed address could
-  get. The send still goes through `ProviderCalls` (timeout, retries, the
-  `PROVIDER ACCOUNT PROBLEM` ERROR line). What changes is the table below: a
+  get. The send is still one interactive attempt through `ProviderCalls`
+  (`almira.otp.send-timeout`, no retry, the `PROVIDER ACCOUNT PROBLEM` ERROR
+  line — see "Interactive and background" below). What changes is the table below: a
   failure other than a timeout makes the challenge unusable in place and keeps
   the cooldown and both counts, because giving them back would make a listed
   address behave differently. The person waits out the cooldown and asks again;
@@ -289,8 +290,9 @@ registration would need, are in [providers/push.md](providers/push.md).
 ## What "the stand-in" means now
 
 Notifications remain a stand-in, but not an unverifiable one. Every outbound
-message is recorded in `outbound_messages` — channel, template, title, status,
-which way it failed and after how many attempts, never a body — so the in-app
+message is recorded in `outbound_messages` — channel, template, title, status
+(`queued` until the background worker has sent it), which way it failed and
+after how many attempts, never a body — so the in-app
 list (`GET /me/messages`) works today, a test can assert that the person who
 should have been told was told, and switching a channel on changes where a row
 goes rather than whether it exists.
@@ -300,12 +302,123 @@ what somebody was told is as personal as what it was about.
 
 ---
 
+## Interactive and background
+
+Every provider call is one of two kinds, decided by one question: **is a person
+waiting for it?** (Owner's decision, 2026-09.)
+
+| | Interactive | Background |
+|---|---|---|
+| **What** | One-time codes by SMS and email — sign-in and step-up. DigiLocker and Account Aggregator connect calls. A WhatsApp capture's reply. | Every notification on `sms`, `email` and `push`: reminders, still-true nudges, emergency-access notices. |
+| **Where it runs** | In the request. | `NotificationOutbox`, a worker on the owner connection, after the request or sweep has committed a `queued` row. |
+| **Attempts** | One-time codes: **exactly one**, under `almira.otp.send-timeout` (5 s), whatever the provider's `max-attempts`. Connect calls: the provider's policy, as described below. | The provider's policy: `timeout`, `max-attempts`, `retry-backoff`. |
+| **Retry** | The person's resend button. | The worker, within `max-attempts`; see the idempotency rules below. |
+
+### One-time codes are interactive
+
+The person is looking at the screen, so a code request is one attempt with its
+own short timeout and no backoff (`ProviderCalls.callOnce`). It is never retried
+by the server. A timeout means *no answer*, not *not delivered*: retrying one
+was how a single request could become two or three billed texts
+(known-issues 21). With one attempt that cannot happen, so there is nothing to
+de-duplicate.
+
+`almira.otp.send-timeout` (`ALMIRA_OTP_SEND_TIMEOUT`, default `5s`, bounded to
+more than zero and at most 15 s at startup): a gateway's send API answers when
+it has *accepted* a message, normally well under a second, so five seconds is
+several slow answers long and still short enough that the person sees
+"delayed" and a working resend button while they are looking. The provider's
+own `timeout` (10 s for SMS) is not used for a code.
+
+What one failed attempt leaves is in "What a failed send does to a one-time
+code" below. In short: a timeout keeps the challenge (the late text works), lifts
+the cooldown (resend at once, `resendAfterSeconds: 0`), and keeps both hourly
+counts (repeated timeouts still reach the caps). A resend replaces the
+challenge, so a code that arrives late after it no longer works.
+
+Connect calls stay in the request and under the provider's policy: their
+retries are few, both non-repeatable operations already refuse to retry a
+timeout, and the person is waiting for the answer either way. A WhatsApp reply
+also stays in the request, because whether it went is part of the capture's
+answer (`replyFailure`); a live Meta webhook's own response deadline is a reason
+to revisit that before WhatsApp goes live (known-issues 21).
+
+### Notifications are background work
+
+Nobody is sitting in front of a reminder. `RecordingNotifier.deliver` writes the
+`in_app` row as `sent` (it is the database, not a provider) and one `queued` row
+per configured channel, in the caller's transaction, and returns. It never calls
+a provider. The worker is woken after the commit and also polls every
+`almira.outbox.poll-interval` (`PT2S`); it claims queued rows `for update skip
+locked`, sends each through `ProviderCalls` with the provider's policy, and
+records `sent` or `failed`, the failure kind and the attempts on the same row.
+The body waits in `outbound_message_bodies`, which the runtime role cannot read,
+and is deleted when the row finishes. A request or sweep that notifies no longer
+waits on any provider (`NotificationOutboxTest` holds a hanging push to that).
+
+The worker uses the owner data source by explicit qualifier: on the runtime
+pool, row-level security shows a user-less worker no rows, and it would do
+nothing, successfully, forever. `NotificationOutboxTest` pins the pool and role,
+and shows a worker built on the runtime pool finding nothing.
+
+### Idempotency keys, and what they guarantee
+
+Every queued row carries `idempotency_key`, unique in the table, naming one
+logical message on one channel: `<logical>:<channel>`. The logical part is
+`reminder:<reminder id>:<date it fires for>:<user>` for a reminder — so a sweep
+that runs again before the reminder is marked (a crash, a second server) queues
+nothing new — and `<template>:<random>` for everything else, whose own
+bookkeeping (the still-true nudge rows, the emergency request) already decides
+whether there is a message. A second enqueue with the same key writes nothing.
+
+The worker passes the key to the adapter on every attempt:
+`ChannelSender.send(notification, recipientHint, idempotencyKey)`. Before calling
+the provider it commits a claim that stamps `send_started_at`, under a lease
+longer than the provider's whole retry budget. So a worker that dies *after the
+provider accepted a message and before recording it* leaves a row that says so.
+What happens next is the channel's declared property,
+`ChannelSender.honoursIdempotencyKey` — deliberately without a default:
+
+| | Provider de-duplicates by key (`true`) | Provider does not (`false`) |
+|---|---|---|
+| **Promise** | **At-least-once to the provider, once to the person.** | **At-most-once.** |
+| **A timeout** | Retried within `max-attempts`, same key. | Not retried. Recorded `failed`, `timeout`. |
+| **A send cut off by a crash** | Sent again when the lease runs out, same key; the provider drops the repeat. | Never sent again. Recorded `failed`, `timeout` ("not confirmed — it may still arrive"). |
+| **Cost** | Correctness rests on the provider honouring the key. | A message the dying worker had not yet handed over is lost. The in-app row still has it. |
+| **Channels today** | `sms` and `email` sandboxes, which count deliveries per key and drop repeats. | `push` (FCM and APNs have no send-side de-duplication: a collapse id replaces a notification on screen, it does not stop a second arriving). |
+
+**The limits, plainly.**
+
+- "Never twice" for an at-least-once channel is only as true as the provider's
+  de-duplication. **A live SMS adapter must pass the key to the provider** (a
+  client reference or idempotency header it de-duplicates on) and may only
+  declare `honoursIdempotencyKey = true` if the provider documents that it drops
+  repeats — for how long, too: a provider that remembers keys for 24 hours is
+  fine, one that remembers them for a minute is not, because the lease is
+  longer. If the chosen provider cannot, the adapter declares `false` and SMS
+  notifications become at-most-once. The same applies to a live email adapter.
+- The key is per logical message. Two different reminders are two messages,
+  and a still-true nudge a month later is a new message by design.
+- A claim that was committed but whose provider call never started (the worker
+  died in between) is, to the next worker, indistinguishable from one that
+  sent. At-most-once channels lose that message rather than risk a duplicate.
+- A live worker slower than its lease (a provider much slower than its own
+  configured timeout) could be mistaken for a dead one. The lease is
+  `max-attempts × (timeout + 30 s) + 1 min`, and `ProviderCalls` enforces the
+  timeout itself, so this needs a bug, not a slow provider.
+- One-time codes are not in the outbox and have no stored key: they are one
+  attempt, which is the stronger guarantee.
+
+---
+
 ## When a provider fails
 
 Every call to every adapter above — the three notification channels, one-time
 codes, DigiLocker, the Account Aggregator and WhatsApp replies — goes through
 one policy, `ProviderCalls`. It is the only reader of each provider's
-`timeout`, `max-attempts` and `retry-backoff`:
+`timeout`, `max-attempts` and `retry-backoff` — which apply to everything except
+a one-time code, whose single attempt is described in "Interactive and
+background" above:
 
 ```yaml
 almira:
@@ -341,29 +454,22 @@ almira:
 A live adapter's only job here is to translate its transport's errors into one
 of the four kinds below. It must not add its own retry loop.
 
-A caution for whoever writes the first live adapter: these calls are made
-inside the request that needs them. The worst case per call is `max-attempts ×
-timeout` plus the backoff — about 31 seconds for SMS at the defaults — and a
-notification tries three channels in turn. That is fine for a sandbox and too
-long for a busy server. Before a notification channel goes live, move delivery
-onto the reminder worker (the `queued` status in `outbound_messages` exists for
-it), or lower the attempts for that provider.
-
 ### Timeout — `timeout`
 
 The provider did not answer in time. It may have received the request.
 
 | | |
 |---|---|
-| **Retried** | Yes, up to `max-attempts` (except the two operations above). |
-| **User — one-time code** | 504 `otp_delivery_delayed`: "Your code is taking longer than usual to send. If it arrives, it will work…" The details carry `requestId`, `expiresInSeconds` and `resendAfterSeconds`. |
+| **Retried** | Yes, up to `max-attempts` (except the two operations above) — but never a one-time code, and never a notification on a channel whose provider does not honour idempotency keys. |
+| **User — one-time code** | 504 `otp_delivery_delayed`: "Your code is taking longer than usual to send. If it arrives, it will work. If it doesn't, you can ask for a new one now." The details carry `requestId`, `expiresInSeconds` and `resendAfterSeconds`, which is `0`. |
 | **User — connect** | 504 `provider_timeout`: "DigiLocker is taking too long to answer. Please try again in a minute." |
 | **User — WhatsApp reply** | The capture still succeeds (200); `replyFailure: "provider_timeout"`. |
 | **User — notification** | The `outbound_messages` row is `failed`, `failure = timeout`, with its `attempts`; `GET /me/messages` says "Not confirmed — the service took too long to answer. It may still arrive." |
 | **Operator** | An INFO line per retry, and one WARN whenever any call gives up — a code, a connect or a notification: `PROVIDER CALL FAILED: provider=<provider> operation=<operation> kind=<kind> attempts=<n>`, with nothing from the call itself (no recipient, code, body or adapter detail). No alert: timeouts are expected in small numbers. A rising count is worth a dashboard. |
 
-For a one-time code, **the challenge, the cooldown and both hourly counts all
-stand**: the text may still arrive, and a late code must still work.
+For a one-time code, **the challenge and both hourly counts stand, and the
+cooldown is lifted**: the text may still arrive and must still work until the
+person asks again, and asking again must not wait out a timer.
 
 ### Unavailable — `unavailable`
 
@@ -372,7 +478,7 @@ maintenance window. Nothing was accepted.
 
 | | |
 |---|---|
-| **Retried** | Yes, up to `max-attempts`, including the two non-repeatable operations. |
+| **Retried** | Yes, up to `max-attempts`, including the two non-repeatable operations — but not a one-time code, which is one attempt. |
 | **User — one-time code** | 503 `otp_provider_unavailable`: "We couldn't reach our text message service just now, so no code was sent…" |
 | **User — connect** | 503 `provider_unavailable`. WhatsApp: `replyFailure: "provider_unavailable"`. |
 | **User — notification** | `failure = unavailable`; "Not sent — the service wasn't reachable. Nothing for you to do." |
@@ -407,13 +513,21 @@ person does will help, and they must not be told otherwise.
 
 ### What a failed send does to a one-time code
 
-Two things have to hold at once: a person must not be locked out by our
-failure, and an attacker must not get unthrottled requests out of it.
+Three things have to hold at once: a person must not be locked out by our
+failure, a late code must not work once a newer one exists, and an attacker must
+not get unthrottled requests out of it. Every row is after exactly **one** send
+attempt.
 
 | Outcome | Challenge | Cooldown | Per-number hourly count | Per-network hourly count |
 |---|---|---|---|---|
-| Timeout | kept | kept | kept | kept |
+| Timeout | kept, until a resend replaces it | **lifted** | kept | kept |
 | Rejected, unavailable, insufficient balance | removed | lifted | given back | **kept** |
+
+A timeout keeps the challenge because the text may still arrive, and lifts the
+cooldown because the person is looking at the screen and resend is their retry.
+The counts are kept because, as far as anyone can tell, a text went: that is
+what stops timeouts buying free requests. A resend overwrites the challenge, so
+the late code then answers `otp_stale` (with its request id) or `otp_invalid`.
 
 When nothing was delivered there is no code worth keeping, and a person who
 fixes a typo — or tries again once we have topped up — is not refused as "too
@@ -433,11 +547,20 @@ code holding the bean — tests — can set it. Adapter names are the provider
 names plus `otp`.
 
 - `ProviderCallsTest` — the policy itself: attempts, backoff, never-retried
-  kinds, non-repeatable operations, the timeout actually cutting off a hang.
+  kinds, non-repeatable operations, the timeout actually cutting off a hang,
+  and `callOnce` making one attempt under its own timeout.
+- `NotificationOutboxTest` — a notifying request that does not wait for a
+  hanging channel; one key per message, handed to the provider; the worker's
+  pool and role, and a runtime-pool worker finding nothing; a send cut off
+  before it was recorded, never delivered twice on either kind of channel; a
+  message queued twice, once.
 - `SandboxFailureMatrixTest` — every sandbox adapter operation × every fault.
 - `ProviderFailureApiTest` — each outcome through HTTP: notification rows and
   `GET /me/messages`, one-time code errors, connect errors, WhatsApp replies.
-- `OtpServiceTest` — the challenge, cooldown and counter table above.
+- `OtpServiceTest` — the challenge, cooldown and counter table above; one
+  send per request under every fault with the provider allowing five; the code's
+  timeout, not the provider's, cutting off a hang; resend at once after a timeout
+  and the late code refused.
 - `EmailOtpTest` — the same for email, plus its own HMAC key, the decoy that no
   code of the million can complete, and a send that happens after the answer.
 - `EmailSignInApiTest`, `SignInChannelSwitchApiTest` — the allowlist cannot be

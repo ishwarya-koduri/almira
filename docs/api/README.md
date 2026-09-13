@@ -82,7 +82,7 @@ each one needs different words ([docs/13 "When a provider fails"](../13-provider
 
 | Status | Code | What to do |
 |---|---|---|
-| 504 | `otp_delivery_delayed` | Go to the code step anyway: the text may still arrive and will work. `details.requestId` is the challenge; offer a resend after `details.resendAfterSeconds`. |
+| 504 | `otp_delivery_delayed` | Go to the code step anyway: the text may still arrive and will work. `details.requestId` is the challenge; offer a resend after `details.resendAfterSeconds`, which is `0` — the server made one attempt and never retries, so resend is the retry and is open at once. A resend replaces the challenge; the late code then stops working. |
 | 422 | `otp_delivery_failed` | Nothing was delivered. Let the person correct the number and ask again straight away. |
 | 503 | `otp_provider_unavailable` | Nothing was sent. Suggest trying again in a few minutes. |
 | 503 | `otp_service_unavailable` | Our account problem. Show the message; do not suggest checking the number. |

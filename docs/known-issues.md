@@ -378,8 +378,9 @@ a device token and there is no table or endpoint for one.
 **Which is right** A per-channel recipient lookup — for push, zero or more
 tokens per user — designed in [providers/push.md](providers/push.md).
 
-**When to fix** Before the first notification channel goes live, together with
-moving delivery off the request thread (Doc 13).
+**When to fix** Before the first notification channel goes live. Delivery
+itself is already off the request thread (the notification outbox, Doc 13); the
+worker passes `recipientHint = null` for the same reason.
 
 **Risk if left** None while every channel is a sandbox.
 
@@ -582,44 +583,57 @@ the failure is seeing too little, not too much.
 
 ---
 
-## 21. Provider calls run on the request thread, and a retried SMS timeout can send two texts
+## 21. Interactive provider calls still hold the request, and background delivery is only as idempotent as the provider
 
-**Where** `provider/ProviderCalls.kt` (`execute`, `once`), called from
-`auth/OtpService.issue` for phone and step-up codes, from `ConnectService`
-(inside `@Transactional` methods), and from `RecordingNotifier.deliver` in
-`provider/Delivery.kt` (reached from `EmergencyService.notify` within its
-transactional request handling).
+**Status** Partly fixed by the owner's "interactive vs background" decision
+(docs/13, "Interactive and background"). What this entry used to describe:
 
-**What** Two consequences of the same shape:
+- **Duplicate texts — fixed.** A one-time-code send (SMS and email, sign-in and
+  step-up) is now exactly one attempt under `almira.otp.send-timeout` (5 s),
+  never retried whatever the provider's `max-attempts`
+  (`ProviderCalls.callOnce`, `OtpService.issue`). One request cannot become two
+  texts. A timeout keeps the challenge, lifts the cooldown so the person can
+  resend at once, and keeps both hourly counts; a resend replaces the challenge,
+  so a late code stops working. `OtpServiceTest`, `EmailOtpTest`.
+- **Notification latency — fixed.** Reminders, still-true nudges and
+  emergency-access notices on `sms`, `email` and `push` are background work:
+  `RecordingNotifier` queues a row per channel with a unique idempotency key,
+  and `NotificationOutbox` (owner connection) sends it with the provider's retry
+  policy. No request or sweep waits on a notification provider.
+  `NotificationOutboxTest`.
 
-- **Latency.** Each call waits for the provider on the caller's thread. With the
-  SMS defaults in `application.yml` (`timeout: 10s`, `max-attempts: 3`,
-  `retry-backoff: 500ms`, doubled with equal jitter), a provider that never
-  answers holds the request for about 31 seconds before the person sees
-  `otp_delivery_delayed`. Where the caller is transactional, a database
-  connection from the app pool is held for the same time, so a slow provider
-  can exhaust the pool for unrelated traffic.
-- **Duplicates.** The one-time-code send is called with the default
-  `idempotent = true`, so a `TIMEOUT` is retried. A timeout means no answer,
-  not no delivery: the first text may already be on its way, and the retry
-  sends another. Up to three texts can arrive for one request, each billed.
-  They all carry the same code, so sign-in still works; the cost is the bill
-  and a confused person.
+**What is still open**
 
-**Which is right** Delivery off the request thread (Doc 13's outbox), with
-the provider's own idempotency key where it has one. Until then, the OTP send
-should pass `idempotent = false` to a live SMS provider without an idempotency
-key, which is the rule `ProviderCalls` already states for operations that must
-not happen twice.
+- **Connect calls hold the request, and a database connection.** DigiLocker
+  and Account Aggregator calls are interactive by the owner's rule (a person is
+  waiting for the answer) and stay in `ConnectService`, inside `@Transactional`
+  methods. At DigiLocker's defaults (`timeout: 15s`, `max-attempts: 3`) an
+  outage holds the request and an app-pool connection for about 46 seconds.
+  **Which is right**: call the provider before opening the transaction (or
+  between two), and give connect calls an interactive budget of their own, as
+  one-time codes now have. **When**: before DigiLocker goes live.
+- **A WhatsApp reply is sent inside the inbound webhook.** Its outcome is part
+  of the capture's answer (`replyFailure`), so it was not moved. Meta expects a
+  webhook to answer quickly and redelivers when it does not, which would
+  capture the same message twice. **When**: before WhatsApp goes live — queue
+  the reply and de-duplicate inbound messages by their id.
+- **The idempotency guarantee rests on the provider.** On a channel whose
+  adapter declares `honoursIdempotencyKey = true` (the `sms` and `email`
+  sandboxes), a timeout and a send cut off by a crash are sent again with the
+  same key, and only the provider's de-duplication stops a second delivery. A
+  live adapter that declares `true` for a provider that does not de-duplicate
+  — or remembers keys for less than the worker's lease, about 3.5 minutes at
+  the SMS defaults — brings duplicate texts back. On `false` (push) delivery is
+  at-most-once: a claim committed just before the worker died loses that
+  message rather than risk a second, and the in-app row is the only copy.
+- **Only reminders have a deterministic logical key.** Still-true nudges and
+  emergency-access notices get a random one per message; their own bookkeeping
+  decides whether a message exists, but two servers sweeping the same household
+  in the same instant could each queue a nudge. Harmless while one server runs.
 
-**Why it is still here** Every provider is a sandbox that answers at once, so
-neither effect can happen today. The outbox is a design change, not a fix.
-
-**When to fix** Before any SMS, email or push provider is switched to `live`,
-together with entry 13.
-
-**Risk if left** None while sandboxed. Live: slow sign-in during a provider
-incident, a starved connection pool, and duplicate billed texts.
+**Risk if left** None while every provider is a sandbox. Live: a slow
+DigiLocker starving the app pool, WhatsApp webhooks captured twice, and — only
+if an adapter misdeclares its provider — duplicate notifications.
 
 ---
 

@@ -146,6 +146,23 @@ def main() -> None:
          "legacyMoveAction(" in code_only(where_web)
          and "export function legacyMoveAction" in read("backend/src/main/resources/static/app/where-legacy.js"))
 
+    # docs/api/README.md: a delayed code still opens the code step, a refused
+    # channel switches to the one the server named, and the three ways of not
+    # sending each have their own sentence in every language. The decision is
+    # asserted in scripts/check-auth-outcome.js; here, that the screen asks it on
+    # every path that can meet those answers, and that the sentences exist.
+    auth_web = code_only(read("backend/src/main/resources/static/app/screens/auth.js"))
+    want("the sign-in screen asks auth-outcome.js on request, resend and verify",
+         auth_web.count("signInOutcome(error, channel)") == 3
+         and "export function signInOutcome" in read("backend/src/main/resources/static/app/auth-outcome.js"))
+    i18n_web = read("backend/src/main/resources/static/app/i18n.js")
+    for stem in ("auth.code.delayed", "auth.error.deliveryFailed", "auth.error.providerUnavailable",
+                 "auth.error.serviceUnavailable", "auth.switched"):
+        for channel in ("phone", "email"):
+            key = f'"{stem}.{channel}":'
+            want(f"{stem}.{channel} is written in English, Telugu and Hindi", i18n_web.count(key) == 3,
+                 f"found {i18n_web.count(key)}")
+
     want("the doc states 600 000 iterations and the code agrees",
          "600 000" in doc and "ITERATIONS = 600_000" in web)
 

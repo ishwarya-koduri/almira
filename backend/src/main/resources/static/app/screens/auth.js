@@ -6,11 +6,16 @@
    presented up front, because most people have one obvious answer.
 
    The email request is answered the same way whether or not the address may
-   sign in, so this screen never learns which it was and never says. */
+   sign in, so this screen never learns which it was and never says.
+
+   Anything short of a plain success goes through signInOutcome (auth-outcome.js):
+   a delayed code still opens the code step, a refused channel switches to the
+   one the server named, and each way of not sending gets its own sentence. */
 
 import { api } from "../api.js";
 import { el, mount, field, textInput, withBusy, toast } from "../ui.js";
 import { t } from "../i18n.js";
+import { signInOutcome } from "../auth-outcome.js";
 
 const CHANNELS = {
   phone: {
@@ -35,7 +40,30 @@ export function authScreen(onSignedIn) {
   return host;
 }
 
-function showAddressStep(host, channels, channel, onSignedIn, prefill = "") {
+/** The message for a plain error: our own sentence when there is one, else the server's. */
+function messageFor(outcome) {
+  return outcome.messageKey ? t(outcome.messageKey) : outcome.message;
+}
+
+/**
+ * The two outcomes that move to another step: a delayed code opens the code
+ * step, a refused channel switches to the one the server named. Returns false
+ * for a plain error, which the caller shows where it belongs.
+ */
+function followOutcome(host, channels, channel, address, outcome, onSignedIn) {
+  if (outcome.kind === "code") {
+    showCodeStep(host, channels, channel, address, outcome.challenge, onSignedIn);
+    return true;
+  }
+  if (outcome.kind === "switch") {
+    showAddressStep(host, outcome.channels, outcome.channel, onSignedIn,
+      { notice: t(`auth.switched.${outcome.channel}`) });
+    return true;
+  }
+  return false;
+}
+
+function showAddressStep(host, channels, channel, onSignedIn, { prefill = "", notice = "" } = {}) {
   const kind = CHANNELS[channel];
   const input = textInput({ ...kind.input, "aria-label": t(`auth.${channel}.label`), value: prefill });
   const addressField = field({
@@ -43,11 +71,16 @@ function showAddressStep(host, channels, channel, onSignedIn, prefill = "") {
   });
 
   const submit = el("button.btn.btn-primary.btn-block", { type: "submit" }, t("auth.sendCode"));
+  // Not the address's fault (the provider, or our account): said above the
+  // button rather than in red under the field, which would read "fix this".
+  const problem = el("div.banner", { role: "alert", "data-auth-problem": "" });
+  problem.hidden = true;
 
   const form = el("form.stack-3", {
     onsubmit: async (event) => {
       event.preventDefault();
       addressField.setError("");
+      problem.hidden = true;
       const address = input.value.trim();
       if (!address) { addressField.setError(t(`auth.${channel}.missing`)); input.focus(); return; }
       await withBusy(submit, async () => {
@@ -55,11 +88,15 @@ function showAddressStep(host, channels, channel, onSignedIn, prefill = "") {
           const challenge = await kind.request(address);
           showCodeStep(host, channels, channel, address, challenge, onSignedIn);
         } catch (error) {
-          addressField.setError(error.message);
+          const outcome = signInOutcome(error, channel);
+          if (followOutcome(host, channels, channel, address, outcome, onSignedIn)) return;
+          if (outcome.onField) { addressField.setError(messageFor(outcome)); return; }
+          problem.textContent = messageFor(outcome);
+          problem.hidden = false;
         }
       });
     },
-  }, addressField, submit);
+  }, addressField, problem, submit);
 
   // Only when the server offers the other one too.
   const other = channels.find((c) => c !== channel);
@@ -75,6 +112,7 @@ function showAddressStep(host, channels, channel, onSignedIn, prefill = "") {
         el("h1", {}, t("auth.welcome")),
         el("p.muted", {}, t("auth.tagline")),
       ),
+      notice ? el("div.banner.banner-accent", { role: "status", "data-auth-notice": "" }, notice) : null,
       form,
       switcher,
       el("p.caption.faint", { style: { margin: 0 } }, t("auth.reassurance")),
@@ -95,6 +133,7 @@ function showCodeStep(host, channels, channel, address, challenge, onSignedIn) {
   });
 
   const submit = el("button.btn.btn-primary.btn-block", { type: "submit" }, t("auth.continue"));
+  let tick = null;
 
   const verify = async () => {
     codeField.setError("");
@@ -103,6 +142,14 @@ function showCodeStep(host, channels, channel, address, challenge, onSignedIn) {
         await kind.verify(address, input.value.trim(), challenge.requestId);
         await onSignedIn();
       } catch (error) {
+        // The verify endpoints refuse a disabled channel too, before the code
+        // is looked at: no code typed here can ever work, so move.
+        const outcome = signInOutcome(error, channel);
+        if (outcome.kind === "switch") {
+          clearInterval(tick);
+          followOutcome(host, channels, channel, address, outcome, onSignedIn);
+          return;
+        }
         codeField.setError(error.message);
         input.select();
       }
@@ -116,14 +163,10 @@ function showCodeStep(host, channels, channel, address, challenge, onSignedIn) {
     if (input.value.length === 6) verify();
   });
 
-  const resend = el("button.btn.btn-ghost.btn-block", { type: "button", disabled: true },
+  const resend = el("button.btn.btn-ghost.btn-block", { type: "button", disabled: true, "data-resend": "" },
     t("auth.resendIn", { seconds: challenge.resendAfterSeconds }));
   let remaining = challenge.resendAfterSeconds;
-  const tick = setInterval(() => {
-    if (!resend.isConnected) { clearInterval(tick); return; }
-    remaining -= 1;
-    if (remaining > 0) { resend.textContent = t("auth.resendIn", { seconds: remaining }); return; }
-    clearInterval(tick);
+  const enableResend = () => {
     resend.disabled = false;
     resend.textContent = t("auth.resend");
     resend.onclick = async () => {
@@ -131,15 +174,34 @@ function showCodeStep(host, channels, channel, address, challenge, onSignedIn) {
         const next = await kind.request(address);
         showCodeStep(host, channels, channel, address, next, onSignedIn);
         toast(t("auth.resent"));
-      } catch (error) { toast(error.message, { tone: "error" }); }
+      } catch (error) {
+        const outcome = signInOutcome(error, channel);
+        if (followOutcome(host, channels, channel, address, outcome, onSignedIn)) return;
+        toast(messageFor(outcome), { tone: "error" });
+      }
     };
-  }, 1000);
+  };
+  if (remaining > 0) {
+    tick = setInterval(() => {
+      if (!resend.isConnected) { clearInterval(tick); return; }
+      remaining -= 1;
+      if (remaining > 0) { resend.textContent = t("auth.resendIn", { seconds: remaining }); return; }
+      clearInterval(tick);
+      enableResend();
+    }, 1000);
+  } else {
+    enableResend();
+  }
 
   mount(host, el("div.auth-card.card", {},
     el("form.stack-3", { onsubmit: (e) => { e.preventDefault(); verify(); } },
       el("div", {},
         el("h1", {}, t(`auth.${channel}.check`)),
-        el("p.muted", {}, t("auth.code.sent")),
+        // A delayed send is still a live challenge: say so plainly instead of
+        // claiming it was sent, and point at the resend timer below.
+        challenge.delayed
+          ? el("div.banner", { role: "status", "data-auth-delayed": "" }, t(`auth.code.delayed.${channel}`))
+          : el("p.muted", {}, t("auth.code.sent")),
         channel === "email" && el("p.caption.faint", { style: { margin: 0 } }, t("auth.email.spam")),
       ),
       codeField,
@@ -148,7 +210,10 @@ function showCodeStep(host, channels, channel, address, challenge, onSignedIn) {
       // A mistyped address should cost a tap, not a reload.
       el("button.btn.btn-ghost.btn-block", {
         type: "button",
-        onclick: () => { clearInterval(tick); showAddressStep(host, channels, channel, onSignedIn, address); },
+        onclick: () => {
+          clearInterval(tick);
+          showAddressStep(host, channels, channel, onSignedIn, { prefill: address });
+        },
       }, t(`auth.${channel}.change`)),
       // Development only: the server echoes the code when nothing can really be
       // sent from it, so the whole flow is usable with no provider at all.

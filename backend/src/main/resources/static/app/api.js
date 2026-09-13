@@ -119,6 +119,9 @@ export const api = {
   /**
    * Which ways in this server offers: ["phone"], ["email"] or both. A server
    * from before email existed has no such endpoint, and that means phone.
+   * That is a guess whenever this call fails for any other reason, so it is not
+   * the last word: a 403 sign_in_channel_disabled names the channels that are
+   * on, and the sign-in screen switches to those (auth-outcome.js).
    */
   signInChannels: async () => {
     try {

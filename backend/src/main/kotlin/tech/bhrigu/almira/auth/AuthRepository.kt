@@ -71,6 +71,21 @@ class AuthRepository(private val jdbc: NamedParameterJdbcTemplate) {
         mapOf("phone" to phone), userMapper,
     )!!
 
+    /** [email] canonical (EmailAddress). The column is citext, so case never splits an account anyway. */
+    fun findByEmail(email: String): UserRow? = jdbc.query(
+        "select * from users where email = :email and deleted_at is null",
+        mapOf("email" to email), userMapper,
+    ).firstOrNull()
+
+    /** An email-only user: users_need_an_identifier accepts either identifier. */
+    fun createWithEmail(email: String): UserRow = jdbc.queryForObject(
+        """
+        insert into users (email, auth_provider) values (:email, 'email')
+        returning *
+        """.trimIndent(),
+        mapOf("email" to email), userMapper,
+    )!!
+
     fun markLogin(userId: UUID) = jdbc.update(
         "update users set last_login_at = now() where id = :id", mapOf("id" to userId),
     )

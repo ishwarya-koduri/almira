@@ -4,6 +4,7 @@ import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.common.EmailAddress
 import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -28,21 +29,28 @@ class StepUpService(
     private val otp: OtpService,
     private val repo: AuthRepository,
     private val audit: AuditService,
+    private val channels: SignInChannels,
 ) {
 
     fun request(userId: UUID, ip: String?): OtpChallenge {
         val user = repo.findById(userId) ?: throw ApiException.unauthorized()
-        val phone = user.phone
-            ?: throw ApiException.badRequest(
-                "no_phone",
-                "We need a phone number on your account before we can confirm it's you.",
-            )
-        return otp.request(phone, ip, OtpService.STEP_UP)
+        return when (val to = destination(user)) {
+            is Destination.Phone -> otp.request(to.phone, ip, OtpService.STEP_UP)
+            // Reported, unlike email sign-in: the caller is already signed in as
+            // the owner of this address, so how the send went tells them nothing
+            // they do not know — and "it didn't go" is worth saying.
+            is Destination.Email -> otp.requestByEmail(to.email, ip, OtpService.STEP_UP, OtpDelivery.REPORTED)
+        }
     }
 
     fun verify(userId: UUID, sessionId: UUID, code: String, requestId: String?) {
         val user = repo.findById(userId) ?: throw ApiException.unauthorized()
-        otp.verify(user.phone!!, code, requestId, OtpService.STEP_UP)
+        // The same choice as [request] makes, from the same row. This used to be
+        // `user.phone!!`, which was a 500 for every account without a number.
+        when (val to = destination(user)) {
+            is Destination.Phone -> otp.verify(to.phone, code, requestId, OtpService.STEP_UP)
+            is Destination.Email -> otp.verifyByEmail(to.email, code, requestId, OtpService.STEP_UP)
+        }
         redis.opsForValue().set(key(sessionId), userId.toString(), ELEVATION)
         audit.record(
             householdId = null, actorUserId = userId, action = "auth.step_up",
@@ -73,6 +81,34 @@ class StepUpService(
     )
 
     private fun key(sessionId: UUID) = "session:elevated:$sessionId"
+
+    private sealed interface Destination {
+        data class Phone(val phone: String) : Destination
+        data class Email(val email: String) : Destination
+    }
+
+    /**
+     * Where a step-up code goes: the way this person could sign in here.
+     *
+     * Only channels this server offers — proving yourself by a channel that
+     * sign-in has switched off would be a second, unreviewed way in. Phone
+     * first when both are possible, because that is what every existing
+     * account has always used.
+     */
+    private fun destination(user: UserRow): Destination {
+        val phone = user.phone
+        val email = user.email?.let { EmailAddress.canonicalOrNull(it) }
+        return when {
+            phone != null && channels.isEnabled(OtpChannel.PHONE) -> Destination.Phone(phone)
+            email != null && channels.isEnabled(OtpChannel.EMAIL) -> Destination.Email(email)
+            else -> throw ApiException.badRequest(
+                "no_step_up_channel",
+                "We can't confirm it's you on this account: there's no " +
+                    "${channels.enabled.joinToString(" or ") { if (it == OtpChannel.EMAIL) "email address" else "phone number" }} " +
+                    "on it that this server can send a code to.",
+            )
+        }
+    }
 
     private companion object {
         val ELEVATION: Duration = Duration.ofMinutes(5)

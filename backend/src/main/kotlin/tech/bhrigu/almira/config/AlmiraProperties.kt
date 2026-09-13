@@ -11,6 +11,7 @@ data class AlmiraProperties(
     val encryption: Encryption = Encryption(),
     val storage: Storage = Storage(),
     val providers: Providers = Providers(),
+    val auth: Auth = Auth(),
     /**
      * Gates the checks that must not be bypassable by forgetting a flag:
      * anything other than exactly "development" makes them strict.
@@ -86,6 +87,35 @@ data class AlmiraProperties(
          * throttled by succeeding.
          */
         val maxVerifyFailuresPerIpPerHour: Int = 30,
+    )
+
+    /**
+     * How people may sign in. Checked at startup by SignInChannels, which
+     * refuses a value it does not understand rather than guessing.
+     */
+    data class Auth(
+        /**
+         * `phone`, `email`, or both. `phone` by default, so a fresh checkout,
+         * the test suites and the end-to-end scripts behave exactly as before.
+         *
+         * The closed alpha runs `email` ALONE. With both on, the same person can
+         * sign in once with a number and once with an address and end up with
+         * two accounts that nothing joins — which is why the owner chose one.
+         */
+        val signInChannels: List<String> = listOf("phone"),
+        /**
+         * The only addresses that can sign in by email. Normalised the way
+         * sign-in normalises (trimmed, lower-cased, nothing else — see
+         * EmailAddress). There is no wildcard and an empty list admits nobody:
+         * with email enabled and this empty, the server refuses to start,
+         * because a closed alpha nobody can enter is a misconfiguration, not a
+         * policy.
+         *
+         * Being left off it is invisible from outside: the request is answered
+         * exactly as for a listed address, no email is sent and the challenge it
+         * creates cannot be completed (AuthService.requestEmailOtp).
+         */
+        val emailAllowlist: List<String> = emptyList(),
     )
 
     /**

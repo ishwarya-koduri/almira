@@ -144,6 +144,16 @@ almira:
       max-attempts: ${ALMIRA_PROVIDER_WHATSAPP_MAX_ATTEMPTS:3}
       retry-backoff: ${ALMIRA_PROVIDER_WHATSAPP_RETRY_BACKOFF:500ms}
 
+  # How people sign in: phone, email, or phone,email. phone by default, so a
+  # fresh checkout, the suites and the e2e scripts are unchanged. The closed
+  # alpha runs email alone, with an allowlist — two channels on at once let one
+  # person make two accounts. Email needs the allowlist: an empty one with email
+  # enabled refuses to start. Addresses off the list get the same answer as
+  # addresses on it and no email (docs/13 §5, docs/api/README.md).
+  auth:
+    sign-in-channels: ${ALMIRA_SIGN_IN_CHANNELS:phone}
+    email-allowlist: ${ALMIRA_ALPHA_EMAIL_ALLOWLIST:}
+
   otp:
     provider: ${ALMIRA_OTP_PROVIDER:log}
     ttl: 5m

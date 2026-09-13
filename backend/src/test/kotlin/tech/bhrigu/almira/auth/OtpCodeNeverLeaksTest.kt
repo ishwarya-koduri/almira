@@ -39,18 +39,38 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * SMS sender is. The development echo is a separate, deliberate channel with
  * its own gate, tested in OtpServiceTest.
  *
+ * Email is walked the same way in its own test, through the real email sender
+ * and the sandbox email channel (which logs), for an allowlisted address and a
+ * decoy, and outbound_messages is searched as well.
+ *
  * Codes are eight digits in this test so that a chance appearance of the same
  * digits in a log line is a one-in-a-hundred-million event rather than a flake.
  */
 @DisplayName("The one-time code never leaks")
 @Import(OtpCodeNeverLeaksTest.Recording::class)
-@TestPropertySource(properties = ["almira.otp.length=8"])
+@TestPropertySource(properties = ["almira.otp.length=8", "almira.auth.sign-in-channels=phone,email"])
 class OtpCodeNeverLeaksTest : ApiTestBase() {
 
     @TestConfiguration
     class Recording {
         @Bean @Primary
         fun recordingSender() = OtpServiceTest.RecordingSender()
+
+        /**
+         * Remembers each email code and then hands it to the REAL email sender,
+         * so the code travels the same way it will in production — through
+         * ChannelEmailOtpSender, ProviderCalls and the sandbox email channel,
+         * which logs — and any of them writing it down is caught.
+         */
+        @Bean @Primary
+        fun recordingEmailSender(real: ChannelEmailOtpSender) = object : EmailOtpSender {
+            override val available get() = real.available
+            override fun send(email: String, code: String) {
+                real.send(email, code)
+                // After, so a test that has seen the code knows the sandbox has logged.
+                emailCodes += email to code
+            }
+        }
     }
 
     @Autowired private lateinit var sender: OtpServiceTest.RecordingSender
@@ -93,19 +113,30 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
         return raw.exchange(url(path), HttpMethod.POST, HttpEntity(body, headers), String::class.java)
     }
 
-    @Test
-    fun `no code sent appears in any log event, response body or response header`() {
+    /** Every logger at DEBUG and every event kept, for the duration of [block]. */
+    private fun captured(block: () -> Unit): Capture {
         val context = LoggerFactory.getILoggerFactory() as LoggerContext
         val capture = Capture(Thread.currentThread().name).apply { this.context = context; start() }
         val root = context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME)
         val saved = context.loggerList.associateWith { it.level }
-        val responses = mutableListOf<ResponseEntity<String>>()
-        fun keep(r: ResponseEntity<String>) = r.also { responses += it }
-
         root.addAppender(capture)
         context.loggerList.forEach { if (it.level != null) it.level = Level.DEBUG }
         root.level = Level.DEBUG
         try {
+            block()
+        } finally {
+            root.detachAppender(capture)
+            saved.forEach { (logger, level) -> logger.level = level }
+        }
+        return capture
+    }
+
+    @Test
+    fun `no code sent appears in any log event, response body or response header`() {
+        val responses = mutableListOf<ResponseEntity<String>>()
+        fun keep(r: ResponseEntity<String>) = r.also { responses += it }
+
+        val capture = captured {
             val phone = uniquePhone()
 
             // Sign-in: request, resend refused, wrong, malformed, right, reused.
@@ -136,9 +167,6 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
             val elevated = keep(post("/api/v1/auth/step-up/verify", token, mapOf("code" to stepUp)))
             assertThat(elevated.statusCode.value()).describedAs(elevated.body).isEqualTo(200)
             keep(post("/api/v1/auth/step-up/verify", token, mapOf("code" to stepUp)))
-        } finally {
-            root.detachAppender(capture)
-            saved.forEach { (logger, level) -> logger.level = level }
         }
 
         val codes = sender.sent.map { it.second }
@@ -190,14 +218,106 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
         }
     }
 
+    /**
+     * The same journey by email, for an allowlisted address and one that is
+     * not: request, resend refused, a decoy, wrong, malformed bodies carrying
+     * the real code, right, reused — then step-up by email for the account that
+     * creates. The code goes through the real email sender and the sandbox email
+     * channel, which logs, and is additionally looked for in outbound_messages,
+     * the table a notification would be recorded in.
+     */
+    @Test
+    fun `no email code appears in any log event, response body, response header or outbound message`() {
+        val responses = mutableListOf<ResponseEntity<String>>()
+        fun keep(r: ResponseEntity<String>) = r.also { responses += it }
+        val outsider = "not.listed.${System.nanoTime()}@example.test"
+
+        val capture = captured {
+            keep(post("/api/v1/auth/otp/email/request", body = mapOf("email" to "  ${listed.uppercase()} ")))
+            val code = awaitEmailCode(1)
+            assertThat(code).hasSize(8)
+            keep(post("/api/v1/auth/otp/email/request", body = mapOf("email" to listed)))
+            keep(post("/api/v1/auth/otp/email/request", body = mapOf("email" to outsider)))
+            keep(post("/api/v1/auth/otp/email/verify", body = mapOf("email" to listed, "code" to wrongFor(code))))
+            malformedBodiesCarrying(code, listed, "email").forEach { keep(postRaw("/api/v1/auth/otp/email/verify", it)) }
+            val login = keep(post("/api/v1/auth/otp/email/verify", body = mapOf("email" to listed, "code" to code)))
+            assertThat(login.statusCode.value()).describedAs(login.body).isEqualTo(200)
+            val token = login.json().path("accessToken").asText()
+            keep(post("/api/v1/auth/otp/email/verify", body = mapOf("email" to listed, "code" to code)))
+
+            val challenge = keep(post("/api/v1/auth/step-up/request", token))
+            assertThat(challenge.json().path("channel").asText()).describedAs(challenge.body).isEqualTo("email")
+            val stepUp = awaitEmailCode(2)
+            assertThat(stepUp).isNotEqualTo(code)
+            keep(post("/api/v1/auth/step-up/verify", token, mapOf("code" to wrongFor(stepUp))))
+            listOf(
+                """{"code":"$stepUp""",
+                """{"code":$stepUp""" + "x}",
+                """{"code":["$stepUp"]}""",
+                """{"code":"${stepUp}a"}""",
+                """{"code":x$stepUp}""",
+            ).forEach { keep(postRaw("/api/v1/auth/step-up/verify", it, token)) }
+            val elevated = keep(post("/api/v1/auth/step-up/verify", token, mapOf("code" to stepUp)))
+            assertThat(elevated.statusCode.value()).describedAs(elevated.body).isEqualTo(200)
+            keep(post("/api/v1/auth/step-up/verify", token, mapOf("code" to stepUp)))
+        }
+
+        val codes = emailCodes.map { it.second }
+        assertThat(emailCodes.map { it.first }).containsExactly(listed, listed)
+        // The harness really walked the paths that log: the sandbox channel spoke
+        // for both codes, the unreadable bodies reached the catch-all, the
+        // validation failures reached the resolver.
+        assertThat(capture.texts.count { "sandbox email: template=otp_email" in it }).isEqualTo(2)
+        assertThat(capture.texts.count { it.startsWith("ERROR") && "HttpMessageNotReadableException" in it })
+            .isEqualTo(9)
+        assertThat(capture.texts.count { it.startsWith("DEBUG") && "Resolved [org.springframework.web.bind.MethodArgumentNotValidException" in it })
+            .isEqualTo(2)
+        assertThat(responses.map { it.statusCode.value() }).containsExactly(
+            200, 429, 200, 400, 500, 500, 500, 400, 500, 500, 200, 400,
+            200, 400, 500, 500, 500, 400, 500, 200, 400,
+        )
+
+        for (c in codes) {
+            assertThat(capture.texts.filter { c in it }).describedAs("log events containing a real email code").isEmpty()
+            responses.forEachIndexed { i, r ->
+                assertThat(r.body.orEmpty()).describedAs("response #$i body").doesNotContain(c)
+                r.headers.forEach { (name, values) ->
+                    assertThat(values.joinToString()).describedAs("response #$i header $name").doesNotContain(c)
+                }
+            }
+            assertThat(db.queryForObject("select count(*) from outbound_messages o where o::text like ?", Long::class.java, "%$c%"))
+                .describedAs("outbound_messages rows containing a real email code").isZero()
+        }
+        assertThat(db.queryForObject("select count(*) from outbound_messages where template = 'otp_email'", Long::class.java))
+            .describedAs("a sign-in code is not a notification and is not recorded as one").isZero()
+    }
+
+    private fun awaitEmailCode(nth: Int): String {
+        val deadline = System.nanoTime() + java.time.Duration.ofSeconds(10).toNanos()
+        while (emailCodes.size < nth && System.nanoTime() < deadline) Thread.sleep(10)
+        check(emailCodes.size >= nth) { "email code #$nth was never sent" }
+        return emailCodes[nth - 1].second
+    }
+
     private fun wrongFor(code: String) = if (code == "00000000") "11111111" else "00000000"
 
-    private fun malformedBodiesCarrying(code: String, phone: String) = listOf(
-        """{"phone":"$phone","code":"$code""",          // unterminated
-        """{"phone":"$phone","code":$code""" + "x}",   // bad token after the digits
-        """{"phone":"$phone","code":["$code"]}""",      // wrong type
-        """{"phone":"$phone","code":"${code}a"}""",     // fails validation
-        """{"phone":"$phone","code":"$code","requestId":7,,}""",
-        """{"phone":"$phone","code":x$code}""",           // an unquoted token Jackson quotes back
+    private fun malformedBodiesCarrying(code: String, address: String, field: String = "phone") = listOf(
+        """{"$field":"$address","code":"$code""",          // unterminated
+        """{"$field":"$address","code":$code""" + "x}",   // bad token after the digits
+        """{"$field":"$address","code":["$code"]}""",      // wrong type
+        """{"$field":"$address","code":"${code}a"}""",     // fails validation
+        """{"$field":"$address","code":"$code","requestId":7,,}""",
+        """{"$field":"$address","code":x$code}""",           // an unquoted token Jackson quotes back
     )
+
+    companion object {
+        val emailCodes = java.util.concurrent.CopyOnWriteArrayList<Pair<String, String>>()
+        private val listed = "leak.test.${System.nanoTime()}@example.test"
+
+        @JvmStatic
+        @org.springframework.test.context.DynamicPropertySource
+        fun allowlist(registry: org.springframework.test.context.DynamicPropertyRegistry) {
+            registry.add("almira.auth.email-allowlist") { listed }
+        }
+    }
 }

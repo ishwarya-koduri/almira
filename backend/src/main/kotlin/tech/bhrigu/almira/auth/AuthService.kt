@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.common.EmailAddress
 import tech.bhrigu.almira.common.PhoneNumber
 import tech.bhrigu.almira.security.JwtService
 import tech.bhrigu.almira.security.SessionRevocationCache
@@ -28,10 +29,12 @@ class AuthService(
     private val audit: AuditService,
     private val revocations: SessionRevocationCache,
     private val sessionRevoker: SessionRevoker,
+    private val channels: SignInChannels,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     fun requestOtp(rawPhone: String, ip: String?): OtpChallenge {
+        channels.requireEnabled(OtpChannel.PHONE)
         val phone = PhoneNumber.normalize(rawPhone)
         // Deliberately does not reveal whether the number is already registered.
         // Enumerating who has an account is itself a privacy leak.
@@ -47,13 +50,78 @@ class AuthService(
         userAgent: String?,
         ip: String?,
     ): LoginResult {
+        channels.requireEnabled(OtpChannel.PHONE)
         val phone = PhoneNumber.normalize(rawPhone)
         otp.verify(phone, code, requestId, ip = ip)
 
         val existing = repo.findByPhone(phone)
         val user = existing ?: repo.createWithPhone(phone)
-        val isNewUser = existing == null
+        return completeLogin(user, existing == null, deviceName, userAgent, ip)
+            .also { log.info("login ok for {} (new={})", PhoneNumber.mask(phone), it.isNewUser) }
+    }
 
+    /**
+     * Sign-in by email, for the closed alpha: only allowlisted addresses.
+     *
+     * Enumeration is the whole difficulty. Every refusal that could depend on
+     * the address — "not invited", "we couldn't deliver", even a response that
+     * arrives a provider round trip later — tells a stranger who is testing a
+     * finance app. So an address that is not allowed walks exactly the same
+     * path as one that is: same validation, same cooldown, same per-address and
+     * per-network counts, a stored challenge with a request id and a lifetime,
+     * the same response. The only differences are invisible from outside: no
+     * email is sent, and the stored value matches no code (OtpDelivery.DECOY).
+     * For the same reason a listed address never hears how its send went —
+     * the send happens after the answer (OtpDelivery.UNREPORTED).
+     *
+     * Checked after normalisation, so `ASHA@Example.com ` is the listed address.
+     */
+    fun requestEmailOtp(rawEmail: String, ip: String?): OtpChallenge {
+        channels.requireEnabled(OtpChannel.EMAIL)
+        val email = EmailAddress.normalize(rawEmail)
+        val delivery = if (channels.isAllowed(email)) OtpDelivery.UNREPORTED else OtpDelivery.DECOY
+        return otp.requestByEmail(email, ip, OtpService.LOGIN, delivery)
+    }
+
+    /**
+     * Creates the account on first success, with the email as its only
+     * identifier. A decoy challenge cannot reach here: it matches no code.
+     */
+    @Transactional
+    fun verifyEmailOtp(
+        rawEmail: String,
+        code: String,
+        requestId: String?,
+        deviceName: String?,
+        userAgent: String?,
+        ip: String?,
+    ): LoginResult {
+        channels.requireEnabled(OtpChannel.EMAIL)
+        val email = EmailAddress.normalize(rawEmail)
+        otp.verifyByEmail(email, code, requestId, OtpService.LOGIN, ip)
+        // Taken off the list between asking and answering: the code was real,
+        // but the invitation is gone. Answered as an expired code, which is
+        // what a listed address sees for a code it can no longer use.
+        if (!channels.isAllowed(email)) {
+            throw ApiException.badRequest(
+                "otp_expired",
+                "That code has expired. Ask for a new one and we'll email it right away.",
+            )
+        }
+
+        val existing = repo.findByEmail(email)
+        val user = existing ?: repo.createWithEmail(email)
+        return completeLogin(user, existing == null, deviceName, userAgent, ip)
+            .also { log.info("login ok for {} by email (new={})", EmailAddress.mask(email), it.isNewUser) }
+    }
+
+    private fun completeLogin(
+        user: UserRow,
+        isNewUser: Boolean,
+        deviceName: String?,
+        userAgent: String?,
+        ip: String?,
+    ): LoginResult {
         repo.markLogin(user.id)
         val tokens = startSession(user.id, deviceName, userAgent, ip)
 
@@ -66,7 +134,6 @@ class AuthService(
             ip = ip,
             userAgent = userAgent,
         )
-        log.info("login ok for {} (new={})", PhoneNumber.mask(phone), isNewUser)
         return LoginResult(tokens, isNewUser, user)
     }
 

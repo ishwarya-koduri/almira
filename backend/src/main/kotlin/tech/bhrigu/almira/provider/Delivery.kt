@@ -27,6 +27,10 @@ interface ChannelSender {
      * Throws [ProviderFailure] to say how it failed — timed out, rejected, out of
      * balance — which decides whether it is retried and what is recorded. It is
      * always called through [ProviderCalls], never directly.
+     *
+     * `recipientHint` is who it is for, when the caller knows. A one-time code
+     * by email passes the complete address (auth/EmailOtpSender.kt); notifications
+     * still pass null (docs/known-issues.md 13). Never log it whole.
      */
     fun send(notification: OutboundNotification, recipientHint: String?): String
 }

@@ -62,6 +62,8 @@ fun SignInScreen(
     state: SignInState,
     onPhoneChanged: (String) -> Unit,
     onSendCode: () -> Unit,
+    onEmailChanged: (String) -> Unit = {},
+    onUseChannel: (SignInChannel) -> Unit = {},
     onCodeChanged: (String) -> Unit,
     onVerify: () -> Unit,
     onResend: () -> Unit,
@@ -109,9 +111,11 @@ fun SignInScreen(
                 label = "signInStep",
             ) { step ->
                 when (step) {
-                    SignInStep.Phone -> PhoneStep(
+                    SignInStep.Phone -> AddressStep(
                         state = state,
                         onPhoneChanged = onPhoneChanged,
+                        onEmailChanged = onEmailChanged,
+                        onUseChannel = onUseChannel,
                         onSubmit = onSendCode,
                     )
 
@@ -158,9 +162,11 @@ private fun BrandMark() {
 }
 
 @Composable
-private fun PhoneStep(
+private fun AddressStep(
     state: SignInState,
     onPhoneChanged: (String) -> Unit,
+    onEmailChanged: (String) -> Unit,
+    onUseChannel: (SignInChannel) -> Unit,
     onSubmit: () -> Unit,
 ) {
     val colors = AlmiraTheme.colors
@@ -180,47 +186,93 @@ private fun PhoneStep(
 
         Spacer(Modifier.height(space.x1))
 
-        OutlinedTextField(
-            value = state.phone,
-            onValueChange = onPhoneChanged,
-            modifier = Modifier.fillMaxWidth().focusRequester(focus),
-            enabled = !state.busy,
-            label = { Text("Your phone number", style = type.small) },
-            // The country code is shown rather than typed. Every number this
-            // product expects is Indian, and making people type +91 is one more
-            // thing to get wrong.
-            prefix = { Text("+91  ", style = type.body, color = colors.inkMuted) },
-            placeholder = { Text("98765 43210", style = type.body, color = colors.inkFaint) },
-            textStyle = type.body,
-            singleLine = true,
-            isError = state.error != null,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Phone,
-                imeAction = ImeAction.Go,
-            ),
-            keyboardActions = KeyboardActions(onGo = { onSubmit() }),
-            shape = RoundedCornerShape(AlmiraTheme.radii.sm),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = colors.accent,
-                unfocusedBorderColor = colors.hairline,
-                errorBorderColor = colors.caution,
-                focusedContainerColor = colors.surface,
-                unfocusedContainerColor = colors.surface,
-                errorContainerColor = colors.surface,
-            ),
+        val fieldColors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = colors.accent,
+            unfocusedBorderColor = colors.hairline,
+            errorBorderColor = colors.caution,
+            focusedContainerColor = colors.surface,
+            unfocusedContainerColor = colors.surface,
+            errorContainerColor = colors.surface,
         )
+
+        when (state.channel) {
+            SignInChannel.Phone -> OutlinedTextField(
+                value = state.phone,
+                onValueChange = onPhoneChanged,
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                enabled = !state.busy,
+                label = { Text("Your phone number", style = type.small) },
+                // The country code is shown rather than typed. Every number this
+                // product expects is Indian, and making people type +91 is one more
+                // thing to get wrong.
+                prefix = { Text("+91  ", style = type.body, color = colors.inkMuted) },
+                placeholder = { Text("98765 43210", style = type.body, color = colors.inkFaint) },
+                textStyle = type.body,
+                singleLine = true,
+                isError = state.error != null,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Phone,
+                    imeAction = ImeAction.Go,
+                ),
+                keyboardActions = KeyboardActions(onGo = { onSubmit() }),
+                shape = RoundedCornerShape(AlmiraTheme.radii.sm),
+                colors = fieldColors,
+            )
+
+            SignInChannel.Email -> OutlinedTextField(
+                value = state.email,
+                onValueChange = onEmailChanged,
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                enabled = !state.busy,
+                label = { Text("Your email address", style = type.small) },
+                placeholder = { Text("you@example.com", style = type.body, color = colors.inkFaint) },
+                textStyle = type.body,
+                singleLine = true,
+                isError = state.error != null,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Email,
+                    autoCorrectEnabled = false,
+                    imeAction = ImeAction.Go,
+                ),
+                keyboardActions = KeyboardActions(onGo = { onSubmit() }),
+                shape = RoundedCornerShape(AlmiraTheme.radii.sm),
+                colors = fieldColors,
+            )
+        }
 
         HelperLine(
             message = state.error,
-            fallback = "We'll text you a 6-digit code.",
+            fallback = when (state.channel) {
+                SignInChannel.Phone -> "We'll text you a 6-digit code."
+                SignInChannel.Email -> "We'll email you a 6-digit code."
+            },
         )
 
         PrimaryButton(
             label = "Send code",
-            enabled = state.phoneIsPlausible,
+            enabled = state.addressIsPlausible,
             busy = state.busy,
             onClick = onSubmit,
         )
+
+        // Only when the server offers both. The closed alpha offers email alone,
+        // and then there is nothing to choose.
+        state.otherChannel?.let { other ->
+            TextButton(
+                onClick = { onUseChannel(other) },
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    when (other) {
+                        SignInChannel.Phone -> "Use my phone number instead"
+                        SignInChannel.Email -> "Use my email address instead"
+                    },
+                    style = type.small,
+                    color = colors.accent,
+                )
+            }
+        }
     }
 }
 
@@ -241,14 +293,18 @@ private fun CodeStep(
     LaunchedEffect(Unit) { focus.requestFocus() }
 
     Column(verticalArrangement = Arrangement.spacedBy(space.x4)) {
-        Text("Check your phone", style = type.h1, color = colors.ink)
+        Text(
+            if (state.channel == SignInChannel.Email) "Check your email" else "Check your phone",
+            style = type.h1,
+            color = colors.ink,
+        )
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(space.x2),
         ) {
             Text(
-                "Sent to +91 ${state.phone}",
+                "Sent to ${state.sentTo}",
                 style = type.body,
                 color = colors.inkMuted,
             )
@@ -314,7 +370,11 @@ private fun CodeStep(
                 Column(verticalArrangement = Arrangement.spacedBy(space.x1)) {
                     Text("Development mode", style = type.overline, color = colors.accent)
                     Text(
-                        "No SMS provider is configured, so the code is $code.",
+                        if (state.channel == SignInChannel.Email) {
+                            "Nothing is really emailed from this server, so the code is $code."
+                        } else {
+                            "No SMS provider is configured, so the code is $code."
+                        },
                         style = type.small,
                         color = colors.ink,
                     )
@@ -324,7 +384,7 @@ private fun CodeStep(
                     // silently — the message arrives and autofill simply never
                     // happens — so it is shown where someone testing delivery
                     // is already looking.
-                    smsSignature?.let {
+                    smsSignature?.takeIf { state.channel == SignInChannel.Phone }?.let {
                         Text(
                             "Messages must end with $it for this build to autofill.",
                             style = type.caption,

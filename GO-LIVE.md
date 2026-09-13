@@ -107,7 +107,11 @@ DMARC published; a verified from-address.
 
 **Gap**: like SMS and push, `RecordingNotifier` calls every sender with
 `recipientHint = null` — there is no lookup from a user to an address yet.
-Email is **not** a sign-in path ([Doc 17 §5](docs/17-deploying.md)).
+Email **is** a sign-in path now, for the closed alpha: one-time codes to
+allowlisted addresses, built on this channel ([Doc 13 §5](docs/13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha)).
+It cannot sign anybody in outside development until a live email adapter
+exists, so this provider is also the alpha's blocker. A one-time code passes
+the full address as `recipientHint`; notifications still pass null.
 
 **Not watched failing**: everything; no adapter exists.
 

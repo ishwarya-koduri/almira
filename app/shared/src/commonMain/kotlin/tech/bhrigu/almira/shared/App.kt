@@ -101,6 +101,9 @@ fun App(
         )
     }
     val controller = remember(api) { SignInController(api, scope, autofill) }
+    // Which ways in the server offers. The phone step shows until it answers,
+    // which is what every server before email sign-in wanted anyway.
+    LaunchedEffect(controller) { controller.loadChannels() }
     val vault = remember(api) { ZkVault(api) }
     val state by controller.state.collectAsState()
 
@@ -202,6 +205,8 @@ fun App(
                     state = state,
                     onPhoneChanged = controller::onPhoneChanged,
                     onSendCode = controller::sendCode,
+                    onEmailChanged = controller::onEmailChanged,
+                    onUseChannel = controller::useChannel,
                     onCodeChanged = controller::onCodeChanged,
                     onVerify = controller::verify,
                     onResend = controller::resend,

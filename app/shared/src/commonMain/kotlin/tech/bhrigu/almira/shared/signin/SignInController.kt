@@ -14,12 +14,40 @@ import tech.bhrigu.almira.shared.api.ApiException
 import tech.bhrigu.almira.shared.api.Me
 import tech.bhrigu.almira.shared.api.OtpChallenge
 
-/** Which of the two steps is on screen. Nothing else is ever on it. */
+/**
+ * Which of the two steps is on screen. Nothing else is ever on it.
+ *
+ * `Phone` is the first step whichever channel it asks for — a number or an
+ * address. The name predates email sign-in and is kept so nothing that
+ * switches on it has to change.
+ */
 enum class SignInStep { Phone, Code }
+
+/** The ways in a server can offer. */
+enum class SignInChannel(val wire: String) {
+    Phone("phone"),
+    Email("email");
+
+    companion object {
+        /**
+         * The server's list, in the server's order, ignoring anything this
+         * build does not know. Empty or unknown means phone, which is what
+         * every server did before it could say.
+         */
+        fun fromServer(names: List<String>): List<SignInChannel> =
+            names.mapNotNull { name -> entries.firstOrNull { it.wire == name } }.distinct()
+                .ifEmpty { listOf(Phone) }
+    }
+}
 
 data class SignInState(
     val step: SignInStep = SignInStep.Phone,
+    /** The channel the first step is asking for. */
+    val channel: SignInChannel = SignInChannel.Phone,
+    /** Every channel the server offers; more than one shows a switch. */
+    val channels: List<SignInChannel> = listOf(SignInChannel.Phone),
     val phone: String = "",
+    val email: String = "",
     val code: String = "",
     val busy: Boolean = false,
     /** Written by the server, shown as written. */
@@ -31,11 +59,33 @@ data class SignInState(
 ) {
     /** Ten digits, which is every Indian mobile number and no accidents. */
     val phoneIsPlausible: Boolean get() = phone.length == 10 && phone.first() in '6'..'9'
+
+    /**
+     * Loose on purpose, as the server is: one `@`, something either side, a
+     * dot after it. The server normalises and has the final word.
+     */
+    val emailIsPlausible: Boolean get() = EMAIL.matches(email.trim())
+
+    val addressIsPlausible: Boolean get() = when (channel) {
+        SignInChannel.Phone -> phoneIsPlausible
+        SignInChannel.Email -> emailIsPlausible
+    }
+
+    /** What the code step says the code was sent to. */
+    val sentTo: String get() = when (channel) {
+        SignInChannel.Phone -> "+91 $phone"
+        SignInChannel.Email -> email.trim()
+    }
+
+    /** Only the other channel, and only when the server offers it. */
+    val otherChannel: SignInChannel? get() = channels.firstOrNull { it != channel }
+
     val codeIsComplete: Boolean get() = code.length == CODE_LENGTH
 
     companion object {
         const val CODE_LENGTH = 6
         const val PHONE_LENGTH = 10
+        private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s.]+$")
     }
 }
 
@@ -68,6 +118,31 @@ class SignInController(
         _state.update { it.copy(phone = digits, error = null) }
     }
 
+    /** Whitespace inside an address is never right; the ends are trimmed on send. */
+    fun onEmailChanged(input: String) {
+        _state.update { it.copy(email = input.filterNot { c -> c == ' ' || c == '\n' }.take(254), error = null) }
+    }
+
+    /**
+     * Asks the server which channels it offers and starts on the first. Called
+     * once when the sign-in screen appears; until it answers, the phone step
+     * shows, as it always did.
+     */
+    suspend fun loadChannels() {
+        val channels = SignInChannel.fromServer(api.signInChannels())
+        _state.update {
+            // Someone already typing keeps their place, if that channel is still offered.
+            val keep = it.channel in channels && (it.phone.isNotEmpty() || it.email.isNotEmpty())
+            it.copy(channels = channels, channel = if (keep) it.channel else channels.first())
+        }
+    }
+
+    /** The switch under the first step. Ignored for a channel the server does not offer. */
+    fun useChannel(channel: SignInChannel) {
+        if (channel !in state.value.channels || state.value.busy) return
+        _state.update { it.copy(channel = channel, error = null) }
+    }
+
     fun onCodeChanged(input: String) {
         val digits = input.filter(Char::isDigit).take(SignInState.CODE_LENGTH)
         _state.update { it.copy(code = digits, error = null) }
@@ -95,10 +170,9 @@ class SignInController(
     }
 
     fun sendCode() {
-        val phone = state.value.phone
-        if (!state.value.phoneIsPlausible || state.value.busy) return
+        if (!state.value.addressIsPlausible || state.value.busy) return
         run("Couldn't send the code.") {
-            val challenge = api.requestOtp(phone)
+            val challenge = requestCode(state.value)
             _state.update {
                 it.copy(step = SignInStep.Code, challenge = challenge, code = "", error = null)
             }
@@ -116,6 +190,9 @@ class SignInController(
      * code path here is how the two quietly grow apart.
      */
     private fun listenForCode() {
+        // The SMS Retriever reads text messages. An emailed code arrives in a
+        // mail app, where the keyboard's own suggestion is what helps.
+        if (state.value.channel != SignInChannel.Phone) return
         val autofill = autofill ?: return
         listening?.cancel()
         listening = scope.launch {
@@ -134,7 +211,7 @@ class SignInController(
     fun resend() {
         if (state.value.resendIn > 0 || state.value.busy) return
         run("Couldn't send a new code.") {
-            val challenge = api.requestOtp(state.value.phone)
+            val challenge = requestCode(state.value)
             _state.update { it.copy(challenge = challenge, code = "", error = null) }
             startCountdown(challenge.resendAfterSeconds)
             // A new code means a new message, and the old listener is watching
@@ -149,7 +226,11 @@ class SignInController(
         scope.launch {
             _state.update { it.copy(busy = true, error = null) }
             try {
-                val login = api.verifyOtp(current.phone, current.code, current.challenge?.requestId)
+                val requestId = current.challenge?.requestId
+                val login = when (current.channel) {
+                    SignInChannel.Phone -> api.verifyOtp(current.phone, current.code, requestId)
+                    SignInChannel.Email -> api.verifyEmailOtp(current.email.trim(), current.code, requestId)
+                }
                 countdown?.cancel()
                 _state.update { it.copy(signedIn = login.user) }
             } catch (failure: ApiException) {
@@ -167,7 +248,7 @@ class SignInController(
         }
     }
 
-    /** Back to the phone step — a wrong number should not need a restart. */
+    /** Back to the first step — a wrong number or address should not need a restart. */
     fun editPhone() {
         listening?.cancel()
         countdown?.cancel()
@@ -175,6 +256,11 @@ class SignInController(
     }
 
     fun dismissError() = _state.update { it.copy(error = null) }
+
+    private suspend fun requestCode(state: SignInState): OtpChallenge = when (state.channel) {
+        SignInChannel.Phone -> api.requestOtp(state.phone)
+        SignInChannel.Email -> api.requestEmailOtp(state.email.trim())
+    }
 
     private fun startCountdown(seconds: Int) {
         countdown?.cancel()

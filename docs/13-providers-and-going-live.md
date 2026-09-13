@@ -192,6 +192,64 @@ offer the code, and the message needs nothing special.
 provider account (SES, Postmark, Resend); a verified from-address;
 `ALMIRA_PROVIDER_EMAIL_MODE=live`.
 
+### Sign-in codes by email — the closed alpha
+
+The owner's route for the alpha: one-time codes by email, to allowlisted
+testers, with email as the **only** sign-in so nobody ends up with two accounts.
+It is built on this channel and on the failure contract below, with no email
+provider chosen. What it still needs is what email needs: a live email adapter
+(none exists, and `mode: live` refuses to start until one does), the checklist
+above, and a deployment that passes the variables below through to the
+application.
+
+```
+ALMIRA_SIGN_IN_CHANNELS=email
+ALMIRA_ALPHA_EMAIL_ALLOWLIST=asha@example.com,ravi.k+alpha@example.com
+ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
+```
+
+- **Switch.** `almira.auth.sign-in-channels` is `phone`, `email` or both;
+  `phone` when unset, so development and every suite are unchanged. A value it
+  does not understand, an empty list, a malformed allowlist entry, or email
+  with an empty allowlist all refuse to start (`SignInChannels`). The startup
+  log says how many addresses are listed, never which.
+- **Sender.** `ChannelEmailOtpSender` hands the code to whichever email
+  `ChannelSender` the mode selected, with the address as `recipientHint` and
+  the code only in the body. It can deliver when the channel is `live`, or when
+  it is the sandbox **in development** — the same rule as the log SMS sender.
+  Anywhere else (today: every non-development server, since no live email
+  adapter exists) the request is `503 otp_unavailable` before a code exists.
+  Nothing is written to `outbound_messages`: a sign-in code is not a
+  notification, and a table of codes sent is a table worth stealing.
+- **Same hardening as phone**, in `OtpService`, under keys of its own
+  (`otp:email:…`, `otp:rate:email:…`) and its own HMAC key
+  (`almira/otp-code/email/v1`), so nothing stored for an address verifies for a
+  number. The per-address cap is `max-per-hour`; the per-network request cap and
+  the per-network wrong-code cap are **shared** with phone, so alternating
+  channels does not double them.
+- **No enumeration.** An address off the allowlist gets a *decoy*: the same
+  cooldown, counts, stored challenge, request id, lifetime and response, with a
+  random stored value no code matches and no email sent. For that to hold, an
+  allowlisted address's email is sent **after** the response
+  (`OtpDelivery.UNREPORTED`) — otherwise the answer would take a provider round
+  trip longer, and "we couldn't deliver" is a reply only a listed address could
+  get. The send still goes through `ProviderCalls` (timeout, retries, the
+  `PROVIDER ACCOUNT PROBLEM` ERROR line). What changes is the table below: a
+  failure other than a timeout makes the challenge unusable in place and keeps
+  the cooldown and both counts, because giving them back would make a listed
+  address behave differently. The person waits out the cooldown and asks again;
+  the operator sees a WARN per failed send and the ERROR line for an account
+  problem. `EmailSignInApiTest` holds both addresses to the same status, fields,
+  headers and refusals, and holds the allowlisted answer to under half a
+  deliberately slow send.
+- **Step-up** goes to the account's email when phone is not offered or the
+  account has no number, and reports failures normally
+  (`OtpDelivery.REPORTED`): the caller already owns the address.
+- **Development echo** still applies to email in development, and only for a
+  listed address. That one difference is development-only by construction.
+
+### Push
+
 **Push to go live**: an FCM project and service-account JSON; an APNs key for
 iOS; and — the piece that does not exist yet — **device token registration**,
 which needs the native app. Until then push has nowhere to go, which is why it
@@ -345,6 +403,10 @@ names plus `otp`.
 - `ProviderFailureApiTest` — each outcome through HTTP: notification rows and
   `GET /me/messages`, one-time code errors, connect errors, WhatsApp replies.
 - `OtpServiceTest` — the challenge, cooldown and counter table above.
+- `EmailOtpTest` — the same for email, plus its own HMAC key, the decoy that no
+  code of the million can complete, and a send that happens after the answer.
+- `EmailSignInApiTest`, `SignInChannelSwitchApiTest` — the allowlist cannot be
+  seen from outside; a switched-off channel refuses; step-up by email.
 
 ---
 

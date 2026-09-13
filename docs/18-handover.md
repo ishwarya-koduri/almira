@@ -31,7 +31,7 @@ would have gone.
 | | Where it is explained |
 |---|---|
 | The native app beyond the thin slice | The slice proves the architecture; the remaining Phase-1 surface — goals, reports, documents, family, continuity — is unbuilt on both platforms. [Doc 09](09-build-and-launch-plan.md) |
-| Email sign-in | [Doc 17 §5](17-deploying.md) — a change to the authentication surface, with account-enumeration questions attached |
+| A live email adapter | Email sign-in for the closed alpha is built and allowlisted ([Doc 13 §5](13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha)); no provider is chosen, so nothing can send it outside development |
 | Real SMS delivery | [Doc 13 §4](13-providers-and-going-live.md) — needs DLT registration, which is days of paperwork |
 | DigiLocker, Account Aggregator, WhatsApp | [Doc 13](13-providers-and-going-live.md) — adapters and sandboxes exist; each needs an account |
 | Push notifications | Needs device-token registration, which needs the native app first |
@@ -46,13 +46,32 @@ is actually wrong, and everything else benefits from a running instance. Follow
 run against a real host.
 
 **2. Sort out sign-in before inviting anybody.** A deployment cannot sign
-anybody in today: the only code sender writes to the log, and outside
-development it refuses rather than generating a code. This used to say a log-read
-alpha was workable; it was a sign-in for any phone number, and
-[Doc 17 §5](17-deploying.md) has the reproduction and the correction. A real SMS
-sender is the unblock, and DLT registration is what gates it — start that early:
-it is the longest-lead item in the whole product and nothing about it is
-technical.
+anybody in today: no code sender can deliver outside development, and each one
+refuses rather than generating a code. This used to say a log-read alpha was
+workable; it was a sign-in for any phone number, and
+[Doc 17 §5](17-deploying.md) has the reproduction and the correction.
+
+The route chosen for the **closed alpha** is one-time codes by **email**, to an
+allowlist, with email as the only way in so nobody ends up with two accounts.
+The server side, the web client and the native app are built for it
+([Doc 13 §5](13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha)).
+What is left, in order:
+
+1. Register a sending domain (SPF, DKIM, DMARC) and choose an email provider.
+   This is the blocker, and it is not technical.
+2. Write the live email `ChannelSender` for that provider, and watch it fail
+   each of the four ways ([Doc 13 "When a provider fails"](13-providers-and-going-live.md#when-a-provider-fails)).
+3. Deploy with `ALMIRA_SIGN_IN_CHANNELS=email`,
+   `ALMIRA_ALPHA_EMAIL_ALLOWLIST=<the testers>` and
+   `ALMIRA_PROVIDER_EMAIL_MODE=live` plus its key — and check the compose file
+   passes all of them through; at the time of writing it passes none.
+4. Sign one tester in end to end, and confirm an address off the list is sent
+   nothing.
+
+Real SMS stays the route for everyone after the alpha, and DLT registration is
+what gates it — start that early: it is the longest-lead item in the whole
+product and nothing about it is technical. Turning phone back on beside email
+needs a decision about the accounts the alpha created, which have no number.
 
 **3. The native app's thin slice is done** — `v0.1.0-thinslice`. What is left
 is widening it to the Phase-1 surface, and the order that worked for the slice

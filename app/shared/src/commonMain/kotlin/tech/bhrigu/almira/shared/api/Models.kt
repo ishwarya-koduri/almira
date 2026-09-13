@@ -28,7 +28,24 @@ data class OtpChallenge(
     val resendAfterSeconds: Int,
     /** Development only — absent from every other environment. */
     val developmentCode: String? = null,
+    /** `phone` or `email`: where the code went. Added after v1 froze; absent from older servers. */
+    val channel: String? = null,
 )
+
+@Serializable
+data class EmailOtpRequestBody(val email: String)
+
+@Serializable
+data class EmailOtpVerifyBody(
+    val email: String,
+    val code: String,
+    val requestId: String? = null,
+    val deviceName: String? = null,
+)
+
+/** `GET /auth/otp/channels`: which sign-in endpoints this server answers. */
+@Serializable
+data class SignInChannelsResponse(val channels: List<String> = emptyList())
 
 @Serializable
 data class OtpVerifyBody(

@@ -221,7 +221,9 @@ export async function accountsScreen(host) {
         maxLength: 6, placeholder: "······", "aria-label": "6-digit code",
       });
       const codeField = field({
-        label: "Enter the code we texted you", control: code, required: true,
+        // Where it went depends on how this account signs in; older servers do not say.
+        label: challenge.channel === "email" ? "Enter the code we emailed you" : "Enter the code we texted you",
+        control: code, required: true,
         help: "Just to be sure it's you before we show the full number.",
       });
       const confirm = el("button.btn.btn-primary", { type: "button" }, "Confirm");

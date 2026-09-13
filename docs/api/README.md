@@ -16,10 +16,44 @@ line of it will otherwise be learned the hard way.
 ## Authentication
 
 ```
-POST /api/v1/auth/otp/request  { phone }        → requestId, expiresInSeconds, resendAfterSeconds
-POST /api/v1/auth/otp/verify   { phone, code }  → accessToken, refreshToken, isNewUser, user
-POST /api/v1/auth/refresh      { refreshToken } → a new pair
+GET  /api/v1/auth/otp/channels                → { channels: ["phone"] | ["email"] | ["phone","email"] }
+POST /api/v1/auth/otp/request        { phone }        → requestId, expiresInSeconds, resendAfterSeconds, channel
+POST /api/v1/auth/otp/verify         { phone, code }  → accessToken, refreshToken, isNewUser, user
+POST /api/v1/auth/otp/email/request  { email }        → the same challenge shape
+POST /api/v1/auth/otp/email/verify   { email, code }  → the same login shape
+POST /api/v1/auth/refresh            { refreshToken } → a new pair
 ```
+
+**Ask the server how to sign in first.** `GET /auth/otp/channels` is public and
+the same for everybody. Show only what it lists; when it lists both, lead with
+phone and offer one quiet switch. A server older than the endpoint answers 404 —
+treat that, and any failure, as `["phone"]`. The endpoints of a channel that is
+not listed answer `403 sign_in_channel_disabled` with `details.channel` and
+`details.enabledChannels`, before the body is looked at. The closed alpha runs
+**email only**: with both on, one person can sign in once with a number and once
+with an address and end up with two accounts nothing joins.
+
+**Email sign-in is allowlisted, and the answer never says whether you are on
+the list.** An address that is not allowed gets exactly what an allowed one
+gets — `200`, the same fields, the same cooldown `429`, the same `otp_stale`,
+`otp_invalid` (with `attemptsRemaining`), `otp_locked` and `otp_expired` in the
+same order — and simply never receives a code. So a client must not branch on
+anything here and must not say "not invited": go to the code step, and if the
+code never comes, the person asks whoever invited them. For the same reason the
+email request **never reports a delivery failure** — `otp_delivery_failed`,
+`otp_provider_unavailable`, `otp_service_unavailable` and `otp_delivery_delayed`
+are phone-only answers at sign-in. The send happens after the response. The
+one exception is development, where `developmentCode` is present only for an
+allowed address.
+
+Addresses are trimmed and lower-cased on the server and nothing else — dots and
+`+tags` are kept, because outside Gmail they name different mailboxes. Send
+whatever the user typed. A malformed address is `400 email_invalid`, whoever
+asks. The first successful verify for an address creates an account whose only
+identifier is that address (`user.phone` absent).
+
+`channel` on a challenge (`phone` or `email`) is additive: say "we texted you" or
+"we emailed you" from it, and assume phone when it is absent.
 
 Send `Authorization: Bearer <accessToken>`. It lasts 15 minutes.
 
@@ -73,6 +107,14 @@ POST /api/v1/auth/step-up/verify   → elevates this session for 5 minutes
 ```
 
 A `403` with code `step_up_required` is the signal to walk the user through it.
+
+The code goes where this account can sign in on this server: its phone number
+when phone is offered and it has one, otherwise its email address. The
+challenge's `channel` says which. An account with nothing on an offered channel
+gets `400 no_step_up_channel` (this used to be a 500 for email-only accounts).
+Unlike email sign-in, a step-up email that cannot be sent **does** answer with
+the failure codes above — the caller already owns the address, so there is
+nothing to enumerate.
 Elevation belongs to the **session**, so confirming on a phone does not unlock a
 browser someone else is sitting in front of.
 

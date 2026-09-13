@@ -121,6 +121,38 @@ class AlmiraApi(
         return login
     }
 
+    /**
+     * Which ways in this server offers, as the server names them. A server from
+     * before email sign-in has no such endpoint, and that means phone — so does
+     * any failure here, because the phone step's own request will then say
+     * what is actually wrong.
+     */
+    suspend fun signInChannels(): List<String> = try {
+        request<SignInChannelsResponse> { client.get("$baseUrl/api/v1/auth/otp/channels") }
+            .channels.filter { it == "phone" || it == "email" }
+            .ifEmpty { listOf("phone") }
+    } catch (_: ApiException) {
+        listOf("phone")
+    }
+
+    /**
+     * Sign-in by email. Answered the same whether or not the address may sign
+     * in, so there is nothing to branch on: go to the code step.
+     */
+    suspend fun requestEmailOtp(email: String): OtpChallenge = request {
+        client.post("$baseUrl/api/v1/auth/otp/email/request") { setBody(EmailOtpRequestBody(email)) }
+    }
+
+    suspend fun verifyEmailOtp(email: String, code: String, requestId: String?): LoginResponse {
+        val login: LoginResponse = request {
+            client.post("$baseUrl/api/v1/auth/otp/email/verify") {
+                setBody(EmailOtpVerifyBody(email, code, requestId, deviceName()))
+            }
+        }
+        tokens.save(login.accessToken, login.refreshToken)
+        return login
+    }
+
     suspend fun signOut() {
         runCatching { client.post("$baseUrl/api/v1/auth/logout") }
         tokens.clear()

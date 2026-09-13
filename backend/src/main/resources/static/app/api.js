@@ -98,6 +98,16 @@ async function request(method, path, body, { retry = true } = {}) {
   return payload;
 }
 
+/** Sign-in calls: no token, no refresh, and the server's error as an ApiError. */
+async function unauthenticated(method, path, body) {
+  const { response, payload } = await raw(method, path, body);
+  if (!response.ok) {
+    const e = payload?.error || {};
+    throw new ApiError(response.status, e.code || "unknown", e.message || "Something went wrong.", e.details);
+  }
+  return payload;
+}
+
 export const api = {
   get:    (path)       => request("GET", path),
   post:   (path, body) => request("POST", path, body),
@@ -106,23 +116,40 @@ export const api = {
   del:    (path)       => request("DELETE", path),
 
   // --- auth -----------------------------------------------------------------
-  requestOtp: (phone) => raw("POST", "/api/v1/auth/otp/request", { phone })
-    .then(({ response, payload }) => {
-      if (!response.ok) {
-        const e = payload?.error || {};
-        throw new ApiError(response.status, e.code, e.message, e.details);
-      }
-      return payload;
-    }),
+  /**
+   * Which ways in this server offers: ["phone"], ["email"] or both. A server
+   * from before email existed has no such endpoint, and that means phone.
+   */
+  signInChannels: async () => {
+    try {
+      const { response, payload } = await raw("GET", "/api/v1/auth/otp/channels");
+      const channels = response.ok ? (payload?.channels || []).filter((c) => c === "phone" || c === "email") : [];
+      return channels.length ? channels : ["phone"];
+    } catch {
+      return ["phone"];
+    }
+  },
+
+  requestOtp: (phone) => unauthenticated("POST", "/api/v1/auth/otp/request", { phone }),
 
   verifyOtp: async (phone, code, requestId) => {
-    const { response, payload } = await raw("POST", "/api/v1/auth/otp/verify", {
+    const payload = await unauthenticated("POST", "/api/v1/auth/otp/verify", {
       phone, code, requestId, deviceName: deviceName(),
     });
-    if (!response.ok) {
-      const e = payload?.error || {};
-      throw new ApiError(response.status, e.code, e.message, e.details);
-    }
+    auth.set(payload);
+    return payload;
+  },
+
+  /**
+   * Sign-in by email. The request answers the same whether or not the address
+   * may sign in, so there is nothing here to branch on: go to the code step.
+   */
+  requestEmailOtp: (email) => unauthenticated("POST", "/api/v1/auth/otp/email/request", { email }),
+
+  verifyEmailOtp: async (email, code, requestId) => {
+    const payload = await unauthenticated("POST", "/api/v1/auth/otp/email/verify", {
+      email, code, requestId, deviceName: deviceName(),
+    });
     auth.set(payload);
     return payload;
   },

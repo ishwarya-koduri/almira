@@ -395,3 +395,74 @@ tokens per user — designed in [providers/push.md](providers/push.md).
 moving delivery off the request thread (Doc 13).
 
 **Risk if left** None while every channel is a sandbox.
+
+---
+
+## 14. Taking an address off the alpha allowlist does not sign it out
+
+**Where** `auth/SignInChannels.kt` (the allowlist) and `AuthService.verifyEmailOtp`,
+which is the only place it is checked.
+
+**What** The allowlist gates signing in and nothing else. A tester removed from
+`ALMIRA_ALPHA_EMAIL_ALLOWLIST` (which takes a restart) cannot sign in again, but
+every session they already hold keeps working until its refresh token expires
+(30 days), and step-up by email still reaches them. Only a code issued before
+the removal and verified after it is refused, as `otp_expired`; that path has no
+test, because the allowlist cannot be changed without a restart.
+
+**Which is right** For a closed alpha, removal should end access: revoke that
+user's sessions when the server starts without their address, or check the
+allowlist on refresh.
+
+**When to fix** Before the first time somebody has to be removed from the alpha.
+Until then, removing a tester means removing the address *and* revoking their
+sessions by hand (`user_sessions.revoked_at`).
+
+**Risk if left** A removed tester keeps reading their own household's data.
+Nobody else's: row-level security is unaffected.
+
+---
+
+## 15. A failed sign-in email is invisible to the tester, and costs them requests
+
+**Where** `OtpService.deliverInBackground` (`OtpDelivery.UNREPORTED`).
+
+**What** Deliberate, and the price of the allowlist being invisible: the email
+request answers before the email is sent, so a rejected address, an outage or an
+empty provider balance never reaches the person. They see "check your email",
+nothing arrives, and after the 30-second cooldown they can ask again — and each
+attempt counts toward the per-address hourly cap (5), because giving the count
+back would let anyone tell a listed address from an unlisted one. Phone sign-in
+reports and forgives all of these.
+
+**Which is right** This, for as long as the allowlist exists. The operator side
+is what needs to be real: the WARN `one-time code by email not confirmed sent`
+and the ERROR `PROVIDER ACCOUNT PROBLEM` must be alerted on before the alpha
+starts, or a broken provider is discovered by testers reporting silence.
+
+**When to fix** Revisit when email sign-in stops being allowlisted: then there
+is nothing to enumerate, and it can report failures the way phone does.
+
+**Risk if left** Testers locked out for up to an hour by our failure, with
+nothing on screen saying why.
+
+---
+
+## 16. The frozen v1 contract does not describe email sign-in yet
+
+**Where** `docs/api/openapi-v1.json`, against the live `/v3/api-docs`.
+
+**What** `GET /auth/otp/channels`, `POST /auth/otp/email/request`,
+`POST /auth/otp/email/verify` and the `channel` field on `OtpChallengeResponse`
+are additive, so `OpenApiContractTest` passes — but the committed contract the
+apps are built against does not list them. The stage that added them did not
+re-freeze the file.
+
+**Which is right** Re-freeze deliberately with `./scripts/freeze-api-spec.sh`
+once the owner has looked at the new endpoints, so the handoff artefact matches
+the server.
+
+**When to fix** Before anyone builds a third client from the JSON alone.
+docs/api/README.md already describes the endpoints.
+
+**Risk if left** None for the two existing clients, which were changed alongside.

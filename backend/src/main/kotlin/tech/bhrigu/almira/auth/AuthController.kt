@@ -43,6 +43,28 @@ data class OtpVerifyBody(
             "requestId=$requestId, deviceName=$deviceName)"
 }
 
+data class EmailOtpRequestBody(
+    @field:NotBlank(message = "Enter your email address")
+    val email: String,
+) {
+    /** An address is personal data; Spring MVC prints resolved bodies at DEBUG. */
+    override fun toString() = "EmailOtpRequestBody(email=${tech.bhrigu.almira.common.EmailAddress.mask(email)})"
+}
+
+data class EmailOtpVerifyBody(
+    @field:NotBlank(message = "Enter your email address")
+    val email: String,
+    @field:Pattern(regexp = "^[0-9]{4,8}$", message = "Enter the code we emailed you")
+    val code: String,
+    val requestId: String? = null,
+    val deviceName: String? = null,
+) {
+    /** See [OtpVerifyBody.toString]. */
+    override fun toString() =
+        "EmailOtpVerifyBody(email=${tech.bhrigu.almira.common.EmailAddress.mask(email)}, code=[redacted], " +
+            "requestId=$requestId, deviceName=$deviceName)"
+}
+
 data class RefreshBody(@field:NotBlank val refreshToken: String)
 
 data class StepUpVerifyBody(
@@ -65,7 +87,12 @@ data class OtpChallengeResponse(
     val expiresInSeconds: Long,
     val resendAfterSeconds: Long,
     val developmentCode: String?,
+    /** `phone` or `email`: where the code went. Added after v1 froze, so optional to clients. */
+    val channel: String? = null,
 )
+
+/** Which sign-in endpoints this server answers, so a client shows only those. */
+data class SignInChannelsResponse(val channels: List<String>)
 
 data class SessionResponse(
     val id: UUID,
@@ -101,17 +128,22 @@ class AuthController(
     private val auth: AuthService,
     private val stepUp: StepUpService,
     private val userContext: RequestUserContext,
+    private val channels: SignInChannels,
 ) {
+
+    /**
+     * Public, and the same for everybody: it describes the server, not a person.
+     * Under /auth/otp so it is reachable before sign-in like the rest of it.
+     */
+    @GetMapping("/auth/otp/channels")
+    fun signInChannels(): SignInChannelsResponse = SignInChannelsResponse(channels.enabled.map { it.key })
 
     @PostMapping("/auth/otp/request")
     fun requestOtp(
         @RequestBody @jakarta.validation.Valid body: OtpRequestBody,
         request: HttpServletRequest,
     ): OtpChallengeResponse {
-        val c = auth.requestOtp(body.phone, clientIp(request))
-        return OtpChallengeResponse(
-            c.requestId, c.expiresInSeconds, c.resendAfterSeconds, c.developmentCode,
-        )
+        return auth.requestOtp(body.phone, clientIp(request)).toResponse()
     }
 
     @PostMapping("/auth/otp/verify")
@@ -119,23 +151,38 @@ class AuthController(
         @RequestBody @jakarta.validation.Valid body: OtpVerifyBody,
         request: HttpServletRequest,
     ): LoginResponse {
-        val result = auth.verifyOtp(
+        return auth.verifyOtp(
             rawPhone = body.phone,
             code = body.code,
             requestId = body.requestId,
             deviceName = body.deviceName,
             userAgent = request.getHeader("User-Agent"),
             ip = clientIp(request),
-        )
-        return LoginResponse(
-            accessToken = result.tokens.accessToken,
-            refreshToken = result.tokens.refreshToken,
-            expiresInSeconds = result.tokens.expiresInSeconds,
-            tokenType = result.tokens.tokenType,
-            isNewUser = result.isNewUser,
-            user = result.user.toResponse(),
-        )
+        ).toResponse()
     }
+
+    /**
+     * Sign-in by email. Answers the same for an address that is not allowed to
+     * sign in as for one that is — see AuthService.requestEmailOtp.
+     */
+    @PostMapping("/auth/otp/email/request")
+    fun requestEmailOtp(
+        @RequestBody @jakarta.validation.Valid body: EmailOtpRequestBody,
+        request: HttpServletRequest,
+    ): OtpChallengeResponse = auth.requestEmailOtp(body.email, clientIp(request)).toResponse()
+
+    @PostMapping("/auth/otp/email/verify")
+    fun verifyEmailOtp(
+        @RequestBody @jakarta.validation.Valid body: EmailOtpVerifyBody,
+        request: HttpServletRequest,
+    ): LoginResponse = auth.verifyEmailOtp(
+        rawEmail = body.email,
+        code = body.code,
+        requestId = body.requestId,
+        deviceName = body.deviceName,
+        userAgent = request.getHeader("User-Agent"),
+        ip = clientIp(request),
+    ).toResponse()
 
     @PostMapping("/auth/refresh")
     fun refresh(
@@ -169,10 +216,7 @@ class AuthController(
      */
     @PostMapping("/auth/step-up/request")
     fun requestStepUp(request: HttpServletRequest): OtpChallengeResponse {
-        val c = stepUp.request(userContext.require(), clientIp(request))
-        return OtpChallengeResponse(
-            c.requestId, c.expiresInSeconds, c.resendAfterSeconds, c.developmentCode,
-        )
+        return stepUp.request(userContext.require(), clientIp(request)).toResponse()
     }
 
     @PostMapping("/auth/step-up/verify")
@@ -197,6 +241,19 @@ class AuthController(
             .toResponse()
 
     // --- helpers ------------------------------------------------------------
+
+    private fun OtpChallenge.toResponse() = OtpChallengeResponse(
+        requestId, expiresInSeconds, resendAfterSeconds, developmentCode, channel.key,
+    )
+
+    private fun LoginResult.toResponse() = LoginResponse(
+        accessToken = tokens.accessToken,
+        refreshToken = tokens.refreshToken,
+        expiresInSeconds = tokens.expiresInSeconds,
+        tokenType = tokens.tokenType,
+        isNewUser = isNewUser,
+        user = user.toResponse(),
+    )
 
     private fun UserRow.toResponse() = MeResponse(
         id = id, phone = phone, email = email, fullName = fullName,

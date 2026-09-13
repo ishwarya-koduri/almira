@@ -13,6 +13,12 @@ duplicate handling, where an imported record's privacy comes from, what happens
 to a document once it arrives. What is left for the day the accounts exist is
 the transport.
 
+> **The go-live checklist is [GO-LIVE.md](../GO-LIVE.md).** It records, per
+> provider, the interface contract in code terms, what the partner and the owner
+> must supply, the ordered steps and smoke test to flip it live, and what is
+> **not watched failing** — which today is every provider, because no live
+> adapter exists. This document is the design those pages build on.
+
 > Nothing here is switched on by default. `GET /households/{id}/connect/providers`
 > reports each provider's mode and the exact list below, so whoever deploys this
 > can see what remains rather than reading it here.
@@ -55,7 +61,13 @@ afterwards, exactly as for an uploaded file.
 1. Register on the DigiLocker partner portal (NeGD) and complete organisation KYC.
 2. Obtain `client_id` and `client_secret`.
 3. Register a redirect URI on a public HTTPS host.
-4. `ALMIRA_PROVIDERS_DIGILOCKER_MODE=live`, plus `..._CLIENT_ID` / `..._CLIENT_SECRET`.
+4. `ALMIRA_PROVIDER_DIGILOCKER_MODE=live`, plus `..._CLIENT_ID` / `..._CLIENT_SECRET`.
+
+Research dated 2026-09 adds three blockers this list used to omit: access is
+through API Setu and needs a **GSTN-verified** entity, there is **no separate
+sandbox**, and the **server must be in India**. The full checklist, and four
+gaps in `ConnectService` a live adapter cannot paper over, are in
+[providers/digilocker.md](providers/digilocker.md).
 
 **Then implement**: the OAuth exchange and the issued-documents API against
 their spec. The sandbox already defines the shape.
@@ -84,7 +96,13 @@ masked account number.
 1. Register as an FIU with an Account Aggregator (Sahamati onboarding).
 2. Obtain a signed client certificate for the AA gateway.
 3. Publish a purpose code and a consent template; have both approved.
-4. `ALMIRA_PROVIDERS_AA_MODE=live` plus the gateway URL and certificate paths.
+4. `ALMIRA_PROVIDER_AA_MODE=live` plus the gateway URL and certificate paths.
+
+Production FIU status needs an entity regulated by RBI, SEBI, IRDAI or PFRDA,
+and even the Setu sandbox needs a Company PAN and GSTIN. **Cutting AA from v1 is
+recommended, pending the owner's decision** — see
+[providers/account-aggregator.md](providers/account-aggregator.md), which also
+records that `mode: off` does not currently start.
 
 **Never**: scraping, credential collection, or "just give us your net-banking
 password". The AA network exists precisely so that nobody has to.
@@ -108,7 +126,7 @@ door; do not expose this endpoint publicly in sandbox mode.
 1. A Meta business account with a verified WhatsApp number.
 2. A permanent access token, and the app secret for `X-Hub-Signature-256`.
 3. Message templates approved by Meta (session messages are time-limited).
-4. `ALMIRA_PROVIDERS_WHATSAPP_MODE=live` plus token and app secret.
+4. `ALMIRA_PROVIDER_WHATSAPP_MODE=live` plus token and app secret.
 
 ---
 
@@ -130,7 +148,10 @@ the amount and the institution, and logs are the least protected thing here.
    entity, the sender ID, and *every message template*. Unregistered templates
    are dropped by the operator, silently.
 3. Map each `template` to its registered DLT template id.
-4. `ALMIRA_PROVIDERS_SMS_MODE=live` plus provider credentials and the sender id.
+4. `ALMIRA_PROVIDER_SMS_MODE=live` plus provider credentials and the sender id.
+
+The full checklist — GST before DLT, the release keystore before the template,
+and five gaps in the current code — is [providers/sms.md](providers/sms.md).
 
 ### The one-time-code template has a fifth requirement
 
@@ -169,12 +190,13 @@ offer the code, and the message needs nothing special.
 
 **Email to go live**: a sending domain with SPF, DKIM and DMARC published; a
 provider account (SES, Postmark, Resend); a verified from-address;
-`ALMIRA_PROVIDERS_EMAIL_MODE=live`.
+`ALMIRA_PROVIDER_EMAIL_MODE=live`.
 
 **Push to go live**: an FCM project and service-account JSON; an APNs key for
 iOS; and — the piece that does not exist yet — **device token registration**,
 which needs the native app. Until then push has nowhere to go, which is why it
-is last.
+is last. The APNs and FCM requirements, and the shape device-token
+registration would need, are in [providers/push.md](providers/push.md).
 
 ---
 

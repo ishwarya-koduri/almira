@@ -89,10 +89,14 @@ class ConnectService(
                 connected = connections["digilocker"]?.first == "active",
                 sandboxNote = "Returns three sample documents — a PAN card, an LIC policy and a " +
                     "driving licence — as real PDFs. They are nobody's records.",
+                // Kept in step with docs/providers/digilocker.md, which has the reasons.
                 toGoLive = listOf(
+                    "GST registration, so the organisation can be GSTN-verified on API Setu",
                     "A client id and secret from the DigiLocker partner portal",
+                    "A server located in India",
                     "A redirect URI on a public HTTPS host, registered with them",
                     "Organisation KYC completed with NeGD",
+                    "A live adapter, written and tested first: DigiLocker has no separate sandbox",
                     "Set almira.providers.digilocker.mode=live",
                 ),
                 lastSyncedAt = connections["digilocker"]?.second,
@@ -102,7 +106,11 @@ class ConnectService(
                 connected = connections["account_aggregator"]?.first == "active",
                 sandboxNote = "Returns a savings account, a fixed deposit and a fund folio, " +
                     "shaped like real FI data. Consent is still asked for.",
+                // Kept in step with docs/providers/account-aggregator.md.
                 toGoLive = listOf(
+                    "An entity regulated by RBI, SEBI, IRDAI or PFRDA — without one, production " +
+                        "access is not available, and cutting this from v1 is recommended",
+                    "A Company PAN and GSTIN, even for the sandbox",
                     "FIU registration with an Account Aggregator (Sahamati onboarding)",
                     "A signed client certificate for the AA's gateway",
                     "A published purpose code and consent template",

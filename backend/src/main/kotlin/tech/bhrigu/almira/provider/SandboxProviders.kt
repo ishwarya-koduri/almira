@@ -24,9 +24,10 @@ import java.util.UUID
  * encrypted, read the text layer, propose fields — is exercised end to end. The
  * only thing not proven is the transport.
  *
- * Live needs: a registered client id and secret from the DigiLocker partner
- * portal, a redirect URI on a public host, and the organisation's KYC. See
- * docs/13.
+ * Live needs: GST registration and a GSTN-verified entity on API Setu, a
+ * client id and secret, a redirect URI on a public host, and a server in
+ * India — and there is no DigiLocker sandbox to rehearse against, so this
+ * class is the only one there will be. See docs/providers/digilocker.md.
  */
 @Component
 @ConditionalOnProperty(
@@ -126,7 +127,10 @@ class SandboxDocumentVault(private val faults: SandboxFaults) : DocumentVaultPro
  * are exactly what the AA framework exists to replace (docs/05 §8).
  *
  * Live needs: an FIU registration with an AA (Sahamati onboarding), a signed
- * client certificate, and a published purpose code.
+ * client certificate, and a published purpose code — and, before any of that,
+ * an entity regulated by RBI, SEBI, IRDAI or PFRDA. See
+ * docs/providers/account-aggregator.md, which records the recommendation to
+ * cut this from v1.
  */
 @Component
 @ConditionalOnProperty(

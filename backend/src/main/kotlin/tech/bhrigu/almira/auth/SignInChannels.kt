@@ -28,6 +28,16 @@ enum class OtpChannel(val key: String, val provider: String) {
  *  - Email enabled with an empty allowlist refuses: nobody could sign in. The
  *    way to end the alpha is to take email out of the channels, which
  *    AlphaAllowlistAccess treats as removing every address.
+ *  - Email enabled with `almira.providers.email.mode=disabled` refuses. Email
+ *    codes go out through the email provider (ChannelEmailOtpSender), so the
+ *    two settings contradict each other: one offers email sign-in, the other
+ *    says there is no email on this server. A disabled provider is a normal
+ *    state and starts; offering sign-in through it is a choice nobody can
+ *    have meant, and the alternative — quietly dropping email from the
+ *    channels — would, through AlphaAllowlistAccess, sign every email-only
+ *    tester out at startup because of a provider switch (docs/13, "The switch").
+ *    Phone has no such rule: phone codes go through `almira.otp.provider`,
+ *    not the `sms` provider (known-issues 12).
  *
  * The startup line says how many addresses are listed and never which.
  */
@@ -45,6 +55,13 @@ class SignInChannels(props: AlmiraProperties) {
                 "is empty, so nobody could sign in by email. List the testers' addresses, or " +
                 "take email out of almira.auth.sign-in-channels to end the email alpha. Taking email " +
                 "out signs every email-only account out when this server starts (docs/13 §5)."
+        }
+        require(OtpChannel.EMAIL !in enabled || props.providers.email.mode.trim().lowercase() != "disabled") {
+            "Email sign-in is enabled in almira.auth.sign-in-channels (ALMIRA_SIGN_IN_CHANNELS), but " +
+                "almira.providers.email.mode (ALMIRA_PROVIDER_EMAIL_MODE) is 'disabled', so no sign-in " +
+                "code could ever be emailed. Set the email provider to sandbox or live, or take email " +
+                "out of almira.auth.sign-in-channels. Taking email out signs every email-only account " +
+                "out when this server starts (docs/13 §5)."
         }
 
         log.info(

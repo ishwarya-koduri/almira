@@ -26,11 +26,16 @@ import java.nio.file.Path
 @DisplayName("Sign-in channels and the email allowlist")
 class SignInChannelsTest {
 
-    private fun props(channels: List<String>, allowlist: List<String> = emptyList()) = AlmiraProperties(
+    private fun props(
+        channels: List<String>,
+        allowlist: List<String> = emptyList(),
+        emailMode: String = "sandbox",
+    ) = AlmiraProperties(
         db = AlmiraProperties.Db("jdbc:postgresql://x/y", "u", "p", "u2", "p2"),
         jwt = AlmiraProperties.Jwt("test-only-secret-that-is-long-enough-for-hmac256-signing"),
         otp = AlmiraProperties.Otp(),
         auth = AlmiraProperties.Auth(channels, allowlist),
+        providers = AlmiraProperties.Providers(email = AlmiraProperties.Provider(mode = emailMode)),
     )
 
     // --- the packaged defaults ----------------------------------------------
@@ -90,6 +95,35 @@ class SignInChannelsTest {
             .hasMessageContaining("ALMIRA_ALPHA_EMAIL_ALLOWLIST")
         // Phone alone does not need one.
         SignInChannels(props(listOf("phone")))
+    }
+
+    /**
+     * Email codes are sent through the email provider, so offering email
+     * sign-in with that provider disabled is two settings that contradict each
+     * other. Refused by name rather than started with email silently left out
+     * of /auth/otp/channels, which would end the email alpha — and sign every
+     * email-only tester out — as a side effect of a provider switch.
+     */
+    @Test
+    fun `email sign-in with the email provider disabled refuses, naming both settings`() {
+        listOf("disabled", "DISABLED", " Disabled ").forEach { mode ->
+            assertThatThrownBy { SignInChannels(props(listOf("email"), listOf("a@b.co"), emailMode = mode)) }
+                .describedAs("email mode '$mode'")
+                .isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining("almira.auth.sign-in-channels")
+                .hasMessageContaining("almira.providers.email.mode")
+                .hasMessageContaining("'disabled'")
+            assertThatThrownBy { SignInChannels(props(listOf("phone", "email"), listOf("a@b.co"), emailMode = mode)) }
+                .hasMessageContaining("almira.providers.email.mode")
+        }
+        // Email disabled on its own is a normal state: a phone-only server starts.
+        assertThat(SignInChannels(props(listOf("phone"), emailMode = "disabled")).enabled)
+            .containsExactly(OtpChannel.PHONE)
+        // And email sign-in with the provider on starts, sandbox or live.
+        listOf("sandbox", "live").forEach { mode ->
+            assertThat(SignInChannels(props(listOf("email"), listOf("a@b.co"), emailMode = mode)).enabled)
+                .containsExactly(OtpChannel.EMAIL)
+        }
     }
 
     @Test

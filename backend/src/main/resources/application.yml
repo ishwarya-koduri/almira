@@ -103,7 +103,9 @@ almira:
   #
   # disabled is a normal state: startup succeeds, the status endpoint reports
   # DISABLED, and every call to that provider answers 409 provider_disabled. A
-  # disabled notification channel is skipped and records nothing. The old word
+  # disabled notification channel is skipped and records nothing — but email
+  # disabled while auth.sign-in-channels includes email refuses to start, naming
+  # both, because email codes are sent through the email provider. The old word
   # `off` refuses to start and names `disabled`.
   #
   # These were previously read only by @ConditionalOnProperty and declared

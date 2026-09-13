@@ -194,6 +194,7 @@ application context exists. Each is `disabled`, `sandbox` or `live`
 | Setting | What happens |
 |---|---|
 | `disabled` (any provider, or all of them) | **Starts.** The provider is not offered: status `DISABLED`, calls answer 409 `provider_disabled`, a disabled notification channel is skipped. `aa` is `disabled` unless set — Account Aggregator is cut from v1. |
+| `ALMIRA_PROVIDER_EMAIL_MODE=disabled` with `email` in `ALMIRA_SIGN_IN_CHANNELS` | Refuses, naming both (`SignInChannels`, as the context starts — not `ProviderModeCheck`): email sign-in would be offered with no way to send a code. Enable the email provider, or take email out of the channels (which ends the email alpha and signs email-only accounts out). |
 | `off` | Refuses, naming `disabled`. It was the old spelling and used to crash startup for three providers. |
 | `live` | Refuses: no live adapter exists for any provider yet. |
 | anything else (`liev`) | Refuses rather than guessing. |

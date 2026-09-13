@@ -45,8 +45,10 @@ interface EmailOtpSender {
  * explicitly chosen development, the same rule as [LoggingOtpSender]: the
  * sandbox sends nothing, so anywhere else a "sent" code would be a code nobody
  * can receive — and the request is refused with 503 `otp_unavailable` before a
- * code exists. With `mode: disabled` there is no email sender at all and the
- * answer is the same.
+ * code exists. With `mode: disabled` there is no email sender at all, and a
+ * server that offers email sign-in that way refuses to start (`SignInChannels`);
+ * [available] is false for it anyway, so a service built without that check
+ * still cannot claim to deliver.
  *
  * **Where the code goes.** Into the message body only. The subject a sandbox
  * logs, and the title `outbound_messages` would record, carry no code. This does

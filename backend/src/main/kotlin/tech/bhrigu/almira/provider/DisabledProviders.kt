@@ -20,8 +20,9 @@ import java.util.UUID
  *
  * Only the three connect providers have one. The notification channels (`sms`,
  * `email`, `push`) are injected as a list, so a disabled channel is simply not in
- * it: `RecordingNotifier` skips it and writes no row for it, and email sign-in
- * reports `otp_unavailable`, as it does for any sender that cannot deliver.
+ * it: `RecordingNotifier` skips it and writes no row for it. Email sign-in with
+ * email disabled does not start at all (`SignInChannels`): offering a sign-in
+ * channel through an absent provider contradicts the setting that made it absent.
  */
 class ProviderDisabled(val provider: String) :
     IllegalStateException("provider '$provider' is disabled on this server")

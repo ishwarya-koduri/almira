@@ -42,7 +42,19 @@ Every provider reads one property, with three values:
   Aggregator or WhatsApp answers **409 `provider_disabled`** with
   `details.provider`, before anything is written or called. A disabled `sms`,
   `email` or `push` channel has no sender: notifications skip it and record no
-  row for it, and email sign-in answers `otp_unavailable`. The default for `aa`.
+  row for it. The default for `aa`.
+
+  One combination refuses: **email as a sign-in channel with `email: disabled`**.
+  Email codes are sent through the email provider, so the two settings say
+  opposite things — email sign-in is offered, and there is no email. The
+  provider being absent is still normal; *offering sign-in through* an absent
+  provider is not a state anyone chose. It refuses at startup naming both
+  settings (`SignInChannels`) rather than starting with email quietly left out
+  of `/auth/otp/channels`: a channel that is not enabled ends the email alpha,
+  which signs every email-only tester out at startup (docs/13 §5), and a
+  provider switch must not do that as a side effect. `sms: disabled` has no such
+  rule, because phone codes go through `almira.otp.provider`, not the `sms`
+  provider (known-issues 12).
 
 Anything else refuses to start, with a sentence. That includes `off`, which was
 the old name for this state: it passed the startup check and then crashed the
@@ -238,8 +250,9 @@ ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
 
 - **Switch.** `almira.auth.sign-in-channels` is `phone`, `email` or both;
   `phone` when unset, so development and every suite are unchanged. A value it
-  does not understand, an empty list, a malformed allowlist entry, or email
-  with an empty allowlist all refuse to start (`SignInChannels`). The startup
+  does not understand, an empty list, a malformed allowlist entry, email
+  with an empty allowlist, or email with `almira.providers.email.mode=disabled`
+  all refuse to start (`SignInChannels`). The startup
   log says how many addresses are listed, never which.
 - **Sender.** `ChannelEmailOtpSender` hands the code to whichever email
   `ChannelSender` the mode selected, with the address as `recipientHint` and

@@ -1,6 +1,8 @@
 package tech.bhrigu.almira.provider
 
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.TestFactory
@@ -25,7 +27,7 @@ import tech.bhrigu.almira.support.TestInfra
 @DisplayName("Providers, disabled: the real application starts")
 class ProviderDisabledStartupTest {
 
-    private fun start(modes: Map<String, String>): ConfigurableApplicationContext {
+    private fun start(modes: Map<String, String>, extra: Map<String, String> = emptyMap()): ConfigurableApplicationContext {
         val properties = mutableMapOf<String, Any>(
             "almira.db.url" to TestInfra.dbUrl,
             "almira.db.owner-user" to TestInfra.dbOwnerUser,
@@ -43,6 +45,7 @@ class ProviderDisabledStartupTest {
             "server.port" to 0,
         )
         modes.forEach { (name, mode) -> properties["almira.providers.$name.mode"] = mode }
+        properties.putAll(extra)
         // As command-line arguments, NOT SpringApplicationBuilder.properties():
         // those are default properties, the lowest precedence there is, so
         // application.yml wins over them. The first version of this test did
@@ -106,5 +109,30 @@ class ProviderDisabledStartupTest {
             names.associateWith { if (it == "aa") ProviderMode.DISABLED else ProviderMode.SANDBOX },
         )
         return oneAtATime + allAtOnce + defaults
+    }
+
+    /**
+     * The one disabled provider that does not start: email, while email is a
+     * sign-in channel. Before, this started, listed email in /auth/otp/channels
+     * and answered every email code request with 503 otp_unavailable — a
+     * sign-in the server offered and could never complete. The real
+     * application, so the refusal is proven to happen at startup and not only
+     * in a constructor.
+     */
+    @Test
+    fun `email disabled while email is a sign-in channel refuses to start, naming both settings`() {
+        assertThatThrownBy {
+            start(
+                mapOf("email" to "disabled"),
+                mapOf(
+                    "almira.auth.sign-in-channels" to "phone,email",
+                    "almira.auth.email-allowlist" to "asha@example.com",
+                ),
+            ).close()
+        }
+            .rootCause()
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("almira.auth.sign-in-channels")
+            .hasMessageContaining("almira.providers.email.mode")
     }
 }

@@ -4,8 +4,12 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
+import tech.bhrigu.almira.security.RequestUserContext
 import tech.bhrigu.almira.support.ApiTestBase
 import java.math.BigDecimal
 import java.security.SecureRandom
@@ -25,6 +29,10 @@ import javax.crypto.spec.SecretKeySpec
  */
 @DisplayName("Zero-knowledge mode: fields the server cannot read")
 class E2eApiTest : ApiTestBase() {
+
+    @Autowired private lateinit var sealedFields: SealedFieldService
+    @Autowired private lateinit var userContext: RequestUserContext
+    @Autowired private lateinit var transactionManager: PlatformTransactionManager
 
     private lateinit var owner: String
     private lateinit var spouse: String
@@ -469,6 +477,87 @@ class E2eApiTest : ApiTestBase() {
         assertThat(gcmOpen(recovered, fetched, aadFor(id, "where_it_is")))
             .describedAs("and it opens, under the content key recovered from the new passphrase")
             .isEqualTo(secret)
+    }
+
+    /**
+     * An interrupted rotation must leave the old key exactly as it was.
+     *
+     * This scheme has no recovery, so a half-written vault is not a bug to fix
+     * later — it is every sealed field in that household gone. The question is
+     * whether the new salt, the new wrapped key, the new verifier and the new
+     * version can ever be observed out of step with each other.
+     *
+     * They cannot, and the reason is structural rather than lucky: `storeKey`
+     * is one `insert … on conflict do update` touching one row, inside one
+     * `@Transactional`. Postgres makes a single statement atomic on its own;
+     * the transaction additionally carries the audit row with it.
+     *
+     * So the test models the interruption the way it actually happens — the
+     * process dies before the commit — by running the real service method
+     * inside a transaction that is then rolled back, and checking that every
+     * column is byte-for-byte what it was and that the original passphrase
+     * still unwraps the key.
+     */
+    @Test
+    fun `a rotation interrupted before commit leaves the old key untouched`() {
+        val (_, contentKey) = enable()
+
+        // Scoped to this household: the suite shares a database and other
+        // tests leave their own keys behind.
+        val before = db.queryForList(
+            "select kdf_salt, wrapped_key, verifier, key_version, user_id " +
+                "from e2e_keys where household_id = ?::uuid",
+            householdId,
+        ).single()
+        val ownerUserId = before["user_id"] as java.util.UUID
+
+        // A complete, valid rotation to version 2 — the kind that would succeed.
+        val newSalt = ByteArray(16).also(random::nextBytes)
+        val newWrappingKey = deriveWrappingKey(newSalt, 600_000, "an interrupted new passphrase")
+        val rotation = E2eKeyEnvelope(
+            kdfSalt = b64(newSalt),
+            iterations = 600_000,
+            wrappedKey = gcmSeal(newWrappingKey, contentKey.encoded, null, keyVersion = 2),
+            verifier = gcmSeal(contentKey, "almira".toByteArray(), null, keyVersion = 2),
+            keyVersion = 2,
+        )
+
+        userContext.set(ownerUserId)
+        try {
+            TransactionTemplate(transactionManager).execute { status ->
+                sealedFields.storeKey(java.util.UUID.fromString(householdId), rotation)
+                // The process dies here: the statement has run, nothing has
+                // committed.
+                status.setRollbackOnly()
+            }
+        } finally {
+            userContext.clear()
+        }
+
+        val after = db.queryForList(
+            "select kdf_salt, wrapped_key, verifier, key_version " +
+                "from e2e_keys where household_id = ?::uuid",
+            householdId,
+        ).single()
+
+        assertThat(after["kdf_salt"])
+            .describedAs("a salt from a rotation that never committed must not survive")
+            .isEqualTo(before["kdf_salt"])
+        assertThat(after["wrapped_key"]).isEqualTo(before["wrapped_key"])
+        assertThat(after["verifier"]).isEqualTo(before["verifier"])
+        assertThat(after["key_version"]).isEqualTo(before["key_version"])
+
+        // The half that matters to a person: the passphrase they still have
+        // opens the vault they still have.
+        val key = get("/api/v1/households/$householdId/e2e", owner).json().path("key")
+        val recovered = deriveWrappingKey(
+            Base64.getUrlDecoder().decode(key.path("kdfSalt").asText()),
+            key.path("iterations").asInt(),
+        )
+        assertThat(gcmOpenBytes(recovered, key.path("wrappedKey").asText(), null))
+            .describedAs("the original passphrase must still unwrap the original content key")
+            .isEqualTo(contentKey.encoded)
+        assertThat(gcmOpen(contentKey, key.path("verifier").asText(), null)).isEqualTo("almira")
     }
 
     @Test

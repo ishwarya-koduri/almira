@@ -221,6 +221,34 @@ re-encrypt under a genuinely new content key must read, decrypt, re-encrypt and
 write every value — which is a migration, not a rotation, and should show
 progress rather than pretending to be instant.
 
+**The write is atomic, and it has to be.** There is no recovery in this scheme,
+so a vault left with a new salt and an old wrapped key is not a bug to fix on
+Monday — it is every sealed field in that household, gone. Three things make a
+torn write impossible rather than unlikely:
+
+1. The whole rotation is **one request**. The client sends salt, iterations,
+   wrapped key, verifier and version together.
+2. The server writes it as **one `insert … on conflict do update`** touching one
+   row. Postgres makes a single statement atomic by itself.
+3. That statement sits inside **one `@Transactional`**, which also carries the
+   audit row, so the record of the rotation cannot outlive the rotation.
+
+And the client proves the old passphrase *before* any of it, so a rotation
+started with a typo fails before a byte is written.
+
+Asserted by `a rotation interrupted before commit leaves the old key untouched`:
+the real service method runs inside a transaction that is then rolled back —
+which is what a process dying mid-request looks like — and every column is
+checked to be byte-for-byte what it was, with the original passphrase still
+unwrapping the original content key.
+
+**The case that is *not* covered, and cannot be:** a rotation that commits and
+whose response never reaches the client. No data is lost — the new passphrase
+works — but the client reports a failure and the person will try the old one and
+be refused. That is a confusing five minutes, not a loss, and the interface
+should say so: *if a rotation reports a failure, try the new passphrase before
+assuming nothing changed.*
+
 ---
 
 ## 7. Implementing it elsewhere
@@ -431,6 +459,58 @@ none:
   signed, reviewable binary and — eventually — reproducible builds.
 - **Metadata.** That a field is sealed, when it was written, how long it is, and
   which record it belongs to are all visible to the server.
+- **Silent corruption in storage, backup or restore.** The server cannot
+  validate a ciphertext beyond its shape, because reading it is the thing it
+  cannot do. So a flipped bit in a backup, or a restore that truncates a column,
+  is invisible until somebody opens that field months later and it fails — and
+  by then the good copy may be gone. See below: this is addressable, and is not
+  addressed yet.
 - **Traffic analysis** and anything else outside the storage boundary.
+
+### On detecting corruption without weakening the scheme
+
+The question is whether storing a length and a checksum beside each envelope
+would close the gap above. It would, mostly, and it leaks nothing — but the
+reasoning needs two corrections.
+
+**It leaks nothing. That part is right.** Both are functions of bytes the server
+already holds. The ciphertext is in front of it; it can already measure the
+length and compute any digest it likes. Recording either adds no information the
+server did not have, so there is no confidentiality cost at all.
+
+**But it is not an integrity control against an attacker.** Anyone who can
+change a ciphertext can recompute a checksum over the new bytes. What defends
+against deliberate tampering is the GCM tag, which already exists and which only
+the key holder can forge. A stored checksum defends against *accidents* —
+bit-rot, a truncated column, a bad restore — and its value is entirely in
+**when** you find out, not in whether an adversary can get away with something.
+
+**And "verified on write" buys nothing.** A checksum the server computes from
+what it just received will always match what it just received; the comparison is
+tautological. Value only exists on the read or restore side, comparing today's
+bytes against a digest recorded earlier. A checksum supplied by the *client*
+would be a different proposition — but that is a change to the frozen v1
+request body, so it is off the table.
+
+So, in order of what actually helps:
+
+1. **Turn on Postgres page checksums.** This is the layer whose job this is, and
+   on the development stack `data_checksums` is **off** — the `initdb` default.
+   It must be decided before the production database has data: enabling it later
+   needs the server stopped and `pg_checksums --enable` run over every page.
+   Bigger win than anything at the application layer, and free.
+2. **Verify structure after every restore.** Every `ciphertext` must be valid
+   base64url, at least 33 bytes, version byte `1`, key version ≥ 1. No schema
+   change, no new column, and it catches truncation and header damage — the
+   most likely restore failures. This belongs in the restore runbook, because a
+   restore that silently returns unopenable fields is the worst version of this.
+3. **Then, if still wanted, a stored digest.** Server-computed SHA-256 of the
+   ciphertext, written alongside it, compared during restore verification. It is
+   additive, internal, and needs no API change. It closes the one case the
+   structural sweep cannot: a flipped bit inside the body, which parses
+   perfectly and simply will not open.
+
+Only the first two are cheap enough to be obvious. The third is real, and it is
+worth doing once there is a production database whose backups matter.
 
 [‹ Index](README.md)

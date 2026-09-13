@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component
 import org.springframework.transaction.support.TransactionTemplate
 import tech.bhrigu.almira.reminder.Notifier
 import tech.bhrigu.almira.reminder.OutboundNotification
+import java.security.MessageDigest
 import java.util.UUID
 import javax.sql.DataSource
 
@@ -76,9 +77,9 @@ class StillTrueSweep(
         var records = 0
         writersIn(households).forEach { (userId, householdId) ->
             val nudged = markForPerson(userId, householdId)
-            if (nudged > 0) {
+            if (nudged.isNotEmpty()) {
                 people++
-                records += nudged
+                records += nudged.size
                 deliver(userId, householdId, nudged)
             }
         }
@@ -118,8 +119,8 @@ class StillTrueSweep(
         mapOf("hids" to households),
     ) { rs, _ -> rs.getObject("user_id", UUID::class.java) to rs.getObject("household_id", UUID::class.java) }
 
-    /** Marks what this person is about to be told, and returns how many. */
-    private fun markForPerson(userId: UUID, householdId: UUID): Int = transactions.execute {
+    /** Marks what this person is about to be told, and returns which records. */
+    private fun markForPerson(userId: UUID, householdId: UUID): List<Due> = transactions.execute {
         // is_local => true: cleared by PostgreSQL at commit, so the next borrower
         // of this pooled connection carries nobody's identity.
         jdbc.query(
@@ -128,11 +129,17 @@ class StillTrueSweep(
         ) { _, _ -> }
         val due = jdbc.query(
             """
-            select record_type, record_id from still_true_items
+            select record_type, record_id, effective_due_on::text as due_on, nudged_at::text as nudged_at
+            from still_true_items
             where household_id = :hid and nudge_eligible
             """.trimIndent(),
             mapOf("hid" to householdId),
-        ) { rs, _ -> rs.getString("record_type") to rs.getObject("record_id", UUID::class.java) }
+        ) { rs, _ ->
+            Due(
+                rs.getString("record_type"), rs.getObject("record_id", UUID::class.java),
+                rs.getString("due_on"), rs.getString("nudged_at"),
+            )
+        }
         due.forEach { (type, id) ->
             jdbc.update(
                 """
@@ -143,15 +150,16 @@ class StillTrueSweep(
                 mapOf("uid" to userId, "type" to type, "id" to id, "hid" to householdId),
             )
         }
-        due.size
-    } ?: 0
+        due
+    } ?: emptyList()
 
-    private fun deliver(userId: UUID, householdId: UUID, count: Int) {
+    private fun deliver(userId: UUID, householdId: UUID, records: List<Due>) {
         val notification = OutboundNotification(
             userId = userId, householdId = householdId, reminderId = null,
             template = StillTrue.DIGEST_TEMPLATE,
-            title = StillTrue.digestTitle(count),
+            title = StillTrue.digestTitle(records.size),
             body = "Open Almira to confirm them or ask again later.",
+            idempotencyKey = digestKey(userId, householdId, records),
         )
         notifiers.forEach { notifier ->
             // One notifier failing must not stop the next, or the next person.
@@ -159,6 +167,22 @@ class StillTrueSweep(
                 log.warn("still-true nudge not delivered on {}: {}", notifier.channel, it.javaClass.simpleName)
             }
         }
+    }
+
+    /** A record this person is about to be asked about, and the state that made it a question. */
+    private data class Due(val type: String, val id: UUID, val dueOn: String?, val lastNudgedAt: String?)
+
+    /**
+     * Names the question, not the run: the records, each with the due date and the
+     * previous nudge that made it eligible. A second server sweeping the same state
+     * asks nothing new; a record confirmed and due again, or ignored for thirty days,
+     * is a new question and a new message. Hashed, so the key names no record.
+     */
+    private fun digestKey(userId: UUID, householdId: UUID, records: List<Due>): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(records.map { "${it.type}:${it.id}:${it.dueOn}:${it.lastNudgedAt}" }.sorted().joinToString(",").toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        return "still-true:$householdId:$userId:$digest"
     }
 
     private companion object {

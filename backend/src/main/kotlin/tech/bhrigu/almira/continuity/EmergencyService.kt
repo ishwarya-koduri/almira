@@ -118,8 +118,16 @@ class EmergencyService(
             entityType = "member", entityId = trustedMemberId,
             diff = mapOf("waitDays" to waitDays),
         )
+        val contactId = jdbc.queryForObject(
+            """
+            select id from emergency_contacts
+            where household_id = :hid and member_id = :memberId and trusted_member_id = :trustedId
+            """.trimIndent(),
+            mapOf("hid" to householdId, "memberId" to me.id, "trustedId" to trustedMemberId),
+            UUID::class.java,
+        )
         notify(
-            householdId, trustedMemberId, "emergency.named",
+            householdId, trustedMemberId, "emergency.named:$contactId", "emergency.named",
             "You've been named as an emergency contact",
             "${me.displayName} has asked you to be the person who can reach their records " +
                 "if they can't. Nothing changes today.",
@@ -225,7 +233,7 @@ class EmergencyService(
         // The subject is told first and loudest. A request they never hear about
         // is a backdoor with extra steps.
         notify(
-            householdId, subjectMemberId, "emergency.requested",
+            householdId, subjectMemberId, "emergency.requested:$id", "emergency.requested",
             "Someone has asked for emergency access to your records",
             "If this wasn't expected, you can stop it. Nothing opens until $unlockAt.",
         )
@@ -252,7 +260,7 @@ class EmergencyService(
             entityType = "emergency_request", entityId = requestId,
         )
         notify(
-            householdId, null, "emergency.vetoed",
+            householdId, null, "emergency.vetoed:$requestId", "emergency.vetoed",
             "An emergency access request was stopped",
             "The person it concerned has stopped it. Nothing was opened.",
         )
@@ -376,7 +384,11 @@ class EmergencyService(
      * until a provider is configured; routing every one of them through
      * [Notifier] is what makes that a one-line change later rather than a hunt.
      */
-    private fun notify(householdId: UUID, memberId: UUID?, template: String, title: String, body: String) {
+    /**
+     * [logicalKey] names the event, not the call: the same contact named again, or a
+     * request vetoed twice, is the same message, and each person is told it once.
+     */
+    private fun notify(householdId: UUID, memberId: UUID?, logicalKey: String, template: String, title: String, body: String) {
         val recipients = households.members(householdId)
             .filter { memberId == null || it.id == memberId }
             .mapNotNull { it.userId }
@@ -386,6 +398,7 @@ class EmergencyService(
                     OutboundNotification(
                         userId = userId, householdId = householdId, reminderId = null,
                         template = template, title = title, body = body,
+                        idempotencyKey = "$logicalKey:$userId",
                     ),
                 )
             }

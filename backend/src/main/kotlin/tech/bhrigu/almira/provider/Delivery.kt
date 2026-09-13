@@ -188,8 +188,8 @@ class RecordingNotifier(
     override val channel = "in_app"
 
     override fun deliver(notification: OutboundNotification) {
-        record(notification)
         val logical = notification.idempotencyKey ?: "${notification.template}:${UUID.randomUUID()}"
+        record(notification, keyFor(logical, channel))
         var queued = 0
         channels.forEach { sender ->
             runCatching {
@@ -214,8 +214,11 @@ class RecordingNotifier(
         if (queued > 0) wakeAfterCommit()
     }
 
-    /** The in-app row: no provider, so it is sent the moment it is written. */
-    private fun record(notification: OutboundNotification) {
+    /**
+     * The in-app row: no provider, so it is sent the moment it is written. It has the
+     * logical message's key (V35), so the same message asked for twice is listed once.
+     */
+    private fun record(notification: OutboundNotification, key: String) {
         runCatching {
             // query, not update: the statement is a SELECT, and executeUpdate on
             // it wrote the row and then threw "a result was returned when none
@@ -223,14 +226,14 @@ class RecordingNotifier(
             // been recorded.
             jdbc.query(
                 """
-                select app.record_outbound_message(:hid, :uid, 'in_app', 'almira', :template,
-                                                   :title, null, 'sent', null, 1)
+                select app.record_in_app_message(:hid, :uid, :template, :title, :key)
                 """.trimIndent(),
                 MapSqlParameterSource()
                     .addValue("hid", notification.householdId)
                     .addValue("uid", notification.userId)
                     .addValue("template", notification.template)
-                    .addValue("title", notification.title),
+                    .addValue("title", notification.title)
+                    .addValue("key", key),
             ) { _, _ -> }
         }.onFailure {
             // Never fails the thing that triggered it. A reminder that fired is

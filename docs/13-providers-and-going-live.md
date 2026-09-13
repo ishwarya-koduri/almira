@@ -458,12 +458,31 @@ and shows a worker built on the runtime pool finding nothing.
 ### Idempotency keys, and what they guarantee
 
 Every queued row carries `idempotency_key`, unique in the table, naming one
-logical message on one channel: `<logical>:<channel>`. The logical part is
-`reminder:<reminder id>:<date it fires for>:<user>` for a reminder — so a sweep
-that runs again before the reminder is marked (a crash, a second server) queues
-nothing new — and `<template>:<random>` for everything else, whose own
-bookkeeping (the still-true nudge rows, the emergency request) already decides
-whether there is a message. A second enqueue with the same key writes nothing.
+logical message on one channel: `<logical>:<channel>`. Since V35 the in-app row
+carries one too (`<logical>:in_app`), so the same logical message is listed once
+in `/me/messages`, not once per time it was asked for. The logical part names the
+event, never the call:
+
+- a reminder: `reminder:<reminder id>:<date it fires for>:<user>` — a sweep that
+  runs again before the reminder is marked (a crash, a second server) queues
+  nothing new;
+- a still-true digest: `still-true:<household>:<user>:<hash>`, the hash over the
+  records asked about, each with its due date and the previous nudge that made it
+  a question — a second sweep of the same state asks nothing new, and a record due
+  again or ignored for thirty days is a new message;
+- an emergency notice: `emergency.named:<contact id>`, `emergency.requested:<request
+  id>` or `emergency.vetoed:<request id>`, then `:<user>` — naming the same contact
+  again, or vetoing twice, tells each person once.
+
+Only a caller that names no key gets `<template>:<random>`. A second enqueue with
+the same key writes nothing.
+
+Two workers can hold the same row only one after the other: a claim whose lease
+ran out can be taken, and the new claim has a new `claim_token`. Every write a
+worker makes to a claimed row — the send stamp and the outcome — is conditional on
+its own token, so a worker that was paused past its lease finds the row no longer
+its own and leaves it without calling the provider. `NotificationOutboxTest` runs
+exactly that interleaving with two workers.
 
 The worker passes the key to the adapter on every attempt:
 `ChannelSender.send(notification, recipientHint, idempotencyKey)`. Before calling

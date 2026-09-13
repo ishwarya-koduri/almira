@@ -96,6 +96,12 @@ class NotificationOutbox(
      */
     @Volatile internal var afterSendBeforeRecord: ((UUID) -> Unit)? = null
 
+    /**
+     * Test seam: runs for each claimed row before its send is stamped as started.
+     * A test blocks in it to be the slow worker whose claim runs out under it.
+     */
+    @Volatile internal var beforeSendStarts: ((UUID) -> Unit)? = null
+
     /** The poll: picks up whatever a wake missed, and rows left by a stopped worker. */
     @Scheduled(
         initialDelayString = "\${almira.outbox.poll-interval:PT2S}",
@@ -242,6 +248,7 @@ class NotificationOutbox(
         var provider = "unknown"
         var failure: String? = null
         var attempts = 1
+        beforeSendStarts?.invoke(row.id)
         // Committed before the provider is called, row by row: this is what says "it may have gone",
         // and the lease runs from here, not from when the batch was claimed. If the claim is no longer
         // ours (a slow batch let it run out and another worker took the row), this worker leaves it.

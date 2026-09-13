@@ -15,6 +15,10 @@ import tech.bhrigu.almira.support.ApiTestBase
 import java.time.Duration
 import java.time.LocalDate
 import java.util.UUID
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import javax.sql.DataSource
 
 /**
@@ -142,9 +146,10 @@ class NotificationOutboxTest : ApiTestBase() {
     fun `every queued message has its own key, the worker hands that key to the provider, and the body goes`() {
         nameEmergencyContact()
         val queued = rows().filter { it.channel != "in_app" }
-        assertThat(queued.map { it.key }).doesNotContainNull().doesNotHaveDuplicates()
-        queued.forEach { assertThat(it.key).endsWith(":${it.channel}") }
-        assertThat(rows().single { it.channel == "in_app" }.key).isNull()
+        assertThat(rows().map { it.key }).doesNotContainNull().doesNotHaveDuplicates()
+        rows().forEach { assertThat(it.key).endsWith(":${it.channel}") }
+        assertThat(rows().map { it.key!!.substringBeforeLast(':') }.distinct())
+            .describedAs("one logical message, in-app row included").hasSize(1)
 
         // Woken by the commit, it may already have run; draining waits for it either way.
         outbox.drain()
@@ -299,6 +304,97 @@ class NotificationOutboxTest : ApiTestBase() {
         }
     }
 
+    /** Every call a worker makes to a provider, and the key it passed, before the provider de-duplicates. */
+    private class Counting(
+        private val real: ChannelSender,
+        private val calledWith: MutableCollection<Pair<String, String>>,
+    ) : ChannelSender by real {
+        override fun send(notification: OutboundNotification, recipientHint: String?, idempotencyKey: String): String {
+            calledWith += real.channel to idempotencyKey
+            return real.send(notification, recipientHint, idempotencyKey)
+        }
+    }
+
+    @Test
+    fun `a worker whose claim ran out and was taken over leaves the row to the worker that took it`() {
+        val calledWith = ConcurrentLinkedQueue<Pair<String, String>>()
+        val counted = channels.map { Counting(it, calledWith) }
+        val slow = NotificationOutbox(ownerDataSource, counted, calls, props)
+        val takeover = NotificationOutbox(ownerDataSource, counted, calls, props)
+
+        // Handshakes, each with a timeout, so a regression fails instead of hanging the suite.
+        val slowReached = LinkedBlockingQueue<UUID>()
+        val slowGo = LinkedBlockingQueue<Unit>()
+        val takeoverSent = LinkedBlockingQueue<UUID>()
+        val takeoverGo = LinkedBlockingQueue<Unit>()
+        fun <T : Any> LinkedBlockingQueue<T>.next(what: String): T =
+            poll(20, TimeUnit.SECONDS) ?: throw AssertionError("timed out waiting for $what")
+        slow.beforeSendStarts = { id -> slowReached.put(id); slowGo.poll(20, TimeUnit.SECONDS) }
+        takeover.afterSendBeforeRecord = { id -> takeoverSent.put(id); takeoverGo.poll(20, TimeUnit.SECONDS) }
+
+        val threads = Executors.newFixedThreadPool(2)
+        var slowResult: OutboxDrainResult? = null
+        try {
+            outbox.whilePaused {
+                queueDirectly()
+                // One order both workers agree on: the claim orders by created_at, and these were written together.
+                listOf("sms", "email", "push").forEachIndexed { i, channel ->
+                    db.update(
+                        "update outbound_messages set created_at = now() - make_interval(secs => ?) where id = ?::uuid",
+                        (10 - i).toDouble(), byChannel().getValue(channel).id,
+                    )
+                }
+
+                // The slow worker claims the whole batch, and stops before its first send.
+                val slowRun = threads.submit<OutboxDrainResult> { slow.drain() }
+                var slowOn = slowReached.next("the slow worker to reach its first send")
+
+                // Its claim runs out, and another worker takes every row.
+                db.update(
+                    "update outbound_messages set claimed_until = now() - interval '1 second' where household_id = ?::uuid and status = 'queued'",
+                    householdId,
+                )
+                val takeoverRun = threads.submit<OutboxDrainResult> { takeover.drain() }
+
+                repeat(3) { i ->
+                    // The takeover has sent row i and not yet recorded it: the row is still queued.
+                    val sent = takeoverSent.next("the takeover worker to send row ${i + 1}")
+                    assertThat(sent).describedAs("both workers go through the batch in the same order").isEqualTo(slowOn)
+                    // The slow worker wakes up on that row.
+                    slowGo.put(Unit)
+                    if (i < 2) {
+                        slowOn = slowReached.next("the slow worker to move on to row ${i + 2}")
+                    } else {
+                        slowResult = slowRun.get(20, TimeUnit.SECONDS)
+                    }
+                    takeoverGo.put(Unit)
+                }
+                takeoverRun.get(20, TimeUnit.SECONDS)
+            }
+        } finally {
+            threads.shutdownNow()
+            slow.close()
+            takeover.close()
+        }
+
+        val after = byChannel()
+        assertThat(push.deliveries.times(after["push"]!!.key!!))
+            .describedAs("push cannot de-duplicate: the slow worker must not send a row it no longer holds")
+            .isEqualTo(1)
+        for (channel in listOf("sms", "email")) {
+            val key = after[channel]!!.key!!
+            assertThat(calledWith.filter { it.first == channel }.map { it.second })
+                .describedAs("$channel: every call carries the row's own key").containsOnly(key)
+        }
+        for (channel in listOf("sms", "email", "push")) {
+            assertThat(calledWith.count { it == channel to after[channel]!!.key!! })
+                .describedAs("$channel: the provider is called once, by the worker that holds the claim").isEqualTo(1)
+            assertThat(after[channel]!!).extracting("status", "failure", "attempts")
+                .describedAs("$channel: recorded by the worker that took it").containsExactly("sent", null, 1)
+        }
+        assertThat(slowResult!!.touched).describedAs("the slow worker did nothing with rows it lost").isZero()
+    }
+
     @Test
     fun `recording a notification that was recorded does not warn that it could not be`() {
         val logger = (org.slf4j.LoggerFactory.getILoggerFactory() as ch.qos.logback.classic.LoggerContext)
@@ -331,11 +427,28 @@ class NotificationOutboxTest : ApiTestBase() {
         val perChannel = db.queryForList(
             """
             select channel, count(*) as n from outbound_messages
-            where household_id = ?::uuid and template = 'outbox.test' and channel <> 'in_app' group by channel
+            where household_id = ?::uuid and template = 'outbox.test' group by channel
             """.trimIndent(),
             householdId,
         ).associate { it["channel"] as String to (it["n"] as Number).toInt() }
-        assertThat(perChannel).containsOnlyKeys("sms", "email", "push").allSatisfy { _, n -> assertThat(n).isEqualTo(1) }
+        assertThat(perChannel).containsOnlyKeys("in_app", "sms", "email", "push").allSatisfy { _, n -> assertThat(n).isEqualTo(1) }
+    }
+
+    @Test
+    fun `naming the same emergency contact twice tells them once`() {
+        val trusted = post(
+            "/api/v1/households/$householdId/members", owner, mapOf("displayName" to "Meera", "relationship" to "sibling"),
+        ).json().path("id").asText().also { joinHousehold(owner, householdId, it, signIn()) }
+        repeat(2) {
+            val named = post(
+                "/api/v1/households/$householdId/emergency/contacts", owner,
+                mapOf("trustedMemberId" to trusted, "waitDays" to 14),
+            )
+            assertThat(named.statusCode.is2xxSuccessful).describedAs(named.body).isTrue()
+        }
+        assertThat(rows().groupingBy { it.channel }.eachCount())
+            .describedAs("one contact, one message per channel: the key names the contact, not the call")
+            .isEqualTo(mapOf("in_app" to 1, "sms" to 1, "email" to 1, "push" to 1))
     }
 
     @Test
@@ -358,5 +471,11 @@ class NotificationOutboxTest : ApiTestBase() {
             Int::class.java, householdId,
         )
         assertThat(sms).describedAs("one reminder, one date, one person: one text").isEqualTo(1)
+
+        val listed = get("/api/v1/me/messages", owner).json()
+            .filter { it.path("template").asText().startsWith("reminder.") }
+            .groupBy { it.path("channel").asText() }.mapValues { it.value.size }
+        assertThat(listed).describedAs("and /me/messages lists it once on each channel, in-app included")
+            .containsEntry("in_app", 1).allSatisfy { _, n -> assertThat(n).isEqualTo(1) }
     }
 }

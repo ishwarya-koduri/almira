@@ -48,7 +48,7 @@ class AuthService(
         ip: String?,
     ): LoginResult {
         val phone = PhoneNumber.normalize(rawPhone)
-        otp.verify(phone, code, requestId)
+        otp.verify(phone, code, requestId, ip = ip)
 
         val existing = repo.findByPhone(phone)
         val user = existing ?: repo.createWithPhone(phone)

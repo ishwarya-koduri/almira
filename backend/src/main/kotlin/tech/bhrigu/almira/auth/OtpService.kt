@@ -48,7 +48,8 @@ data class OtpChallenge(
  *  - a stored code cannot be recovered from a Redis dump (keyed, not a bare hash);
  *  - a code works once, even when two correct attempts race;
  *  - wrong guesses are counted atomically, so racing guesses cannot exceed the cap;
- *  - resend cooldown, per-number and per-network hourly caps;
+ *  - resend cooldown, per-number and per-network hourly caps on requests, and a
+ *    per-network hourly cap on wrong codes across all numbers;
  *  - lifetime, length and attempts are bounded, so configuration cannot quietly
  *    turn a six-digit five-minute code into something guessable.
  */
@@ -140,7 +141,14 @@ class OtpService(
      * correct attempts both succeed, and let a burst of parallel wrong guesses
      * all be judged against the same attempt count.
      */
-    fun verify(phone: String, code: String, requestId: String?, purpose: String = LOGIN) {
+    fun verify(phone: String, code: String, requestId: String?, purpose: String = LOGIN, ip: String? = null) {
+        // Before the challenge is even read: a network over its allowance gets
+        // no verdict at all, not even on a correct code, or the limit would only
+        // slow a lucky guess down rather than stop it. The challenge is left
+        // untouched, so its owner can still use it from their own network.
+        val missKey = ip?.let { "otp:verify-miss:ip:$it" }
+        missKey?.let(::enforceVerifyAllowance)
+
         val key = challengeKey(phone, purpose)
         val stored = redis.opsForHash<String, String>().entries(key)
         if (stored.isEmpty()) throw expired()
@@ -164,6 +172,7 @@ class OtpService(
         val attempts = redis.execute(
             RECORD_MISS, listOf(key), storedRequestId, cfg.maxAttempts.toString(),
         ) ?: -1L
+        if (attempts >= 0) missKey?.let(::recordNetworkMiss)
         when {
             attempts < 0 -> throw expired()
             attempts >= cfg.maxAttempts -> throw ApiException.badRequest(
@@ -190,6 +199,22 @@ class OtpService(
                 "We just sent a code. You can ask for another in $ttl seconds.", ttl,
             )
         }
+    }
+
+    private fun enforceVerifyAllowance(key: String) {
+        val misses = redis.opsForValue().get(key)?.toLongOrNull() ?: 0
+        if (misses >= cfg.maxVerifyFailuresPerIpPerHour) {
+            val retry = redis.getExpire(key, TimeUnit.SECONDS).coerceAtLeast(60)
+            throw ApiException.tooManyRequests(
+                "Too many incorrect codes from this network. Please try again later.", retry,
+            )
+        }
+    }
+
+    /** INCR is atomic; parallel misses can overshoot by at most the number in flight. */
+    private fun recordNetworkMiss(key: String) {
+        val count = redis.opsForValue().increment(key) ?: 1
+        if (count == 1L) redis.expire(key, Duration.ofHours(1))
     }
 
     private fun enforceHourlyLimit(key: String, max: Int, subject: String) {

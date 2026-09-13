@@ -229,8 +229,10 @@ abstract class ApiTestBase {
             registry.add("ALMIRA_ENV") { "development" }
             // Every test signs in from 127.0.0.1, so the per-IP hourly limit
             // (a real and wanted control) would throttle the suite itself.
-            // Raised here, and exercised deliberately in OtpRateLimitTest.
+            // Raised here, and exercised deliberately in auth/OtpServiceTest
+            // (the counting) and auth/ClientAddressTest (which address counts).
             registry.add("almira.otp.max-per-ip-per-hour") { 100_000 }
+            registry.add("almira.otp.max-verify-failures-per-ip-per-hour") { 100_000 }
             registry.add("almira.otp.max-per-hour") { 1_000 }
             registry.add("almira.jwt.secret") { "test-only-secret-that-is-long-enough-for-hmac256-signing" }
         }

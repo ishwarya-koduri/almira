@@ -36,17 +36,20 @@ class ClientAddressTest {
             }
         }
 
-        fun requestWithForwardedFor(value: String): Int {
+        fun requestWithForwardedFor(value: String, phone: String = uniquePhone()): Int =
+            postWithForwardedFor("/api/v1/auth/otp/request", value, mapOf("phone" to phone))
+
+        fun postWithForwardedFor(path: String, value: String, body: Map<String, Any?>): Int {
             val headers = HttpHeaders().apply {
                 contentType = MediaType.APPLICATION_JSON
                 set("X-Forwarded-For", value)
             }
-            val body = mapper.writeValueAsString(mapOf("phone" to uniquePhone()))
-            return rest.exchange(url("/api/v1/auth/otp/request"), HttpMethod.POST, HttpEntity(body, headers), String::class.java)
+            return rest.exchange(url(path), HttpMethod.POST, HttpEntity(mapper.writeValueAsString(body), headers), String::class.java)
                 .statusCode.value()
         }
 
         fun count(address: String) = redis.opsForValue().get("otp:rate:ip:$address")?.toLong() ?: 0L
+        fun misses(address: String) = redis.opsForValue().get("otp:verify-miss:ip:$address")?.toLong() ?: 0L
 
         fun documentationAddress() = "203.0.113.${Random.nextInt(1, 255)}"
     }
@@ -76,6 +79,22 @@ class ClientAddressTest {
             assertThat(requestWithForwardedFor("$forgedByClient, $addedByProxy")).isEqualTo(200)
             assertThat(count(addedByProxy) - before).isEqualTo(1)
             assertThat(count(forgedByClient)).isZero()
+        }
+
+        @Test
+        fun `a wrong code over HTTP counts against the proxy-vouched network`() {
+            val phone = uniquePhone()
+            val addedByProxy = documentationAddress()
+            assertThat(requestWithForwardedFor(addedByProxy, phone)).isEqualTo(200)
+            val before = misses(addedByProxy)
+            // Eight digits against a six-digit code: wrong by construction.
+            val status = postWithForwardedFor(
+                "/api/v1/auth/otp/verify", "198.51.100.9, $addedByProxy",
+                mapOf("phone" to phone, "code" to "00000000"),
+            )
+            assertThat(status).isEqualTo(400)
+            assertThat(misses(addedByProxy) - before).isEqualTo(1)
+            assertThat(misses("198.51.100.9")).isZero()
         }
     }
 }

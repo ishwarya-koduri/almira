@@ -264,7 +264,8 @@ with its fix removed (`backend/src/test/kotlin/tech/bhrigu/almira/auth/`):
 | Redis holds an HMAC keyed from the signing secret over purpose, phone and code — not a SHA-256 a million-entry table reverses | `OtpServiceTest` |
 | A code works once, including when correct attempts race | `OtpServiceTest` |
 | Wrong guesses are counted atomically; 48 parallel guesses get at most the five allowed | `OtpServiceTest` |
-| Five-minute lifetime, 30-second resend cooldown, per-number and per-network hourly caps | `OtpServiceTest` |
+| Five-minute lifetime, 30-second resend cooldown, per-number and per-network hourly caps on requests | `OtpServiceTest` |
+| At most 30 wrong codes per network per hour across all numbers; over it, even a correct code gets no verdict and the challenge is left for its owner | `OtpServiceTest`, `ClientAddressTest` |
 | Length 6–8, lifetime ≤ 10 minutes and 1–10 attempts, or the application refuses to start | `OtpServiceTest` |
 | The per-network cap counts the proxy-vouched address, not a client-written `X-Forwarded-For` | `ClientAddressTest` |
 | No code reaches any log event (every logger at DEBUG), response body or header, across request, resend, wrong, malformed, right and reused, for sign-in and step-up | `OtpCodeNeverLeaksTest` |
@@ -281,6 +282,8 @@ which covers a proxy on the same host reaching the container through Docker —
 and takes the right-most address that is not one of those. A proxy that passes
 the client's header through untouched makes the per-network limit forgeable
 again; a proxy on a public address needs `server.tomcat.remoteip.internal-proxies`.
+The same address is what a guest-link view is recorded against, which had the
+same forgeable-header bug until `ShareAuditAddressTest`.
 
 **Real SMS in India** needs more than a provider account. Every message template
 must be registered on a telecom operator's DLT portal along with the sender ID,

@@ -320,4 +320,35 @@ class OtpServiceTest {
         service.request(phone(), ip())
         assertThat(sender.sent).hasSize(4)
     }
+
+    @Test
+    fun `one network cannot keep guessing across many numbers`() {
+        val sender = RecordingSender()
+        val service = OtpService(
+            redis, sender,
+            props(otp = AlmiraProperties.Otp(maxPerHour = 1_000, maxPerIpPerHour = 1_000, maxVerifyFailuresPerIpPerHour = 3)),
+        )
+        val attacker = ip()
+
+        // Successes from the network do not count toward it.
+        repeat(5) {
+            val n = phone(); service.request(n, ip()); service.verify(n, sender.lastCode(), null, ip = attacker)
+        }
+
+        // Three wrong codes, each at a different person's live challenge.
+        repeat(3) {
+            val n = phone(); service.request(n, ip())
+            val wrong = if (sender.lastCode() == "000000") "111111" else "000000"
+            assertThat(refusal { service.verify(n, wrong, null, ip = attacker) }.code).isEqualTo("otp_invalid")
+        }
+
+        // The fourth number: refused even with the right code, and its
+        // challenge is not touched, so its owner can still use it.
+        val victim = phone(); service.request(victim, ip())
+        val e = refusal { service.verify(victim, sender.lastCode(), null, ip = attacker) }
+        assertThat(e.status).isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
+        assertThat(e.message).contains("this network")
+        assertThat(redis.opsForHash<String, String>().get("otp:challenge:login:$victim", "attempts")).isEqualTo("0")
+        service.verify(victim, sender.lastCode(), null, ip = ip())
+    }
 }

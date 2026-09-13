@@ -67,10 +67,16 @@ class GuestShareController(private val service: ShareService) {
     /**
      * Hashed, and never stored raw: enough to notice one link being opened from
      * twenty places, not enough to follow anybody around (docs/05 §5).
+     *
+     * The address is the container's `remoteAddr`, which honours
+     * X-Forwarded-For only from a trusted proxy (application.yml,
+     * `server.forward-headers-strategy`). It used to read the header's first
+     * entry from anyone, so whoever opened a link chose what the view log said
+     * about where they were — and a log that can be written by the person it
+     * records reads as evidence while being none. ShareAuditAddressTest.
      */
     private fun ipHash(request: HttpServletRequest): String? {
-        val ip = request.getHeader("X-Forwarded-For")?.substringBefore(',')?.trim()
-            ?: request.remoteAddr ?: return null
+        val ip = request.remoteAddr ?: return null
         return MessageDigest.getInstance("SHA-256").digest(ip.toByteArray())
             .joinToString("") { "%02x".format(it) }.take(32)
     }

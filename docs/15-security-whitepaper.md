@@ -110,7 +110,8 @@ phone is not enough.
 
 Rate limits apply per phone number and per IP, and the one-time code namespaces
 sign-in separately from step-up so one cannot be used for the other. A code is
-five minutes long-lived, works once, and is locked after five wrong tries; what
+five minutes long-lived, works once, and is locked after five wrong tries; one
+network gets thirty wrong codes an hour across every number; what
 Redis stores is a keyed MAC, not the code or a plain hash of it. The address a
 limit counts is the one the reverse proxy vouches for, never a forwarding header
 the caller wrote. Codes are never written to logs or error responses, and a test

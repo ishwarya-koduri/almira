@@ -78,6 +78,14 @@ data class AlmiraProperties(
         val resendCooldown: Duration = Duration.ofSeconds(30),
         val maxPerHour: Int = 5,
         val maxPerIpPerHour: Int = 20,
+        /**
+         * Wrong codes one network may submit in an hour, across every number.
+         * The per-challenge cap stops guessing at one person; this stops one
+         * host guessing five times at each of a thousand people whose codes are
+         * live. Only misses count, so an office signing in many people is not
+         * throttled by succeeding.
+         */
+        val maxVerifyFailuresPerIpPerHour: Int = 30,
     )
 
     /**

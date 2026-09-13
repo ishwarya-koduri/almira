@@ -146,6 +146,9 @@ almira:
     # for — used to exhaust it and fail with "too many attempts from this
     # network", which reads like a broken build rather than a working defence.
     max-per-ip-per-hour: ${ALMIRA_OTP_MAX_PER_IP_PER_HOUR:20}
+    # Wrong codes per network per hour, across all numbers. Successes do not
+    # count. See AlmiraProperties.Otp.
+    max-verify-failures-per-ip-per-hour: ${ALMIRA_OTP_MAX_VERIFY_FAILURES_PER_IP_PER_HOUR:30}
 
 springdoc:
   # The spec IS the contract, so it contains exactly what the app depends on.

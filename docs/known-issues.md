@@ -525,3 +525,37 @@ then read `still_true_items` (or be retired), and its button can open the list.
 
 **Risk if left** Two answers to one question on the same screen, which is how a
 freshness signal stops being believed.
+
+## 19. The completeness score can say 100% with a gap still there
+
+**Where** `CompletenessService.report` (`GET /reports/completeness`, the card on
+Reports), compared with `HandoverReadinessService` ([Doc 22](22-handover-readiness.md)).
+
+**What** Three things, each found while designing readiness:
+
+- It rounds half up: `earned × 100 ÷ possible`, `RoundingMode.HALF_UP`. In a
+  household of 200 active holdings where one has no nominee, 3 weighted points
+  are missing out of well over a thousand, so the score shows **100**.
+- With nothing recorded, it returns `score = 100` (the label says "Nothing to
+  check yet", but the number is still 100).
+- It weights each item and adds the items up, so a large household drowns out
+  any single gap. The two scores also count different records: completeness
+  counts `active` holdings, including ones left out of continuity, while
+  readiness counts `active` and `matured` holdings that are in continuity,
+  plus executed wills.
+
+**Which is right** Doc 22 §1: round down, show no number when the data has not
+earned one, and give each check equal weight. Doc 18 §6 is the rule both
+features answer to.
+
+**Why it is still there** The completeness response is frozen v1, and its
+`score` is an `Int` that clients render. Changing the rounding is small, but it
+is a v1 behaviour change, and so is making `score` nullable. That is the owner's
+call, and it was out of scope for the change that found it.
+
+**When to fix** When Reports is next touched. The least disruptive fix is to
+round down, and to add an additive `scoreEarned: false` (or retire the card in
+favour of readiness) rather than change `score` to null.
+
+**Risk if left** Two percentages about the same household can disagree, and one
+of them can claim to be complete when it is not.

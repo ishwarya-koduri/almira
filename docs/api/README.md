@@ -309,6 +309,16 @@ today and within a year. Someone who can see a record but does not own it gets
 valuation, a loan balance) also counts as a confirmation. An edit or a visibility
 change does not. See [Doc 21](../21-still-true.md).
 
+**Handover readiness is a number only when it is earned.**
+`GET /continuity/readiness` returns `score` (0–100, rounded down) and
+`scoreExplanation`. `score` is left out, like any null field, when nothing
+counted applies, and the explanation then says why. Render the sentence, never a
+0. `complete` is true only when there are no gaps. `checks` always lists all four
+checks in order, and `gaps` names each missing item with a `reason` to
+translate, an English `fix`, and `recordType`/`recordId` as the deep link. It is
+computed as the caller, so two members can get different answers and both are
+right. See [Doc 22](../22-handover-readiness.md).
+
 **Money is stored in the currency it is in.** `currency` is per record; the
 dashboard converts into the household's base currency and reports what it could
 not convert in `unconverted` — render that, because the total is deliberately

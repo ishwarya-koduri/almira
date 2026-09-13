@@ -19,17 +19,21 @@ import {
 import { state } from "../state.js";
 import { t } from "../i18n.js";
 import { whereWhoCard } from "../where.js";
+import { loadReadiness, readinessCard } from "../readiness.js";
+import { openDetail } from "./detail.js";
+import { navigate } from "../app.js";
 
 export async function continuityScreen(host) {
   mount(host, skeletonRows(4));
 
-  const [handbook, mismatches, estate, contacts, trusted, requests] = await Promise.all([
+  const [handbook, mismatches, estate, contacts, trusted, requests, readiness] = await Promise.all([
     api.handbook(state.household.id),
     api.mismatches(state.household.id).catch(() => []),
     api.estateDocuments(state.household.id).catch(() => []),
     api.contacts(state.household.id).catch(() => []),
     api.trustedContacts(state.household.id).catch(() => []),
     api.emergencyRequests(state.household.id).catch(() => []),
+    loadReadiness(state.household.id),
   ]);
 
   mount(host, el("div.stack", {},
@@ -39,12 +43,51 @@ export async function continuityScreen(host) {
     ),
     el("p.muted", {}, t("continuity.intro")),
 
+    readiness && readinessCard(readiness, fixers(estate, host)),
     mismatches.length > 0 && mismatchCard(mismatches),
     handbookCard(handbook, host),
     estateCard(estate, host),
     contactsCard(contacts, host),
     emergencyCard(trusted, requests, host),
   ));
+}
+
+/* -----------------------------------------------------------------------------
+   Ready to hand over (docs/22): where each named gap is fixed. The card is
+   drawn again when that place closes, so a fix shows as a shorter list.
+   ----------------------------------------------------------------------------- */
+
+function fixers(estate, host) {
+  const redraw = () => continuityScreen(host);
+  return {
+    record(recordType, recordId) {
+      if (recordType === "investment") {
+        // The holding's own sheet has the nominee card, its documents and the
+        // where-and-who card: every record gap is fixed in one place.
+        openDetail(recordId, redraw);
+        whenLastSheetCloses(redraw);
+      } else if (recordType === "estate_document") {
+        const document = estate.find((item) => item.id === recordId);
+        if (document) openWhere(document, host, redraw);
+      }
+    },
+    trusted(reason) {
+      // Nobody else can sign in: the fix starts with an invitation.
+      if (reason === "nobody_to_name") navigate("family");
+      else nameTrusted(host);
+    },
+  };
+}
+
+/** openDetail keeps its sheet to itself; notice when the newest one is gone. */
+function whenLastSheetCloses(callback) {
+  const scrims = document.querySelectorAll(".scrim");
+  const opened = scrims[scrims.length - 1];
+  if (!opened) return;
+  const observer = new MutationObserver(() => {
+    if (!opened.isConnected) { observer.disconnect(); callback(); }
+  });
+  observer.observe(document.body, { childList: true });
 }
 
 function printButton() {
@@ -222,9 +265,10 @@ function estateCard(documents, host) {
  * relative wants most, so it is recorded sealed (docs/20). The old unsealed
  * `location` is shown as a warning with a way to move it across.
  */
-function openWhere(document, host) {
+function openWhere(document, host, onClose) {
   const modal = sheet({
     title: document.title,
+    onClose,
     body: whereWhoCard("estate_document", document.id, {
       legacy: {
         text: document.location || null,

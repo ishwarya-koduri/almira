@@ -291,6 +291,7 @@ export const api = {
   mismatches:    (hid)            => api.get(`/api/v1/households/${hid}/estate/mismatches`),
   transmission:  (hid, id)        => api.get(`/api/v1/households/${hid}/continuity/transmission/${id}`),
   handbook:      (hid)            => api.get(`/api/v1/households/${hid}/continuity/handbook`),
+  readiness:     (hid)            => api.get(`/api/v1/households/${hid}/continuity/readiness`),
   handbookPdfUrl: (hid)           => `/api/v1/households/${hid}/continuity/handbook.pdf`,
 
   // --- sharing and emergency access -----------------------------------------

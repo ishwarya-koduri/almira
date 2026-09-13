@@ -28,7 +28,6 @@ private data class Slice(
     val attributedValue: BigDecimal,
     val currency: String,
     val maturityDate: LocalDate?,
-    val lastVerified: LocalDate?,
     val hasInstitution: Boolean,
     val hasAccount: Boolean,
     val categoryExpectsAccount: Boolean,
@@ -210,7 +209,7 @@ class DashboardService(
             },
             byLiabilityKind = groupDebts(selectedDebts, owed),
             upcoming = upcoming(distinct, selectedDebts.distinctBy { it.liabilityId }),
-            attention = attention(distinct),
+            attention = attention(distinct, stillTrueDue(householdId)),
             unconverted = unconverted,
             disclaimer = DISCLAIMER,
         )
@@ -258,14 +257,13 @@ class DashboardService(
 
     private fun loadSlices(householdId: UUID): List<Slice> = jdbc.query(
         """
-        select i.id, i.title, i.maturity_date, i.last_verified_at, i.currency,
+        select i.id, i.title, i.maturity_date, i.currency,
                c.code as category_code, c.label as category_label,
                coalesce(t.color, c.color) as color, t.label as type_label,
                o.member_id, m.display_name as member_name,
                coalesce(inst.name, acct_inst.name) as institution_name,
                ov.effective_value, ov.value_basis, ov.attributed_value,
-               i.account_id,
-               coalesce(i.last_verified_at, i.created_at) as freshness
+               i.account_id
         from investments i
         join investment_types t   on t.id = i.type_id
         join asset_categories c   on c.id = t.category_id
@@ -304,13 +302,27 @@ class DashboardService(
             attributedValue = rs.getBigDecimal("attributed_value") ?: BigDecimal.ZERO,
             currency = rs.getString("currency"),
             maturityDate = rs.getDate("maturity_date")?.toLocalDate(),
-            lastVerified = rs.getTimestamp("freshness")
-                ?.toInstant()?.atZone(java.time.ZoneOffset.UTC)?.toLocalDate(),
             hasInstitution = rs.getString("institution_name") != null,
             hasAccount = rs.getObject("account_id") != null,
             categoryExpectsAccount = rs.getString("category_code") in CATEGORIES_WITH_ACCOUNTS,
         )
     }
+
+    /**
+     * The holdings "Still true?" says are due, read from the same view its list
+     * and its sweep read (`still_true_records`, security invoker), so the card
+     * cannot keep a second clock. Under the caller's RLS this is every due
+     * holding they can see; who is *asked* is narrower (docs/21 §4), but when a
+     * record is due is the same answer for everyone.
+     */
+    private fun stillTrueDue(householdId: UUID): Set<UUID> = jdbc.queryForList(
+        """
+        select record_id from still_true_records
+        where household_id = :hid and record_type = 'investment' and is_due
+        """.trimIndent(),
+        mapOf("hid" to householdId),
+        UUID::class.java,
+    ).toSet()
 
     /**
      * Read through the caller's own RLS, exactly like assets. A private debt
@@ -438,8 +450,7 @@ class DashboardService(
      * completeness, never a judgement about the investment itself — Almira
      * records, it does not advise (docs/08 §6).
      */
-    private fun attention(slices: List<Slice>): List<AttentionItem> {
-        val staleBefore = LocalDate.now().minusMonths(6)
+    private fun attention(slices: List<Slice>, dueToConfirm: Set<UUID>): List<AttentionItem> {
         val items = mutableListOf<AttentionItem>()
 
         slices.filter { it.valueBasis == "unknown" }.let {
@@ -463,13 +474,14 @@ class DashboardService(
                 it.size, it.map { s -> s.investmentId },
             )
         }
-        // A record entered today is not stale. Treating an unconfirmed-but-new
-        // record as overdue would greet every new user with a list of problems
-        // they have not had time to have — which is how an attention list
-        // teaches people to ignore it (docs/08 §5).
-        slices.filter { it.lastVerified != null && it.lastVerified.isBefore(staleBefore) }.let {
+        // One clock: a holding is "not confirmed lately" exactly when "Still
+        // true?" says it is due (docs/21 §2, known-issues 18) — its per-type
+        // period, a maturity or renewal date, a snooze, the household's time
+        // zone. A record entered today is not due, so a new user is not greeted
+        // with problems they have not had time to have (docs/08 §5).
+        slices.filter { it.investmentId in dueToConfirm }.let {
             if (it.isNotEmpty()) items += AttentionItem(
-                "not_verified", "Not confirmed in over six months",
+                "not_verified", "Due to be confirmed as still true",
                 it.size, it.map { s -> s.investmentId },
             )
         }

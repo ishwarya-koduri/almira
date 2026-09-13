@@ -12,6 +12,7 @@ import { api, downloadAuthenticated } from "../api.js";
 import { el, mount, skeletonRows, withBusy, toast } from "../ui.js";
 import { state } from "../state.js";
 import { openDetail } from "./detail.js";
+import { completenessPercent } from "../completeness.js";
 
 export async function reportsScreen(host) {
   mount(host, skeletonRows(4));
@@ -29,12 +30,14 @@ export async function reportsScreen(host) {
 }
 
 function completenessCard(report, host) {
+  const percent = completenessPercent(report);
   return el("div.card.stack-2", {},
     el("div.row-between.wrap", { style: { alignItems: "baseline" } },
       el("h3", {}, "How complete this is"),
-      el("div.hero-amount", { style: { fontSize: "var(--text-h2)" } }, `${report.score}%`),
+      percent && el("div.hero-amount", { style: { fontSize: "var(--text-h2)" } }, percent),
     ),
     el("p.muted", {}, report.scoreLabel),
+    !percent && report.scoreExplanation && el("p", { "data-no-score": "true" }, report.scoreExplanation),
     report.nextStep && el("div.banner", {}, report.nextStep),
 
     ...report.checks.map((check) => el("div.row-between.wrap", {},

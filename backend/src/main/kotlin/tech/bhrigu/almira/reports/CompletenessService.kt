@@ -4,8 +4,6 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.household.HouseholdService
-import java.math.BigDecimal
-import java.math.RoundingMode
 import java.time.LocalDate
 import java.util.UUID
 
@@ -23,15 +21,49 @@ data class CompletenessCheck(
 )
 
 data class Completeness(
+    /**
+     * Rounded down, so it is 100 only when nothing is missing. When [scoreEarned]
+     * is false this is 0 and means nothing: v1 froze `score` as a required
+     * integer, so "no number" is said by [scoreEarned], not by a null here.
+     */
     val score: Int,
+    /**
+     * False when the records have not earned a number (nothing recorded that
+     * you can see). Clients show [scoreExplanation] instead of a percentage.
+     * docs/18 §6: never show a number the data did not earn.
+     */
+    val scoreEarned: Boolean,
+    /** Why there is no number. Present only when [scoreEarned] is false. */
+    val scoreExplanation: String?,
     val recordCount: Int,
-    /** Null when there is nothing recorded yet: a score of 0% is not a fact about a new user. */
     val scoreLabel: String,
     val checks: List<CompletenessCheck>,
     /** The single most useful next thing, or null when there is nothing to fix. */
     val nextStep: String?,
     val note: String,
 )
+
+/**
+ * The completeness score, as a pure function so its edges can be tested
+ * without a thousand holdings (known-issues 19, docs/22 §1).
+ */
+object CompletenessScore {
+
+    /**
+     * floor(100 × earned ÷ possible), weighted, in integer arithmetic. Rounding
+     * down is the guarantee: with any item outstanding, earned < possible, so
+     * the result is at most 99. Rounding to nearest showed 100 with one missing
+     * nominee among a few hundred holdings.
+     *
+     * Null when nothing can be scored: no number is better than 100 or 0.
+     */
+    fun of(checks: List<CompletenessCheck>): Int? {
+        val earned = checks.sumOf { it.done.toLong() * it.weight }
+        val possible = checks.sumOf { (it.done.toLong() + it.outstanding) * it.weight }
+        if (possible == 0L) return null
+        return (earned * 100 / possible).toInt()
+    }
+}
 
 /**
  * How usable this registry would be to someone who did not build it.
@@ -57,8 +89,12 @@ class CompletenessService(
         val rows = load(householdId)
 
         if (rows.isEmpty()) {
+            // Not 100: nothing recorded is not complete. Not 0 either, as a
+            // claim: a new user has not failed at anything. No number at all.
             return Completeness(
-                score = 100, recordCount = 0,
+                score = 0, scoreEarned = false,
+                scoreExplanation = NOTHING_TO_SCORE,
+                recordCount = 0,
                 scoreLabel = "Nothing to check yet",
                 checks = emptyList(),
                 nextStep = "Add your first holding and this will tell you what's missing.",
@@ -97,11 +133,16 @@ class CompletenessService(
             ) { it.inContinuity },
         ).filter { it.done + it.outstanding > 0 }
 
-        val earned = checks.sumOf { (it.done * it.weight).toLong() }
-        val possible = checks.sumOf { ((it.done + it.outstanding) * it.weight).toLong() }
-        val score = if (possible == 0L) 100 else {
-            BigDecimal(earned * 100).divide(BigDecimal(possible), 0, RoundingMode.HALF_UP).toInt()
-        }
+        val score = CompletenessScore.of(checks)
+            ?: return Completeness(
+                score = 0, scoreEarned = false,
+                scoreExplanation = NOTHING_TO_SCORE,
+                recordCount = rows.size,
+                scoreLabel = "Nothing to check yet",
+                checks = checks,
+                nextStep = null,
+                note = NOTE,
+            )
 
         // The most-weighted gap, not the longest list: one missing nominee
         // matters more than five missing links.
@@ -109,6 +150,8 @@ class CompletenessService(
 
         return Completeness(
             score = score,
+            scoreEarned = true,
+            scoreExplanation = null,
             recordCount = rows.size,
             scoreLabel = when {
                 score >= 90 -> "Your family could pick this up tomorrow"
@@ -189,6 +232,8 @@ class CompletenessService(
 
     private companion object {
         const val MAX_IDS = 50
+        const val NOTHING_TO_SCORE =
+            "Nothing is recorded that you can see yet, so there is nothing to score."
         const val NOTE =
             "A measure of how usable these records would be to someone who didn't create " +
                 "them — not a judgement of the holdings themselves."

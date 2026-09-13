@@ -8,6 +8,12 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
+import org.springframework.core.io.ByteArrayResource
+import org.springframework.http.HttpEntity
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
+import org.springframework.util.LinkedMultiValueMap
+import org.springframework.web.client.RestTemplate
 import tech.bhrigu.almira.support.ApiTestBase
 import java.math.BigDecimal
 
@@ -45,13 +51,119 @@ class ReportsApiTest : ApiTestBase() {
      * teaches people to ignore it.
      */
     @Test
-    fun `an empty household is not scored as a failure`() {
+    fun `an empty household is not scored at all - not as a failure, and not as complete`() {
         val report = completeness(owner)
 
-        assertThat(report.path("score").asInt()).isEqualTo(100)
+        // docs/18 §6: no number the data did not earn. It used to say 100.
+        assertThat(report.path("scoreEarned").asBoolean(true)).isFalse()
+        assertThat(report.path("scoreExplanation").asText()).contains("nothing to score")
+        assertThat(report.path("score").asInt())
+            .describedAs("v1 keeps score an integer; with nothing earned it must not claim 100")
+            .isNotEqualTo(100)
         assertThat(report.path("recordCount").asInt()).isZero()
         assertThat(report.path("checks")).isEmpty()
         assertThat(report.path("nextStep").asText()).contains("Add your first holding")
+    }
+
+    private val upload = RestTemplate().apply {
+        errorHandler = object : org.springframework.web.client.ResponseErrorHandler {
+            override fun hasError(r: org.springframework.http.client.ClientHttpResponse) = false
+            override fun handleError(r: org.springframework.http.client.ClientHttpResponse) = Unit
+        }
+    }
+
+    private fun scan(investmentId: String) {
+        val body = LinkedMultiValueMap<String, Any>().apply {
+            add("file", object : ByteArrayResource("a gold receipt".toByteArray()) {
+                override fun getFilename() = "receipt.pdf"
+            })
+        }
+        val headers = HttpHeaders().apply {
+            contentType = MediaType.MULTIPART_FORM_DATA
+            setBearerAuth(owner)
+        }
+        val response = upload.exchange(
+            url("/api/v1/households/$householdId/documents?docType=receipt&entityType=investment&entityId=$investmentId"),
+            org.springframework.http.HttpMethod.POST, HttpEntity(body, headers), String::class.java,
+        )
+        check(response.statusCode.is2xxSuccessful) { "upload: ${response.body}" }
+    }
+
+    /** Physical gold with a nominee and a receipt: every check that applies to it is done. */
+    private fun completeGold(): String {
+        val id = capture(owner, householdId, "gold_physical", "Wedding gold", BigDecimal("500000"))
+            .path("id").asText()
+        val response = call(
+            org.springframework.http.HttpMethod.PUT,
+            "/api/v1/households/$householdId/investments/$id/nominees", owner,
+            mapOf("nominees" to listOf(mapOf("memberId" to spouseMemberId, "relationship" to "spouse", "sharePct" to 100))),
+        )
+        check(response.statusCode.is2xxSuccessful) { "nominee: ${response.body}" }
+        scan(id)
+        return id
+    }
+
+    @Test
+    fun `everything done is 100, and it is earned`() {
+        completeGold()
+
+        val report = completeness(owner)
+        assertThat(report.path("checks").map { it.path("outstanding").asInt() }).allMatch { it == 0 }
+        assertThat(report.path("score").asInt()).isEqualTo(100)
+        assertThat(report.path("scoreEarned").asBoolean(false)).isTrue()
+        assertThat(report.path("scoreExplanation").isMissingNode || report.path("scoreExplanation").isNull).isTrue()
+        assertThat(report.path("nextStep").isMissingNode || report.path("nextStep").isNull).isTrue()
+    }
+
+    /**
+     * Known-issues 19. 250 complete holdings are 1000 checked items; one of them,
+     * the lightest (left out of the family summary), is missing. That is 1999 of
+     * 2000 weighted points, which rounding to nearest showed as 100. The copies
+     * are made on the owner connection because 250 captures through the API
+     * would take minutes; the score itself is still read through the API.
+     */
+    @Test
+    fun `one gap in a thousand items does not show 100`() {
+        val source = completeGold()
+        db.update(
+            """
+            with made as (
+              insert into investments (household_id, type_id, title, status, invested_amount, currency,
+                                       is_in_continuity, visibility, created_by)
+              select s.household_id, s.type_id, s.title || ' ' || g, s.status, s.invested_amount, s.currency,
+                     s.is_in_continuity, s.visibility, s.created_by
+              from investments s, generate_series(1, 249) g
+              where s.id = ?::uuid
+              returning id
+            ), owned as (
+              insert into investment_ownerships (investment_id, member_id, holder_type, share_pct)
+              select m.id, o.member_id, o.holder_type, o.share_pct
+              from made m, investment_ownerships o where o.investment_id = ?::uuid
+            ), nominated as (
+              insert into investment_nominees (investment_id, member_id, relationship, share_pct)
+              select m.id, n.member_id, n.relationship, n.share_pct
+              from made m, investment_nominees n where n.investment_id = ?::uuid
+            )
+            insert into document_links (document_id, entity_type, entity_id)
+            select l.document_id, 'investment', m.id
+            from made m, document_links l
+            where l.entity_type = 'investment' and l.entity_id = ?::uuid
+            """.trimIndent(),
+            source, source, source, source,
+        )
+
+        val allDone = completeness(owner)
+        assertThat(allDone.path("recordCount").asInt()).isEqualTo(250)
+        assertThat(allDone.path("score").asInt()).describedAs(allDone.toString()).isEqualTo(100)
+
+        db.update("update investments set is_in_continuity = false where id = ?::uuid", source)
+
+        val report = completeness(owner)
+        assertThat(check(report, "continuity").path("outstanding").asInt()).isEqualTo(1)
+        assertThat(report.path("score").asInt())
+            .describedAs("one item missing among 1000 is not complete")
+            .isEqualTo(99)
+        assertThat(report.path("scoreEarned").asBoolean(false)).isTrue()
     }
 
     @Test
@@ -108,7 +220,7 @@ class ReportsApiTest : ApiTestBase() {
 
         val theirs = completeness(spouse)
         assertThat(theirs.path("recordCount").asInt()).isZero()
-        assertThat(theirs.path("score").asInt()).isEqualTo(100)
+        assertThat(theirs.path("scoreEarned").asBoolean(true)).isFalse()
     }
 
     // --- insights ------------------------------------------------------------

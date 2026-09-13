@@ -22,19 +22,44 @@ the transport.
 > Nothing here is switched on by default. `GET /households/{id}/connect/providers`
 > reports each provider's mode and the exact list below, so whoever deploys this
 > can see what remains rather than reading it here.
+>
+> **Account Aggregator is cut from v1** (owner's decision, 2026-09-13) and is
+> `disabled` by default — see §2.
 
 ---
 
 ## The switch
 
-Every provider reads one property. Absent or `sandbox` means the sandbox
-implementation; `live` selects the real adapter and requires its credentials.
+Every provider reads one property, with three values:
+
+- **`sandbox`** — the in-process sandbox implementation. The default for every
+  provider but `aa`.
+- **`live`** — the real adapter, which requires its credentials. Refuses to
+  start today, because no live adapter exists.
+- **`disabled`** — not offered on this server, and a normal state rather than an
+  error. The application starts; `connect/providers` reports `mode: DISABLED`
+  and `connected: false`; every call to a disabled DigiLocker, Account
+  Aggregator or WhatsApp answers **409 `provider_disabled`** with
+  `details.provider`, before anything is written or called. A disabled `sms`,
+  `email` or `push` channel has no sender: notifications skip it and record no
+  row for it, and email sign-in answers `otp_unavailable`. The default for `aa`.
+
+Anything else refuses to start, with a sentence. That includes `off`, which was
+the old name for this state: it passed the startup check and then crashed the
+application for three providers (known-issues 11), so it is refused by name and
+the message says to write `disabled`. One spelling, so the configuration, the
+startup check and the status endpoint all use the same word.
+
+409 rather than 503 or 404: 503 is what a provider *outage* answers, and clients
+may retry it; this will not change by retrying. 404 is how this API says "no
+such household, or not yours". The refusal is about how the server is
+configured, and clients branch on the code.
 
 ```yaml
 almira:
   providers:
-    digilocker: { mode: sandbox }   # sandbox | live
-    aa:         { mode: sandbox }
+    digilocker: { mode: sandbox }   # disabled | sandbox | live
+    aa:         { mode: disabled }  # cut from v1
     whatsapp:   { mode: sandbox }
     sms:        { mode: sandbox }
     email:      { mode: sandbox }
@@ -99,10 +124,13 @@ masked account number.
 4. `ALMIRA_PROVIDER_AA_MODE=live` plus the gateway URL and certificate paths.
 
 Production FIU status needs an entity regulated by RBI, SEBI, IRDAI or PFRDA,
-and even the Setu sandbox needs a Company PAN and GSTIN. **Cutting AA from v1 is
-recommended, pending the owner's decision** — see
-[providers/account-aggregator.md](providers/account-aggregator.md), which also
-records that `mode: off` does not currently start.
+and even the Setu sandbox needs a Company PAN and GSTIN. **Cut from v1 — the
+owner's decision, 2026-09-13, for exactly that reason.** `aa` defaults to
+`disabled`: the three AA endpoints answer 409 `provider_disabled`, and the web
+client leaves it out of Connected services because the server reports it
+`DISABLED`. The interface, the sandbox and its tests are kept for a future
+regulated partner; `ALMIRA_PROVIDER_AA_MODE=sandbox` brings the sandbox back.
+Details in [providers/account-aggregator.md](providers/account-aggregator.md).
 
 **Never**: scraping, credential collection, or "just give us your net-banking
 password". The AA network exists precisely so that nobody has to.
@@ -414,6 +442,13 @@ names plus `otp`.
   code of the million can complete, and a send that happens after the answer.
 - `EmailSignInApiTest`, `SignInChannelSwitchApiTest` — the allowlist cannot be
   seen from outside; a switched-off channel refuses; step-up by email.
+- `ProviderDisabledStartupTest` — the real application starts with each provider
+  `disabled` alone, all six together, and with nothing set (`aa` disabled).
+- `ProviderDisabledApiTest` — all six disabled, over HTTP: status `DISABLED` and
+  never connected, every connect call 409 `provider_disabled` with nothing
+  written, notifications recorded in-app only.
+- `ProviderModeCheckTest` — `disabled` accepted, `off` refused by name, the four
+  copies of the default modes in agreement, an unknown OTP sender refused.
 
 ---
 

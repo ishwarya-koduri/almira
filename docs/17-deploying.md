@@ -185,6 +185,24 @@ mean recreating the volume, which means destroying it, and this project does not
 remove things from a working machine. The startup check warns there instead, so
 the difference is visible without being fatal.
 
+### Provider modes: absent is normal, nonsense refuses
+
+`ProviderModeCheck` reads every `ALMIRA_PROVIDER_<NAME>_MODE` before the
+application context exists. Each is `disabled`, `sandbox` or `live`
+([Doc 13, "The switch"](13-providers-and-going-live.md#the-switch)).
+
+| Setting | What happens |
+|---|---|
+| `disabled` (any provider, or all of them) | **Starts.** The provider is not offered: status `DISABLED`, calls answer 409 `provider_disabled`, a disabled notification channel is skipped. `aa` is `disabled` unless set — Account Aggregator is cut from v1. |
+| `off` | Refuses, naming `disabled`. It was the old spelling and used to crash startup for three providers. |
+| `live` | Refuses: no live adapter exists for any provider yet. |
+| anything else (`liev`) | Refuses rather than guessing. |
+| `ALMIRA_OTP_PROVIDER` other than `log` | Refuses: `log` is the only one-time-code sender that exists. |
+
+Proven on the real application context, each provider disabled alone and all
+together (`ProviderDisabledStartupTest`), and once on the built jar with all six
+disabled.
+
 ## 4 · The key, and what losing it means
 
 `ALMIRA_KMS_MASTER_KEY` wraps every household's data key. Account numbers,

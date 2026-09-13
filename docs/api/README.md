@@ -91,6 +91,13 @@ Connecting DigiLocker or the Account Aggregator fails the same four ways, as
 `provider_timeout` (504), `provider_unavailable` (503), `provider_rejected` (422)
 and `provider_account_unavailable` (503), with `details.provider`. The WhatsApp
 webhook still answers 200 and sets `replyFailure` to one of those codes.
+
+A provider this server does not offer is not a failure: `GET …/connect/providers`
+reports it with `mode: DISABLED`, and every call to it — DigiLocker, Account
+Aggregator (disabled by default: cut from v1) or the WhatsApp webhook — answers
+`409` `provider_disabled` with `details.provider`. Retrying will not help; hide
+whatever the client offers for a provider reported as `DISABLED`. `mode: OFF`
+remains in the enum for compatibility and is never sent.
 `GET /api/v1/me/messages` lists the caller's own notifications, with `status`,
 `failure`, `attempts` and a ready-to-show `failureMessage`.
 

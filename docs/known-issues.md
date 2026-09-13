@@ -330,51 +330,38 @@ to start. Serious the day it does not.
 
 ## 11. `mode: off` does not start for DigiLocker, Account Aggregator or WhatsApp
 
-**Where** `ProviderModeCheck` accepts `off`; `ConnectService` requires one bean
-of each of `DocumentVaultProvider`, `AccountAggregatorClient` and
-`WhatsAppGateway`, and every implementation is conditional on `sandbox`.
+**Resolved** (2026-09-13, "Disabled mode, AA cut"). Kept as a stub so the number
+still means something where it is cited.
 
-**What** `ALMIRA_PROVIDER_AA_MODE=off` passes the check and then dies on
-"required a bean of type 'tech.bhrigu.almira.provider.AccountAggregatorClient'
-that could not be found" — the exact unreadable failure `ProviderModeCheck` was
-written to replace. Watched on 2026-09-13 with the jar from `94d839e`. DigiLocker
-and WhatsApp have the same shape and were not run; `push=off` was run and starts,
-because the notifier takes a list.
+`disabled` is now a first-class mode for every provider. DigiLocker, Account
+Aggregator and WhatsApp each have a disabled adapter (`provider/DisabledProviders.kt`)
+that reports `mode: DISABLED`; `ConnectService` refuses every call to one with
+409 `provider_disabled` before writing or calling anything, and the status
+endpoint reports it as never connected. A disabled `sms`, `email` or `push` has
+no sender, so `RecordingNotifier` skips it and records no row. `off` itself is
+now **refused** by `ProviderModeCheck` with a sentence naming `disabled`, rather
+than accepted as a second spelling.
 
-**Which is right** `off` should start, report `mode: OFF`, and refuse the
-connect calls with a sentence.
-
-**Why it is still here** It matters only if the owner accepts the recommendation
-to cut Account Aggregator from v1, and how to cut it (an `off` implementation or
-hiding the card) is part of that decision.
-
-**When to fix** With that decision. See
-[providers/account-aggregator.md](providers/account-aggregator.md).
-
-**Risk if left** A deployment that tries to switch AA off does not start. Loud,
-not silent.
+Proven by `ProviderDisabledStartupTest` (the real application, each provider
+disabled alone, all together, and the defaults), `ProviderDisabledApiTest` (every
+call over HTTP, the status, notifications) and `ProviderModeCheckTest`; and once
+with the built jar, all six disabled.
 
 ---
 
 ## 12. Choosing any one-time-code sender but `log` fails obscurely
 
-**Where** `auth/OtpSender.kt` (`LoggingOtpSender` is the only `OtpSender`, on
-`almira.otp.provider=log`) and `ProviderModeCheck`, which does not read
-`almira.otp.provider`.
+**Resolved as a refusal** (2026-09-13, same change). `ProviderModeCheck` now
+reads `almira.otp.provider` and refuses anything but `log` at startup with a
+sentence pointing at [providers/sms.md](providers/sms.md), instead of dying on
+"required a bean of type 'tech.bhrigu.almira.auth.OtpSender'". Watched in
+`ProviderModeCheckTest`.
 
-**What** `ALMIRA_OTP_PROVIDER=sms` fails startup with "Parameter 1 of
-constructor in tech.bhrigu.almira.auth.OtpService required a bean of type
-'tech.bhrigu.almira.auth.OtpSender' that could not be found". Watched on
-2026-09-13 with the jar from `94d839e`.
-
-**Which is right** One switch (`almira.providers.sms.mode=live` selecting the
-live OTP sender), or the startup check refusing an unknown OTP provider with a
-sentence.
-
-**When to fix** When the live SMS sender is written — gap 1 in
-[providers/sms.md](providers/sms.md).
-
-**Risk if left** Loud, but it reads like a broken build.
+What is **not** done is the other half of "which is right": one switch, where
+`almira.providers.sms.mode=live` selects a live OTP sender. That comes with the
+live SMS sender (gap 1 in providers/sms.md), and until then `sms.mode` and
+`otp.provider` stay independent — in particular `sms: disabled` does not stop
+development sign-in codes, which go to the log, not through SMS.
 
 ---
 

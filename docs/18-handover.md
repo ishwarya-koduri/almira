@@ -33,7 +33,8 @@ would have gone.
 | The native app beyond the thin slice | The slice proves the architecture; the remaining Phase-1 surface — goals, reports, documents, family, continuity — is unbuilt on both platforms. [Doc 09](09-build-and-launch-plan.md) |
 | A live email adapter | Email sign-in for the closed alpha is built and allowlisted ([Doc 13 §5](13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha)); no provider is chosen, so nothing can send it outside development |
 | Real SMS delivery | [Doc 13 §4](13-providers-and-going-live.md) — needs DLT registration, which is days of paperwork |
-| DigiLocker, Account Aggregator, WhatsApp | [Doc 13](13-providers-and-going-live.md) — adapters and sandboxes exist; each needs an account |
+| Account Aggregator | **Cut from v1** — the owner's decision (2026-09-13): a production FIU must be regulated by RBI, SEBI, IRDAI or PFRDA, and a family asset registry is not. `aa` is `disabled` by default, its endpoints answer 409 `provider_disabled`, and the web client hides it because the server reports it disabled. The interface, sandbox and tests are kept for a future regulated partner. [providers/account-aggregator.md](providers/account-aggregator.md) |
+| DigiLocker, WhatsApp | [Doc 13](13-providers-and-going-live.md) — adapters and sandboxes exist; each needs an account. Any provider can be set to `disabled` and the server still starts ([Doc 13, "The switch"](13-providers-and-going-live.md#the-switch)) |
 | Push notifications | Needs device-token registration, which needs the native app first |
 | Offline data sync | [Doc 17 §7](17-deploying.md) — the shell opens offline; syncing records is a separate project |
 | Object storage for documents | The `DocumentStorage` interface is the seam; only the filesystem implementation exists |

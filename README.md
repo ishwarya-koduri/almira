@@ -32,7 +32,9 @@ a pluggable rate source, **Telugu and Hindi** in the web client
 ([docs/14](docs/14-localization.md)), and an **advisor** role that sees only what
 it is given. DigiLocker, the Account Aggregator network, WhatsApp, SMS, email and
 push are built as adapters with working sandboxes and a list of exactly what
-flips each one live ([docs/13](docs/13-providers-and-going-live.md)).
+flips each one live ([docs/13](docs/13-providers-and-going-live.md)). The
+Account Aggregator is cut from v1 and disabled by default: a production FIU must
+be regulated by RBI, SEBI, IRDAI or PFRDA.
 
 The web client is an **installable PWA** whose shell opens without a network,
 and [`deploy/`](deploy/) holds everything needed to run this on a host

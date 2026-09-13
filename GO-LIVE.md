@@ -4,7 +4,10 @@ What each outside service needs before Almira can use it for real, what the
 code already promises it, and what has never been checked.
 
 **Every provider is a fake today.** `sandbox` means *our own in-process
-imitation* — no request leaves the server. Setting any provider to `live`
+imitation* — no request leaves the server. `disabled` means not offered on this
+server: it starts, reports `DISABLED`, and answers every call with 409
+`provider_disabled`. Account Aggregator is `disabled` by default — it is cut
+from v1, because a production FIU must be regulated by RBI, SEBI, IRDAI or PFRDA. Setting any provider to `live`
 refuses to start, on purpose, because no live adapter exists for any of them
 (`ProviderModeCheck`; `GoLiveDocTest` fails the build if that stops being true
 while this file still says it). So nothing below has been exercised against a
@@ -22,7 +25,7 @@ checklist for the day the accounts exist. The research behind it is dated
 | Provider | Config name | Can it be built today? | Blocked on | Detail |
 |---|---|---|---|---|
 | DigiLocker — documents | `digilocker` | **No** | GST registration → GSTN-verified entity on API Setu; a server in India; there is no separate sandbox | [providers/digilocker.md](docs/providers/digilocker.md) |
-| Account Aggregator — holdings | `aa` | **No** — recommended **cut from v1**, pending the owner's decision | Company PAN + GSTIN for even the Setu sandbox; production FIU status needs an RBI/SEBI/IRDAI/PFRDA-regulated entity | [providers/account-aggregator.md](docs/providers/account-aggregator.md) |
+| Account Aggregator — holdings | `aa` | **No** — **cut from v1** (owner's decision, 2026-09-13); `disabled` by default | Company PAN + GSTIN for even the Setu sandbox; production FIU status needs an RBI/SEBI/IRDAI/PFRDA-regulated entity, which is the reason for the cut | [providers/account-aggregator.md](docs/providers/account-aggregator.md) |
 | iOS push (APNs) | `push` | **No** | A paid Apple Developer membership; *and* device-token registration, which does not exist in any client or in the API | [providers/push.md](docs/providers/push.md) |
 | Real SMS delivery (India) | `sms` | **No** (the API is reachable; delivery is not) | GST registration → DLT entity, header and verbatim template registration; the release keystore first | [providers/sms.md](docs/providers/sms.md) |
 | Android push (FCM) | `push` | Transport yes, usefully no | Self-serve Firebase project; the same missing device-token registration as iOS | [providers/push.md](docs/providers/push.md#android-fcm) |
@@ -57,8 +60,10 @@ Read these once; each provider page assumes them.
    here: update the provider's row and its "not watched failing" section in
    the same change.
 5. **Config lives in three places kept in step**: `AlmiraProperties.kt`,
-   `application.yml`, `.env.production.example`. Env names are
-   `ALMIRA_PROVIDER_<NAME>_*`.
+   `application.yml`, `.env.production.example` — and the default mode also in
+   `ProviderModeCheck.DEFAULT_MODES`; `ProviderModeCheckTest` reads all four back.
+   Env names are `ALMIRA_PROVIDER_<NAME>_*`. Modes are `disabled`, `sandbox`,
+   `live`; `off` is refused.
 6. **It gets a contract test against a fake HTTP server** replaying the
    provider's documented responses — success, and one per failure kind —
    before it is ever pointed at the real thing. That test is what gets watched

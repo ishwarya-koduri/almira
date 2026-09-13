@@ -2,8 +2,7 @@
 
 # Account Aggregator — holdings
 
-**Status: cannot be built today. Recommended cut from v1, pending the owner's
-decision. Not watched failing.**
+**Status: cut from v1 — disabled by default. Cannot be built today. Not watched failing.**
 
 A person consents, through the RBI Account Aggregator network, to share their
 bank, deposit and fund data; Almira imports it as ordinary records at the
@@ -13,37 +12,42 @@ refuses to fetch before approval, and returns data shaped like FI data.
 
 ---
 
-## The recommendation, and what it does not mean
+## The cut
 
-Production access as a Financial Information User requires the FIU to be
+**The owner's decision (2026-09-13): Account Aggregator is cut from v1.** The
+reason: production access as a Financial Information User requires the FIU to be
 regulated by RBI, SEBI, IRDAI or PFRDA (research dated 2026-09). A family asset
-registry is not, and is unlikely to become, one of those. The owner's
-checklist therefore recommends **cutting Account Aggregator from v1**.
+registry is not, and is unlikely to become, one of those.
 
-That is recorded here as a **recommendation, not a decision**. Nothing has been
-removed: the interface, the sandbox, the connect endpoints, the tests and the
-UI all remain, so the work is not lost if a regulated partner route appears
-(an FIU that offers the data onward under its own licence, for instance —
-unexplored).
+**What "cut" means here** — off by default and hidden, with the code path kept
+for a future regulated partner (an FIU that offers the data onward under its own
+licence, for instance — unexplored):
 
-**If it is cut, the switch does not exist yet.** Setting
-`ALMIRA_PROVIDER_AA_MODE=off` passes `ProviderModeCheck`, and then the
-application **fails to start**: `ConnectService` requires an
-`AccountAggregatorClient` and `off` leaves none. Watched in this stage, running
-the jar built from `94d839e` with `ALMIRA_ENV=development`, on 2026-09-13:
+- `almira.providers.aa.mode` defaults to **`disabled`** in `application.yml`,
+  `AlmiraProperties` and `.env.production.example`
+  (`ALMIRA_PROVIDER_AA_MODE=disabled`). The application starts normally.
+- `GET …/connect/providers` reports `account_aggregator` with `mode: DISABLED`,
+  `connected: false` (even for a household that connected it in sandbox before)
+  and no `sandboxNote`.
+- `POST …/aa/consent`, `GET …/aa/consent` and `POST …/aa/import` answer
+  **409 `provider_disabled`**, `details.provider = "aa"`: "The Account Aggregator
+  isn't offered on this server." Nothing is written — no pending connection, no
+  audit row — and the adapter is never called.
+- The web client leaves every provider the server reports as `DISABLED` out of
+  Settings → Connected services. It reads the status; nothing about AA is
+  hard-coded, so a server with `aa: sandbox` shows it again. The native app has
+  never had a provider or connect surface, so it has nothing to hide.
+- **Kept, deliberately**: `AccountAggregatorClient`, `SandboxAccountAggregator`,
+  the three connect endpoints, `ConnectService`'s import logic, and their tests
+  (`ProviderApiTest` and `ProviderFailureApiTest` ask for `aa.mode=sandbox`,
+  `SandboxFailureMatrixTest` builds the sandbox directly).
 
-```
-Parameter 7 of constructor in tech.bhrigu.almira.provider.ConnectService required
-a bean of type 'tech.bhrigu.almira.provider.AccountAggregatorClient' that could not be found.
-```
+To try it locally: `ALMIRA_PROVIDER_AA_MODE=sandbox`.
 
-The same applies to `digilocker` and `whatsapp` (not run, same shape). `push`
-with `off` was run and starts, because the notifier takes a list of senders;
-`email` and `sms` have the same shape and were not run. Cutting AA
-cleanly needs either an `off` implementation that answers every call with a
-"not offered" refusal and reports `mode: OFF`, or hiding the card in the
-clients. That is a small change, but a product decision should drive it, not
-this document.
+Before this, the cut could not be made: `off` passed `ProviderModeCheck` and
+then the application failed to start on a missing `AccountAggregatorClient`
+bean (known-issues 11, watched on 2026-09-13 with the jar from `94d839e`). `off`
+is now refused with a sentence naming `disabled`.
 
 ---
 
@@ -134,7 +138,7 @@ the spec knows where to look.
 
 ---
 
-## (c) Flipping it live, in order — only if the recommendation is overturned
+## (c) Flipping it live, in order — only if the cut is reversed
 
 1. Resolve the regulatory route (the owner's call, with advice). Without it,
    stop here.
@@ -162,7 +166,7 @@ the spec knows where to look.
 | Every call against a real AA | No adapter; production access needs a regulated entity; sandbox needs PAN + GSTIN |
 | The fit of a polling, synchronous interface to the real network | Spec not in hand |
 | Failure classification | No real responses seen |
-| `mode=off` as a way to cut it | Verified **broken** (startup fails) — see above |
+| The web client leaving a `DISABLED` provider out of Settings | No automated test drives that card; checked by hand in a browser against a running server when the cut was made |
 
 What would make it watched: a regulatory route, then steps 3–4 with each test
 observed red, then step 7's negative against the real network.

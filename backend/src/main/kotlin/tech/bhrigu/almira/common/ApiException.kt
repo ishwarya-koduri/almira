@@ -40,6 +40,10 @@ class ApiException(
         fun conflict(code: String, message: String, details: Map<String, Any?> = emptyMap()) =
             ApiException(HttpStatus.CONFLICT, code, message, details)
 
+        /** A capability that is configured off, said plainly rather than faked. */
+        fun serviceUnavailable(code: String, message: String) =
+            ApiException(HttpStatus.SERVICE_UNAVAILABLE, code, message)
+
         fun tooManyRequests(message: String, retryAfterSeconds: Long) =
             ApiException(
                 HttpStatus.TOO_MANY_REQUESTS, "rate_limited", message,

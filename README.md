@@ -267,14 +267,14 @@ both that choice and the token storage noted in `app/api.js`.
 
 ### Signing in without an SMS bill
 
-With `ALMIRA_OTP_PROVIDER=log` (the default) the OTP is returned in the response and printed to the log, so the whole flow works with no SMS provider, no Twilio account, and no DLT registration:
+With `ALMIRA_ENV=development` and `ALMIRA_OTP_PROVIDER=log` (the default) the OTP is returned in the response and printed to the log, so the whole flow works with no SMS provider, no Twilio account, and no DLT registration:
 
 ```bash
 curl -s -X POST localhost:8080/api/auth/otp/request \
   -H 'Content-Type: application/json' -d '{"phone":"9876543210"}'
 ```
 
-Switch `ALMIRA_OTP_PROVIDER` to `twilio` or `msg91` and the field disappears. **This must never be enabled in production** — it hands anyone a login for any phone number.
+There is no `twilio` or `msg91` sender; this used to say switching to one made the field disappear. What actually protects a deployment is the environment: with any `ALMIRA_ENV` other than `development`, the log sender refuses with 503 `otp_unavailable` and no code is generated. Before that was true, a production boot returned the code to anyone who asked ([docs/17 §5](docs/17-deploying.md)).
 
 ---
 

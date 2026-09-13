@@ -58,6 +58,12 @@ The cause is `HttpMessageNotReadableException` wrapping Jackson's
 `MissingKotlinParameterException` for a non-nullable Kotlin constructor
 parameter. It escapes the validation handler and lands in the generic 500 path.
 
+The same path used to log Jackson's message at ERROR, and for some malformed
+bodies that message quotes the input — `Unrecognized token 'x27020424'` — so a
+one-time code could reach the production log. That part is fixed
+(`UnreadableBodyMessages`, proved by `OtpCodeNeverLeaksTest`); the status is
+still 500, and still wrong.
+
 **What it should be** A 400 naming the field, like every other bad request the
 API answers.
 

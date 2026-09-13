@@ -116,8 +116,10 @@ door; do not expose this endpoint publicly in sandbox mode.
 
 **Interface** `ChannelSender` (`channel = "sms"`) · **Sandbox** `SandboxSmsSender`
 
-In development the OTP is returned in the response and printed to the log, which
-is why the whole sign-in flow works with no provider at all. The sandbox sender
+In development — `ALMIRA_ENV=development`, set explicitly — the OTP is returned
+in the response and printed to the log, which is why the whole sign-in flow works
+with no provider at all. In any other environment that sender refuses with 503
+`otp_unavailable` before a code exists ([Doc 17 §5](17-deploying.md)). The sandbox sender
 records that a message would have gone, and never its body: an SMS body carries
 the amount and the institution, and logs are the least protected thing here.
 

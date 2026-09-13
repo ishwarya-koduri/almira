@@ -35,6 +35,17 @@ server:
     include-message: never
     include-stacktrace: never
   shutdown: graceful
+  # Who the client is, for rate limiting and audit. `native` hands
+  # X-Forwarded-For to Tomcat's RemoteIpValve, which believes it ONLY when the
+  # TCP peer is a trusted proxy — by default loopback and the private ranges
+  # (10/8, 172.16/12, 192.168/16, 169.254/16), which covers a reverse proxy on
+  # the same host reaching the container through Docker. It then walks the
+  # header from the right and takes the first address that is not a trusted
+  # proxy, so a client-written value on the left is ignored. The proxy must
+  # APPEND to the header (nginx `$proxy_add_x_forwarded_for`, Caddy's default),
+  # not pass the client's through untouched. A proxy outside those ranges needs
+  # server.tomcat.remoteip.internal-proxies set to match it.
+  forward-headers-strategy: native
 
 almira:
   # Anything other than "development" makes every startup check strict: a real

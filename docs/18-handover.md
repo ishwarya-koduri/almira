@@ -45,10 +45,14 @@ is actually wrong, and everything else benefits from a running instance. Follow
 [Doc 17](17-deploying.md). Expect to correct a line or two — none of it has been
 run against a real host.
 
-**2. Sort out sign-in before inviting anybody.** Log-only OTP works for a
-controlled alpha where you read the container log per tester. Start the DLT
-registration early: it is the longest-lead item in the whole product and nothing
-about it is technical.
+**2. Sort out sign-in before inviting anybody.** A deployment cannot sign
+anybody in today: the only code sender writes to the log, and outside
+development it refuses rather than generating a code. This used to say a log-read
+alpha was workable; it was a sign-in for any phone number, and
+[Doc 17 §5](17-deploying.md) has the reproduction and the correction. A real SMS
+sender is the unblock, and DLT registration is what gates it — start that early:
+it is the longest-lead item in the whole product and nothing about it is
+technical.
 
 **3. The native app's thin slice is done** — `v0.1.0-thinslice`. What is left
 is widening it to the Phase-1 surface, and the order that worked for the slice

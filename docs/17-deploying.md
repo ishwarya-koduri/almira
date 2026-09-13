@@ -55,8 +55,10 @@ every privacy policy switched off — and nothing else would look wrong. The
 runtime role exists for exactly this, and `/health` reports it so the mistake is
 visible from outside, without signing in.
 
-**If `environment` is not `production`**, one-time codes are being echoed in API
-responses and the encryption checks are relaxed.
+**If `environment` is `development`**, one-time codes are echoed in API
+responses and the signing-secret, encryption-key and page-checksum checks are
+relaxed. On anything reachable by anybody but you, that is a sign-in for any
+phone number. Any other value — including an empty one — is strict.
 
 Then point your TLS terminator at `127.0.0.1:8080` and run the smoke test:
 
@@ -204,18 +206,81 @@ you.
 **This is the one thing that will block your first testers, so read it before
 you invite anybody.**
 
-Sign-in is **phone plus one-time code**. Three provider settings exist in the
-configuration; **only `log` is implemented**. It writes the code to the
-application log:
+Sign-in is **phone plus one-time code**, and **the only code sender that exists
+is `log`, which works only when `ALMIRA_ENV=development`.** On a deployment,
+`POST /api/v1/auth/otp/request` answers:
 
-```bash
-docker compose -f deploy/docker-compose.prod.yml --env-file .env.production \
-  logs -f app | grep 'DEV OTP'
+```
+503  {"error":{"code":"otp_unavailable","message":"Sign-in by text message isn't available on this server yet. No code was sent."}}
 ```
 
-That is workable for a closed alpha where you are present and reading the log
-for each tester, and it is not acceptable for anybody beyond that: the code for
-any phone number is visible to anyone who can read the logs.
+No code is generated, stored, logged or returned. **Until a real SMS sender is
+built, a deployed Almira cannot sign anybody in.** Health, the smoke test's
+unauthenticated checks and restores all still work; anything behind sign-in
+does not.
+
+### Correction: the log-read alpha this section used to describe was a sign-in for anyone
+
+Earlier versions of this section said the `log` sender was "workable for a
+closed alpha where you are present and reading the log for each tester". That
+was wrong, and worse than the risk it named (people who can read the log).
+
+The `log` sender also told the API to return the code in the response, and
+nothing checked the environment before doing so. Reproduced on 2026-09-13
+against a jar built from `4ddf264`, with `ALMIRA_ENV=production`, a real signing
+secret, a real key and the OTP provider left at its documented default — an
+anonymous request for somebody else's number:
+
+```
+POST /api/v1/auth/otp/request {"phone":"+919000018168"}
+200  {"requestId":"d6386b03-…","expiresInSeconds":300,"resendAfterSeconds":30,"developmentCode":"143003"}
+```
+
+Anyone who could reach the server could sign in as anyone. Nothing had been
+deployed, so no account was exposed; the compose file and this document would
+have shipped it. The same boot also wrote the code to the log at WARN, and
+wrote a malformed request body's content to the log at ERROR.
+
+After the fix, the identical request against the identical configuration
+returns the 503 above, Redis holds no key for that number, and the log contains
+neither the code nor the malformed body. With `ALMIRA_ENV=development` the code
+is still returned and logged, which is what local development and every
+end-to-end suite rely on.
+
+**Do not work around this by deploying with `ALMIRA_ENV=development`.** That
+restores the echo *and* relaxes the signing-secret, key and checksum checks at
+the same time. A closed alpha before real SMS needs a different mechanism —
+say, a short list of tester numbers whose codes go to an operator channel — and
+that is a change to the authentication surface, to be designed and signed off
+rather than configured.
+
+What the code path now guarantees, each with a test that was watched failing
+with its fix removed (`backend/src/test/kotlin/tech/bhrigu/almira/auth/`):
+
+| Guarantee | Test |
+|---|---|
+| Outside development the log sender generates, stores and sends nothing | `OtpServiceTest` |
+| The code is echoed only when development was explicitly chosen, whatever the sender claims | `OtpServiceTest` |
+| Redis holds an HMAC keyed from the signing secret over purpose, phone and code — not a SHA-256 a million-entry table reverses | `OtpServiceTest` |
+| A code works once, including when correct attempts race | `OtpServiceTest` |
+| Wrong guesses are counted atomically; 48 parallel guesses get at most the five allowed | `OtpServiceTest` |
+| Five-minute lifetime, 30-second resend cooldown, per-number and per-network hourly caps | `OtpServiceTest` |
+| Length 6–8, lifetime ≤ 10 minutes and 1–10 attempts, or the application refuses to start | `OtpServiceTest` |
+| The per-network cap counts the proxy-vouched address, not a client-written `X-Forwarded-For` | `ClientAddressTest` |
+| No code reaches any log event (every logger at DEBUG), response body or header, across request, resend, wrong, malformed, right and reused, for sign-in and step-up | `OtpCodeNeverLeaksTest` |
+
+Comparison is `MessageDigest.isEqual` over the stored and computed HMACs. That
+is constant-time in the JDK, and because what is compared is a keyed MAC, a
+timing difference would reveal MAC bytes rather than digits of the code. No
+timing measurement was made; that sentence is reasoning, not a result.
+
+**The reverse proxy must append to `X-Forwarded-For`** (nginx
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`, Caddy by
+default). Tomcat trusts the header only from loopback and private addresses —
+which covers a proxy on the same host reaching the container through Docker —
+and takes the right-most address that is not one of those. A proxy that passes
+the client's header through untouched makes the per-network limit forgeable
+again; a proxy on a public address needs `server.tomcat.remoteip.internal-proxies`.
 
 **Real SMS in India** needs more than a provider account. Every message template
 must be registered on a telecom operator's DLT portal along with the sender ID,

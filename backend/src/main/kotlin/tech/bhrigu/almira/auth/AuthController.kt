@@ -31,7 +31,17 @@ data class OtpVerifyBody(
     val code: String,
     val requestId: String? = null,
     val deviceName: String? = null,
-)
+) {
+    /**
+     * A data class prints every field, and Spring MVC prints the resolved body
+     * at DEBUG ("Read ... to [OtpVerifyBody(phone=…, code=123456…)]"). Turning
+     * on web debugging to chase a sign-in problem would have written every
+     * submitted code to the log.
+     */
+    override fun toString() =
+        "OtpVerifyBody(phone=${tech.bhrigu.almira.common.PhoneNumber.mask(phone)}, code=[redacted], " +
+            "requestId=$requestId, deviceName=$deviceName)"
+}
 
 data class RefreshBody(@field:NotBlank val refreshToken: String)
 
@@ -39,7 +49,10 @@ data class StepUpVerifyBody(
     @field:Pattern(regexp = "^[0-9]{4,8}$", message = "Enter the code we texted you")
     val code: String,
     val requestId: String? = null,
-)
+) {
+    /** See [OtpVerifyBody.toString]. */
+    override fun toString() = "StepUpVerifyBody(code=[redacted], requestId=$requestId)"
+}
 
 data class StepUpStatusResponse(val elevated: Boolean, val expiresInSeconds: Long)
 
@@ -194,12 +207,16 @@ class AuthController(
         userContext.currentSessionId()
 
     /**
-     * Behind a load balancer the socket address is the proxy, so the first hop
-     * in X-Forwarded-For is the real client. Only ever used for rate limiting
-     * and audit — never for authorisation, because the header is caller-supplied
-     * and trivially spoofed.
+     * The caller's address, for rate limiting and audit only.
+     *
+     * This used to take the first X-Forwarded-For entry from anyone. That
+     * header is whatever the caller types, so the per-network sign-in limit was
+     * a limit on how many different strings an attacker could be bothered to
+     * invent. The address now comes from the servlet container, which honours
+     * X-Forwarded-For only when the connection itself arrives from a trusted
+     * proxy (`server.forward-headers-strategy: native`, application.yml) and
+     * then takes the right-most address the proxy chain vouches for — never
+     * the left-most one the client wrote.
      */
-    private fun clientIp(request: HttpServletRequest): String? =
-        request.getHeader("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
-            ?: request.remoteAddr
+    private fun clientIp(request: HttpServletRequest): String? = request.remoteAddr
 }

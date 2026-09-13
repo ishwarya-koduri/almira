@@ -109,7 +109,12 @@ require a **recent re-authentication on that session**, so a borrowed unlocked
 phone is not enough.
 
 Rate limits apply per phone number and per IP, and the one-time code namespaces
-sign-in separately from step-up so one cannot be used for the other.
+sign-in separately from step-up so one cannot be used for the other. A code is
+five minutes long-lived, works once, and is locked after five wrong tries; what
+Redis stores is a keyed MAC, not the code or a plain hash of it. The address a
+limit counts is the one the reverse proxy vouches for, never a forwarding header
+the caller wrote. Codes are never written to logs or error responses, and a test
+drives every path a code travels, with logging at DEBUG, to prove it.
 
 ## 6 · The three ways someone outside the family sees something
 

@@ -39,6 +39,10 @@ In development the OTP is returned in `developmentCode` and printed to the log,
 so the whole flow works with no SMS provider. It is absent in every other
 environment.
 
+A server with no working code sender answers the request with `503` and
+`otp_unavailable`, and sends nothing. Show the message; retrying will not help.
+Today that is every server not running in development.
+
 ### Step-up
 
 Revealing a full account number, or opening a document, needs a **recent

@@ -19,10 +19,15 @@ import java.util.concurrent.ConcurrentHashMap
  * and nothing else, and a removed tester's sessions lasted 30 days.)
  *
  * **Who it applies to.** An account whose only identifier is an email address
- * that is not on the list, on a server where email sign-in is on — which today
- * always means allowlisted email. An account with a phone number is a phone
- * account and is never touched. On a server that does not offer email at all,
- * the allowlist is not in force and nothing here runs (not even a query).
+ * (no phone number) may hold a session only while this server offers email
+ * sign-in AND lists that address. Every other email-only account is signed
+ * out, whatever the configuration change that got it there: one address taken
+ * off the list, the last address taken off, or email taken out of
+ * `almira.auth.sign-in-channels` altogether — which is how an operator ends the
+ * alpha (docs/13 §5). The check therefore runs on every server, including one
+ * that offers phone only; before 2026-09-14 it did not run there, and ending
+ * the alpha left email-only sessions alive until they expired. An account with
+ * a phone number is a phone account and is never touched.
  *
  * **When it takes effect.** The list is configuration, so it changes only when
  * the server starts. Three places enforce it, so no single one has to be
@@ -74,21 +79,22 @@ class AlphaAllowlistAccess(
     private data class Verdict(val allowed: Boolean, val at: Long)
     private val verdicts = ConcurrentHashMap<UUID, Verdict>()
 
-    /** Whether the allowlist decides anything on this server. */
-    val inForce: Boolean get() = channels.isEnabled(OtpChannel.EMAIL)
-
     /**
-     * True for an account the allowlist shuts out: email is its only way in,
-     * and that address is not listed. A stored address that no longer
-     * normalises is not listed either.
+     * True for an account shut out of the alpha: email is its only way in, and
+     * either this server does not offer email sign-in or the address is not
+     * listed. A stored address that no longer normalises is not listed either.
+     *
+     * Deliberately not conditional on the channel switch: a switch that turned
+     * this check off is exactly how sessions would outlive the alpha.
      */
     fun shutsOut(phone: String?, email: String?): Boolean =
-        inForce && phone == null && email != null &&
-            EmailAddress.canonicalOrNull(email)?.let(channels::isAllowed) != true
+        phone == null && email != null && !(
+            channels.isEnabled(OtpChannel.EMAIL) &&
+                EmailAddress.canonicalOrNull(email)?.let(channels::isAllowed) == true
+            )
 
-    /** For JwtAuthFilter. Costs nothing when the allowlist is not in force. */
+    /** For JwtAuthFilter. One cached account read per account per [VERDICT_TTL]. */
     fun allowsRequest(userId: UUID, sessionId: UUID): Boolean {
-        if (!inForce) return true
         val now = System.nanoTime()
         val cached = verdicts[userId]?.takeIf { now - it.at < VERDICT_TTL.toNanos() }
         val allowed = cached?.allowed ?: decide(userId).also {
@@ -101,7 +107,6 @@ class AlphaAllowlistAccess(
 
     /** For AuthService.refresh: always read fresh. */
     fun allowsRefresh(userId: UUID, sessionId: UUID): Boolean {
-        if (!inForce) return true
         val allowed = decide(userId)
         if (!allowed) end(userId, sessionId, "refresh")
         return allowed
@@ -126,7 +131,7 @@ class AlphaAllowlistAccess(
             // Never the address: the account id already says whose it was.
             diff = mapOf("reason" to REASON, "via" to via),
         )
-        log.info("ended a session of an account no longer on the email allowlist (via {})", via)
+        log.info("ended a session of an email-only account not on this server's email allowlist (via {})", via)
     }
 
     /**
@@ -138,7 +143,6 @@ class AlphaAllowlistAccess(
      * to start would only take the alpha down for everyone else.
      */
     override fun afterSingletonsInstantiated() {
-        if (!inForce) return
         try {
             sweep()
         } catch (e: Exception) {
@@ -152,7 +156,6 @@ class AlphaAllowlistAccess(
 
     /** Returns how many sessions it ended. */
     fun sweep(): Int {
-        if (!inForce) return 0
         data class Live(val sessionId: UUID, val userId: UUID, val email: String)
         val live = system.query(
             """
@@ -191,8 +194,9 @@ class AlphaAllowlistAccess(
             }
         }
         log.info(
-            "Email allowlist: {} live email-only session(s) checked, {} ended because the address is no longer listed",
+            "Email allowlist: {} live email-only session(s) checked, {} ended because {}",
             live.size, ended,
+            if (channels.isEnabled(OtpChannel.EMAIL)) "the address is no longer listed" else "this server does not offer email sign-in",
         )
         return ended
     }

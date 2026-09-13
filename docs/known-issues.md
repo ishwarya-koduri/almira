@@ -393,9 +393,18 @@ Owner's decision: removing a tester from the allowlist ends their sessions.
 session id in `SessionRevocationCache` so the access token stops too — before
 the web server takes a request), on every authenticated request, and on
 refresh; each ending is audited as `auth.session_ended_not_allowlisted` with
-`via`. Accounts with a phone number, and servers without email sign-in, are
-never touched. Proven by `AlphaAllowlistRemovalApiTest`, which seeds sessions
-before its server starts. The list stays in configuration; docs/13 §5 says why.
+`via`. Accounts with a phone number are never touched. Proven by
+`AlphaAllowlistRemovalApiTest`, which seeds sessions before its server starts.
+The list stays in configuration; docs/13 §5 says why.
+
+Since 2026-09-14 the check runs whatever the channel switch says: an email-only
+account keeps a session only while email sign-in is on and its address is
+listed. So taking the last tester off, or ending the alpha with
+`ALMIRA_SIGN_IN_CHANNELS=phone`, signs every email-only tester out at startup
+too (before, both left their sessions alive until they expired, because a server
+without email did not run the check at all). Email on with an empty list still
+refuses to start; turning email off is how the alpha ends (docs/13 §5). Proven
+by `AlphaAllowlistEndedAtStartupApiTest`.
 
 **What is left, narrowed:**
 
@@ -403,13 +412,10 @@ before its server starts. The list stays in configuration; docs/13 §5 says why.
   a removed tester in, and serve them, until it stops. Any new server refuses
   that session on its first request or refresh. On the single-server compose
   deployment (Doc 17) this does not arise.
-- **Turning email sign-in off altogether** is not a removal. With
-  `ALMIRA_SIGN_IN_CHANNELS=phone` the allowlist is not in force, so email-only
-  accounts' existing sessions are left as they are (they cannot sign in again).
-  If that should end them too, it is a one-line change to
-  `AlphaAllowlistAccess.inForce` — an owner's call, not made here. The startup
-  error for an empty allowlist, which offers taking email out as a way out,
-  says so, so nobody takes it for a way to end the alpha.
+- **A phone-only server now reads accounts it used not to.** The per-request
+  check runs everywhere, so a phone-only server reads each signed-in account
+  once a minute (cached per account) to learn it has a phone. Not measured;
+  expected to be negligible beside the request itself.
 - **The refresh-reuse audit row.** Unrelated, noticed here:
   `AuthService.refresh` writes `auth.refresh_reuse_detected` inside the
   transaction its own throw rolls back, so that audit row is probably never

@@ -161,26 +161,69 @@ class AlphaAllowlistRemovalApiTest : ApiTestBase() {
         assertThat(revokedReason(held.sessionId)).isNull()
     }
 
-    @Test
-    fun `on a server without email sign-in the allowlist is not in force, and nothing is ended`() {
-        val phoneOnly = SignInChannels(
+    /**
+     * The same database and cache, judged by a server configured differently.
+     * Never `sweep()` through one here: it would end this class's own seeded
+     * listed tester, whom another test expects alive.
+     */
+    private fun accessUnder(channels: List<String>, allowlist: List<String>) = AlphaAllowlistAccess(
+        SignInChannels(
             AlmiraProperties(
                 db = AlmiraProperties.Db("jdbc:postgresql://x/y", "u", "p", "u2", "p2"),
                 jwt = AlmiraProperties.Jwt("test-only-secret-that-is-long-enough-for-hmac256-signing"),
                 otp = AlmiraProperties.Otp(),
-                auth = AlmiraProperties.Auth(signInChannels = listOf("phone"), emailAllowlist = emptyList()),
+                auth = AlmiraProperties.Auth(signInChannels = channels, emailAllowlist = allowlist),
             ),
-        )
-        val access = AlphaAllowlistAccess(phoneOnly, repo, revoker, audit, revocations, system)
-        val emailOnly = repo.createWithEmail("no-email-sign-in.$run@example.test")
-        val held = sessionFor(emailOnly)
+        ),
+        repo, revoker, audit, revocations, system,
+    )
 
-        assertThat(access.inForce).isFalse()
-        assertThat(access.shutsOut(null, emailOnly.email)).isFalse()
-        assertThat(access.allowsRequest(held.userId, held.sessionId)).isTrue()
-        assertThat(access.allowsRefresh(held.userId, held.sessionId)).isTrue()
-        assertThat(access.sweep()).isZero()
-        assertThat(revokedReason(held.sessionId)).isNull()
+    private fun assertEndedAndAudited(held: Held, via: String) {
+        assertThat(revokedReason(held.sessionId)).describedAs(via).isEqualTo(AlphaAllowlistAccess.REASON)
+        assertThat(liveRefreshTokens(held.sessionId)).describedAs(via).isZero()
+        assertThat(redis.hasKey("session:revoked:${held.sessionId}")).describedAs("$via: the access token too").isTrue()
+        assertThat(auditedVia(held.sessionId)).containsExactly(via)
+    }
+
+    @Test
+    fun `taking the last tester off, which leaves email off, ends that tester's sessions on request and refresh`() {
+        // Email on with nobody listed refuses to start, so a list with nobody
+        // left is a server with email taken out: that is what "everyone
+        // removed" can be.
+        val nobody = accessUnder(listOf("phone"), emptyList())
+        val address = "last.tester.$run@example.test"
+        assertThat(nobody.shutsOut(null, address)).isTrue()
+        assertThat(nobody.shutsOut(uniquePhone(), address)).describedAs("a phone account").isFalse()
+
+        val onRequest = sessionFor(repo.createWithEmail("last.request.$run@example.test"))
+        assertThat(nobody.allowsRequest(onRequest.userId, onRequest.sessionId)).isFalse()
+        assertEndedAndAudited(onRequest, "request")
+
+        val onRefresh = sessionFor(repo.createWithEmail("last.refresh.$run@example.test"))
+        assertThat(nobody.allowsRefresh(onRefresh.userId, onRefresh.sessionId)).isFalse()
+        assertEndedAndAudited(onRefresh, "refresh")
+
+        val phone = sessionFor(repo.findById(UUID.fromString(get("/api/v1/me", signIn()).json().path("id").asText()))!!)
+        assertThat(nobody.allowsRequest(phone.userId, phone.sessionId)).describedAs("a phone account").isTrue()
+        assertThat(nobody.allowsRefresh(phone.userId, phone.sessionId)).describedAs("a phone account").isTrue()
+        assertThat(revokedReason(phone.sessionId)).describedAs("a phone account").isNull()
+        // At startup: AlphaAllowlistEndedAtStartupApiTest, which starts a server so configured.
+    }
+
+    @Test
+    fun `turning email sign-in off ends a tester's sessions on request and refresh, even while their address is still listed`() {
+        val address = "listed.but.email.off.$run@example.test"
+        val emailOff = accessUnder(listOf("phone"), listOf(address))
+        assertThat(emailOff.shutsOut(null, address)).isTrue()
+
+        val onRequest = sessionFor(repo.createWithEmail("off.request.$run@example.test"))
+        assertThat(emailOff.allowsRequest(onRequest.userId, onRequest.sessionId)).isFalse()
+        assertEndedAndAudited(onRequest, "request")
+
+        val listed = sessionFor(repo.createWithEmail(address))
+        assertThat(emailOff.allowsRefresh(listed.userId, listed.sessionId)).isFalse()
+        assertEndedAndAudited(listed, "refresh")
+        assertThat(get("/api/v1/me", listed.access).statusCode.value()).isEqualTo(401)
     }
 
     companion object {

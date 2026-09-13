@@ -25,7 +25,9 @@ enum class OtpChannel(val key: String, val provider: String) {
  *  - Every allowlist entry must be an address. A typo in one tester's address
  *    would lock that tester out without a trace, because a non-listed address
  *    is deliberately indistinguishable from a listed one.
- *  - Email enabled with an empty allowlist refuses: nobody could sign in.
+ *  - Email enabled with an empty allowlist refuses: nobody could sign in. The
+ *    way to end the alpha is to take email out of the channels, which
+ *    AlphaAllowlistAccess treats as removing every address.
  *
  * The startup line says how many addresses are listed and never which.
  */
@@ -41,8 +43,8 @@ class SignInChannels(props: AlmiraProperties) {
         require(OtpChannel.EMAIL !in enabled || allowlist.isNotEmpty()) {
             "Email sign-in is enabled but almira.auth.email-allowlist (ALMIRA_ALPHA_EMAIL_ALLOWLIST) " +
                 "is empty, so nobody could sign in by email. List the testers' addresses, or " +
-                "take email out of almira.auth.sign-in-channels. Taking email out does not sign " +
-                "anyone out: email-only testers' sessions go on until they end (known-issues 14)."
+                "take email out of almira.auth.sign-in-channels to end the email alpha. Taking email " +
+                "out signs every email-only account out when this server starts (docs/13 §5)."
         }
 
         log.info(

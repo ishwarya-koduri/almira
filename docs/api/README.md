@@ -169,7 +169,10 @@ A `403` with code `step_up_required` is the signal to walk the user through it.
 The code goes where this account can sign in on this server: its phone number
 when phone is offered and it has one, otherwise its email address. The
 challenge's `channel` says which. An account with nothing on an offered channel
-gets `400 no_step_up_channel` (this used to be a 500 for email-only accounts).
+gets `400 no_step_up_channel` (this used to be a 500 for email-only accounts) —
+today a phone-only account on an email-only server. An email-only account on a
+server without email sign-in never gets that far: its session is ended and the
+request is `401` (docs/13 §5).
 Unlike email sign-in, a step-up email that cannot be sent **does** answer with
 the failure codes above — the caller already owns the address, so there is
 nothing to enumerate.

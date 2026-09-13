@@ -42,13 +42,43 @@ class SignInChannelSwitchApiTest {
         }
 
         /**
-         * StepUpService read `user.phone!!`. An account with only an email —
-         * which the schema has always allowed — was a 500 on the way to seeing
-         * an account number.
+         * An email-only account has no way in here, so it holds no session here
+         * either: its first request ends the session (AlphaAllowlistAccess —
+         * a server without email sign-in is the alpha ended). Before
+         * 2026-09-14 this account reached step-up and was told
+         * `no_step_up_channel`; that answer is now tested on the email-only
+         * server, for a phone-only account.
          */
         @Test
-        fun `an email-only account asking to step up is told why, not given a 500`() {
+        fun `an email-only account's session is ended on its first request, step-up included`() {
             val user = repo.createWithEmail("stranded-${System.nanoTime()}@example.test")
+            val session = repo.createSession(user.id, "test", null, null, Instant.now().plus(jwt.refreshTtl))
+            val token = jwt.issueAccessToken(user.id, session)
+
+            for (path in listOf("/api/v1/auth/step-up/request", "/api/v1/auth/step-up/verify")) {
+                val r = post(path, token, mapOf("code" to "123456"))
+                assertThat(r.statusCode.value()).describedAs("$path: ${r.body}").isEqualTo(401)
+            }
+            assertThat(db.queryForObject("select revoked_reason from user_sessions where id = ?", String::class.java, session))
+                .isEqualTo(AlphaAllowlistAccess.REASON)
+        }
+    }
+
+    /** The alpha configuration: email alone, with an allowlist. */
+    @DisplayName("An email-only server")
+    class EmailOnly : ApiTestBase() {
+
+        @Autowired private lateinit var repo: AuthRepository
+        @Autowired private lateinit var jwt: JwtService
+
+        /**
+         * StepUpService read `user.phone!!`, and an account with no way to
+         * receive a code here was a 500 on the way to seeing an account number.
+         * A phone-only account on an email-only server is that account now.
+         */
+        @Test
+        fun `a phone-only account asking to step up is told why, not given a 500`() {
+            val user = repo.createWithPhone(uniquePhone())
             val session = repo.createSession(user.id, "test", null, null, Instant.now().plus(jwt.refreshTtl))
             val token = jwt.issueAccessToken(user.id, session)
 
@@ -58,11 +88,6 @@ class SignInChannelSwitchApiTest {
                 assertThat(r.errorCode()).isEqualTo("no_step_up_channel")
             }
         }
-    }
-
-    /** The alpha configuration: email alone, with an allowlist. */
-    @DisplayName("An email-only server")
-    class EmailOnly : ApiTestBase() {
 
         @Test
         fun `offers email, and refuses both phone endpoints before looking at the number`() {

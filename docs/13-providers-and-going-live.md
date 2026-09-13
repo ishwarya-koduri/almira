@@ -331,9 +331,31 @@ ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
   nothing beyond the restart. In a rolling deploy an old server still holding
   the old list can sign the tester in until it stops; any new server refuses
   that session on its first request. Accounts with a phone number are never
-  touched, and on a server without email sign-in the check does not run.
+  touched.
+
+  **The rule, whatever the configuration.** An email-only account (no phone
+  number) may hold a session only while the server offers email sign-in *and*
+  lists its address. The check runs on every server, including one that offers
+  phone only, so no change to either variable can leave an email-only session
+  alive: taking one address off, taking the last one off, and taking email out
+  of `ALMIRA_SIGN_IN_CHANNELS` all sign the affected testers out at the next
+  startup (and on their next request or refresh, on any server already running
+  the new configuration). On a phone-only server this costs one account read
+  per signed-in account per minute.
+
+  **Ending the alpha.** Email on with an empty allowlist still refuses to start
+  — a sign-in screen offering a channel nobody can use helps no one — so the
+  clean way to end the alpha is `ALMIRA_SIGN_IN_CHANNELS=phone` (the list may be
+  emptied or left; it is ignored while email is off) and a restart. Every
+  email-only tester is signed out before the server takes a request, each
+  audited as above; the startup log line says how many were ended and that
+  email is off. Turning email back on later does not bring those sessions back:
+  the testers sign in again.
+
   `AlphaAllowlistRemovalApiTest` seeds sessions before its server starts and
-  asserts the starting server ended them.
+  asserts the starting server ended them; `AlphaAllowlistEndedAtStartupApiTest`
+  does the same for a server started with email off, with the list emptied
+  (`EveryoneRemoved`) and with it left as it was (`EmailTurnedOff`).
 
   **Why the list stays in configuration.** Moving it to the database would let
   it change without a restart, and would need what that implies: an operator

@@ -290,15 +290,19 @@ must be registered on a telecom operator's DLT portal along with the sender ID,
 and unregistered templates are dropped silently by the operator. Budget days,
 not hours. [Doc 13 §4](13-providers-and-going-live.md) has the sequence.
 
-**Email is not a fallback today.** `users.email` is stored and shown, but there
-is no email sign-in path: `AuthRepository.findByPhone` is the only lookup, and
-`OtpSender.send(phone, code)` is the only delivery interface. Adding it is a
-small, well-shaped change — an `EmailOtpSender` implementing the existing
-interface, an email branch in the OTP request and verify endpoints, and a unique
-lookup on `users.email` — but it is a change to the **authentication surface**,
-with an account-enumeration and account-takeover question attached to it, and it
-is not something to add quietly during a deployment. It is written up here as
-the gap it is.
+**Email sign-in exists for a closed alpha — and cannot deliver yet.** Earlier
+versions of this paragraph said there was no email sign-in path. There now is:
+`POST /api/v1/auth/otp/email/request` and `/verify`, with the same hardening as
+phone (keyed storage, single use, atomic attempt counting, per-address and
+per-network caps), restricted to `ALMIRA_ALPHA_EMAIL_ALLOWLIST`, and built so an
+address outside the list gets an answer that cannot be told apart from one inside
+it. `ALMIRA_SIGN_IN_CHANNELS=email` makes it the only sign-in, so no tester ends
+up with two accounts. What it still lacks is a real email sender: no provider has
+been chosen, so outside development every request answers 503 `otp_unavailable`,
+exactly as phone does. The unblock is a sending domain (SPF, DKIM, DMARC) and a
+provider account, then a live email adapter watched failing all four ways.
+[Doc 13 §5](13-providers-and-going-live.md) has the design and
+[Doc 18 §3](18-handover.md) the alpha sequence.
 
 ## 6 · Backups
 

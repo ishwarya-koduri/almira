@@ -1,7 +1,7 @@
 package tech.bhrigu.almira.provider
 
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.boot.SpringApplication
@@ -114,11 +114,15 @@ class GoLiveDocTest {
             val environment = MockEnvironment()
                 .withProperty("almira.providers.$name.mode", "live")
                 .withProperty("almira.providers.$name.api-key", "present")
-            assertThatThrownBy { ProviderModeCheck().postProcessEnvironment(environment, SpringApplication()) }
+            // catchThrowable, not assertThatThrownBy: the latter fails with its own
+            // "Expecting code to raise a throwable" before any description applies.
+            val refusal = catchThrowable { ProviderModeCheck().postProcessEnvironment(environment, SpringApplication()) }
+            assertThat(refusal)
                 .describedAs(
                     "'$name' no longer refuses live. GO-LIVE.md and docs/providers still say no live " +
                         "adapter exists — update them in the same change.",
                 )
+                .isNotNull()
                 .hasMessageContaining("no live adapter for $name")
         }
     }

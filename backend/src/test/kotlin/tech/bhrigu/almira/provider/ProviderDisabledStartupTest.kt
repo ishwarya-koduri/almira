@@ -49,13 +49,13 @@ class ProviderDisabledStartupTest {
         // that, and every context it started ignored both the provider modes
         // and the database URL — and ran Flyway against application.yml's
         // development database instead of the test one.
+        //
+        // This test used to check the URL here, after run() — which is after
+        // Flyway. The check is now TestDatabaseGuard (support/, registered for
+        // the whole test classpath), which refuses before any connection is
+        // opened; see TestDatabaseGuardTest.
         val args = properties.map { (key, value) -> "--$key=$value" }.toTypedArray()
-        val context = SpringApplicationBuilder(AlmiraApplication::class.java).run(*args)
-        check(context.environment.getProperty("almira.db.url") == TestInfra.dbUrl) {
-            context.close()
-            "the started context is not on the test database"
-        }
-        return context
+        return SpringApplicationBuilder(AlmiraApplication::class.java).run(*args)
     }
 
     /** What the running context actually has, per provider name. */

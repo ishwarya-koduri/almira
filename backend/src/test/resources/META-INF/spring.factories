@@ -1,0 +1,6 @@
+# Test classpath only. Spring merges every META-INF/spring.factories it finds, so
+# this adds to src/main/resources/META-INF/spring.factories rather than replacing
+# it. TestDatabaseGuard refuses, before anything connects, to start any
+# application whose database is not the test database. See its KDoc.
+org.springframework.context.ApplicationListener=\
+tech.bhrigu.almira.support.TestDatabaseGuard

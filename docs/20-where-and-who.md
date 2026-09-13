@@ -18,8 +18,10 @@ agreed to be written down.
 
 This document is the spec, and it records the decisions made when the feature
 was built. Status: **built** (migration V28, backend, web client). The older
-plaintext columns are **retired** (migration V33, §1). Native app: **no editor**;
-it shows the key-holder guidance on its generic sealed-field screen. See §9.
+plaintext columns are **retired** (migration V33, §1), and so are the two seeded
+type fields that asked the same question in plain text (V34, §1). Native app:
+**no editor**; its generic sealed-field screen shows the key-holder guidance only
+when the field key typed is `key_holder` or `original_location`. See §9.
 
 ---
 
@@ -94,6 +96,35 @@ Why:
      no longer renders `storage_location` even if an older server's schema names
      it, and never sends it. `scripts/check-spec.py` fails if any Kotlin, SQL
      (in V34 onwards), JS or fixture script reads or writes a plaintext location.
+   - **V34: the two seeded "where" fields went the same way.** V33 only looked
+     for `storage_location`. Two seeded type fields (V6) asked the same question
+     in plain text, into `investments.attributes`, which the server copies into
+     duplicates and between holdings and templates, and matches in search
+     (`attributes::text ilike`): `business_equity.agreement_location` ("Where
+     the agreement is") and `crypto.wallet_hint` ("Where the keys are"). V34
+     refuses, with counts, while any holding (trashed too) or template has a
+     non-empty value under either key, and while row-level security is active;
+     then strips both keys from attributes, removes both fields from every
+     type's `fields` (keeping the others in order), deletes custom field
+     definitions by those names, and adds check constraints. The service
+     refuses text under any of the three keys by name
+     (`RetiredPlaintextLocation.ATTRIBUTE_KEYS`): a holding's or a template's
+     attributes get `400 plaintext_location_retired` with
+     `details.field = attributes.<key>` instead of falling through to
+     `attribute_unknown`, and a custom field or custom type field with one of
+     those keys gets the same code with `details.field = key`. An empty value is
+     dropped. Both sentences belong on the sealed card, which every holding has.
+     To move values out of a database before V34, use a build from before it
+     (for example `47c9e74`): retype each into the sealed card, then edit the
+     holding and empty the old field. The rows are listed by
+     `select id, household_id, title, deleted_at is not null from investments
+     where length(coalesce(attributes->>'agreement_location','')) > 0 or
+     length(coalesce(attributes->>'wallet_hint','')) > 0` (and the same on
+     `investment_templates` with `name`).
+   - **What no migration can retire** is a person typing a location into a field
+     that is not sealed: a title, the notes, a custom field with some other
+     name. Titles and notes are plaintext by design (Doc 12 §1); the capture
+     form points to the sealed card instead of inviting it there (§3).
 
    **A database that still holds notes.** V33's message names the counts. To
    move them, run a build from **before** V33 (for example commit `02a198d`)
@@ -220,8 +251,8 @@ its **title**, and search matches titles on the device too. Titles are not seale
 
 ## 4. Decision (d): the key holder is free text, not a link
 
-**It is stored as a sealed free-text string**, such as "Amma" or "Ramesh (CA)". It
-is not a foreign key to a `members` or `contacts` row.
+**It is stored as a sealed free-text string**, such as "Amma" or "the CA". It is
+not a foreign key to a `members` or `contacts` row.
 
 Why a link was rejected:
 
@@ -233,10 +264,15 @@ Why a link was rejected:
   still point at a contact row whose name and phone number are plaintext. It would
   also break silently when that contact is deleted, and search would need a second
   join on the device for no gain.
-- **Minimisation.** Recording who holds a key needs a name, as the person would
-  say it. It does not need a phone number, an address or an account. The editor
-  offers names from members and contacts as **suggestions**. Choosing one copies
-  the text and creates no link.
+- **Minimisation.** Recording who holds a key needs a role or a relationship, as
+  the family would say it: "Amma", "the CA", "my brother". It does not need a
+  full name, a phone number, an address or an account. The editor offers
+  **roles and relationships** as one-tap suggestions, in the reader's language
+  (`where.keyHolderSuggestions`: Amma, Nanna, my wife, my husband, my brother,
+  my sister, the CA, our lawyer, the bank). It does **not** offer the names of
+  members or contacts: contact names are the full names people save, and a
+  suggestion one tap away would undo the guidance written under the line.
+  Choosing a suggestion copies the text and creates no link.
 - **The words ask for less than a name.** The owner's decision: *"Design
   mitigation while you get [a legal answer] — the field is end-to-end encrypted
   so we cannot read it, and the UI should guide people toward 'Amma' or 'the CA'
@@ -248,9 +284,10 @@ Why a link was rejected:
   location line has its own: enough for the family to find it, no street address
   or locker number. Both are in English, Telugu and Hindi (`where.keyHolderHelp`,
   `where.locationHelp`) and, in English, on the native sealed-field screen
-  (`WhereAndWhoWording`). The member and contact suggestions stay, because a
-  household often calls a member by a relationship already; picking one is still
-  the person's choice.
+  (`WhereAndWhoWording`). An earlier version of the editor suggested member and
+  contact names; that was removed on review, because it put full names one tap
+  away from a line that asks for a role. `scripts/check-spec.py` fails if
+  `where.js` reads members or contacts again.
 
 **Consent and the DPDP Act.** The key holder is a data principal who has not
 consented. What this design does about that:
@@ -258,7 +295,8 @@ consented. What this design does about that:
 - They are never contacted. No message, invite or notification goes to them.
 - The name is sealed, so neither the operator nor a breach of the server can read
   or list who is named.
-- It is the smallest identifier that works: a name, chosen by the user.
+- It asks for the smallest identifier that works: a role or a relationship,
+  written by the user, not a full name.
 - Removing it is one action. Blank the line and the row is deleted.
 
 Whether a family recording "the key is with Amma" falls within the Act's
@@ -266,7 +304,7 @@ personal or domestic purpose exemption is a question for counsel. **Legal review
 is pending, and nothing here or in the product states a conclusion.** The design
 keeps the question small either way. The privacy notice ([Doc 23](23-privacy-notice.md))
 says what is stored, that it names another person, that it is sealed, the
-guidance above, and that the consent question is with lawyers.
+guidance above, and that the consent question is pending legal review.
 
 ## 5. Decision (e): visibility
 
@@ -345,8 +383,9 @@ server release that accepts it. It would need coordinated client releases anyway
 - **Capture and the new-will form** do not ask where the original is. Each shows
   a line pointing to the sealed card instead (§1).
 - **The editor** has two lines. Each is sealed on the device before it is sent,
-  exactly as typed, with no trim. A blank line removes that field. Names are
-  suggested, never linked. Each line has its guidance under it (§4).
+  exactly as typed, with no trim. A blank line removes that field. Roles and
+  relationships are suggested for the key holder, never member or contact names,
+  and nothing is linked. Each line has its guidance under it (§4).
 - **The privacy notice** (Settings, and the end of onboarding) carries the
   key-holder paragraph ([Doc 23](23-privacy-notice.md)).
 - **Strings** are in English, Telugu and Hindi (`where.*`, `nav.where`). The
@@ -413,6 +452,20 @@ detail showed no "Kept at" row, the editor showed both helper texts in English,
 Telugu and Hindi, and a request with `storageLocation` got
 `400 plaintext_location_retired`. Which guarantees were watched failing is
 listed in the change's report, not repeated here.
+
+**Verified for V34.** `PlaintextLocationRetiredApiTest` ("the plaintext where
+fields on crypto and a business stake are gone as well"): the taxonomy no longer
+has either key while the rest of both types remains; a crypto holding with
+`wallet_hint` text, a business stake edit with `agreement_location` text, a
+template with `wallet_hint` text and a custom type with a `wallet_hint` field are
+refused with `plaintext_location_retired` and the right `details.field`; an empty
+value is accepted and not stored; and the database refuses a type or an
+attributes object with either key. The migration was run by hand against a copy
+of the test database holding one `wallet_hint` holding and one whitespace-only
+`agreement_location` template: it refused with the counts and changed nothing,
+and a copy of it without the refusal (run in a rolled-back transaction) stripped
+the value. The refusal block, run as the app role with the RLS check removed,
+passed with a value present; with the check, it refused.
 
 **Not verified:**
 

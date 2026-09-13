@@ -140,6 +140,9 @@ class InvestmentService(
     @Transactional
     fun create(householdId: UUID, input: CreateInvestment): CreatedInvestment {
         val userId = userContext.require()
+        // Before anything is written: a retired "where" key with text in it is
+        // refused by name, not left to fall through as an unknown attribute.
+        val submittedAttributes = RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes)!!
         val household = households.get(householdId)
         val type = catalog.type(householdId, input.typeId)
 
@@ -173,7 +176,7 @@ class InvestmentService(
         else catalogRepo.customFields("record", listOf(id))
 
         val attributes = validator.validate(
-            type.schema, customDefs, input.attributes,
+            type.schema, customDefs, submittedAttributes,
             requireEssentials = !input.allowMissingRequired,
         )
 
@@ -347,7 +350,7 @@ class InvestmentService(
         val current = get(householdId, id)
         input.status?.let(::requireStatus)
 
-        val attributes = input.attributes?.let {
+        val attributes = RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes)?.let {
             val type = catalog.type(householdId, current.typeId)
             val customDefs = catalogRepo.customFields("record", listOf(id))
             validator.validate(type.schema, customDefs, it)

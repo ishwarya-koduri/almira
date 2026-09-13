@@ -246,6 +246,12 @@ RETIRED_ALLOWED_KOTLIN = {
 }
 
 
+# The attribute keys a plaintext "where" sentence lived under besides the column's
+# own name: "Where the agreement is" and "Where the keys are" (V6, retired in V34).
+RETIRED_WHERE_KEYS = ("agreement_location", "wallet_hint")
+RETIRED_KEYS_LINE = 'val ATTRIBUTE_KEYS: Set<String> = setOf("storage_location", "agreement_location", "wallet_hint")'
+
+
 def sql_only(source: str) -> str:
     return "\n".join(line.split("--", 1)[0] for line in source.splitlines())
 
@@ -273,6 +279,26 @@ def check_plaintext_location_retired() -> None:
                                    ("estate_documents", "location")))
          and "#- '{common,storage_location}'" in migration)
 
+    v34 = sql_only(read("db/migrations/V34__retire_plaintext_where_fields.sql"))
+    want("V34 refuses, and changes nothing, while agreement_location or wallet_hint holds text",
+         "raise exception" in v34 and "row_security_active" in v34
+         and all(f"attributes ->> '{key}'" in v34 for key in RETIRED_WHERE_KEYS)
+         and v34.index("raise exception") < v34.index("update investments"))
+    want("V34 takes both fields out of every type and adds the constraints",
+         "type_does_not_ask_for_plaintext_where" in v34
+         and "no_plaintext_where_in_attributes" in v34
+         and "no_plaintext_where_in_template_attributes" in v34
+         and "custom_field_is_not_plaintext_where" in v34)
+    retired_kotlin = code_only(read("backend/src/main/kotlin/tech/bhrigu/almira/e2e/RetiredPlaintextLocation.kt"))
+    want("the service refuses all three retired keys by name, on holdings and templates",
+         RETIRED_KEYS_LINE in retired_kotlin
+         and code_only(read("backend/src/main/kotlin/tech/bhrigu/almira/investment/InvestmentService.kt"))
+             .count("RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes)") == 2
+         and code_only(read("backend/src/main/kotlin/tech/bhrigu/almira/template/TemplateService.kt"))
+             .count("RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes)") == 2
+         and "field.key in RetiredPlaintextLocation.ATTRIBUTE_KEYS"
+             in code_only(read("backend/src/main/kotlin/tech/bhrigu/almira/catalog/CatalogService.kt")))
+
     offenders: list[str] = []
 
     # Later migrations: nothing may bring a column or a schema entry back.
@@ -280,6 +306,8 @@ def check_plaintext_location_retired() -> None:
         if migration_version(path) <= 33:
             continue
         body = sql_only(path.read_text())
+        if migration_version(path) > 34 and any(key in body for key in RETIRED_WHERE_KEYS):
+            offenders.append(f"db/migrations/{path.name}")
         if "storage_location" in body or re.search(r"\badd\s+column\s+(if\s+not\s+exists\s+)?location\b", body, re.I):
             offenders.append(f"db/migrations/{path.name}")
 
@@ -291,9 +319,10 @@ def check_plaintext_location_retired() -> None:
             stripped = line.strip()
             if stripped in RETIRED_ALLOWED_KOTLIN:
                 continue
-            if path.name == "RetiredPlaintextLocation.kt" and stripped == 'const val ATTRIBUTE_KEY = "storage_location"':
+            if path.name == "RetiredPlaintextLocation.kt" and stripped == RETIRED_KEYS_LINE:
                 continue
-            if ("storage_location" in stripped or "storageLocation" in stripped or "whereItIsKept" in stripped
+            if (any(key in stripped for key in RETIRED_WHERE_KEYS)
+                    or "storage_location" in stripped or "storageLocation" in stripped or "whereItIsKept" in stripped
                     or re.search(r"(?<![\w.])[a-z]{1,3}\.location\b", stripped)
                     or (any(part in relative for part in estate_like) and re.search(r"\blocation\b", stripped))):
                 offenders.append(f"{relative}: {stripped}")
@@ -311,6 +340,7 @@ def check_plaintext_location_retired() -> None:
                 unquoted = re.sub(r'"(?:[^"\\]|\\.)*"', '""', stripped)
                 if ("storage_location" in stripped or "storageLocation" in stripped
                         or "whereItIsKept" in stripped
+                        or any(key in stripped for key in RETIRED_WHERE_KEYS)
                         or (path.suffix == ".js" and re.search(r"\.location\b(?!\.)|\blocation\s*:", unquoted)
                             and "self.location" not in unquoted)):
                     offenders.append(f"{relative}: {stripped}")
@@ -318,7 +348,8 @@ def check_plaintext_location_retired() -> None:
     # Scripts that post fixtures through the API.
     for path in sorted((ROOT / "scripts").glob("*.sh")):
         body = path.read_text()
-        if "storageLocation" in body or re.search(r'\\"location\\"\s*:', body):
+        if ("storageLocation" in body or any(key in body for key in RETIRED_WHERE_KEYS)
+                or "storage_location" in body) or re.search(r'\\"location\\"\s*:', body):
             offenders.append(f"scripts/{path.name}")
 
     want("no SQL, Kotlin, JS or fixture reads or writes a plaintext location",
@@ -327,6 +358,12 @@ def check_plaintext_location_retired() -> None:
     web_where = code_only(read("backend/src/main/resources/static/app/where.js"))
     want("the web editor gives both sealed lines their guidance",
          't("where.keyHolderHelp")' in web_where and 't("where.locationHelp")' in web_where)
+    # The owner's decision: guide people toward "Amma" or "the CA", not full
+    # names. A suggestion list fed from members or contacts puts full names one
+    # tap away from that guidance (docs/20 §4).
+    want("the key-holder suggestions are roles, never member or contact names",
+         't("where.keyHolderSuggestions")' in web_where
+         and not re.search(r"\bapi\.contacts\b|\bstate\.members\b|\.displayName\b|\bcontacts\b", web_where))
 
 
 def check_privacy_notice() -> None:
@@ -334,7 +371,7 @@ def check_privacy_notice() -> None:
     print("PRIVACY NOTICE — the key holder paragraph (docs/23)")
     notice_doc = read("docs/23-privacy-notice.md")
     i18n_web = read("backend/src/main/resources/static/app/i18n.js")
-    for key in ("where.keyHolderHelp", "where.locationHelp", "privacy.keyHolder.body",
+    for key in ("where.keyHolderHelp", "where.locationHelp", "where.keyHolderSuggestions", "privacy.keyHolder.body",
                 "privacy.keyHolder.sealed", "privacy.keyHolder.guidance", "privacy.keyHolder.pending",
                 "privacy.status"):
         want(f"{key} is written in English, Telugu and Hindi", i18n_web.count(f'"{key}":') == 3,

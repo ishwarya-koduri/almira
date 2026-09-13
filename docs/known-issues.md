@@ -487,11 +487,13 @@ docs/api/README.md already describes the endpoints.
 
 ---
 
-## 17. Plaintext columns still hold "where the original is" — retired in V33
+## 17. Plaintext columns still hold "where the original is" — retired in V33 and V34
 
 **Where** `investments.storage_location` (V3), `investment_templates.storage_location`
 (V16), `estate_documents.location` (V18), and `storage_location` in eight seeded
-type schemas.
+type schemas. Also two seeded type fields that asked the same question into
+`attributes`: `business_equity.agreement_location` ("Where the agreement is")
+and `crypto.wallet_hint` ("Where the keys are"), V6.
 
 **What was wrong** [Doc 20](20-where-and-who.md) seals the location of the
 original, with no plaintext fallback. These columns held the same sentence in
@@ -507,11 +509,27 @@ server path that read, copied or printed a location is gone, and a request that
 still sends text gets `400 plaintext_location_retired` without an echo. The web
 client and the native app neither show nor send it.
 
+V33 only looked for `storage_location`, so review found the two `attributes`
+fields still asked for, copied into duplicates and templates, and searched. V34
+retires them the same way (refuse with counts while any non-empty value exists,
+then remove from types and attributes, constraints, and the same
+`plaintext_location_retired` refusal by name). `scripts/check-spec.py` scans for
+all three keys.
+
 **What is left** Kept here, not deleted, because it is not finished everywhere:
 
 - Any database that still has notes must have them moved **with a build from
   before V33** (for example `02a198d`), whose web client has the move button.
   The owner's development database held one such holding when V33 was written.
+  A database with `agreement_location` or `wallet_hint` values needs a build
+  from before V34 (for example `47c9e74`); the owner's development database had
+  none when V34 was written.
+- A location typed into a field that is not sealed (a title, the notes, a custom
+  field with another name) cannot be retired by a migration. The capture form
+  points to the sealed card instead.
+- The native app has no key-holder field; its generic sealed-field screen shows
+  the guidance only if someone types the internal key `key_holder` or
+  `original_location`.
 - The v1 schema still lists `storageLocation` / `location` / `whereItIsKept`
   (always absent in responses, refused with text in requests). Removing them is
   a v2 change.

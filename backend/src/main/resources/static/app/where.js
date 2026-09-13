@@ -164,19 +164,18 @@ export function whereWhoCard(recordType, recordId) {
    The editor — two sentences, sealed on this device before they are sent
    ----------------------------------------------------------------------------- */
 
-async function suggestions() {
-  // Names to pick from, copied as text. Nothing is linked: a link would be a
-  // plaintext pointer from a sealed record to a real person (docs/20 §4).
-  const contacts = await api.contacts(state.household.id).catch(() => []);
-  const names = [...state.members.map((m) => m.displayName), ...contacts.map((c) => c.name)]
-    .filter(Boolean);
-  return [...new Set(names)];
+function suggestions() {
+  // Roles and relationships to pick from, in the reader's language — never the
+  // names of members or contacts. The helper text asks for "Amma" or "the CA"
+  // rather than a full name, so the one-tap choices must not offer full names
+  // (the owner's decision, docs/20 §4). Nothing is linked either way.
+  return t("where.keyHolderSuggestions").split("|").map((s) => s.trim()).filter(Boolean);
 }
 
 export async function openEditor(record, onSaved) {
   const listId = `where-people-${record.recordId}`;
   const people = el("datalist#" + listId, {});
-  suggestions().then((names) => names.forEach((name) => people.append(el("option", { value: name }))));
+  suggestions().forEach((role) => people.append(el("option", { value: role })));
 
   const current = (slot) => (record.opened[slot].state === "open" ? record.opened[slot].text : "");
   const theirs = (slot) => record.opened[slot].state === "theirs";

@@ -250,6 +250,92 @@ class PlaintextLocationRetiredApiTest : ApiTestBase() {
     }
 
     @Test
+    fun `the plaintext where fields on crypto and a business stake are gone as well`() {
+        // V34: "Where the keys are" and "Where the agreement is" asked the same
+        // question in plain text, into attributes the server copied and searched.
+        val taxonomy = get("/api/v1/households/$householdId/taxonomy", owner).json()
+        val types = taxonomy.flatMap { category -> category.path("types").toList() }
+        val keysByCode = types.associate { type ->
+            type.path("code").asText() to type.path("schema").path("fields").map { it.path("key").asText() }
+        }
+        assertThat(keysByCode["crypto"]).describedAs("crypto still captures").contains("asset_symbol")
+            .doesNotContain("wallet_hint")
+        assertThat(keysByCode["business_equity"]).contains("business_name").doesNotContain("agreement_location")
+        assertThat(keysByCode.values.flatten()).doesNotContain("wallet_hint", "agreement_location")
+
+        val cryptoId = post(
+            "/api/v1/households/$householdId/investments", owner,
+            mapOf(
+                "id" to uuid(), "typeId" to typeId(owner, householdId, "crypto"),
+                "title" to "Bitcoin", "investedAmount" to 10000, "quantity" to 1,
+                "attributes" to mapOf("asset_symbol" to "BTC", "wallet_hint" to sentence),
+            ),
+        )
+        assertRefused(cryptoId, "attributes.wallet_hint")
+
+        // An older client that sends the field empty still saves the holding.
+        val saved = post(
+            "/api/v1/households/$householdId/investments", owner,
+            mapOf(
+                "id" to uuid(), "typeId" to typeId(owner, householdId, "business_equity"),
+                "title" to "Stake", "investedAmount" to 10000,
+                "attributes" to mapOf("business_name" to "Pickles", "agreement_location" to ""),
+            ),
+        )
+        assertThat(saved.statusCode).describedAs(saved.body).isEqualTo(HttpStatus.CREATED)
+        val stake = saved.json().path("investment")
+        assertThat(stake.path("attributes").has("agreement_location")).isFalse()
+        assertRefused(
+            patch(
+                "/api/v1/households/$householdId/investments/${stake.path("id").asText()}", owner,
+                mapOf(
+                    "version" to stake.path("version").asInt(),
+                    "attributes" to mapOf("business_name" to "Pickles", "agreement_location" to sentence),
+                ),
+            ),
+            "attributes.agreement_location",
+        )
+
+        assertRefused(
+            post(
+                "/api/v1/households/$householdId/templates", owner,
+                mapOf(
+                    "name" to "Keys again", "typeId" to typeId(owner, householdId, "crypto"),
+                    "attributes" to mapOf("wallet_hint" to sentence),
+                ),
+            ),
+            "attributes.wallet_hint",
+        )
+        assertRefused(
+            post(
+                "/api/v1/households/$householdId/types", owner,
+                mapOf(
+                    "label" to "Wallets",
+                    "fields" to listOf(mapOf("key" to "wallet_hint", "label" to "Keys", "dataType" to "text")),
+                ),
+            ),
+            "key",
+        )
+
+        assertThatThrownBy {
+            db.update(
+                """
+                update investment_types
+                   set field_schema = jsonb_set(field_schema, '{fields}',
+                         (field_schema -> 'fields') || '[{"key":"wallet_hint","label":"Keys","dataType":"text"}]')
+                 where code = 'crypto'
+                """.trimIndent(),
+            )
+        }.hasMessageContaining("type_does_not_ask_for_plaintext_where")
+        assertThatThrownBy {
+            db.update(
+                "update investments set attributes = attributes || '{\"agreement_location\":\"\"}' where id = ?::uuid",
+                stake.path("id").asText(),
+            )
+        }.hasMessageContaining("no_plaintext_where_in_attributes")
+    }
+
+    @Test
     fun `a type that used to ask for it still captures without it`() {
         val captured = capture(owner, householdId, "cash_on_hand", "Envelope", BigDecimal("2000"))
         assertThat(captured.path("investment").has("storageLocation")).isFalse()

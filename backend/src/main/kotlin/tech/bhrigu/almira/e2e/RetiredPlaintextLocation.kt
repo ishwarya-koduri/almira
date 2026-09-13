@@ -35,17 +35,26 @@ object RetiredPlaintextLocation {
         )
     }
 
-    /** The one attribute key the retired column could hide under. */
-    const val ATTRIBUTE_KEY = "storage_location"
+    /**
+     * The attribute keys a plaintext "where" sentence could live under: the
+     * retired column's own name (V33), and the two seeded type fields that asked
+     * the same question in plain text — "Where the agreement is" on a business
+     * stake and "Where the keys are" on crypto (V34). They can never be a type
+     * field, a custom field or an attribute again.
+     */
+    val ATTRIBUTE_KEYS: Set<String> = setOf("storage_location", "agreement_location", "wallet_hint")
 
     /**
-     * Attributes a caller supplies without a schema to check them against (a
-     * template's). Text under the retired key is refused like the field; an
-     * empty value is dropped, because the database refuses the key itself.
+     * Attributes on their way in — a holding's, before the schema check, and a
+     * template's, which has no schema check. Text under a retired key is refused
+     * like the field; an empty value is dropped, because the database refuses
+     * the key itself.
      */
     fun withoutRetiredAttribute(attributes: Map<String, Any?>?): Map<String, Any?>? {
-        if (attributes == null || ATTRIBUTE_KEY !in attributes) return attributes
-        refuseIfSent("attributes.$ATTRIBUTE_KEY", attributes[ATTRIBUTE_KEY]?.toString())
-        return attributes - ATTRIBUTE_KEY
+        if (attributes == null || ATTRIBUTE_KEYS.none { it in attributes }) return attributes
+        ATTRIBUTE_KEYS.filter { it in attributes }.sorted().forEach { key ->
+            refuseIfSent("attributes.$key", attributes[key]?.toString())
+        }
+        return attributes - ATTRIBUTE_KEYS
     }
 }

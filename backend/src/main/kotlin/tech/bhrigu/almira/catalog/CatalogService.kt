@@ -126,7 +126,7 @@ class CatalogService(
                     "numbers and underscores.",
             )
         }
-        if (field.key == RetiredPlaintextLocation.ATTRIBUTE_KEY) {
+        if (field.key in RetiredPlaintextLocation.ATTRIBUTE_KEYS) {
             // The retired column, back under its own name as a custom field,
             // would be the same plaintext sentence (V33, docs/20 §1).
             throw ApiException.badRequest(

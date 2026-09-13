@@ -12,8 +12,11 @@ from.
 **Settings → Privacy notice** and from the bottom of **onboarding** ("Read the
 privacy notice"), in English, Telugu and Hindi (`privacy.*` in
 `static/app/i18n.js`, rendered by `static/app/privacy.js`). The native app has
-no settings or onboarding screen to put it on yet; it shows the key-holder
-guidance itself under the sealed field (`WhereAndWhoWording`). When the notice
+no settings or onboarding screen to put it on yet, and no key-holder field of
+its own: its generic sealed-field screen shows the key-holder guidance
+(`WhereAndWhoWording`) only when the field key typed is `key_holder` or
+`original_location`, so in practice few native users will see it. That gap is
+open (known-issues 17). When the notice
 below changes, change the `privacy.*` strings with it: `scripts/check-spec.py`
 checks that the key-holder paragraph and its guidance exist in all three
 languages and that both entry points link to it.
@@ -50,8 +53,8 @@ never contact the person named.
 Please write a role or a relationship — “Amma”, “the CA”, “my brother” — rather
 than a full name, an address or a phone number.
 
-Whether recording another person this way needs their consent is with our
-lawyers. We have not reached a conclusion, and this notice will change when
+Whether recording another person this way needs their consent is pending
+legal review. We have not reached a conclusion, and this notice will change when
 there is one.
 
 ### What we never do
@@ -71,19 +74,28 @@ So, while legal review of third-party consent is **pending**:
 
 - **What is stored.** Two sealed values per record at most, `original_location`
   and `key_holder` ([Doc 20](20-where-and-who.md) §2). The server holds
-  ciphertext, row presence, a timestamp and who sealed it (Doc 20 §6). There is
-  no plaintext copy anywhere: the older plaintext columns were retired in V33
-  (Doc 20 §1), and the server refuses a request that still sends them.
+  ciphertext, row presence, a timestamp and who sealed it (Doc 20 §6). No field
+  asks for a location in plaintext any more: the older plaintext columns were
+  retired in V33, and the two seeded type fields that asked the same question
+  ("Where the agreement is" on a business stake, "Where the keys are" on crypto)
+  in V34 (Doc 20 §1). The server refuses a request that still sends any of them,
+  and the database refuses the keys. What it cannot stop is a person typing a
+  location into a field that is not sealed — a title or the notes — so the
+  editor asks for it on the sealed card instead.
 - **That it names another person.** The notice says so plainly, rather than
   treating the key holder as the user's own data.
 - **That it is sealed.** True of the database, not only of the client: nothing
-  on the server can read, search or print either line, including the family
-  handbook and its PDF.
+  on the server can read, search or print either sealed line, including the
+  family handbook and its PDF.
 - **The guidance.** A role or a relationship is enough for a family to act on
   ("the key is with Amma") and identifies the person less than a full name, an
   address or a phone number would. The same sentence is the helper text under
   the key-holder field in the web client (`where.keyHolderHelp`, three
-  languages) and in the native app's sealed-field screen. The location line gets
+  languages) and in the native app's sealed-field screen. The web field's
+  one-tap suggestions are roles and relationships in the reader's language
+  (`where.keyHolderSuggestions`: Amma, Nanna, the CA, …), never the names of
+  members or contacts, so the quickest choice is also the one the guidance asks
+  for. The location line gets
   its own guidance (`where.locationHelp`): enough for the family to find it, no
   street address or locker number.
 - **Pending, without a conclusion.** Doc 20 §4 records the open question

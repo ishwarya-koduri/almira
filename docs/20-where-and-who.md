@@ -51,12 +51,36 @@ Why:
    handbook and its PDF (`HandbookService`), and in the transmission view. They
    cannot be dropped, because v1 is additive-only. The server also cannot
    encrypt them itself, because it does not have the key.
-   *What was done:* nothing new is written to them. Wherever the web client shows
-   a record that has one, it also shows a warning ("Anyone who can see the record
-   can read it, and so can our server"). The warning has a button: **Seal it, and
-   clear the unsealed note.** The client seals the text, then clears the plain
-   column with a PATCH to `""`. It never overwrites a location that is already
-   sealed. Retiring the columns is still to do: [known-issues 17](known-issues.md).
+   *What was done:* the web client no longer asks for either one. The capture
+   form used to offer `storage_location` in the "essential" group of every type
+   schema that lists it ("Where it's kept", "Where the deed is", "Where the
+   certificate is", and "Where it is / who holds it" on Anything Else), and the
+   new-will form offered `location`. Both posted plain text. Each field is now
+   replaced by a line that points to the sealed card on the saved record. The
+   API still accepts both fields, because v1 is additive-only, and this client
+   never sends them. `scripts/check-spec.py` fails if either form starts asking
+   again.
+   *What is still written in plain text, and by whom:* anything already in the
+   columns; any other v1 client that sends them; and the server's own copies.
+   When a holding is duplicated, `InvestmentService` carries `storage_location`
+   to the copy. When a template is saved from a holding or applied,
+   `TemplateService` carries it both ways through
+   `investment_templates.storage_location` (V16). The web client does not use
+   templates. The native app has not been checked for a location field.
+   Wherever the web client shows a record that still has a note, it also shows a
+   warning ("Anyone who can see the record can read it, and so can our server").
+   The warning has a button: **Seal it, and clear the unsealed note.** It is
+   offered only when this person can still read a location after the note is
+   gone. If the sealed slot is empty, the client seals the note first, and it
+   clears the column with a PATCH to `""` only after the seal is stored. If the
+   slot holds the person's own later value, the note is cleared and that value
+   stands. If a co-owner sealed the slot ("theirs"), or it will not open
+   ("unreadable"), there is no button. The note stays, with a line saying why.
+   Clearing in those cases would seal nothing and delete the only copy that this
+   person, and the family through the handbook, can read. An earlier version of
+   the button did exactly that. The rule is in `where-legacy.js` and is checked
+   by `scripts/check-where-legacy.js`. Retiring the columns is still to do:
+   [known-issues 17](known-issues.md).
 2. **Continuity.** The people who most need "where is the will" are the family,
    after a death or incapacity. Emergency access (V20) gives a trusted contact
    more *rows*. It cannot give them the passphrase. They will see that a location
@@ -263,7 +287,10 @@ server release that accepts it. It would need coordinated client releases anyway
 - **A card on each record** (holding detail, loan detail, account detail, and
   "Where the original is" on each will under *For my family*). It shows the two
   lines once unlocked and "Recorded — locked" before that. It also shows the
-  legacy-note warning and its move-and-clear button (§1).
+  legacy-note warning and its move-and-clear button, which is offered only when
+  the slot is empty or the person's own (§1).
+- **Capture and the new-will form** do not ask where the original is. Each shows
+  a line pointing to the sealed card instead (§1).
 - **The editor** has two lines. Each is sealed on the device before it is sent,
   exactly as typed, with no trim. A blank line removes that field. Names are
   suggested, never linked.
@@ -295,6 +322,20 @@ move-and-clear button sealed "Home locker" and emptied `storage_location`. Lock
 removed the words from the page. Blanking a line removed that field, and the
 presence count updated after the save. The screen rendered in Telugu and Hindi.
 The existing Doc 12 conformance vector still passes in that browser.
+
+**Verified after review, in the browser against a local server.** The setup was
+two members, one shared gold holding with the plain note "Steel almirah, second
+shelf", and a location sealed on it by the other member. With the first version
+of the button, the card showed "Sealed by someone else" and still offered **Seal
+it, and clear the unsealed note**. Clicking it emptied `storage_location` and
+sealed nothing, and the slot was still the other member's. With the fix, the same
+card offers no button and says the note stays. On a private holding with an empty
+slot, the button is offered. Clicking it sealed the note as this member's value
+and emptied the column. The capture form for Physical Gold and the new-will form
+render the pointer line and no location input. `scripts/check-where-legacy.js`
+(run with `jsc -m`) asserts the rule for every slot state. It failed when the rule
+was put back to "clear whenever unlocked". The three `check-spec.py` checks for
+the two forms and the button failed against the previous commit's files.
 
 **Not verified:**
 

@@ -18,6 +18,7 @@ import {
   withBusy, toast, rupees,
 } from "../ui.js";
 import { state, myMember, findType } from "../state.js";
+import { t } from "../i18n.js";
 import { reload } from "../app.js";
 import { openImport } from "./import.js";
 
@@ -265,15 +266,24 @@ export function captureForm(type, onSaved, prefill = null) {
   const more = el("div.stack-3", {});
 
   /* --- first-class columns, relabelled by the type ------------------------- */
-  const columnOrder = [
-    "invested_amount", "quantity", "start_date", "maturity_date", "storage_location",
-  ];
+  // storage_location is deliberately not one of them. Where the original is
+  // gets recorded sealed, on the saved record (docs/20 §1); this form posts in
+  // plain text, so asking here would put the most damaging sentence in the
+  // database somewhere the server can read it. The API still accepts the
+  // column (v1 is additive-only); this client simply never sends it.
+  const columnOrder = ["invested_amount", "quantity", "start_date", "maturity_date"];
   for (const key of columnOrder) {
     const def = schema.common?.[key];
     if (!def) continue;
     const control = buildColumnControl(key, def);
     controls.set(key, control);
     (def.group === "essential" ? essentials : more).append(control.field);
+  }
+  if (schema.common?.storage_location) {
+    const def = schema.common.storage_location;
+    (def.group === "essential" ? essentials : more).append(
+      el("p.caption.muted", { "data-sealed-pointer": "storage_location" },
+        t("where.captureNote", { label: def.label })));
   }
 
   /* --- type-specific attributes -------------------------------------------- */

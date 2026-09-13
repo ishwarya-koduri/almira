@@ -130,6 +130,22 @@ def main() -> None:
     want("docs/20 says search is client-side and the web client does not send the query anywhere",
          "no server-side search" in doc20.lower() and "api.search" not in code_only(where_web))
 
+    # docs/20 §1: no plaintext fallback. The two older columns stay in the v1
+    # API, but the web client's own forms must not ask for them, or new records
+    # keep writing the sentence where the server can read it.
+    capture_web = code_only(read("backend/src/main/resources/static/app/screens/capture.js"))
+    column_order = re.search(r"columnOrder\s*=\s*\[(.*?)\]", capture_web, flags=re.S)
+    want("the capture form does not ask for storage_location in plain text",
+         column_order is not None and "storage_location" not in column_order.group(1)
+         and "storageLocation" not in capture_web)
+    continuity_web = code_only(read("backend/src/main/resources/static/app/screens/continuity.js"))
+    create_estate = re.search(r"api\.createEstateDocument\((.*?)\}\);", continuity_web, flags=re.S)
+    want("the new-estate-document form does not post location in plain text",
+         create_estate is not None and not re.search(r"\blocation\s*:", create_estate.group(1)))
+    want("the seal-and-clear button asks where-legacy.js whether clearing is safe",
+         "legacyMoveAction(" in code_only(where_web)
+         and "export function legacyMoveAction" in read("backend/src/main/resources/static/app/where-legacy.js"))
+
     want("the doc states 600 000 iterations and the code agrees",
          "600 000" in doc and "ITERATIONS = 600_000" in web)
 

@@ -261,9 +261,6 @@ function newEstateDocument(host) {
     value: state.members.find((m) => m.isMe)?.id,
     "aria-label": "Whose",
   });
-  const location = textInput({
-    placeholder: "Home locker, second shelf", "aria-label": "Where the original is",
-  });
   const executedOn = textInput({ type: "date", "aria-label": "Executed on" });
   const visibility = select({
     options: [
@@ -283,7 +280,6 @@ function newEstateDocument(host) {
         memberId: member.value,
         kind: kind.value,
         title: title.value.trim(),
-        location: location.value.trim() || null,
         executedOn: executedOn.value || null,
         visibility: visibility.value,
       });
@@ -304,10 +300,11 @@ function newEstateDocument(host) {
       field({ label: "What is it?", control: kind }),
       field({ label: "Name", control: title, required: true }),
       field({ label: "Whose is it?", control: member }),
-      field({
-        label: t("estate.location"), control: location,
-        help: "The single most useful line here — a will nobody can find is a will that does not exist.",
-      }),
+      // Where the original is: the single most useful line about a will, and
+      // the one a hostile relative wants most. It is recorded sealed on the
+      // saved document (docs/20 §1), never in this plain form.
+      el("p.caption.muted", { "data-sealed-pointer": "location" },
+        t("where.estateNote")),
       field({ label: "Signed on", control: executedOn }),
       field({ label: "Who can see it?", control: visibility }),
       error,

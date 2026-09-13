@@ -469,28 +469,32 @@ docs/api/README.md already describes the endpoints.
 
 ---
 
-## 17. Two plaintext columns still hold "where the original is"
+## 17. Plaintext columns still hold "where the original is"
 
 **Where** `investments.storage_location` (V3, the "Kept at" / "Where it's kept"
-field in many investment type schemas) and `estate_documents.location` (V18).
-They are read by `SearchService`, `HandbookService` (including the PDF) and
-`TransmissionService`.
+field in many investment type schemas), `estate_documents.location` (V18) and
+`investment_templates.storage_location` (V16). They are read by `SearchService`,
+`HandbookService` (including the PDF) and `TransmissionService`.
 
 **What** [Doc 20](20-where-and-who.md) seals the location of the original under
-the zero-knowledge scheme, with no plaintext fallback. These two older columns
-hold the same sentence in plaintext. The server can read them, search them and
-print them. They cannot be removed while v1 is additive-only, and the server
-cannot migrate them itself, because it has no key.
+the zero-knowledge scheme, with no plaintext fallback. These older columns hold
+the same sentence in plaintext. The server can read them, search them and print
+them. They cannot be removed while v1 is additive-only, and the server cannot
+migrate them itself, because it has no key.
 
-**Which is right** The sealed field. The web client shows a warning on any record
-that still has a plaintext note, with a button that seals the note and clears the
-column. Capture forms still offer `storage_location` wherever a type schema lists
-it.
+**Which is right** The sealed field. The web client no longer asks for either
+column: the capture form and the new-will form show a pointer to the sealed card
+instead. On any record that still has a plaintext note, it shows a warning with a
+button that seals the note and clears the column. The button is offered only when
+the sealed slot is empty or the person's own. Three things still write plain
+text: whatever any other v1 client sends; the server's copy of `storage_location`
+when a holding is duplicated (`InvestmentService`); and template save and apply
+(`TemplateService`), which carry it between the holding and `investment_templates`.
 
-**When to fix** When there is a v2 contract, or sooner by taking
-`storage_location` out of the seeded type schemas (a data migration on
-`investment_types.schema`) so new records stop writing it. The native app needs
-the same warning and move before that.
+**When to fix** When there is a v2 contract. Sooner, the server could stop
+carrying the column into duplicates and templates, and a data migration could
+take `storage_location` out of the seeded type schemas, so that the native app
+stops being prompted for it. The native app needs the same warning and move.
 
 **Risk if left** People keep writing the most damaging sentence in the database
 into a field the server can read, next to a sealed field that exists for exactly

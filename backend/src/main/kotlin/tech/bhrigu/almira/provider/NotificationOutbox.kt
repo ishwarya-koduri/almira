@@ -53,9 +53,12 @@ data class OutboxDrainResult(
  * explicit qualifier, as StillTrueSweep does. NotificationOutboxTest fails if it
  * is ever given the runtime pool.
  *
- * **Never the same key twice.** Each row is claimed in a committed transaction
- * that also stamps `send_started_at` BEFORE the provider is called, under a
- * lease long enough for the provider's whole retry budget. A worker that dies
+ * **Never the same key twice.** Rows are claimed in a committed transaction
+ * (token and a lease only). Then, row by row, `send_started_at` is stamped and
+ * committed immediately BEFORE that row's provider call, and the lease is
+ * renewed from that moment for the provider's whole retry budget — so a row the
+ * worker never reached is never taken for one that may have gone, and a slow
+ * batch cannot run out the lease of the row being sent. A worker that dies
  * after the provider accepted a message and before recording it leaves a row
  * that is still queued, with `send_started_at` set and its lease run out. What
  * the next worker does with it depends on the channel's provider:
@@ -147,7 +150,10 @@ class NotificationOutbox(
         val body: String?,
     )
 
-    /** One transaction: finishes what cannot be sent, claims the rest, commits before any provider call. */
+    /**
+     * One transaction: finishes what cannot be sent, claims the rest, commits before any provider call.
+     * A claim does not mark a row as started; [send] does that for each row just before its own call.
+     */
     private fun claim(): Pair<OutboxDrainResult, List<Claimed>> = transactions.execute {
         val candidates = jdbc.query(
             """
@@ -201,21 +207,19 @@ class NotificationOutbox(
                     finished += OutboxDrainResult(failed = 1)
                 }
                 else -> {
+                    // Only the claim here. The send is stamped by send(), just before it starts,
+                    // so a row this worker never reached is not taken for one that may have gone.
                     val token = UUID.randomUUID()
                     jdbc.update(
                         """
                         update outbound_messages
                            set claim_token = :token,
-                               claimed_until = now() + make_interval(secs => :lease),
-                               send_started_at = now(),
-                               -- the attempt a stopped worker made, when this is a re-send
-                               attempts = attempts + case when :resend then 1 else 0 end
+                               claimed_until = now() + make_interval(secs => :lease)
                          where id = :id
                         """.trimIndent(),
                         MapSqlParameterSource()
                             .addValue("token", token)
                             .addValue("lease", lease(sender).seconds.toDouble())
-                            .addValue("resend", row.started)
                             .addValue("id", row.id),
                     )
                     claimed += Claimed(
@@ -238,6 +242,24 @@ class NotificationOutbox(
         var provider = "unknown"
         var failure: String? = null
         var attempts = 1
+        // Committed before the provider is called, row by row: this is what says "it may have gone",
+        // and the lease runs from here, not from when the batch was claimed. If the claim is no longer
+        // ours (a slow batch let it run out and another worker took the row), this worker leaves it.
+        val started = jdbc.update(
+            """
+            update outbound_messages
+               set send_started_at = now(),
+                   claimed_until = now() + make_interval(secs => :lease),
+                   -- the attempt a stopped worker made, when this is a re-send
+                   attempts = attempts + case when :resend then 1 else 0 end
+             where id = :id and claim_token = :token and status = 'queued'
+            """.trimIndent(),
+            MapSqlParameterSource()
+                .addValue("lease", lease(sender).seconds.toDouble())
+                .addValue("resend", row.resend)
+                .addValue("id", row.id).addValue("token", row.token),
+        )
+        if (started != 1) return OutboxDrainResult()
         try {
             val sent = calls.execute(sender.channel, "notify", idempotent = sender.honoursIdempotencyKey) {
                 sender.send(row.notification, null, row.key)
@@ -287,8 +309,10 @@ class NotificationOutbox(
     }
 
     /**
-     * Longer than the provider's whole retry budget, so a live worker's claim
-     * never runs out under it and a second worker cannot mistake it for dead.
+     * Longer than the provider's whole retry budget. It is set at claim time and
+     * renewed when each row's send starts, so the row being sent always has the
+     * full budget from its own start and a second worker cannot mistake it for dead,
+     * however long the rows before it in the batch took.
      */
     internal fun lease(sender: ChannelSender): Duration {
         val p = props.providers.all().getValue(sender.channel)

@@ -624,8 +624,9 @@ the failure is seeing too little, not too much.
   live adapter that declares `true` for a provider that does not de-duplicate
   — or remembers keys for less than the worker's lease, about 3.5 minutes at
   the SMS defaults — brings duplicate texts back. On `false` (push) delivery is
-  at-most-once: a claim committed just before the worker died loses that
-  message rather than risk a second, and the in-app row is the only copy.
+  at-most-once: the one send a worker had stamped as started when it died
+  loses that message rather than risk a second (the rest of its batch is sent
+  normally), and the in-app row is the only copy.
 - **Only reminders have a deterministic logical key.** Still-true nudges and
   emergency-access notices get a random one per message; their own bookkeeping
   decides whether a message exists, but two servers sweeping the same household

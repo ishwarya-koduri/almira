@@ -373,8 +373,12 @@ whether there is a message. A second enqueue with the same key writes nothing.
 
 The worker passes the key to the adapter on every attempt:
 `ChannelSender.send(notification, recipientHint, idempotencyKey)`. Before calling
-the provider it commits a claim that stamps `send_started_at`, under a lease
-longer than the provider's whole retry budget. So a worker that dies *after the
+the provider it commits, for that row alone, a stamp of `send_started_at` and
+a lease that runs from that moment for longer than the provider's whole retry
+budget. (A batch is claimed together, but a claim only reserves rows; each row
+is stamped just before its own send, so rows a worker never reached are not
+marked as possibly sent, and a slow batch does not eat the lease of the row
+being sent.) So a worker that dies *after the
 provider accepted a message and before recording it* leaves a row that says so.
 What happens next is the channel's declared property,
 `ChannelSender.honoursIdempotencyKey` — deliberately without a default:
@@ -399,13 +403,19 @@ What happens next is the channel's declared property,
   notifications become at-most-once. The same applies to a live email adapter.
 - The key is per logical message. Two different reminders are two messages,
   and a still-true nudge a month later is a new message by design.
-- A claim that was committed but whose provider call never started (the worker
-  died in between) is, to the next worker, indistinguishable from one that
-  sent. At-most-once channels lose that message rather than risk a duplicate.
-- A live worker slower than its lease (a provider much slower than its own
-  configured timeout) could be mistaken for a dead one. The lease is
-  `max-attempts × (timeout + 30 s) + 1 min`, and `ProviderCalls` enforces the
-  timeout itself, so this needs a bug, not a slow provider.
+- The one row a worker had stamped as started when it died, but whose provider
+  call had not really begun (it died in the few statements between), is to the
+  next worker indistinguishable from one that sent. At-most-once channels lose
+  that one message rather than risk a duplicate. Rows claimed in the same batch
+  that the worker never reached are not stamped and are sent normally
+  (`NotificationOutboxTest` "a worker that stops mid-batch…").
+- A claimed but not-yet-started row whose batch ran slower than its claim lease
+  can be taken by another server; the first worker's stamp then matches no row
+  (it is bound to the claim token) and it leaves the row alone. The row being
+  sent has a lease of `max-attempts × (timeout + 30 s) + 1 min` counted from its
+  own start, and `ProviderCalls` enforces the timeout itself, so a live send is
+  mistaken for a dead one only through a bug, not a slow provider or a long
+  batch. Two live servers were not exercised together.
 - One-time codes are not in the outbox and have no stored key: they are one
   attempt, which is the stronger guarantee.
 

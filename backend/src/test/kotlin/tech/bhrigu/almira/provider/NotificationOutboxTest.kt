@@ -231,6 +231,75 @@ class NotificationOutboxTest : ApiTestBase() {
     }
 
     @Test
+    fun `a worker that stops mid-batch has only started the send it was on`() {
+        // The default batch: every queued row is claimed together, and the worker dies after its first send.
+        var crashedOn: UUID? = null
+        val dying = NotificationOutbox(ownerDataSource, channels, calls, props).apply {
+            afterSendBeforeRecord = { id -> if (crashedOn == null) { crashedOn = id; throw Crash() } }
+        }
+        assertThat(props.outbox.batchSize).isGreaterThan(2)
+
+        outbox.whilePaused {
+            queueDirectly()
+            assertThat(runCatching { dying.drain() }.exceptionOrNull()).isInstanceOf(Crash::class.java)
+        }
+        dying.close()
+
+        val started = rows().associate {
+            it.channel to db.queryForObject(
+                "select send_started_at is not null from outbound_messages where id = ?::uuid", Boolean::class.java, it.id,
+            )!!
+        }
+        val crashedChannel = rows().single { it.id == crashedOn.toString() }.channel
+        assertThat(started.filterValues { it }.keys)
+            .describedAs("only the row the worker was sending is marked as possibly sent").containsExactly(crashedChannel)
+
+        db.update(
+            "update outbound_messages set claimed_until = now() - interval '1 second' where household_id = ?::uuid and status = 'queued'",
+            householdId,
+        )
+        outbox.drain()
+
+        val after = byChannel()
+        val deliveries = mapOf("sms" to sms.deliveries, "email" to email.deliveries, "push" to push.deliveries)
+        deliveries.forEach { (channel, d) ->
+            assertThat(d.times(after[channel]!!.key!!)).describedAs("$channel: delivered exactly once").isEqualTo(1)
+            if (channel != crashedChannel) {
+                assertThat(after[channel]!!).extracting("status", "failure", "attempts")
+                    .describedAs("$channel was never handed to the provider by the dead worker: an ordinary send")
+                    .containsExactly("sent", null, 1)
+            }
+        }
+    }
+
+    @Test
+    fun `each send in a batch starts its own lease when it starts, not when the batch was claimed`() {
+        val worker = NotificationOutbox(ownerDataSource, channels, calls, props)
+        outbox.whilePaused {
+            queueDirectly()
+            worker.drain()
+        }
+        worker.close()
+
+        data class Timing(val channel: String, val started: java.sql.Timestamp, val finished: java.sql.Timestamp)
+        val timings = db.query(
+            """
+            select channel, send_started_at, finished_at from outbound_messages
+            where household_id = ?::uuid and template = 'emergency.named' and channel <> 'in_app'
+            order by send_started_at, finished_at
+            """.trimIndent(),
+            { rs, _ -> Timing(rs.getString(1), rs.getTimestamp(2), rs.getTimestamp(3)) },
+            householdId,
+        )
+        assertThat(timings).hasSize(3)
+        timings.zipWithNext().forEach { (before, next) ->
+            assertThat(next.started)
+                .describedAs("${next.channel} is stamped as started after ${before.channel} was recorded")
+                .isAfterOrEqualTo(before.finished)
+        }
+    }
+
+    @Test
     fun `recording a notification that was recorded does not warn that it could not be`() {
         val logger = (org.slf4j.LoggerFactory.getILoggerFactory() as ch.qos.logback.classic.LoggerContext)
             .getLogger(RecordingNotifier::class.java)

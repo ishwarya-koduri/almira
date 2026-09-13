@@ -204,6 +204,13 @@ export const api = {
   linkSecuredAsset: (hid, id, b)  => api.post(`/api/v1/households/${hid}/liabilities/${id}/secured-by`, b),
   deleteLiability: (hid, id)      => api.del(`/api/v1/households/${hid}/liabilities/${id}`),
 
+  // --- still true? (docs/21) --------------------------------------------------
+  stillTrue:     (hid)            => api.get(`/api/v1/households/${hid}/still-true`),
+  confirmStillTrue: (hid, type, id) =>
+    api.post(`/api/v1/households/${hid}/still-true/${type}/${id}/confirm`),
+  snoozeStillTrue: (hid, type, id, until) =>
+    api.post(`/api/v1/households/${hid}/still-true/${type}/${id}/snooze`, { until }),
+
   // --- nominees -------------------------------------------------------------
   // PUT, not PATCH: the nominee list is replaced as a unit.
   setNominees:   (hid, id, body)  =>

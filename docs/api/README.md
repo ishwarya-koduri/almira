@@ -298,6 +298,17 @@ another member's value answers `409 sealed_by_someone_else`. Since V28 a
 ciphertext must be at least a 33-byte envelope with version byte 1. See
 [Doc 20](../20-where-and-who.md).
 
+**"Still true?" is a list, a yes and a later.** `GET /still-true` returns the
+records that are due now and that the caller owns or holds. Each one carries a
+`reason`: `period` when it has not been confirmed for `periodMonths`, or
+`key_date` when a maturity, renewal or end date has passed since the last
+confirmation. `POST /still-true/{recordType}/{recordId}/confirm` answers it.
+`…/snooze` with `{"until"}` puts it off: the date must be after the household's
+today and within a year. Someone who can see a record but does not own it gets
+404 on both, the same as for a record that does not exist. A value refresh (a
+valuation, a loan balance) also counts as a confirmation. An edit or a visibility
+change does not. See [Doc 21](../21-still-true.md).
+
 **Money is stored in the currency it is in.** `currency` is per record; the
 dashboard converts into the household's base currency and reports what it could
 not convert in `unconverted` — render that, because the total is deliberately

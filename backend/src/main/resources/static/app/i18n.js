@@ -161,6 +161,15 @@ const messages = {
     "where.type.document": "Document",
     "where.type.estate_document": "Will or paperwork",
 
+    "still.title": "Still true?",
+    "still.intro": "Nobody has confirmed these in a while. A quick yes keeps the record something your family can rely on.",
+    "still.confirm": "Yes, still true",
+    "still.snooze": "Ask me in a month",
+    "still.confirmed": "Confirmed. We'll ask again around {date}.",
+    "still.snoozed": "We'll ask again on {date}.",
+    "still.lastConfirmed": "Last confirmed {date}",
+    "still.keyDate": "Its date passed on {date}. Is it still as recorded?",
+
     "connect.title": "Connected services",
     "connect.sandbox": "Sandbox",
     "connect.live": "Live",
@@ -335,6 +344,15 @@ const messages = {
     "where.type.document": "పత్రం",
     "where.type.estate_document": "వీలునామా లేదా పత్రాలు",
 
+    "still.title": "ఇంకా నిజమేనా?",
+    "still.intro": "వీటిని ఈమధ్య ఎవరూ ధృవీకరించలేదు. ఒక్క 'అవును' చెబితే మీ కుటుంబం ఈ నమోదుపై ఆధారపడవచ్చు.",
+    "still.confirm": "అవును, ఇంకా నిజమే",
+    "still.snooze": "ఒక నెల తర్వాత అడగండి",
+    "still.confirmed": "ధృవీకరించబడింది. మళ్ళీ {date} ప్రాంతంలో అడుగుతాం.",
+    "still.snoozed": "{date}న మళ్ళీ అడుగుతాం.",
+    "still.lastConfirmed": "చివరిసారి ధృవీకరించింది {date}",
+    "still.keyDate": "దీని తేదీ {date}న గడిచిపోయింది. ఇది ఇంకా నమోదు చేసినట్లే ఉందా?",
+
     "connect.title": "అనుసంధానించిన సేవలు",
     "connect.sandbox": "పరీక్ష",
     "connect.live": "ప్రత్యక్షం",
@@ -508,6 +526,15 @@ const messages = {
     "where.type.account": "खाता",
     "where.type.document": "दस्तावेज़",
     "where.type.estate_document": "वसीयत या कागज़ात",
+
+    "still.title": "क्या अब भी सही है?",
+    "still.intro": "इनकी पुष्टि काफ़ी समय से किसी ने नहीं की है। एक 'हाँ' से यह रिकॉर्ड ऐसा बना रहता है जिस पर आपका परिवार भरोसा कर सके।",
+    "still.confirm": "हाँ, अब भी सही है",
+    "still.snooze": "एक महीने बाद पूछें",
+    "still.confirmed": "पुष्टि हो गई। लगभग {date} को फिर पूछेंगे।",
+    "still.snoozed": "{date} को फिर पूछेंगे।",
+    "still.lastConfirmed": "पिछली पुष्टि {date}",
+    "still.keyDate": "इसकी तारीख़ {date} को निकल गई। क्या यह अब भी वैसा ही है जैसा दर्ज है?",
 
     "connect.title": "जुड़ी हुई सेवाएँ",
     "connect.sandbox": "परीक्षण",

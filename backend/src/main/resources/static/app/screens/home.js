@@ -11,6 +11,7 @@ import { openCapture } from "./capture.js";
 import { openDetail } from "./detail.js";
 import { navigate } from "../app.js";
 import { t } from "../i18n.js";
+import { loadStillTrue, stillTrueCard } from "../still-true.js";
 
 export async function homeScreen(host) {
   mount(host, el("div.stack", {}, el("div.skeleton", { style: { height: "180px", borderRadius: "24px" } }), skeletonRows(3)));
@@ -28,7 +29,8 @@ export async function homeScreen(host) {
     return api.dashboard(state.household.id, scope, state.scopeMember);
   };
 
-  const data = await load();
+  // Loaded beside the dashboard, never instead of it: a failed list is no card.
+  const [data, stillTrue] = await Promise.all([load(), loadStillTrue(state.household.id)]);
   const upcoming = data.upcoming.slice(0, 4);
 
   mount(host, el("div.stack", {},
@@ -119,6 +121,8 @@ export async function homeScreen(host) {
           el("div.amount", {}, el("b", {}, rupees(item.value))),
         ))),
     ),
+
+    stillTrueCard(state.household.id, stillTrue),
 
     data.attention.length > 0 && el("div.stack-3", {},
       el("h4", {}, t("home.attention")),

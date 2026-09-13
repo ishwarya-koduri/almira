@@ -499,3 +499,29 @@ stops being prompted for it. The native app needs the same warning and move.
 **Risk if left** People keep writing the most damaging sentence in the database
 into a field the server can read, next to a sealed field that exists for exactly
 that sentence.
+
+## 18. Two clocks for "not confirmed lately"
+
+**Where** `DashboardService.attention` (the "Not confirmed in over six months"
+card) and `app.still_true_period_months` / `still_true_records` (V29, [Doc 21](21-still-true.md)).
+
+**What** The dashboard card counts a holding as stale after a flat six months
+since `last_verified_at` (or creation). "Still true?" asks about a holding after
+12 months (3 for cash), or a week after a maturity or renewal date. The same
+holding can therefore sit on the Home attention list for six months before it is
+ever asked about, and the card's "Review" button leads to the holdings list, not
+to the question.
+
+**Which is right** Doc 21's periods, which are argued per type; the card predates
+them. Confirming through "Still true?" already stamps `last_verified_at`, so
+answering the question does clear the card.
+
+**Why it is still there** The dashboard response is part of frozen v1, and its
+label and count are something the native app renders. Changing what the card
+counts changes a v1 behaviour, which is the owner's call.
+
+**When to fix** When the native app gains the "Still true?" surface: the card can
+then read `still_true_items` (or be retired), and its button can open the list.
+
+**Risk if left** Two answers to one question on the same screen, which is how a
+freshness signal stops being believed.

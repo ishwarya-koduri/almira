@@ -217,7 +217,11 @@ class RecordingNotifier(
     /** The in-app row: no provider, so it is sent the moment it is written. */
     private fun record(notification: OutboundNotification) {
         runCatching {
-            jdbc.update(
+            // query, not update: the statement is a SELECT, and executeUpdate on
+            // it wrote the row and then threw "a result was returned when none
+            // was expected" — a WARN for every notification that had in fact
+            // been recorded.
+            jdbc.query(
                 """
                 select app.record_outbound_message(:hid, :uid, 'in_app', 'almira', :template,
                                                    :title, null, 'sent', null, 1)
@@ -227,7 +231,7 @@ class RecordingNotifier(
                     .addValue("uid", notification.userId)
                     .addValue("template", notification.template)
                     .addValue("title", notification.title),
-            )
+            ) { _, _ -> }
         }.onFailure {
             // Never fails the thing that triggered it. A reminder that fired is
             // worth more than a tidy record of having mentioned it.

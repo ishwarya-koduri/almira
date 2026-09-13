@@ -231,6 +231,26 @@ class NotificationOutboxTest : ApiTestBase() {
     }
 
     @Test
+    fun `recording a notification that was recorded does not warn that it could not be`() {
+        val logger = (org.slf4j.LoggerFactory.getILoggerFactory() as ch.qos.logback.classic.LoggerContext)
+            .getLogger(RecordingNotifier::class.java)
+        val warnings = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        val capture = object : ch.qos.logback.core.AppenderBase<ch.qos.logback.classic.spi.ILoggingEvent>() {
+            override fun append(e: ch.qos.logback.classic.spi.ILoggingEvent) {
+                if (e.level.isGreaterOrEqual(ch.qos.logback.classic.Level.WARN)) warnings += e.formattedMessage
+            }
+        }.apply { start() }
+        logger.addAppender(capture)
+        try {
+            nameEmergencyContact()
+        } finally {
+            logger.detachAppender(capture)
+        }
+        assertThat(rows().map { it.channel }).contains("in_app")
+        assertThat(warnings).describedAs("the in-app row was written; nothing failed").isEmpty()
+    }
+
+    @Test
     fun `the same logical message asked for twice is queued once per channel`() {
         val message = OutboundNotification(
             userId = UUID.fromString(ownerUserId), householdId = UUID.fromString(householdId), reminderId = null,

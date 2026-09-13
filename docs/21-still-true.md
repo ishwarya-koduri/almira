@@ -18,7 +18,7 @@ A registry nobody updates becomes wrong, then abandoned (docs/08). A bigger form
 does not fix that. One small question at the right moment does.
 
 This document is the spec, and it records the decisions made when the feature
-was built. Status: **built** (migration V29, backend, web client). The native
+was built. Status: **built** (migrations V29 and V30, backend, web client). The native
 app has no surface for it yet.
 
 ---
@@ -138,7 +138,8 @@ agreement with the answer.
 ## 4. Who is asked
 
 The person asked is **someone who owns the record**, in a household where they
-can write:
+can write — or, when none of its owners could answer, **whoever recorded it**
+(below):
 
 | Record | Asked |
 |---|---|
@@ -160,6 +161,36 @@ Being able to see a record is not enough. An admin can see a household-visible
 FD, but is not asked about it, and confirming it answers **404**, the same as a
 private record or one that does not exist. Seeing a record is not the same as
 knowing whether it is still in force.
+
+**When no owner can answer, whoever recorded it is asked.** The case this
+feature exists for is a parent's LIC policy or FD, typed in by the adult child
+and owned by a member who never signs in. Asking owners only (as V29 first did)
+asks nobody about exactly those records: they never come back, nobody can
+confirm them, and nothing says so. V30 adds one rule:
+
+- The owners are asked when at least one of them *could* answer: a member with
+  a live login and an active `owner`/`admin`/`editor` membership in the
+  household.
+- Otherwise the record's `created_by` is asked, provided they can still write in
+  the household **and** can see the record without owning it: household
+  visibility, or a scoped grant. Emergency access does not count.
+- A private record for a member with no login is visible to nobody in the app,
+  so it is asked of nobody. That is not new: nobody could open it before this
+  feature either.
+- Once an owner joins with a login and can write, the question becomes theirs,
+  and the recorder stops being asked.
+- If the recorder has left, or the record has no `created_by`, nobody is asked.
+  Falling back further, to the household's admins, was considered and rejected:
+  it would ask people who did not type the figures and are no better placed to
+  know, and it would make "an admin who can see it is not asked" untrue.
+
+The alternative, asking every writer who can see such a record, was rejected for
+the same reason. The recorder is the one person who demonstrably knew the facts
+once.
+
+The sight check sits in the predicate itself (`app.still_true_recorder_answers`),
+not only in the view's security-invoker reads, because the sweep reads on the
+owner connection, which row-level security does not restrict.
 
 **Joint records.** Each owner is asked. One answer is the record's answer,
 because whether a policy is still in force is a fact about the policy. The same
@@ -293,6 +324,11 @@ Two ways this could have silently done nothing, and what stops each:
   too. That is intended: a sweep that forgets whose view it is reading tells
   nobody, rather than telling everybody.
 
+**One instance.** The sweep takes no lock. Two app instances running it at the
+same :15 could both mark and deliver the same nudge. `ReminderWorker` has the
+same property; both assume a single scheduling instance, which is what the
+deployment runs today. A second instance needs an advisory lock around `run()`.
+
 Privacy here is enforced in **who is asked**, not in what the job can read. That
 is the same principle as `ReminderWorker`, and the ownership predicate is the one
 the read policies use.
@@ -314,6 +350,9 @@ the read policies use.
   is asked about, plus `nudged_at` and `nudge_eligible`.
 - `app.still_true_period_months(record_type, subtype)` holds §2's table.
 - `app.try_date(text)` parses a date, and returns null instead of failing.
+- `app.still_true_owner_can_answer(record_type, record_id)` and
+  `app.still_true_recorder_answers(record_type, record_id)` (V30, security
+  definer, booleans only) hold §4's recorder fallback.
 
 Audit: `record.confirm_still_true` and `record.snooze_still_true` (the snooze
 records the from and to dates).
@@ -340,6 +379,14 @@ reason, and passed again once it was restored):
 - `confirm` not stamping `last_verified_at`: the holding's "Last confirmed" stays
   empty.
 - The one-year snooze limit removed: `snooze_too_far` is not returned.
+- Asking owners only (V29 as first written): a household-visible FD owned by a
+  member with no login is asked of nobody, in the list and by the sweep.
+- The recorder's sight check removed from `still_true_recorder_answers`: the
+  sweep nudges the recorder about a private record they cannot open. (The list
+  endpoint still hid it, through row-level security, which is why the test that
+  catches this is a sweep test.)
+- The "no owner can answer" check removed: the recorder is still asked after the
+  owner has joined with a login.
 
 **Tested but not watched failing:**
 

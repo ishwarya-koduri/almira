@@ -299,6 +299,68 @@ class StillTrueApiTest : ApiTestBase() {
         assertThat(dueIds(owner)).contains(joint)
     }
 
+    // --- records whose owners have no login ----------------------------------
+
+    /** An FD recorded by the owner for someone who will never sign in. */
+    private fun ammasFd(
+        title: String,
+        visibility: String,
+        amma: String = addMember(owner, householdId, "Amma").path("id").asText(),
+    ): Pair<String, String> {
+        val response = post(
+            "/api/v1/households/$householdId/investments", owner,
+            mapOf(
+                "typeId" to typeId(owner, householdId, "fd"), "title" to title,
+                "investedAmount" to 300_000, "visibility" to visibility,
+                "attributes" to mapOf("interest_rate" to 7.0),
+                "owners" to listOf(mapOf("memberId" to amma, "sharePct" to 100)),
+            ),
+        )
+        val id = response.json().path("id").asText().takeIf { it.isNotBlank() }
+            // A private record for someone else is invisible to its recorder the
+            // moment it is saved, so the response may not echo it back.
+            ?: db.queryForObject(
+                "select id::text from investments where household_id = ?::uuid and title = ?",
+                String::class.java, householdId, title,
+            )!!
+        age("investments", id, 13)
+        return id to amma
+    }
+
+    @Test
+    fun `a record owned by someone with no login is asked of whoever recorded it`() {
+        val (id, _) = ammasFd("Amma's LIC", visibility = "household")
+
+        assertThat(dueIds(owner))
+            .describedAs("the parent's policy recorded by the child is the main case; nobody else can answer it")
+            .contains(id)
+        assertThat(dueIds(spouse))
+            .describedAs("seeing it is still not having recorded it")
+            .doesNotContain(id)
+        assertThat(post("${base()}/investment/$id/confirm", spouse).status()).isEqualTo(HttpStatus.NOT_FOUND)
+        assertThat(post("${base()}/investment/$id/confirm", owner).status()).isEqualTo(HttpStatus.OK)
+        assertThat(dueIds(owner)).doesNotContain(id)
+    }
+
+    @Test
+    fun `the recorder stops being asked once the owner can answer, and never about what they cannot see`() {
+        val (visible, amma) = ammasFd("Amma's FD", visibility = "household")
+        val (hidden, _) = ammasFd("Amma's private FD", visibility = "private", amma = amma)
+
+        assertThat(dueIds(owner))
+            .describedAs("a private record for someone else is not the recorder's to see, so not theirs to answer")
+            .contains(visible)
+            .doesNotContain(hidden)
+        assertThat(post("${base()}/investment/$hidden/confirm", owner).status()).isEqualTo(HttpStatus.NOT_FOUND)
+
+        val ammaToken = signIn()
+        joinHousehold(owner, householdId, amma, ammaToken, role = "editor")
+        assertThat(dueIds(ammaToken)).contains(visible, hidden)
+        assertThat(dueIds(owner))
+            .describedAs("once the owner has a login and can write, the question is theirs")
+            .doesNotContain(visible)
+    }
+
     // --- snooze -----------------------------------------------------------------
 
     @Test

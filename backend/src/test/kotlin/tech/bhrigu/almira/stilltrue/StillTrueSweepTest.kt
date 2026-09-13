@@ -120,6 +120,52 @@ class StillTrueSweepTest : ApiTestBase() {
             .isEmpty()
     }
 
+    /** Recorded by the owner for a member who never signs in, and thirteen months old. */
+    private fun ammasFd(title: String, visibility: String) {
+        val amma = addMember(owner, householdId, "Amma").path("id").asText()
+        post(
+            "/api/v1/households/$householdId/investments", owner,
+            mapOf(
+                "typeId" to typeId(owner, householdId, "fd"), "title" to title,
+                "investedAmount" to 300_000, "visibility" to visibility,
+                "attributes" to mapOf("interest_rate" to 7.0),
+                "owners" to listOf(mapOf("memberId" to amma, "sharePct" to 100)),
+            ),
+        )
+        db.update(
+            """
+            update investments set created_at = now() - interval '13 months', last_verified_at = null
+             where household_id = ?::uuid and title = ?
+            """.trimIndent(),
+            householdId, title,
+        )
+    }
+
+    @Test
+    fun `a record whose owner has no login reaches whoever recorded it`() {
+        ammasFd("Amma's LIC", visibility = "household")
+
+        sweep.run()
+
+        assertThat(inApp(ownerUserId))
+            .describedAs("nobody else can answer for a member who never signs in")
+            .hasSize(1)
+        assertThat(inApp(spouseUserId)).isEmpty()
+    }
+
+    @Test
+    fun `the recorder is not nudged about a record they cannot open`() {
+        // The sweep reads on the owner connection, which row-level security does
+        // not restrict, so sight has to be checked in the predicate itself.
+        ammasFd("Amma's private FD", visibility = "private")
+
+        sweep.run()
+
+        assertThat(inApp(ownerUserId))
+            .describedAs("a private record for someone else is not the recorder's to see")
+            .isEmpty()
+    }
+
     @Test
     fun `the notification carries a count, not a name or an amount`() {
         dueFd("HDFC FD 2025 ₹2,50,000")

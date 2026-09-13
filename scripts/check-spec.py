@@ -97,17 +97,39 @@ def main() -> None:
     want("the AAD separator is U+007C and refused inside a component",
          "SEPARATOR: Char = '|'" in aad and "offender" in aad)
 
-    types = set(re.findall(r'"(investment|liability|account|member|estate_document)"', service))
-    want("the recordType vocabulary is the five the doc lists",
-         types == {"investment", "liability", "account", "member", "estate_document"},
+    vocabulary = {"investment", "liability", "account", "member", "estate_document", "document"}
+    types = set(re.findall(r'"(investment|liability|account|member|estate_document|document)"', service))
+    want("the recordType vocabulary is the six the doc lists",
+         types == vocabulary
+         and "`investment`, `liability`, `account`, `member`, `estate_document`, `document`" in doc,
          f"code has {sorted(types)}")
+    migration = read("db/migrations/V28__where_and_who.sql")
+    want("the table's recordType check agrees with the service",
+         "'investment','liability','account','member','estate_document','document'" in migration)
     for literal, label in (
         ("MIN_ITERATIONS = 100_000", "the iteration floor is 100 000"),
         ("MAX_CIPHERTEXT = 64_000", "the ciphertext ceiling is 64 000 characters"),
         ("fieldKey.length > 64", "fieldKey is capped at 64"),
-        ('minBytes = 17', "ciphertext must decode to at least 17 bytes"),
+        ("MIN_ENVELOPE_BYTES = 33", "ciphertext must decode to at least 33 bytes, the smallest envelope"),
+        ("ENVELOPE_VERSION = 1", "ciphertext must carry version byte 1"),
     ):
         want(label, literal in service)
+    want("the doc states the 33-byte server floor",
+         "at least **33 bytes** decoded" in doc)
+    want("the table's floor is 33 bytes as 44 base64 characters",
+         "length(ciphertext) >= 44" in migration)
+
+    # docs/20: the two field keys are a contract between the clients, and the
+    # server hands them out, so all three must spell them the same way.
+    doc20 = read("docs/20-where-and-who.md")
+    where_service = read("backend/src/main/kotlin/tech/bhrigu/almira/e2e/WhereAndWho.kt")
+    where_web = read("backend/src/main/resources/static/app/where.js")
+    for key in ("original_location", "key_holder"):
+        want(f"the field key `{key}` is the same in docs/20, the server and the web client",
+             f"`{key}`" in doc20 and f'"{key}"' in where_service and f'"{key}"' in where_web)
+    want("docs/20 says search is client-side and the web client does not send the query anywhere",
+         "no server-side search" in doc20.lower() and "api.search" not in code_only(where_web))
+
     want("the doc states 600 000 iterations and the code agrees",
          "600 000" in doc and "ITERATIONS = 600_000" in web)
 

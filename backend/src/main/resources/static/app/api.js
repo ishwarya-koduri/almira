@@ -269,6 +269,9 @@ export const api = {
     api.put(`/api/v1/households/${hid}/e2e/values/${type}/${id}/${field}`, body),
   unsealValue:   (hid, type, id, field) =>
     api.del(`/api/v1/households/${hid}/e2e/values/${type}/${id}/${field}`),
+  // Every record with a physical original, with its two sealed slots (docs/20).
+  whereAndWho:   (hid, type, id)  => api.get(
+    `/api/v1/households/${hid}/where-and-who${type ? `?recordType=${type}&recordId=${id}` : ""}`),
 
   // --- estate, contacts and continuity --------------------------------------
   contacts:      (hid, query)     => api.get(`/api/v1/households/${hid}/contacts${query ? `?${query}` : ""}`),
@@ -277,6 +280,7 @@ export const api = {
   deleteContact: (hid, id)        => api.del(`/api/v1/households/${hid}/contacts/${id}`),
   estateDocuments: (hid)          => api.get(`/api/v1/households/${hid}/estate/documents`),
   createEstateDocument: (hid, b)  => api.post(`/api/v1/households/${hid}/estate/documents`, b),
+  updateEstateDocument: (hid, id, b) => api.patch(`/api/v1/households/${hid}/estate/documents/${id}`, b),
   mismatches:    (hid)            => api.get(`/api/v1/households/${hid}/estate/mismatches`),
   transmission:  (hid, id)        => api.get(`/api/v1/households/${hid}/continuity/transmission/${id}`),
   handbook:      (hid)            => api.get(`/api/v1/households/${hid}/continuity/handbook`),

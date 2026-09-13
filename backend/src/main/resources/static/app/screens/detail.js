@@ -7,6 +7,7 @@ import {
 } from "../ui.js";
 import { state, findType } from "../state.js";
 import { reload } from "../app.js";
+import { whereWhoCard } from "../where.js";
 
 export async function openDetail(id, onChanged) {
   const body = el("div.stack-3", {}, el("div.skeleton", { style: { height: "200px" } }));
@@ -71,6 +72,18 @@ export async function openDetail(id, onChanged) {
 
     returnsCard(),
     nomineeCard(),
+    // Sealed, and separate from the "Kept at" note above, which is not (docs/20 §1).
+    whereWhoCard("investment", id, {
+      legacy: {
+        text: record.storageLocation || null,
+        clear: async () => {
+          record = await api.updateInvestment(state.household.id, id, {
+            version: record.version, storageLocation: "",
+          });
+          draw();
+        },
+      },
+    }),
 
     el("div.row.wrap", { style: { gap: "8px" } },
       el("button.btn", { type: "button", onclick: () => duplicate() }, "Duplicate"),

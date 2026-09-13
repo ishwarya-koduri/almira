@@ -31,7 +31,7 @@ components and nothing else:
 | | | |
 |---|---|---|
 | `householdId` | uuid | the household the record belongs to |
-| `recordType` | one of `investment`, `liability`, `account`, `member`, `estate_document` | a closed vocabulary the server enforces |
+| `recordType` | one of `investment`, `liability`, `account`, `member`, `estate_document`, `document` | a closed vocabulary the server enforces |
 | `recordId` | uuid | the record |
 | `fieldKey` | 1–64 characters, non-blank | chosen by the client, not by the server |
 
@@ -46,8 +46,13 @@ Two limits apply to the ciphertext:
 - **64 000 characters** of base64url, enforced by the server. That is 47 967
   plaintext bytes once the header, tag and base64 expansion are taken off — the
   number the acceptance matrix in §9 exercises exactly.
-- **17 bytes decoded minimum**, so that a client which posts plain text where
-  ciphertext belongs is rejected rather than stored.
+- **The shape of an envelope** (§3): at least **33 bytes** decoded, version
+  byte `1`, key version ≥ 1 — so that a client which posts plain text where
+  ciphertext belongs is rejected rather than stored. The floor was 17 bytes
+  until [Doc 20](20-where-and-who.md) put "key with Amma" into a sealed field:
+  17 is a header with no tag, and let through any 23-character run of letters
+  that happened to be valid base64. The table carries the same 33-byte floor
+  (`ciphertext_is_at_least_an_envelope`, 44 base64 characters) underneath.
 
 The consequences are stated in the UI, not buried:
 
@@ -198,7 +203,8 @@ DELETE /api/v1/households/{id}/e2e/values/{recordType}/{recordId}/{fieldKey}
 ```
 
 The server performs exactly one check on what it is given: that it is
-well-formed base64 of a plausible length. Anything more would require
+well-formed base64 shaped like an envelope — long enough, version `1`, a key
+version of at least 1 (§1). Anything more would require
 understanding the contents, which is the property being sold. That check exists
 for one failure mode — a client bug that posts the note in the clear while the
 interface says it is sealed — and it is tested.

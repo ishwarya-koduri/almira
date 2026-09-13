@@ -154,9 +154,9 @@ The order is load-bearing and the app must not shorten it:
 
 | | |
 |---|---|
-| `recordType` ∈ | `investment`, `liability`, `account`, `member`, `estate_document` |
+| `recordType` ∈ | `investment`, `liability`, `account`, `member`, `estate_document`, `document` |
 | `fieldKey` | non-blank, ≤ 64 characters |
-| `ciphertext` | valid base64 (url or standard), ≥ 17 decoded bytes, ≤ 64000 **characters** of base64 |
+| `ciphertext` | valid base64 (url or standard), ≥ 33 decoded bytes, version byte `1`, key version ≥ 1, ≤ 64000 **characters** of base64 |
 | `kdfSalt` | ≥ 16 decoded bytes |
 | `wrappedKey` | ≥ 28 decoded bytes |
 | `verifier` | ≥ 16 decoded bytes |

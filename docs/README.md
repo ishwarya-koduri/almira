@@ -33,6 +33,7 @@ This is the **build-ready documentation set**, split into interlinked docs for c
 | 17 | [Deploying](17-deploying.md) | Bare host to running instance: the compose stack, the runtime role, the key and what losing it means, backups, the installable web client — and why your first testers cannot sign in by email yet. |
 | 18 | [Handover](18-handover.md) | What exists, what is deliberately not built, the order to do the rest in, what has never been verified, and how to pick the repository up on another machine. |
 | 19 | [Pen-test pack](19-pen-test-pack.md) | What a security tester is handed cold. Being assembled; the section on how the verification tooling is itself verified is written. |
+| 20 | [Where it is, and who holds the key](20-where-and-who.md) | Location of the original and the key holder on every record: sealed under Doc 12 with no plaintext fallback, which records it covers, why search runs on the device and what that costs, why the key holder is free text, and what the server may reveal. |
 | — | [Known issues](known-issues.md) | A running log of things found while building and deliberately **not** fixed in the change that found them: what it is, which behaviour is the correct one, why it is still there, and when to pick it up. Entries are deleted when fixed. |
 
 ## How the docs interlink

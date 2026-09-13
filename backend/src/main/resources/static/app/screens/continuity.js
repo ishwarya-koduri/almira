@@ -18,6 +18,7 @@ import {
 } from "../ui.js";
 import { state } from "../state.js";
 import { t } from "../i18n.js";
+import { whereWhoCard } from "../where.js";
 
 export async function continuityScreen(host) {
   mount(host, skeletonRows(4));
@@ -199,6 +200,12 @@ function estateCard(documents, host) {
             el("b", {}, document.title),
             el("span.caption.muted", {}, document.kind),
           ),
+          el("div.row", {},
+            el("button.btn.btn-sm", {
+              type: "button",
+              onclick: () => openWhere(document, host),
+            }, t("where.cardTitle")),
+          ),
           document.location && el("div.caption.muted", {},
             `${t("estate.location")}: ${document.location}`),
           document.roles.length > 0 && el("div.caption.muted", {},
@@ -208,6 +215,29 @@ function estateCard(documents, host) {
               `${b.name}${b.investmentTitle ? ` (${b.investmentTitle})` : ""}`).join(", ")}`),
         ))),
   );
+}
+
+/**
+ * A will's location is the line the family needs most and the line a hostile
+ * relative wants most, so it is recorded sealed (docs/20). The old unsealed
+ * `location` is shown as a warning with a way to move it across.
+ */
+function openWhere(document, host) {
+  const modal = sheet({
+    title: document.title,
+    body: whereWhoCard("estate_document", document.id, {
+      legacy: {
+        text: document.location || null,
+        clear: async () => {
+          await api.updateEstateDocument(state.household.id, document.id, {
+            version: document.version, location: "",
+          });
+          modal.close();
+          await continuityScreen(host);
+        },
+      },
+    }),
+  });
 }
 
 function newEstateDocument(host) {

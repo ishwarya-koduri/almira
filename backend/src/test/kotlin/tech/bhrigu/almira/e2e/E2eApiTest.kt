@@ -358,7 +358,7 @@ class E2eApiTest : ApiTestBase() {
      * it — the gap docs/12 §8.5 listed as asserted only in unit tests.
      *
      * The server cannot tell: a truncated envelope is still base64 and still
-     * longer than the 17-byte floor, so it is accepted, which is correct. The
+     * longer than the 33-byte floor, so it is accepted, which is correct. The
      * refusal has to happen in the client, on read, and it has to be a refusal
      * rather than a plausible-looking answer.
      */

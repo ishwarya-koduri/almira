@@ -287,6 +287,17 @@ sealed field as locked rather than blank. The scheme — PBKDF2 parameters,
 envelope layout, AAD construction — is in [Doc 12](../12-end-to-end-encryption.md)
 and the backend test implements the client half in Kotlin, which you can copy.
 
+**Where the original is, and who holds the key, are two sealed values per
+record.** Seal them with `PUT /e2e/values/{recordType}/{recordId}/original_location`
+and `…/key_holder` for `investment`, `liability`, `account`, `document` and
+`estate_document`. `GET /where-and-who` returns every record you can see with
+both slots as ciphertext, plus `sealedByMe`. A value somebody else sealed will
+not open with your key, so say so rather than calling it corrupt. Search is
+yours to do on the device after unlocking, because the server cannot. Overwriting
+another member's value answers `409 sealed_by_someone_else`. Since V28 a
+ciphertext must be at least a 33-byte envelope with version byte 1. See
+[Doc 20](../20-where-and-who.md).
+
 **Money is stored in the currency it is in.** `currency` is per record; the
 dashboard converts into the household's base currency and reports what it could
 not convert in `unconverted` — render that, because the total is deliberately

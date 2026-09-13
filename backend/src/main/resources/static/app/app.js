@@ -19,6 +19,7 @@ import { reportsScreen } from "./screens/reports.js";
 import { continuityScreen } from "./screens/continuity.js";
 import { t, language } from "./i18n.js";
 import { openCapture } from "./screens/capture.js";
+import { whereScreen } from "./where.js";
 
 // Labels are resolved at render time rather than here, so switching language
 // redraws the navigation without a reload.
@@ -31,6 +32,7 @@ const routes = {
   tax: { label: "nav.tax", render: taxScreen },
   reports: { label: "nav.reports", render: reportsScreen },
   continuity: { label: "nav.continuity", render: continuityScreen },
+  where: { label: "nav.where", render: whereScreen },
   family: { label: "nav.family", render: familyScreen },
   settings: { label: "nav.settings", render: settingsScreen },
 };
@@ -100,7 +102,7 @@ function topbar(active) {
    ----------------------------------------------------------------------------- */
 
 const PHONE_TABS = ["home", "investments", "liabilities"];
-const PHONE_MORE = ["accounts", "goals", "tax", "reports", "continuity", "family", "settings"];
+const PHONE_MORE = ["accounts", "goals", "tax", "reports", "continuity", "where", "family", "settings"];
 
 // Drawn rather than borrowed: a 20px stroke set costs nothing, matches the
 // hairline weight the rest of the interface uses, and takes its colour from

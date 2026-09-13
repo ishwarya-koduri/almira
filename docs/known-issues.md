@@ -466,3 +466,32 @@ the server.
 docs/api/README.md already describes the endpoints.
 
 **Risk if left** None for the two existing clients, which were changed alongside.
+
+---
+
+## 17. Two plaintext columns still hold "where the original is"
+
+**Where** `investments.storage_location` (V3, the "Kept at" / "Where it's kept"
+field in many investment type schemas) and `estate_documents.location` (V18).
+They are read by `SearchService`, `HandbookService` (including the PDF) and
+`TransmissionService`.
+
+**What** [Doc 20](20-where-and-who.md) seals the location of the original under
+the zero-knowledge scheme, with no plaintext fallback. These two older columns
+hold the same sentence in plaintext. The server can read them, search them and
+print them. They cannot be removed while v1 is additive-only, and the server
+cannot migrate them itself, because it has no key.
+
+**Which is right** The sealed field. The web client shows a warning on any record
+that still has a plaintext note, with a button that seals the note and clears the
+column. Capture forms still offer `storage_location` wherever a type schema lists
+it.
+
+**When to fix** When there is a v2 contract, or sooner by taking
+`storage_location` out of the seeded type schemas (a data migration on
+`investment_types.schema`) so new records stop writing it. The native app needs
+the same warning and move before that.
+
+**Risk if left** People keep writing the most damaging sentence in the database
+into a field the server can read, next to a sealed field that exists for exactly
+that sentence.

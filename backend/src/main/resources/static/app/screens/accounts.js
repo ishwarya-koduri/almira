@@ -10,6 +10,7 @@ import {
   withBusy, toast,
 } from "../ui.js";
 import { state, myMember } from "../state.js";
+import { whereWhoCard } from "../where.js";
 import { reload } from "../app.js";
 
 const KINDS = [
@@ -186,6 +187,9 @@ export async function accountsScreen(host) {
         detailRow("Holdings linked", String(row.linkedInvestmentCount)),
         row.ifsc && detailRow("IFSC", row.ifsc),
       ),
+
+      // A locker is the canonical case: which branch, and who has the key.
+      whereWhoCard("account", id),
     ));
 
     /**

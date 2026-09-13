@@ -145,7 +145,7 @@ class SealedFieldService(
         if (fieldKey.isBlank() || fieldKey.length > 64) {
             throw ApiException.badRequest("field_invalid", "That field name won't do.")
         }
-        requireBase64("ciphertext", ciphertext, minBytes = 17)
+        requireEnvelope(ciphertext)
         if (ciphertext.length > MAX_CIPHERTEXT) {
             throw ApiException.badRequest(
                 "ciphertext_too_large",
@@ -155,6 +155,27 @@ class SealedFieldService(
         if (findKey(householdId, userId) == null) {
             throw ApiException.badRequest(
                 "no_key", "Set up a passphrase for this household before sealing anything.",
+            )
+        }
+
+        // One value per field per record, and it belongs to whoever sealed it:
+        // nobody else holds the content key it was sealed under, so nobody else
+        // could have read what they would be overwriting. Refused in words here
+        // rather than by the row-level policy, which would surface as a failure
+        // with no explanation. The caller can already see that the value exists
+        // (it is in their list), so saying so reveals nothing new.
+        val holder = jdbc.query(
+            """
+            select sealed_by from sealed_values
+            where record_type = :type and record_id = :rid and field_key = :field
+            """.trimIndent(),
+            mapOf("type" to recordType, "rid" to recordId, "field" to fieldKey),
+        ) { rs, _ -> rs.getObject("sealed_by", UUID::class.java) }.firstOrNull()
+        if (holder != null && holder != userId) {
+            throw ApiException.conflict(
+                "sealed_by_someone_else",
+                "Someone else sealed this, with a passphrase only they have. " +
+                    "Ask them to change it, or to remove it so you can add your own.",
             )
         }
 
@@ -248,6 +269,51 @@ class SealedFieldService(
         }
     }
 
+    /**
+     * A sealed field must at least be shaped like the envelope docs/12 §3
+     * defines, because the failure this exists for is a client that posts the
+     * sentence itself — "key with Amma" — where ciphertext belongs:
+     *
+     *  - **33 bytes or more**: 1 version + 4 key version + 12 iv + 16 tag is the
+     *    smallest legal envelope (an empty string, sealed). The floor used to be
+     *    17, which is a header with no tag, and let through any 23-character
+     *    run of letters that happens to be valid base64.
+     *  - **version byte 1**, the only format there is. Plain words decoded as
+     *    base64 almost never start with 0x01 — it needs the text to begin "AQ",
+     *    "AR", "AS" or "AT".
+     *  - **key version 1 or more.**
+     *
+     * None of this reads the contents, which the server cannot do. The cost of
+     * checking the version is that a future envelope format needs a server
+     * release that accepts it — which it would need anyway, with both clients.
+     *
+     * The value is never echoed into the error: it may be the plaintext.
+     */
+    private fun requireEnvelope(value: String) {
+        val decoded = decodeBase64OrNull(value) ?: throw ApiException.badRequest(
+            "not_ciphertext", "ciphertext has to be base64 — this looks like plain text.",
+        )
+        if (decoded.size < MIN_ENVELOPE_BYTES) {
+            throw ApiException.badRequest(
+                "not_ciphertext", "ciphertext is too short to be what it claims to be.",
+            )
+        }
+        val keyVersion = ((decoded[1].toInt() and 0xFF) shl 24) or
+            ((decoded[2].toInt() and 0xFF) shl 16) or
+            ((decoded[3].toInt() and 0xFF) shl 8) or
+            (decoded[4].toInt() and 0xFF)
+        if (decoded[0].toInt() != ENVELOPE_VERSION || keyVersion < 1) {
+            throw ApiException.badRequest(
+                "not_ciphertext", "ciphertext isn't shaped like a sealed value.",
+            )
+        }
+    }
+
+    private fun decodeBase64OrNull(value: String): ByteArray? =
+        runCatching { Base64.getUrlDecoder().decode(value) }
+            .recoverCatching { Base64.getDecoder().decode(value) }
+            .getOrNull()
+
     private fun requireRecordType(value: String) {
         if (value !in RECORD_TYPES) {
             throw ApiException.badRequest("record_type_invalid", "That isn't something you can seal.")
@@ -257,6 +323,8 @@ class SealedFieldService(
     private companion object {
         const val MIN_ITERATIONS = 100_000
         const val MAX_CIPHERTEXT = 64_000
-        val RECORD_TYPES = setOf("investment", "liability", "account", "member", "estate_document")
+        const val MIN_ENVELOPE_BYTES = 33
+        const val ENVELOPE_VERSION = 1
+        val RECORD_TYPES = setOf("investment", "liability", "account", "member", "estate_document", "document")
     }
 }

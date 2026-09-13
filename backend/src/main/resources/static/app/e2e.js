@@ -311,6 +311,17 @@ export async function readSealed(householdId, recordType, recordId) {
   }));
 }
 
+/**
+ * Opens one sealed value the caller already holds — from the where-and-who
+ * index, say — rather than fetching it again. Throws when locked, when the
+ * value will not open, or when it was sealed by a newer Almira; the caller
+ * decides how to say which (docs/20).
+ */
+export async function openSealedValue(householdId, recordType, recordId, fieldKey, ciphertext) {
+  if (!contentKey) throw new Error("Unlock zero-knowledge mode first.");
+  return open(contentKey, ciphertext, aadFor(householdId, recordType, recordId, fieldKey));
+}
+
 export const unsealField = (householdId, recordType, recordId, fieldKey) =>
   api.unsealValue(householdId, recordType, recordId, fieldKey);
 

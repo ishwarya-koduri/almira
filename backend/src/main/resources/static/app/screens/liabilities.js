@@ -9,6 +9,7 @@ import {
 } from "../ui.js";
 import { state, myMember } from "../state.js";
 import { reload } from "../app.js";
+import { whereWhoCard } from "../where.js";
 
 const KINDS = [
   { value: "home", label: "Home loan" },
@@ -230,6 +231,8 @@ export async function liabilitiesScreen(host) {
         row.startDate && detailRow("Started", formatDate(row.startDate)),
         row.endDate && detailRow("Ends", formatDate(row.endDate)),
       ),
+
+      whereWhoCard("liability", id),
 
       el("div.row", {},
         el("button.btn.btn-danger", {

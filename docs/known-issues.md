@@ -559,3 +559,138 @@ favour of readiness) rather than change `score` to null.
 
 **Risk if left** Two percentages about the same household can disagree, and one
 of them can claim to be complete when it is not.
+
+---
+
+## 20. The reminder sweep reads through row-level security on master, and finds nothing
+
+**Where** `backend/.../config/DatabaseConfig.kt` (`systemJdbc`, the
+`systemJdbcBypassingRls` bean) and its only consumer, `reminder/ReminderWorker.kt`.
+
+**What** The bean is meant to be a template on the *owner* pool. Its parameter
+is `ownerDataSource: HikariDataSource`, with no `@Qualifier`. Both pools are
+`HikariDataSource` at runtime, so once both exist the parameter matches both,
+and `@Primary` on the runtime pool wins over the parameter's name. The
+template is therefore built on `almira-app`: the hourly sweep runs under
+row-level security with no user, sees no rows, sends nothing, and reports no
+error. Two separate verifiers observed this at runtime during the build; this
+entry was written from their reports and from reading the code, not from a new
+run.
+
+**Which is right** The fix already written on the unpushed branch
+`infra/deploy-and-pentest`: `@Qualifier("ownerDataSource")` on the parameter,
+with a comment explaining why, and `ReminderSweepTest` to prove the sweep sees
+rows.
+
+**Why it is still here** `DatabaseConfig.kt` is owned by the infra session, and
+the fix lives on its branch. The build that noticed it was told not to touch the
+file.
+
+**When to fix** When `infra/deploy-and-pentest` is merged. Do not fix it a
+second time on master: the two changes would conflict for nothing.
+
+**Risk if left** No reminder is ever sent from master, silently. A maturity or
+renewal date passes without the nudge the product promises. No privacy risk:
+the failure is seeing too little, not too much.
+
+---
+
+## 21. Provider calls run on the request thread, and a retried SMS timeout can send two texts
+
+**Where** `provider/ProviderCalls.kt` (`execute`, `once`), called from
+`auth/OtpService.issue` for phone and step-up codes, from `ConnectService`
+(inside `@Transactional` methods), and from `RecordingNotifier.deliver` in
+`provider/Delivery.kt` (reached from `EmergencyService.notify` within its
+transactional request handling).
+
+**What** Two consequences of the same shape:
+
+- **Latency.** Each call waits for the provider on the caller's thread. With the
+  SMS defaults in `application.yml` (`timeout: 10s`, `max-attempts: 3`,
+  `retry-backoff: 500ms`, doubled with equal jitter), a provider that never
+  answers holds the request for about 31 seconds before the person sees
+  `otp_delivery_delayed`. Where the caller is transactional, a database
+  connection from the app pool is held for the same time, so a slow provider
+  can exhaust the pool for unrelated traffic.
+- **Duplicates.** The one-time-code send is called with the default
+  `idempotent = true`, so a `TIMEOUT` is retried. A timeout means no answer,
+  not no delivery: the first text may already be on its way, and the retry
+  sends another. Up to three texts can arrive for one request, each billed.
+  They all carry the same code, so sign-in still works; the cost is the bill
+  and a confused person.
+
+**Which is right** Delivery off the request thread (Doc 13's outbox), with
+the provider's own idempotency key where it has one. Until then, the OTP send
+should pass `idempotent = false` to a live SMS provider without an idempotency
+key, which is the rule `ProviderCalls` already states for operations that must
+not happen twice.
+
+**Why it is still here** Every provider is a sandbox that answers at once, so
+neither effect can happen today. The outbox is a design change, not a fix.
+
+**When to fix** Before any SMS, email or push provider is switched to `live`,
+together with entry 13.
+
+**Risk if left** None while sandboxed. Live: slow sign-in during a provider
+incident, a starved connection pool, and duplicate billed texts.
+
+---
+
+## 22. A code request that replaces a live one and then fails leaves neither
+
+**Where** `auth/OtpService.issue`.
+
+**What** A new request writes its challenge over the key of any existing one
+(`putAll` on the same `challengeKey`), so the earlier code stops working at that
+moment. If the send then fails with anything but a timeout, `CONSUME` removes
+the new challenge too. The person is left with no working code: the old one was
+overwritten, the new one was never delivered and has been deleted.
+
+In practice the 30-second cooldown means this only happens when the earlier
+code is at least that old. The cooldown and the per-number count are given
+back, so they can ask again straight away; nothing is locked out.
+
+**Which is right** Either keep the previous challenge until the new send
+succeeds (write the new one under the request id, then swap on success), or put
+the previous challenge back when the send fails, if it has not been used or
+expired in the meantime.
+
+**Why it is still here** Found while reviewing the provider failure contract;
+not in that change's scope, and every path through it needs a Redis-backed
+watched-failing test of its own.
+
+**When to fix** The next time `OtpService` is opened, and before a live SMS
+provider (whose outright rejections are what trigger it).
+
+**Risk if left** Low. Someone who asked again because the first text was slow
+can lose a code that would have worked, and has to ask a third time.
+
+---
+
+## 23. Migration V26 on the infra branch sits below V27 to V30 on master
+
+**Where** `db/migrations/V26__ciphertext_digests.sql`, which exists only on
+`infra/deploy-and-pentest`. Master skips 26, leaving the number free, and
+already has `V27` to `V30`.
+
+**What** Flyway applies migrations in version order and, by default, refuses to
+start against a database that has applied a higher version than a pending one
+(`outOfOrder` is not enabled anywhere in this repo). Any database migrated from
+master, including every test database and the personal dev stack, will reject
+V26 once the infra branch is merged. Leaving the number free does not help:
+a database that has applied V30 treats a newly arrived V26 as a migration it
+skipped.
+
+**Which is right** Renumber the infra migration above the highest version on
+master at merge time (V31 today), and update the references to `V26` in that
+branch's `deploy/restore/digest-check.sql` and `docs/17-deploying.md`, which
+both name it. Turning on `outOfOrder` is not the answer: it makes the schema
+depend on the order a database happened to see the branches in.
+
+**Why it is still here** The migration belongs to the infra session's
+unpushed branch, and renumbering it there is that session's change.
+
+**When to fix** At the merge of `infra/deploy-and-pentest`, before it lands.
+
+**Risk if left** Loud, not silent: the application refuses to start with a
+Flyway validation error on any already-migrated database.

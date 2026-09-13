@@ -48,8 +48,10 @@ data class ProviderResult<T>(val value: T, val attempts: Int)
  *  - a rejection or an account-level failure is never retried;
  *  - anything that is not a [ProviderFailure] is a bug or a domain refusal and
  *    passes through unchanged, after one attempt;
- *  - an account-level failure is logged at ERROR, once per call, and remembered
- *    in [accountProblems], because it is the operator's to fix.
+ *  - giving up is logged at WARN, once per call, with the provider, operation,
+ *    kind and attempts only;
+ *  - an account-level failure is also logged at ERROR, once per call, and
+ *    remembered in [accountProblems], because it is the operator's to fix.
  *
  * What runs inside the block must be the provider call and nothing else. It is
  * on another thread, so it has no request identity and no transaction — which
@@ -122,6 +124,7 @@ class ProviderCalls(
                     attempt < config.maxAttempts &&
                     (idempotent || failure.kind != FailureKind.TIMEOUT)
                 if (!retry) {
+                    gaveUp(provider, operation, failure.kind, attempt)
                     if (failure.kind.accountLevel) raiseAccountProblem(provider, operation, failure)
                     throw ProviderCallFailed(provider, operation, failure.kind, attempt, failure)
                 }
@@ -161,6 +164,25 @@ class ProviderCalls(
             Thread.currentThread().interrupt()
             throw e
         }
+    }
+
+    /**
+     * One WARN per call that ends in failure, whatever the kind. Without it a
+     * sign-in code or a connect that was rejected, or ran out of attempts
+     * against an outage, left nothing in the log but INFO retry lines (or, for a
+     * rejection, nothing at all) — the person saw an error and the operator saw
+     * no trace of it.
+     *
+     * Provider, operation, kind and attempts, and nothing else: not the
+     * [ProviderFailure] (its detail is the adapter's words and could carry a
+     * recipient by mistake), not the exception, and never anything from the
+     * block — the recipient, the code and the message body stay out.
+     */
+    private fun gaveUp(provider: String, operation: String, kind: FailureKind, attempts: Int) {
+        log.warn(
+            "PROVIDER CALL FAILED: provider={} operation={} kind={} attempts={}",
+            provider, operation, kind.code, attempts,
+        )
     }
 
     private fun raiseAccountProblem(provider: String, operation: String, failure: ProviderFailure) {

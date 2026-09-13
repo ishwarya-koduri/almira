@@ -325,7 +325,7 @@ The provider did not answer in time. It may have received the request.
 | **User — connect** | 504 `provider_timeout`: "DigiLocker is taking too long to answer. Please try again in a minute." |
 | **User — WhatsApp reply** | The capture still succeeds (200); `replyFailure: "provider_timeout"`. |
 | **User — notification** | The `outbound_messages` row is `failed`, `failure = timeout`, with its `attempts`; `GET /me/messages` says "Not confirmed — the service took too long to answer. It may still arrive." |
-| **Operator** | An INFO line per retry, a WARN when a notification gives up. No alert: timeouts are expected in small numbers. A rising count is worth a dashboard. |
+| **Operator** | An INFO line per retry, and one WARN whenever any call gives up — a code, a connect or a notification: `PROVIDER CALL FAILED: provider=<provider> operation=<operation> kind=<kind> attempts=<n>`, with nothing from the call itself (no recipient, code, body or adapter detail). No alert: timeouts are expected in small numbers. A rising count is worth a dashboard. |
 
 For a one-time code, **the challenge, the cooldown and both hourly counts all
 stand**: the text may still arrive, and a late code must still work.
@@ -355,7 +355,7 @@ authorisation code.
 | **User — one-time code** | 422 `otp_delivery_failed`: "We couldn't deliver a code to that number. Please check it and try again." |
 | **User — connect** | 422 `provider_rejected`: "…turned that request down. Please start again from the beginning." WhatsApp: `replyFailure: "provider_rejected"`. |
 | **User — notification** | `failure = rejected`; "Not delivered — it was refused for this address or number. Check your contact details." |
-| **Operator** | A WARN per notification. Many rejections at once usually mean a template or sender id problem, not many bad numbers. |
+| **Operator** | The same `PROVIDER CALL FAILED: provider=<provider> operation=<operation> kind=rejected attempts=<n>` WARN for every rejected code, connect or notification. Many rejections at once usually mean a template or sender id problem, not many bad numbers. |
 
 ### Insufficient balance — `insufficient_balance`
 
@@ -368,7 +368,7 @@ person does will help, and they must not be told otherwise.
 | **User — one-time code** | 503 `otp_service_unavailable`: "Sign-in codes can't be sent right now. This is a problem on our side, not with your number, and we've been alerted…" |
 | **User — connect** | 503 `provider_account_unavailable`: "…isn't available on our side right now. It isn't anything you did, and we've been alerted." WhatsApp: `replyFailure: "provider_account_unavailable"`. |
 | **User — notification** | `failure = insufficient_balance`; "Not sent — a problem on our side, not with your details. We've been alerted." |
-| **Operator** | An **ERROR** log line on every occurrence, with fixed wording to alert on: `PROVIDER ACCOUNT PROBLEM: <provider> refused <operation> on account grounds`. `ProviderCalls.accountProblems()` holds the last time per provider. Top up or fix the account; nothing on that provider is delivered until then. |
+| **Operator** | The `PROVIDER CALL FAILED` WARN, and an **ERROR** log line on every occurrence, with fixed wording to alert on: `PROVIDER ACCOUNT PROBLEM: <provider> refused <operation> on account grounds`. `ProviderCalls.accountProblems()` holds the last time per provider. Top up or fix the account; nothing on that provider is delivered until then. |
 
 ### What a failed send does to a one-time code
 

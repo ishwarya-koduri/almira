@@ -388,51 +388,71 @@ worker passes `recipientHint = null` for the same reason.
 
 ## 14. Taking an address off the alpha allowlist does not sign it out
 
-**Where** `auth/SignInChannels.kt` (the allowlist) and `AuthService.verifyEmailOtp`,
-which is the only place it is checked.
+**Resolved** (2026-09-13, "Allowlist and visible failure"). Kept as a stub so
+the number still means something where it is cited.
 
-**What** The allowlist gates signing in and nothing else. A tester removed from
-`ALMIRA_ALPHA_EMAIL_ALLOWLIST` (which takes a restart) cannot sign in again, but
-every session they already hold keeps working until its refresh token expires
-(30 days), and step-up by email still reaches them. Only a code issued before
-the removal and verified after it is refused, as `otp_expired`; that path has no
-test, because the allowlist cannot be changed without a restart.
+Owner's decision: removing a tester from the allowlist ends their sessions.
+`AlphaAllowlistAccess` enforces it when a server starts without the address
+(every live session of that email-only account revoked — refresh tokens, and the
+session id in `SessionRevocationCache` so the access token stops too — before
+the web server takes a request), on every authenticated request, and on
+refresh; each ending is audited as `auth.session_ended_not_allowlisted` with
+`via`. Accounts with a phone number, and servers without email sign-in, are
+never touched. Proven by `AlphaAllowlistRemovalApiTest`, which seeds sessions
+before its server starts. The list stays in configuration; docs/13 §5 says why.
 
-**Which is right** For a closed alpha, removal should end access: revoke that
-user's sessions when the server starts without their address, or check the
-allowlist on refresh.
+**What is left, narrowed:**
 
-**When to fix** Before the first time somebody has to be removed from the alpha.
-Until then, removing a tester means removing the address *and* revoking their
-sessions by hand (`user_sessions.revoked_at`).
-
-**Risk if left** A removed tester keeps reading their own household's data.
-Nobody else's: row-level security is unaffected.
+- **A rolling deploy.** An old server still running with the old list can sign
+  a removed tester in, and serve them, until it stops. Any new server refuses
+  that session on its first request or refresh. On the single-server compose
+  deployment (Doc 17) this does not arise.
+- **Turning email sign-in off altogether** is not a removal. With
+  `ALMIRA_SIGN_IN_CHANNELS=phone` the allowlist is not in force, so email-only
+  accounts' existing sessions are left as they are (they cannot sign in again).
+  If that should end them too, it is a one-line change to
+  `AlphaAllowlistAccess.inForce` — an owner's call, not made here.
+- **The refresh-reuse audit row.** Unrelated, noticed here:
+  `AuthService.refresh` writes `auth.refresh_reuse_detected` inside the
+  transaction its own throw rolls back, so that audit row is probably never
+  kept (the revocation itself is, via `SessionRevoker`). Not verified; no test
+  asserts the row.
 
 ---
 
 ## 15. A failed sign-in email is invisible to the tester, and costs them requests
 
-**Where** `OtpService.deliverInBackground` (`OtpDelivery.UNREPORTED`).
+**Resolved, with named residual signals** (2026-09-13, "Allowlist and visible
+failure"). Kept as a stub.
 
-**What** Deliberate, and the price of the allowlist being invisible: the email
-request answers before the email is sent, so a rejected address, an outage or an
-empty provider balance never reaches the person. They see "check your email",
-nothing arrives, and after the 30-second cooldown they can ask again — and each
-attempt counts toward the per-address hourly cap (5), because giving the count
-back would let anyone tell a listed address from an unlisted one. Phone sign-in
-reports and forgives all of these.
+Owner's decision: a failed email send must not be silent. The email request
+still answers before sending, but the code step now polls
+`GET /api/v1/auth/otp/email/delivery/{requestId}` and says "We couldn't send
+the code" (web: en/te/hi; native: en) with the reason, or that it is delayed,
+and opens resend at once. A failure now does what a reported phone failure
+does — challenge removed, cooldown lifted, the per-address count given back —
+so it no longer costs the tester requests. Decoys for unlisted addresses settle
+through the same code, replaying the last real send's outcome and latency, so a
+failing provider fails for both (`EmailSignInApiTest`, `EmailOtpTest`).
 
-**Which is right** This, for as long as the allowlist exists. The operator side
-is what needs to be real: the WARN `one-time code by email not confirmed sent`
-and the ERROR `PROVIDER ACCOUNT PROBLEM` must be alerted on before the alpha
-starts, or a broken provider is discovered by testers reporting silence.
+**What is still distinguishable** — the full list, with conditions, is in
+docs/13 §5:
 
-**When to fix** Revisit when email sign-in stops being allowlisted: then there
-is nothing to enumerate, and it can report failures the way phone does.
+1. A synchronous **rejection** of one address is reported for a listed address
+   and never for an unlisted one: "couldn't deliver to that address" means
+   listed and undeliverable.
+2. Between a **change in the provider's state** and the next real sign-in
+   email, decoys report the old state.
+3. A real send whose latency **straddles a whole second** can settle one tick
+   away from a decoy.
+4. With **no real send in the last day** (or a fresh Redis), decoys assume a
+   healthy provider.
 
-**Risk if left** Testers locked out for up to an hour by our failure, with
-nothing on screen saying why.
+**Risk if left** Each needs either a listed, undeliverable address or probing
+timed to a provider change, and every probe spends the prober's per-network
+allowance. The operator alerts still matter: the WARN
+`one-time code by email not confirmed sent` and the ERROR
+`PROVIDER ACCOUNT PROBLEM`.
 
 ---
 
@@ -441,7 +461,8 @@ nothing on screen saying why.
 **Where** `docs/api/openapi-v1.json`, against the live `/v3/api-docs`.
 
 **What** `GET /auth/otp/channels`, `POST /auth/otp/email/request`,
-`POST /auth/otp/email/verify` and the `channel` field on `OtpChallengeResponse`
+`POST /auth/otp/email/verify`, `GET /auth/otp/email/delivery/{requestId}`
+(with `OtpDeliveryResponse`) and the `channel` field on `OtpChallengeResponse`
 are additive, so `OpenApiContractTest` passes — but the committed contract the
 apps are built against does not list them. The stage that added them did not
 re-freeze the file.

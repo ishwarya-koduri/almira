@@ -320,6 +320,12 @@ up with two accounts. What it still lacks is a real email sender: no provider ha
 been chosen, so outside development every request answers 503 `otp_unavailable`,
 exactly as phone does. The unblock is a sending domain (SPF, DKIM, DMARC) and a
 provider account, then a live email adapter watched failing all four ways.
+Two operational facts about the allowlist: **removing an address takes a
+restart**, and that restart signs the tester out of every session they hold
+(audited as `auth.session_ended_not_allowlisted`); and a sign-in email that
+fails is **shown to the tester** ("We couldn't send the code") through
+`GET /api/v1/auth/otp/email/delivery/{requestId}`, which the reverse proxy must
+pass through like the other auth endpoints.
 [Doc 13 §5](13-providers-and-going-live.md) has the design and
 [Doc 18 §3](18-handover.md) the alpha sequence.
 

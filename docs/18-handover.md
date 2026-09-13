@@ -68,6 +68,16 @@ What is left, in order:
    passes all of them through; at the time of writing it passes none.
 4. Sign one tester in end to end, and confirm an address off the list is sent
    nothing.
+5. Make one send fail on purpose (a wrong provider key is enough) and watch the
+   tester's code step say "We couldn't send the code" — for a listed address
+   and, identically, for one off the list. Then remove a tester's address,
+   restart, and confirm their open session is signed out at once
+   ([Doc 13 §5](13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha)).
+
+Removing a tester is a restart with their address gone: the server ends their
+sessions as it starts, and audits each. A failed sign-in email is shown to the
+tester and costs them nothing; what an outsider can still infer about who is on
+the list, and when, is written down in Doc 13 §5 and known-issues 15.
 
 Real SMS stays the route for everyone after the alpha, and DLT registration is
 what gates it — start that early: it is the longest-lead item in the whole

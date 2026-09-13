@@ -259,18 +259,82 @@ ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
   cooldown, counts, stored challenge, request id, lifetime and response, with a
   random stored value no code matches and no email sent. For that to hold, an
   allowlisted address's email is sent **after** the response
-  (`OtpDelivery.UNREPORTED`) — otherwise the answer would take a provider round
-  trip longer, and "we couldn't deliver" is a reply only a listed address could
-  get. The send is still one interactive attempt through `ProviderCalls`
-  (`almira.otp.send-timeout`, no retry, the `PROVIDER ACCOUNT PROBLEM` ERROR
-  line — see "Interactive and background" below). What changes is the table below: a
-  failure other than a timeout makes the challenge unusable in place and keeps
-  the cooldown and both counts, because giving them back would make a listed
-  address behave differently. The person waits out the cooldown and asks again;
-  the operator sees a WARN per failed send and the ERROR line for an account
-  problem. `EmailSignInApiTest` holds both addresses to the same status, fields,
-  headers and refusals, and holds the allowlisted answer to under half a
-  deliberately slow send.
+  (`OtpDelivery.DEFERRED`) — otherwise the answer would take a provider round
+  trip longer. The send is still one interactive attempt through
+  `ProviderCalls` (`almira.otp.send-timeout`, no retry, the
+  `PROVIDER ACCOUNT PROBLEM` ERROR line — see "Interactive and background"
+  below).
+- **A failed send is not silent** (owner's decision, 2026-09: *the tester sees
+  "we couldn't send the code" — silence is indistinguishable from a code that
+  never arrived*). The code step polls
+  `GET /api/v1/auth/otp/email/delivery/{requestId}`: `sending`, then `sent`,
+  `delayed` (resend open now) or `failed` with the reason
+  (`otp_delivery_failed`, `otp_provider_unavailable`,
+  `otp_service_unavailable`; resend open now). The web client says it in
+  English, Telugu and Hindi; the native app in English, as the rest of it.
+  A failure does to the challenge, cooldown and counts exactly what a reported
+  send does ("What a failed send does to a one-time code", below): nobody is
+  locked out, or charged a request, by our failure.
+
+  **How a decoy stays indistinguishable.** A decoy's status is settled by the
+  same code on the same executor as a real send, with one line different: in
+  place of the provider call it waits as long as the **last real email send**
+  took and ends the way that send ended (`otp:email:provider-weather` in Redis,
+  shared by every instance). So with the provider healthy both say `sent`; with
+  it timing out, unreachable or out of credit both say `delayed` or `failed`
+  with the same reason, lift the same cooldown and give back the same count.
+  Every outcome, real or decoy, is applied on a whole-second tick from the
+  request, so a real send's variable latency and a decoy's replayed one land
+  on the same tick. `EmailSignInApiTest` holds a listed and an unlisted address
+  to the same request, the same settled status (status, fields, headers), the
+  same settling time class and the same answer to asking again — with the
+  provider healthy, unavailable, out of credit and timing out.
+
+  **What is still distinguishable, plainly:**
+  1. **A rejection.** When the provider refuses one address synchronously
+     (a suppression list, a mailbox it knows is dead), the listed address
+     reports `failed` / `otp_delivery_failed`; an unlisted address never does,
+     because a rejection is about an address, not the provider. Seeing
+     "couldn't deliver to that address" therefore means *listed, and
+     undeliverable*.
+  2. **A change in the provider.** Decoys replay the last real send. Between
+     the provider changing state (going down, coming back, running out of
+     credit) and the next real sign-in email, decoys still report the old
+     state. Someone probing at exactly that moment, alternating addresses,
+     could see a listed one flip first. They cannot cause the change, and
+     cannot see it without a listed address.
+  3. **Latency on a tick boundary.** A real send whose latency happens to
+     straddle a whole second can settle one tick apart from a decoy replaying
+     the previous send's latency. It takes many requests and a provider
+     latency near a second to see, and each request costs the prober their
+     per-network allowance.
+  4. **A fresh Redis**, or a day without any real send: decoys assume a
+     healthy provider answering in 300 ms until one real send is seen.
+- **Taking a tester off the list ends their access** (owner's decision,
+  2026-09). The list is configuration, so removal is a restart with the
+  address gone. `AlphaAllowlistAccess` then enforces it three times: at startup,
+  before the web server takes a request, it revokes every live session of an
+  email-only account that is no longer listed — refresh tokens in the database,
+  the session id in the revocation cache so its access token stops too — and
+  audits each (`auth.session_ended_not_allowlisted`, `via: startup`); on every
+  authenticated request it checks the account (cached a minute; the list cannot
+  change while a server runs) and revokes on the spot (`via: request`); on
+  refresh, uncached (`via: refresh`). A session therefore outlives a removal by
+  nothing beyond the restart. In a rolling deploy an old server still holding
+  the old list can sign the tester in until it stops; any new server refuses
+  that session on its first request. Accounts with a phone number are never
+  touched, and on a server without email sign-in the check does not run.
+  `AlphaAllowlistRemovalApiTest` seeds sessions before its server starts and
+  asserts the starting server ended them.
+
+  **Why the list stays in configuration.** Moving it to the database would let
+  it change without a restart, and would need what that implies: an operator
+  surface to edit it (none exists, and one is itself something to attack), an
+  audit trail of edits, and the per-request check reading the table instead
+  of memory. For a closed alpha of a handful of testers a restart is minutes and
+  happens anyway on deploy, and with the startup revocation there is no window
+  in which a removed tester keeps access. Revisit if the list starts changing
+  more often than the deploys do.
 - **Step-up** goes to the account's email when phone is not offered or the
   account has no number, and reports failures normally
   (`OtpDelivery.REPORTED`): the caller already owns the address.
@@ -544,6 +608,10 @@ fixes a typo — or tries again once we have topped up — is not refused as "to
 many attempts". The per-network count is never given back: that is the limit
 that stops one network hammering the endpoint, and it holds whether or not our
 provider works. `OtpServiceTest` has a test for each row.
+
+Email **sign-in** follows the same table, applied after the response and
+reported through `GET /auth/otp/email/delivery/{requestId}` rather than in it
+(§5), and a decoy follows it too, replaying the last real send.
 
 The existing 503 `otp_unavailable` is a different thing again: no sender is
 configured at all, and nothing is generated.

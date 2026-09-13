@@ -20,6 +20,7 @@ GET  /api/v1/auth/otp/channels                → { channels: ["phone"] | ["emai
 POST /api/v1/auth/otp/request        { phone }        → requestId, expiresInSeconds, resendAfterSeconds, channel
 POST /api/v1/auth/otp/verify         { phone, code }  → accessToken, refreshToken, isNewUser, user
 POST /api/v1/auth/otp/email/request  { email }        → the same challenge shape
+GET  /api/v1/auth/otp/email/delivery/{requestId}      → requestId, status, failure?, message?, resendAfterSeconds?
 POST /api/v1/auth/otp/email/verify   { email, code }  → the same login shape
 POST /api/v1/auth/refresh            { refreshToken } → a new pair
 ```
@@ -40,11 +41,35 @@ gets — `200`, the same fields, the same cooldown `429`, the same `otp_stale`,
 same order — and simply never receives a code. So a client must not branch on
 anything here and must not say "not invited": go to the code step, and if the
 code never comes, the person asks whoever invited them. For the same reason the
-email request **never reports a delivery failure** — `otp_delivery_failed`,
+email **request** never reports a delivery failure — `otp_delivery_failed`,
 `otp_provider_unavailable`, `otp_service_unavailable` and `otp_delivery_delayed`
-are phone-only answers at sign-in. The send happens after the response. The
+are phone-only *responses* at sign-in. The send happens after the response. The
 one exception is development, where `developmentCode` is present only for an
 allowed address.
+
+**But a failed email is never silent.** On the code step, poll
+`GET /auth/otp/email/delivery/{requestId}` about once a second until `status`
+is not `sending`:
+
+| `status` | Do |
+|---|---|
+| `sending` | Ask again shortly. |
+| `sent` | Nothing more to say. |
+| `delayed` | Show the delayed sentence; resend is open now (`resendAfterSeconds: 0`). The code still works if it arrives. |
+| `failed` | Say **"We couldn't send the code."** with the sentence for `failure` (`otp_delivery_failed` · `otp_provider_unavailable` · `otp_service_unavailable`, the same advice as the phone codes); resend is open now. The challenge is gone. |
+
+Unknown or expired request ids are `404 otp_request_unknown`; treat that, a
+server without the endpoint, and any status you do not know as "stop asking".
+An address that is not allowed gets a status too, and it settles the way an
+allowed address's would with the email provider as it is — so a failing
+provider fails for both, and nothing here needs a branch either. Outcomes are
+applied on whole-second ticks from the request. What is still distinguishable,
+and when, is in [Doc 13 §5](../13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha).
+
+**Taking an address off the allowlist signs that tester out.** Once a server
+runs without the address, the account's refresh token answers `401` and its
+access token stops working on the next request — there is no grace period to
+wait out. An account with a phone number is never affected.
 
 Addresses are trimmed and lower-cased on the server and nothing else — dots and
 `+tags` are kept, because outside Gmail they name different mailboxes. Send

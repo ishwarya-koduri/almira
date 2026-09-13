@@ -31,6 +31,7 @@ This is the **build-ready documentation set**, split into interlinked docs for c
 | 16 | [Controls & threat model](16-controls-and-threat-model.md) | The auditor's companion: trust boundaries, assets against adversaries, STRIDE, a control catalogue naming the file to read, and the known gaps. |
 | 17 | [Deploying](17-deploying.md) | Bare host to running instance: the compose stack, the runtime role, the key and what losing it means, backups, the installable web client — and why your first testers cannot sign in by email yet. |
 | 18 | [Handover](18-handover.md) | What exists, what is deliberately not built, the order to do the rest in, what has never been verified, and how to pick the repository up on another machine. |
+| 19 | [Pen-test pack](19-pen-test-pack.md) | What a security tester is handed cold. Being assembled; the section on how the verification tooling is itself verified is written. |
 | — | [Known issues](known-issues.md) | A running log of things found while building and deliberately **not** fixed in the change that found them: what it is, which behaviour is the correct one, why it is still there, and when to pick it up. Entries are deleted when fixed. |
 
 ## How the docs interlink

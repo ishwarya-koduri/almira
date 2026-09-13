@@ -79,9 +79,46 @@ nothing about it appears wrong.
 |---|---|
 | `ALMIRA_KMS_MASTER_KEY` | Refuses to start. Data encrypted with a key nobody chose, kept nowhere durable, is worse than an application that will not boot. |
 | `ALMIRA_JWT_SECRET` still the development value, or shorter than 32 characters | Refuses to start. The default is printed in this repository; anybody could mint a session with it. |
+| **Postgres `data_checksums` is `off`** | **Refuses to start.** *(decided; lands with the item-4 artefacts — see below)* |
 
-Both are relaxed in `development` so the app runs out of the box with no
+All three are relaxed in `development` so the app runs out of the box with no
 configuration — which is exactly why the environment flag has to be right.
+
+### Page checksums: decided, and why it is a refusal rather than a warning
+
+`data_checksums` makes Postgres detect a flipped bit on a page instead of
+serving it. It is **off by default** — `initdb`'s default, and off on this
+project's development database today.
+
+For most applications that is a shrug. Here it is not, for a reason specific to
+what this stores: a zero-knowledge ciphertext is the one kind of data where the
+server **cannot** tell that it has been corrupted, because reading it is exactly
+the thing the server cannot do. Every other column would eventually look wrong
+to somebody. A sealed field looks perfect until the day its owner opens it and
+it fails — and by then the good backup may have rotated away. A silently
+flipped bit in a financial record is worse than an outage, because an outage is
+noticed.
+
+So, three things, and they have to be in this order:
+
+1. **The production database is created with `--data-checksums`.** It is an
+   `initdb` flag. It cannot be turned on later without stopping the server and
+   running `pg_checksums --enable` over every page, which is downtime
+   proportional to the database size — so this has to be right *before* there
+   is data, or it is an outage to fix.
+2. **The application refuses to boot when it is off.** A provisioning step that
+   can be skipped will be skipped. The check reads `show data_checksums` at
+   startup and stops, so a year cannot pass on an unprotected volume.
+3. **The check fails closed.** It relaxes only when the environment is
+   *explicitly* `development` — never "unless production", never on a missing
+   or unrecognised value. An environment-gated safety check is the kind that
+   gets quietly disabled by a typo in a deployment variable, so the typo has to
+   fail towards refusing rather than towards running.
+
+**The development database stays as it is.** Enabling checksums there would
+mean recreating the volume, which means destroying it, and this project does not
+remove things from a working machine. The startup check warns there instead, so
+the difference is visible without being fatal.
 
 ## 4 · The key, and what losing it means
 
@@ -150,6 +187,43 @@ docker run --rm -v almira_documents:/var -v "$PWD":/backup alpine \
 A database restored without the documents leaves every holding pointing at a
 missing scan. Documents restored without the key are ciphertext. **Test a
 restore before you need one** — an untested backup is a hope.
+
+### Verifying a restore, not just taking one
+
+*Decided; lands with the item-4 artefacts.* A backup that restores is not the
+same as a backup that restored **correctly**, and for sealed fields the
+difference is invisible: the server cannot read them, so a truncated or
+corrupted ciphertext restores without complaint and fails months later in front
+of the one person who needed it.
+
+Two checks, in this order.
+
+**A structural sweep, after every restore.** Every row in `sealed_values` must
+carry a ciphertext that is valid base64url, at least 33 bytes decoded, with
+version byte `1` and a key version of at least 1. Every row in `e2e_keys` must
+have a salt of at least 16 bytes and a wrapped key and verifier that parse the
+same way. No schema change and no new column — it reads what is already there,
+and it catches truncation and header damage, which are what a bad restore
+actually looks like.
+
+It names the exact row. A sweep that says "something is wrong" is a sweep that
+sends someone to read a million rows by hand.
+
+And it is proved the way everything else here is proved: by deliberately
+corrupting a ciphertext in a **restored copy**, confirming the sweep names that
+row and no other, and restoring it. A sweep nobody has watched fail is a sweep
+nobody should trust.
+
+**Then a stored digest — after the sweep works, not before.** A server-computed
+SHA-256 of each ciphertext, written beside it and compared during restore
+verification. Internal, additive, no change to the frozen v1 API. It closes the
+one case the sweep cannot see: a flipped bit *inside* the body, which parses
+perfectly and simply will not open.
+
+It is deliberately last. It is the only one of the three that needs a schema
+change, and it is worth nothing until the two cheaper checks are running — see
+[Doc 12 §9](12-end-to-end-encryption.md) for why it is not an integrity control
+against an attacker and why verifying it on write buys nothing.
 
 ## 7 · The web client is installable
 

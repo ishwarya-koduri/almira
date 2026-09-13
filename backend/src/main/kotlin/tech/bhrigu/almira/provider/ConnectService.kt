@@ -68,7 +68,10 @@ class ConnectService(
     private val userContext: RequestUserContext,
     private val mapper: ObjectMapper,
     private val calls: ProviderCalls,
+    transactionManager: org.springframework.transaction.PlatformTransactionManager,
 ) {
+
+    private val transactions = org.springframework.transaction.support.TransactionTemplate(transactionManager)
 
     @Transactional(readOnly = true)
     fun status(householdId: UUID): List<ProviderStatus> {
@@ -145,18 +148,50 @@ class ConnectService(
         return mapOf("authorizationUrl" to vault.authorizationUrl(householdId, state), "state" to state)
     }
 
-    @Transactional
+    /**
+     * Redeems the authorisation code, keeps the connection, then lists.
+     *
+     * Deliberately not one transaction. The code is spent the moment [exchange]
+     * succeeds, so the connection it bought is committed before the list call:
+     * a list that then times out or finds DigiLocker unavailable used to roll
+     * the connection back with it, leaving a person with no connection and a
+     * code that could never be redeemed again — no way to finish at all.
+     *
+     * A failed list after a good exchange answers with the list's own
+     * `provider_*` code and `details.connected = true`; the documents are then
+     * one [listDocuments] away, with no new code.
+     */
     fun completeDocumentVault(householdId: UUID, code: String): List<VaultDocument> {
         val userId = userContext.require()
-        households.get(householdId)
+        transactions.execute { households.get(householdId) }
         // Not idempotent: an authorisation code redeems once, so a retry after a
         // timeout would come back "rejected" and blame the person for our wait.
         val session = provider(DIGILOCKER, "exchange", idempotent = false) { vault.exchange(householdId, code) }
-        upsertConnection(householdId, "digilocker", vault.mode, "active", session.token, userId)
-        audit.record(
-            householdId = householdId, actorUserId = userId, action = "provider.connect",
-            entityType = "provider", entityId = null, diff = mapOf("provider" to "digilocker"),
-        )
+        transactions.execute {
+            upsertConnection(householdId, "digilocker", vault.mode, "active", session.token, userId)
+            audit.record(
+                householdId = householdId, actorUserId = userId, action = "provider.connect",
+                entityType = "provider", entityId = null, diff = mapOf("provider" to "digilocker"),
+            )
+        }
+        return try {
+            provider(DIGILOCKER, "list") { vault.list(session) }
+        } catch (e: ApiException) {
+            throw ApiException(
+                e.status, e.code,
+                "You're connected to DigiLocker, but it couldn't list your documents just now. " +
+                    "Please try again in a minute — you won't need to sign in to DigiLocker again.",
+                e.details + mapOf("connected" to true),
+                e,
+            )
+        }
+    }
+
+    /** What an active DigiLocker connection offers, without redeeming anything. */
+    @Transactional
+    fun listDocuments(householdId: UUID): List<VaultDocument> {
+        households.get(householdId)
+        val session = activeSession(householdId, "digilocker", requireActive = true)
         return provider(DIGILOCKER, "list") { vault.list(session) }
     }
 
@@ -475,19 +510,20 @@ class ConnectService(
         )
     }
 
-    private fun externalRef(householdId: UUID, provider: String): String = jdbc.query(
+    private fun externalRef(householdId: UUID, provider: String, requireActive: Boolean = false): String = jdbc.query(
         """
         select external_ref from provider_connections
         where household_id = :hid and provider = :provider
+          and (:anyStatus or status = 'active')
         """.trimIndent(),
-        mapOf("hid" to householdId, "provider" to provider),
+        mapOf("hid" to householdId, "provider" to provider, "anyStatus" to !requireActive),
     ) { rs, _ -> rs.getString("external_ref") }.firstOrNull()
         ?: throw ApiException.badRequest(
             "not_connected", "Connect that first — there's nothing to fetch yet.",
         )
 
-    private fun activeSession(householdId: UUID, provider: String) = ProviderSession(
-        token = externalRef(householdId, provider),
+    private fun activeSession(householdId: UUID, provider: String, requireActive: Boolean = false) = ProviderSession(
+        token = externalRef(householdId, provider, requireActive),
         expiresAt = Instant.now().plusSeconds(3600),
         scope = "files.issueddocs",
     )

@@ -39,6 +39,15 @@ class ConnectController(private val service: ConnectService) {
         @RequestBody body: CompleteConnectionBody,
     ): List<VaultDocument> = service.completeDocumentVault(householdId, body.code)
 
+    /**
+     * The documents an active connection offers. What to call when `complete`
+     * connected but could not list (`details.connected = true`): the code is
+     * already spent, and this needs none.
+     */
+    @GetMapping("/digilocker/documents")
+    fun digiLockerDocuments(@PathVariable householdId: UUID): List<VaultDocument> =
+        service.listDocuments(householdId)
+
     @PostMapping("/digilocker/import")
     fun importDocuments(
         @PathVariable householdId: UUID,

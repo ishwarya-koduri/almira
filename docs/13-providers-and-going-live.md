@@ -299,6 +299,13 @@ almira:
   try would come back "rejected" and blame the person for our wait) and
   creating an Account Aggregator consent (a second one leaves two to approve).
   "Unavailable" is still retried there, because nothing was accepted.
+- Redeeming a DigiLocker code and listing what it opened are **not** one
+  transaction. The connection is committed as soon as the code redeems, so a
+  list that then times out or is unavailable leaves the connection in place:
+  `complete` answers with the list's `provider_*` code and
+  `details.connected: true`, and `GET …/connect/digilocker/documents` lists
+  again without a new code. Rolling the connection back with the list would
+  leave the person a spent code and no way to finish.
 - Anything an adapter throws that is not a `ProviderFailure` is a bug or a
   domain refusal (a consent that is not active yet). It is not retried and
   passes through unchanged.

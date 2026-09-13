@@ -182,6 +182,51 @@ class ProviderFailureApiTest : ApiTestBase() {
         assertThat(balance.json().path("error").path("message").asText()).contains("isn't anything you did")
     }
 
+    @Test
+    fun `a list that fails after the code redeemed keeps the connection, and lists again without a new code`() {
+        listOf(
+            SandboxFault.TIMEOUT to (HttpStatus.GATEWAY_TIMEOUT to "provider_timeout"),
+            SandboxFault.UNAVAILABLE to (HttpStatus.SERVICE_UNAVAILABLE to "provider_unavailable"),
+        ).forEach { (fault, expected) ->
+            // Each fault in its own household, so nothing here reads another's row.
+            val hid = createHousehold(owner, "Koduri ${fault.name}", "private", "Ishwarya").path("id").asText()
+            val connectTo = { path: String -> "/api/v1/households/$hid/connect/$path" }
+            faults.clear()
+            post(connectTo("digilocker/start"), owner)
+
+            // The exchange succeeds — the code is spent — and every list attempt fails.
+            faults.succeedFirst("digilocker", 1)
+            faults.always("digilocker", fault)
+            val failed = post(connectTo("digilocker/complete"), owner, mapOf("code" to "one-time"))
+            assertThat(failed.status()).describedAs(fault.name).isEqualTo(expected.first)
+            assertThat(failed.errorCode()).describedAs(fault.name).isEqualTo(expected.second)
+            assertThat(failed.json().path("error").path("details").path("connected").asBoolean())
+                .describedAs("${fault.name}: the client must be told the connection stands")
+                .isTrue()
+
+            val connection = db.queryForList(
+                "select status from provider_connections where household_id = ?::uuid and provider = 'digilocker'",
+                hid,
+            )
+            assertThat(connection.map { it["status"] })
+                .describedAs("${fault.name}: a list failure must not roll back the connection the spent code bought")
+                .containsExactly("active")
+
+            faults.clear()
+            val listed = get(connectTo("digilocker/documents"), owner)
+            assertThat(listed.status()).describedAs(fault.name).isEqualTo(HttpStatus.OK)
+            assertThat(listed.json().map { it.path("name").asText() }).contains("LIC term policy")
+        }
+    }
+
+    @Test
+    fun `listing DigiLocker documents before connecting is refused, not sent with a pending state`() {
+        post(connect("digilocker/start"), owner)
+        val listed = get(connect("digilocker/documents"), owner)
+        assertThat(listed.status()).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(listed.errorCode()).isEqualTo("not_connected")
+    }
+
     // --- Account Aggregator ----------------------------------------------------
 
     @Test

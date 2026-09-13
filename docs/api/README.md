@@ -8,7 +8,10 @@ will be removed, renamed or retyped. A breaking change goes to `/api/v2` and v1
 stays as it is for as long as a released app depends on it. `OpenApiContractTest`
 fails the backend build if that promise is broken, so a client can rely on it.
 **Operation ids are part of the promise**: a generated client names its methods
-after them, so a changed `operationId` fails the build too.
+after them, so a changed `operationId` fails the build too. **The file is complete**:
+the same test fails when the server serves a path, operation, parameter, response
+code, schema, field or enum value this file does not list, so what you generate
+from it is everything there is.
 
 **Added at the 2026-09-14 re-freeze** — built before it, and described below, but
 only now in the file:

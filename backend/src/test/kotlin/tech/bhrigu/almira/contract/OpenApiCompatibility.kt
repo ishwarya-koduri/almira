@@ -44,6 +44,83 @@ object OpenApiCompatibility {
         return breakages
     }
 
+    /**
+     * The other direction: what the live API serves that the frozen file does
+     * not describe. None of it breaks a v1 client — [check] is right to let it
+     * through — but a client built from the JSON alone cannot know it exists,
+     * and a later change to it would be judged against nothing. That is how the
+     * file drifted by eleven paths before (known issue #16).
+     *
+     * Reported: paths, operations, their parameters and response status codes,
+     * schemas, schema properties, enum values, and security schemes. Prose
+     * (summaries, descriptions) and the generated `servers` URL are not.
+     */
+    fun undeclared(frozen: JsonNode, live: JsonNode): List<Breakage> {
+        val out = mutableListOf<Breakage>()
+
+        val frozenPaths = frozen.path("paths")
+        live.path("paths").fields().forEach { (path, item) ->
+            val known = frozenPaths.path(path)
+            if (known.isMissingNode) {
+                out += Breakage(path, "the path is served but not in the frozen contract")
+                return@forEach
+            }
+            item.fields().forEach { (method, operation) ->
+                if (method !in HTTP_METHODS) return@forEach
+                val where = "${method.uppercase()} $path"
+                val knownOp = known.path(method)
+                if (knownOp.isMissingNode) {
+                    out += Breakage(where, "the operation is served but not in the frozen contract")
+                    return@forEach
+                }
+                val knownParams = knownOp.path("parameters").map { it.path("name").asText() }.toSet()
+                operation.path("parameters").forEach {
+                    val name = it.path("name").asText()
+                    if (name !in knownParams) out += Breakage(where, "parameter '$name' is not in the frozen contract")
+                }
+                val knownCodes = knownOp.path("responses").fieldNames().asSequence().toSet()
+                operation.path("responses").fieldNames().forEach {
+                    if (it !in knownCodes) out += Breakage(where, "response $it is not in the frozen contract")
+                }
+            }
+        }
+
+        val frozenSchemas = frozen.path("components").path("schemas")
+        live.path("components").path("schemas").fields().forEach { (name, schema) ->
+            val known = frozenSchemas.path(name)
+            if (known.isMissingNode) {
+                out += Breakage(name, "the schema is served but not in the frozen contract")
+                return@forEach
+            }
+            schema.path("properties").fields().forEach { (property, definition) ->
+                val knownProperty = known.path("properties").path(property)
+                if (knownProperty.isMissingNode) {
+                    out += Breakage("$name.$property", "the field is served but not in the frozen contract")
+                    return@forEach
+                }
+                // An enum sits on the property, or on its items for a list.
+                listOf(definition to knownProperty, definition.path("items") to knownProperty.path("items"))
+                    .forEach { (served, declared) ->
+                        val knownValues = declared.path("enum").map { it.asText() }.toSet()
+                        served.path("enum").map { it.asText() }.forEach {
+                            if (it !in knownValues) {
+                                out += Breakage("$name.$property", "enum value '$it' is not in the frozen contract")
+                            }
+                        }
+                    }
+            }
+        }
+
+        val frozenSecurity = frozen.path("components").path("securitySchemes")
+        live.path("components").path("securitySchemes").fieldNames().forEach {
+            if (frozenSecurity.path(it).isMissingNode) {
+                out += Breakage(it, "the security scheme is served but not in the frozen contract")
+            }
+        }
+
+        return out
+    }
+
     // --- paths and operations -------------------------------------------------
 
     private fun checkPaths(baseline: JsonNode, current: JsonNode, out: MutableList<Breakage>) {

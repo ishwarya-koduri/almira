@@ -19,9 +19,10 @@ import java.nio.file.Path
  * would be a crash on someone's phone, weeks later, in a build that had already
  * shipped.
  *
- * So the contract is diffed against the frozen copy on every run. Additive
- * changes pass. Anything a v1 client would notice fails, with a list of exactly
- * what and where.
+ * So the contract is diffed against the frozen copy on every run, both ways.
+ * Anything a v1 client would notice fails, with a list of exactly what and
+ * where. An additive change is compatible, but it still fails until the file
+ * is re-frozen to include it — otherwise it sits outside every later comparison.
  */
 @DisplayName("The v1 API contract")
 class OpenApiContractTest : ApiTestBase() {
@@ -60,6 +61,48 @@ class OpenApiContractTest : ApiTestBase() {
                 field — re-freeze the contract deliberately:
 
                     ./scripts/freeze-api-spec.sh
+
+                The spec as it stands now is in backend/build/openapi-current.json.
+                """.trimIndent(),
+            )
+            .isEmpty()
+    }
+
+    /**
+     * The other half of "frozen". The test above lets additive changes through,
+     * which is right for a v1 client and wrong for the file: an endpoint the
+     * server serves but the contract does not list is outside every future
+     * comparison, and a third client built from the JSON cannot know it exists.
+     * Eleven paths drifted in that way before anyone noticed (known issue #16).
+     */
+    @Test
+    fun `everything the live API serves is in the frozen v1 contract`() {
+        val baseline = mapper.readTree(Files.readString(frozenSpec))
+        val current = mapper.readTree(get("/v3/api-docs").body)
+
+        val undeclared = OpenApiCompatibility.undeclared(baseline, current)
+
+        val actual = Path.of("build", "openapi-current.json")
+        Files.createDirectories(actual.parent)
+        Files.writeString(actual, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(current))
+
+        assertThat(undeclared)
+            .describedAs(
+                """
+                The live API serves things the frozen v1 contract does not describe.
+
+                Each item below is served by the server but missing from
+                docs/api/openapi-v1.json. If the change is ADDITIVE (a new
+                endpoint, a new optional field, a new enum value a client can
+                ignore), re-freeze the contract deliberately, in the same commit
+                as the code:
+
+                    ./scripts/dev.sh              # in one terminal
+                    ./scripts/freeze-api-spec.sh  # in another
+
+                and review the diff. If it was not meant to be served at all,
+                remove it instead. If it breaks a v1 client, the compatibility
+                test says so and it belongs in /api/v2.
 
                 The spec as it stands now is in backend/build/openapi-current.json.
                 """.trimIndent(),
@@ -132,6 +175,48 @@ class OpenApiContractTest : ApiTestBase() {
         assertThat(OpenApiCompatibility.check(baseline, renamedOperation))
             .describedAs("an operationId that changed, which renames a generated client's method")
             .isNotEmpty()
+    }
+
+    /**
+     * Guards the other guard: an undeclared-check that always said "nothing"
+     * would let the file drift again, silently, with the test green.
+     */
+    @Test
+    fun `the undeclared check catches what the frozen file does not list`() {
+        val baseline = mapper.readTree(Files.readString(frozenSpec)) as ObjectNode
+
+        assertThat(OpenApiCompatibility.undeclared(baseline, baseline))
+            .describedAs("the frozen file against itself").isEmpty()
+
+        val futurePath = "/api/v1/households/{householdId}/not-built-yet"
+        assertThat(baseline.get("paths").has(futurePath)).isFalse()
+
+        val newPath = baseline.deepCopy().apply {
+            (get("paths") as ObjectNode).putObject(futurePath).putObject("get").put("operationId", "notBuiltYet")
+        }
+        assertThat(OpenApiCompatibility.undeclared(baseline, newPath))
+            .describedAs("a served path the file does not list").isNotEmpty()
+
+        val newOperation = baseline.deepCopy().apply {
+            (get("paths").get("/api/v1/households/{householdId}/reminders/{id}/snooze") as ObjectNode)
+                .putObject("delete").put("operationId", "unsnooze")
+        }
+        assertThat(OpenApiCompatibility.undeclared(baseline, newOperation))
+            .describedAs("a served operation on a known path").isNotEmpty()
+
+        val newSchema = baseline.deepCopy().apply {
+            (get("components").get("schemas") as ObjectNode).putObject("NotBuiltYetResponse").put("type", "object")
+        }
+        assertThat(OpenApiCompatibility.undeclared(baseline, newSchema))
+            .describedAs("a served schema").isNotEmpty()
+
+        val newField = baseline.deepCopy().apply {
+            val schemas = get("components").get("schemas") as ObjectNode
+            (schemas.get("InvestmentResponse").get("properties") as ObjectNode)
+                .putObject("xirr").put("type", "number")
+        }
+        assertThat(OpenApiCompatibility.undeclared(baseline, newField))
+            .describedAs("a served field").isNotEmpty()
     }
 
     /** Additive changes are the whole point of the rule — they must pass. */

@@ -164,7 +164,9 @@ depends on it.
 
 That is enforced, not merely intended. `OpenApiContractTest` diffs the live API
 against the frozen copy on every build and fails on anything a v1 client would
-notice. It judges request and response schemas differently, because it matters
+notice — and, in the other direction, on anything the server serves that the
+frozen copy does not list, so an additive change is re-frozen with
+`scripts/freeze-api-spec.sh` in the same commit rather than left outside the file. It judges request and response schemas differently, because it matters
 who sends what:
 
 | | Response — the client **reads** it | Request — the client **sends** it |

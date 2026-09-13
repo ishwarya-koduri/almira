@@ -475,8 +475,15 @@ means something where it is cited.
 Owner's decision: "regenerate the frozen spec to include the new endpoints.
 They're additive, and endpoints outside the contract test are how drift starts."
 `docs/api/openapi-v1.json` was regenerated with `scripts/freeze-api-spec.sh`
-from a development server built from the commit before this one, and now holds
-120 paths, 163 operations and 179 schemas (was 109, 152, 164).
+from a development server built from the working tree of the re-freeze commit
+itself (6f5e049) — including its `snoozeStillTrue` rename below, which is why the
+frozen file already carries that operationId — and now holds 120 paths,
+163 operations and 179 schemas (was 109, 152, 164).
+
+`OpenApiContractTest` now also fails when the server serves a path, operation,
+parameter, response code, schema, field or enum value the frozen file does not
+list (`OpenApiCompatibility.undeclared`), and says to re-freeze for an additive
+change, so this drift cannot recur silently.
 
 It had drifted by more than email sign-in: eleven paths were outside the file —
 `GET /auth/otp/channels`, `POST /auth/otp/email/request`,

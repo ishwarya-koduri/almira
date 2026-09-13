@@ -151,7 +151,11 @@ data class AlmiraProperties(
          * somebody.
          */
         val timeout: Duration = Duration.ofSeconds(10),
-        /** Attempts in total, not retries after the first. 1 disables retrying. */
+        /**
+         * Attempts in total, not retries after the first. 1 disables retrying.
+         * Only timeouts and "unavailable" are ever retried — see ProviderCalls,
+         * which enforces [timeout], this and [retryBackoff] on every call.
+         */
         val maxAttempts: Int = 3,
         /** Doubling from here, with jitter, between attempts. */
         val retryBackoff: Duration = Duration.ofMillis(500),

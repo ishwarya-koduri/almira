@@ -32,22 +32,29 @@ import java.util.UUID
 @ConditionalOnProperty(
     name = ["almira.providers.digilocker.mode"], havingValue = "sandbox", matchIfMissing = true,
 )
-class SandboxDocumentVault : DocumentVaultProvider {
+class SandboxDocumentVault(private val faults: SandboxFaults) : DocumentVaultProvider {
 
     override val mode = ProviderMode.SANDBOX
 
     override fun authorizationUrl(householdId: UUID, state: String) =
         "/app/#/connect/digilocker/sandbox?state=$state"
 
-    override fun exchange(householdId: UUID, code: String) = ProviderSession(
-        token = "sandbox-${UUID.randomUUID()}",
-        expiresAt = Instant.now().plus(1, ChronoUnit.HOURS),
-        scope = "files.issueddocs",
-    )
+    override fun exchange(householdId: UUID, code: String): ProviderSession {
+        faults.apply(NAME)
+        return ProviderSession(
+            token = "sandbox-${UUID.randomUUID()}",
+            expiresAt = Instant.now().plus(1, ChronoUnit.HOURS),
+            scope = "files.issueddocs",
+        )
+    }
 
-    override fun list(session: ProviderSession) = FIXTURES
+    override fun list(session: ProviderSession): List<VaultDocument> {
+        faults.apply(NAME)
+        return FIXTURES
+    }
 
     override fun fetch(session: ProviderSession, uri: String): ByteArray {
+        faults.apply(NAME)
         val document = FIXTURES.firstOrNull { it.uri == uri }
             ?: throw IllegalArgumentException("no such document in the sandbox")
         return pdf(
@@ -90,6 +97,8 @@ class SandboxDocumentVault : DocumentVaultProvider {
     }
 
     private companion object {
+        const val NAME = "digilocker"
+
         val FIXTURES = listOf(
             VaultDocument(
                 "in.gov.pan-PANCR-ABCDE1234F", "PAN card", "Income Tax Department",
@@ -123,13 +132,15 @@ class SandboxDocumentVault : DocumentVaultProvider {
 @ConditionalOnProperty(
     name = ["almira.providers.aa.mode"], havingValue = "sandbox", matchIfMissing = true,
 )
-class SandboxAccountAggregator : AccountAggregatorClient {
+class SandboxAccountAggregator(private val faults: SandboxFaults) : AccountAggregatorClient {
 
     override val mode = ProviderMode.SANDBOX
 
-    private val consents = mutableMapOf<String, ConsentHandle>()
+    // Concurrent: calls arrive on ProviderCalls' threads, not the request's.
+    private val consents = java.util.concurrent.ConcurrentHashMap<String, ConsentHandle>()
 
     override fun requestConsent(householdId: UUID, request: ConsentRequest): ConsentHandle {
+        faults.apply(NAME)
         val handle = "sandbox-consent-${UUID.randomUUID()}"
         val consent = ConsentHandle(
             handle = handle,
@@ -142,6 +153,7 @@ class SandboxAccountAggregator : AccountAggregatorClient {
     }
 
     override fun consentStatus(handle: String): ConsentHandle {
+        faults.apply(NAME)
         // The sandbox approves on the second look, so the "waiting for consent"
         // state is a state the app has actually been through.
         val current = consents[handle] ?: throw IllegalArgumentException("unknown consent")
@@ -151,12 +163,15 @@ class SandboxAccountAggregator : AccountAggregatorClient {
     }
 
     override fun fetch(handle: String): List<DiscoveredHolding> {
+        faults.apply(NAME)
         val consent = consents[handle] ?: throw IllegalArgumentException("unknown consent")
         if (consent.status != "ACTIVE") throw IllegalStateException("consent is not active")
         return FIXTURES
     }
 
     private companion object {
+        const val NAME = "aa"
+
         val FIXTURES = listOf(
             DiscoveredHolding(
                 "DEPOSIT", "State Bank of India", "XXXX4417", "SBI savings",
@@ -191,7 +206,10 @@ class SandboxAccountAggregator : AccountAggregatorClient {
 @ConditionalOnProperty(
     name = ["almira.providers.whatsapp.mode"], havingValue = "sandbox", matchIfMissing = true,
 )
-class SandboxWhatsAppGateway(private val mapper: ObjectMapper) : WhatsAppGateway {
+class SandboxWhatsAppGateway(
+    private val mapper: ObjectMapper,
+    private val faults: SandboxFaults,
+) : WhatsAppGateway {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -216,6 +234,7 @@ class SandboxWhatsAppGateway(private val mapper: ObjectMapper) : WhatsAppGateway
     }
 
     override fun reply(to: String, text: String) {
+        faults.apply("whatsapp")
         log.info("sandbox WhatsApp reply to {}: {} characters", to.takeLast(4), text.length)
     }
 }

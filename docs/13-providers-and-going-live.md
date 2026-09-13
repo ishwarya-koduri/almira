@@ -182,12 +182,147 @@ is last.
 
 Notifications remain a stand-in, but not an unverifiable one. Every outbound
 message is recorded in `outbound_messages` — channel, template, title, status,
-never a body — so the in-app list works today, a test can assert that the person
-who should have been told was told, and switching a channel on changes where a
-row goes rather than whether it exists.
+which way it failed and after how many attempts, never a body — so the in-app
+list (`GET /me/messages`) works today, a test can assert that the person who
+should have been told was told, and switching a channel on changes where a row
+goes rather than whether it exists.
 
 Reading that table is restricted to the person the message was for. The log of
 what somebody was told is as personal as what it was about.
+
+---
+
+## When a provider fails
+
+Every call to every adapter above — the three notification channels, one-time
+codes, DigiLocker, the Account Aggregator and WhatsApp replies — goes through
+one policy, `ProviderCalls`. It is the only reader of each provider's
+`timeout`, `max-attempts` and `retry-backoff`:
+
+```yaml
+almira:
+  providers:
+    sms: { timeout: 10s, max-attempts: 3, retry-backoff: 500ms }   # likewise for each
+```
+
+- **Timeout** is per attempt and enforced by `ProviderCalls` itself: the call
+  runs on its own virtual thread and is interrupted when time is up. An adapter
+  that hangs cannot hold a request for longer.
+- **max-attempts** counts every attempt, the first included. `1` turns retrying
+  off. Bounded to 1–10 at startup.
+- **retry-backoff** doubles per attempt, with jitter (between half and all of
+  the doubled delay), capped at 30s.
+- Only a **timeout** or **unavailable** is retried. A rejection or an empty
+  balance never is.
+- Two operations must not happen twice, so a timeout on them is **not**
+  retried: redeeming a DigiLocker authorisation code (it works once; a second
+  try would come back "rejected" and blame the person for our wait) and
+  creating an Account Aggregator consent (a second one leaves two to approve).
+  "Unavailable" is still retried there, because nothing was accepted.
+- Anything an adapter throws that is not a `ProviderFailure` is a bug or a
+  domain refusal (a consent that is not active yet). It is not retried and
+  passes through unchanged.
+
+A live adapter's only job here is to translate its transport's errors into one
+of the four kinds below. It must not add its own retry loop.
+
+A caution for whoever writes the first live adapter: these calls are made
+inside the request that needs them. The worst case per call is `max-attempts ×
+timeout` plus the backoff — about 31 seconds for SMS at the defaults — and a
+notification tries three channels in turn. That is fine for a sandbox and too
+long for a busy server. Before a notification channel goes live, move delivery
+onto the reminder worker (the `queued` status in `outbound_messages` exists for
+it), or lower the attempts for that provider.
+
+### Timeout — `timeout`
+
+The provider did not answer in time. It may have received the request.
+
+| | |
+|---|---|
+| **Retried** | Yes, up to `max-attempts` (except the two operations above). |
+| **User — one-time code** | 504 `otp_delivery_delayed`: "Your code is taking longer than usual to send. If it arrives, it will work…" The details carry `requestId`, `expiresInSeconds` and `resendAfterSeconds`. |
+| **User — connect** | 504 `provider_timeout`: "DigiLocker is taking too long to answer. Please try again in a minute." |
+| **User — WhatsApp reply** | The capture still succeeds (200); `replyFailure: "provider_timeout"`. |
+| **User — notification** | The `outbound_messages` row is `failed`, `failure = timeout`, with its `attempts`; `GET /me/messages` says "Not confirmed — the service took too long to answer. It may still arrive." |
+| **Operator** | An INFO line per retry, a WARN when a notification gives up. No alert: timeouts are expected in small numbers. A rising count is worth a dashboard. |
+
+For a one-time code, **the challenge, the cooldown and both hourly counts all
+stand**: the text may still arrive, and a late code must still work.
+
+### Unavailable — `unavailable`
+
+The provider could not take the request at all — connection refused, a 503, a
+maintenance window. Nothing was accepted.
+
+| | |
+|---|---|
+| **Retried** | Yes, up to `max-attempts`, including the two non-repeatable operations. |
+| **User — one-time code** | 503 `otp_provider_unavailable`: "We couldn't reach our text message service just now, so no code was sent…" |
+| **User — connect** | 503 `provider_unavailable`. WhatsApp: `replyFailure: "provider_unavailable"`. |
+| **User — notification** | `failure = unavailable`; "Not sent — the service wasn't reachable. Nothing for you to do." |
+| **Operator** | As for timeouts. |
+
+### Delivery failed — `rejected`
+
+The provider answered and refused *this* message or request: an invalid or
+unreachable number, a DLT template the operator does not recognise, an expired
+authorisation code.
+
+| | |
+|---|---|
+| **Retried** | Never. The next attempt gets the same refusal and, for SMS, may be billed. |
+| **User — one-time code** | 422 `otp_delivery_failed`: "We couldn't deliver a code to that number. Please check it and try again." |
+| **User — connect** | 422 `provider_rejected`: "…turned that request down. Please start again from the beginning." WhatsApp: `replyFailure: "provider_rejected"`. |
+| **User — notification** | `failure = rejected`; "Not delivered — it was refused for this address or number. Check your contact details." |
+| **Operator** | A WARN per notification. Many rejections at once usually mean a template or sender id problem, not many bad numbers. |
+
+### Insufficient balance — `insufficient_balance`
+
+The provider refused **us**: out of credit, over quota, suspended. Nothing the
+person does will help, and they must not be told otherwise.
+
+| | |
+|---|---|
+| **Retried** | Never. |
+| **User — one-time code** | 503 `otp_service_unavailable`: "Sign-in codes can't be sent right now. This is a problem on our side, not with your number, and we've been alerted…" |
+| **User — connect** | 503 `provider_account_unavailable`: "…isn't available on our side right now. It isn't anything you did, and we've been alerted." WhatsApp: `replyFailure: "provider_account_unavailable"`. |
+| **User — notification** | `failure = insufficient_balance`; "Not sent — a problem on our side, not with your details. We've been alerted." |
+| **Operator** | An **ERROR** log line on every occurrence, with fixed wording to alert on: `PROVIDER ACCOUNT PROBLEM: <provider> refused <operation> on account grounds`. `ProviderCalls.accountProblems()` holds the last time per provider. Top up or fix the account; nothing on that provider is delivered until then. |
+
+### What a failed send does to a one-time code
+
+Two things have to hold at once: a person must not be locked out by our
+failure, and an attacker must not get unthrottled requests out of it.
+
+| Outcome | Challenge | Cooldown | Per-number hourly count | Per-network hourly count |
+|---|---|---|---|---|
+| Timeout | kept | kept | kept | kept |
+| Rejected, unavailable, insufficient balance | removed | lifted | given back | **kept** |
+
+When nothing was delivered there is no code worth keeping, and a person who
+fixes a typo — or tries again once we have topped up — is not refused as "too
+many attempts". The per-network count is never given back: that is the limit
+that stops one network hammering the endpoint, and it holds whether or not our
+provider works. `OtpServiceTest` has a test for each row.
+
+The existing 503 `otp_unavailable` is a different thing again: no sender is
+configured at all, and nothing is generated.
+
+### Testing the failures
+
+`SandboxFaults` is the sandbox adapters' failure switch. Every sandbox adapter
+asks it, before each operation, whether to succeed, throw one of the four
+kinds, or hang. It has no endpoint, property or environment variable, so only
+code holding the bean — tests — can set it. Adapter names are the provider
+names plus `otp`.
+
+- `ProviderCallsTest` — the policy itself: attempts, backoff, never-retried
+  kinds, non-repeatable operations, the timeout actually cutting off a hang.
+- `SandboxFailureMatrixTest` — every sandbox adapter operation × every fault.
+- `ProviderFailureApiTest` — each outcome through HTTP: notification rows and
+  `GET /me/messages`, one-time code errors, connect errors, WhatsApp replies.
+- `OtpServiceTest` — the challenge, cooldown and counter table above.
 
 ---
 

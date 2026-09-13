@@ -30,6 +30,13 @@ data class WhatsAppCapture(
     val understood: Boolean,
     val reply: String,
     val fields: List<Map<String, Any?>> = emptyList(),
+    /**
+     * Null when the reply went out; otherwise the same code a connect call would
+     * have failed with (`provider_timeout`, `provider_unavailable`,
+     * `provider_rejected`, `provider_account_unavailable`). The capture itself
+     * still succeeded — see [ConnectService.captureFromWhatsApp].
+     */
+    val replyFailure: String? = null,
 )
 
 /**
@@ -60,6 +67,7 @@ class ConnectService(
     private val audit: AuditService,
     private val userContext: RequestUserContext,
     private val mapper: ObjectMapper,
+    private val calls: ProviderCalls,
 ) {
 
     @Transactional(readOnly = true)
@@ -133,13 +141,15 @@ class ConnectService(
     fun completeDocumentVault(householdId: UUID, code: String): List<VaultDocument> {
         val userId = userContext.require()
         households.get(householdId)
-        val session = vault.exchange(householdId, code)
+        // Not idempotent: an authorisation code redeems once, so a retry after a
+        // timeout would come back "rejected" and blame the person for our wait.
+        val session = provider(DIGILOCKER, "exchange", idempotent = false) { vault.exchange(householdId, code) }
         upsertConnection(householdId, "digilocker", vault.mode, "active", session.token, userId)
         audit.record(
             householdId = householdId, actorUserId = userId, action = "provider.connect",
             entityType = "provider", entityId = null, diff = mapOf("provider" to "digilocker"),
         )
-        return vault.list(session)
+        return provider(DIGILOCKER, "list") { vault.list(session) }
     }
 
     @Transactional
@@ -147,7 +157,7 @@ class ConnectService(
         val userId = userContext.require()
         households.get(householdId)
         val session = activeSession(householdId, "digilocker")
-        val available = vault.list(session).associateBy { it.uri }
+        val available = provider(DIGILOCKER, "list") { vault.list(session) }.associateBy { it.uri }
 
         val titles = mutableListOf<String>()
         var skipped = 0
@@ -157,7 +167,7 @@ class ConnectService(
                 skipped++
                 return@forEach
             }
-            val bytes = vault.fetch(session, uri)
+            val bytes = provider(DIGILOCKER, "fetch") { vault.fetch(session, uri) }
             documents.upload(
                 householdId,
                 DocumentUpload(
@@ -193,15 +203,17 @@ class ConnectService(
     fun requestConsent(householdId: UUID): ConsentHandle {
         val userId = userContext.require()
         households.get(householdId)
-        val consent = aggregator.requestConsent(
-            householdId,
-            ConsentRequest(
-                purpose = "Personal finance management",
-                fiTypes = listOf("DEPOSIT", "TERM_DEPOSIT", "MUTUAL_FUNDS", "EQUITIES"),
-                fromDate = LocalDate.now().minusYears(1),
-                toDate = LocalDate.now(),
-            ),
+        val request = ConsentRequest(
+            purpose = "Personal finance management",
+            fiTypes = listOf("DEPOSIT", "TERM_DEPOSIT", "MUTUAL_FUNDS", "EQUITIES"),
+            fromDate = LocalDate.now().minusYears(1),
+            toDate = LocalDate.now(),
         )
+        // Not idempotent: a retried consent request after a timeout can leave
+        // the person with two consents to approve and no idea which is real.
+        val consent = provider(AA, "consent", idempotent = false) {
+            aggregator.requestConsent(householdId, request)
+        }
         upsertConnection(householdId, "account_aggregator", aggregator.mode, "pending", consent.handle, userId)
         return consent
     }
@@ -210,7 +222,7 @@ class ConnectService(
     fun consentStatus(householdId: UUID): ConsentHandle {
         households.get(householdId)
         val handle = externalRef(householdId, "account_aggregator")
-        val status = aggregator.consentStatus(handle)
+        val status = provider(AA, "consent-status") { aggregator.consentStatus(handle) }
         if (status.status == "ACTIVE") {
             jdbc.update(
                 """
@@ -234,7 +246,15 @@ class ConnectService(
         val userId = userContext.require()
         households.get(householdId)
         val handle = externalRef(householdId, "account_aggregator")
-        val discovered = runCatching { aggregator.fetch(handle) }.getOrElse {
+        // A provider failure is its own answer. Only the adapter's own refusal
+        // (the consent is not active) means "approve it first" — reading a
+        // timeout as that would send someone to re-approve a consent that is
+        // fine, while the real problem is on the other end.
+        val discovered = try {
+            provider(AA, "fetch") { aggregator.fetch(handle) }
+        } catch (e: ApiException) {
+            throw e
+        } catch (e: RuntimeException) {
             throw ApiException.badRequest(
                 "consent_not_active", "That consent isn't active yet — approve it first.",
             )
@@ -369,6 +389,11 @@ class ConnectService(
      * add — never a saved record. Somebody texting their bank balance to a
      * number should not be able to write to a registry without looking at what
      * was understood.
+     *
+     * A reply that fails to send does not fail the capture: the webhook answers
+     * 200 with [WhatsAppCapture.replyFailure] set. Failing the webhook would make
+     * the provider redeliver it, and the person would get the reply twice once
+     * the outage passed — or, on a rejection, be retried into the same refusal.
      */
     fun captureFromWhatsApp(
         householdId: UUID,
@@ -392,11 +417,17 @@ class ConnectService(
             "Got it: " + parsed.fields.joinToString(", ") { "${it.label} ${it.display}" } +
                 ". Open Almira to confirm and save."
         }
-        whatsApp.reply(message.from, reply)
+        val replyFailure = try {
+            provider(WHATSAPP, "reply") { whatsApp.reply(message.from, reply) }
+            null
+        } catch (e: ApiException) {
+            e.code
+        }
 
         return WhatsAppCapture(
             understood = recognised.isNotEmpty(),
             reply = reply,
+            replyFailure = replyFailure,
             fields = parsed.fields.map {
                 mapOf("key" to it.key, "label" to it.label, "display" to it.display, "value" to it.value)
             },
@@ -404,6 +435,14 @@ class ConnectService(
     }
 
     // --- plumbing --------------------------------------------------------------
+
+    /** Through the shared timeout and retry policy, with each failure turned into its own answer. */
+    private fun <T> provider(name: String, operation: String, idempotent: Boolean = true, block: () -> T): T =
+        try {
+            calls.call(name, operation, idempotent, block)
+        } catch (failure: ProviderCallFailed) {
+            throw ProviderErrors.forConnect(failure)
+        }
 
     private fun upsertConnection(
         householdId: UUID,
@@ -444,6 +483,12 @@ class ConnectService(
         expiresAt = Instant.now().plusSeconds(3600),
         scope = "files.issueddocs",
     )
+
+    private companion object {
+        const val DIGILOCKER = "digilocker"
+        const val AA = "aa"
+        const val WHATSAPP = "whatsapp"
+    }
 
     private fun touchSync(householdId: UUID, provider: String) {
         jdbc.update(

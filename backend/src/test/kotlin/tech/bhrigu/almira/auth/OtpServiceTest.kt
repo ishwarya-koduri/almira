@@ -11,6 +11,12 @@ import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.http.HttpStatus
 import tech.bhrigu.almira.common.ApiException
 import tech.bhrigu.almira.config.AlmiraProperties
+import tech.bhrigu.almira.provider.ProviderCalls
+import tech.bhrigu.almira.provider.SandboxFault
+import tech.bhrigu.almira.provider.SandboxFaults
+import tech.bhrigu.almira.provider.Sleeper
+import java.time.Clock
+import java.util.function.DoubleSupplier
 import tech.bhrigu.almira.support.TestInfra
 import java.security.MessageDigest
 import java.time.Duration
@@ -350,5 +356,104 @@ class OtpServiceTest {
         assertThat(e.message).contains("this network")
         assertThat(redis.opsForHash<String, String>().get("otp:challenge:login:$victim", "attempts")).isEqualTo("0")
         service.verify(victim, sender.lastCode(), null, ip = ip())
+    }
+
+    // --- when the send fails --------------------------------------------------
+
+    /**
+     * Records the code as a provider that received it would, then fails the way
+     * the sandbox faults say — so "it timed out but the text arrived" is a case
+     * a test can hold the code for.
+     */
+    class FaultySender(val faults: SandboxFaults = SandboxFaults()) : OtpSender {
+        val sent = CopyOnWriteArrayList<Pair<String, String>>()
+        override fun send(phone: String, code: String) {
+            sent += phone to code
+            faults.apply("otp")
+        }
+        fun lastCode() = sent.last().second
+    }
+
+    private fun failingService(
+        fault: SandboxFault,
+        otp: AlmiraProperties.Otp = AlmiraProperties.Otp(maxPerHour = 1_000, maxPerIpPerHour = 1_000),
+    ): Pair<OtpService, FaultySender> {
+        val sender = FaultySender().apply { faults.always("otp", fault) }
+        val props = props(otp = otp)
+        val calls = ProviderCalls(props, Sleeper { }, DoubleSupplier { 1.0 }, Clock.systemUTC())
+        return OtpService(redis, sender, props, calls) to sender
+    }
+
+    @Test
+    fun `a timed-out send keeps the challenge and the cooldown, so a late text still signs in`() {
+        val (service, sender) = failingService(SandboxFault.TIMEOUT)
+        val number = phone()
+        val e = refusal { service.request(number, ip()) }
+        assertThat(e.status).isEqualTo(HttpStatus.GATEWAY_TIMEOUT)
+        assertThat(e.code).isEqualTo("otp_delivery_delayed")
+        assertThat(sender.sent).describedAs("retried: three attempts in total").hasSize(3)
+        assertThat(e.message + e.details).doesNotContain(sender.lastCode())
+
+        assertThat(refusal { service.request(number, ip()) }.status)
+            .describedAs("it may have been sent, so the cooldown stands")
+            .isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
+        service.verify(number, sender.lastCode(), e.details["requestId"] as String)
+    }
+
+    @Test
+    fun `a failed delivery, an unavailable provider and an empty balance leave nothing live and no cooldown`() {
+        val expected = mapOf(
+            SandboxFault.REJECTED to (HttpStatus.UNPROCESSABLE_ENTITY to "otp_delivery_failed"),
+            SandboxFault.UNAVAILABLE to (HttpStatus.SERVICE_UNAVAILABLE to "otp_provider_unavailable"),
+            SandboxFault.INSUFFICIENT_BALANCE to (HttpStatus.SERVICE_UNAVAILABLE to "otp_service_unavailable"),
+        )
+        for ((fault, outcome) in expected) {
+            val (service, sender) = failingService(fault)
+            val number = phone()
+            val e = refusal { service.request(number, ip()) }
+            assertThat(e.status).describedAs(fault.name).isEqualTo(outcome.first)
+            assertThat(e.code).describedAs(fault.name).isEqualTo(outcome.second)
+            assertThat(sender.sent).describedAs("attempts for $fault")
+                .hasSize(if (fault == SandboxFault.UNAVAILABLE) 3 else 1)
+            assertThat(e.message + e.details).doesNotContain(sender.lastCode())
+            assertThat(redis.hasKey("otp:challenge:login:$number")).describedAs(fault.name).isFalse()
+            assertThat(redis.hasKey("otp:cooldown:login:$number")).describedAs(fault.name).isFalse()
+
+            // The code that was generated for the failed send is worthless.
+            sender.faults.clear()
+            val stale = sender.lastCode()
+            service.request(number, ip())
+            if (stale != sender.lastCode()) {
+                assertThat(refusal { service.verify(number, stale, null) }.code).isEqualTo("otp_invalid")
+            }
+        }
+    }
+
+    @Test
+    fun `our failure does not use up a person's hourly allowance`() {
+        val (service, sender) = failingService(
+            SandboxFault.INSUFFICIENT_BALANCE,
+            AlmiraProperties.Otp(maxPerHour = 2, maxPerIpPerHour = 1_000),
+        )
+        val number = phone()
+        repeat(4) {
+            assertThat(refusal { service.request(number, ip()) }.code).isEqualTo("otp_service_unavailable")
+        }
+        sender.faults.clear() // topped up
+        service.request(number, ip())
+        service.verify(number, sender.lastCode(), null)
+    }
+
+    @Test
+    fun `but a network does not get free requests out of it`() {
+        val (service, _) = failingService(
+            SandboxFault.REJECTED,
+            AlmiraProperties.Otp(maxPerHour = 1_000, maxPerIpPerHour = 3),
+        )
+        val address = ip()
+        repeat(3) { assertThat(refusal { service.request(phone(), address) }.code).isEqualTo("otp_delivery_failed") }
+        val e = refusal { service.request(phone(), address) }
+        assertThat(e.status).isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
+        assertThat(e.message).contains("this network")
     }
 }

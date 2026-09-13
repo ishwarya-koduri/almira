@@ -2,9 +2,13 @@ package tech.bhrigu.almira.auth
 
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.data.redis.core.script.DefaultRedisScript
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import tech.bhrigu.almira.common.ApiException
 import tech.bhrigu.almira.config.AlmiraProperties
+import tech.bhrigu.almira.provider.FailureKind
+import tech.bhrigu.almira.provider.ProviderCallFailed
+import tech.bhrigu.almira.provider.ProviderCalls
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.Duration
@@ -51,13 +55,17 @@ data class OtpChallenge(
  *  - resend cooldown, per-number and per-network hourly caps on requests, and a
  *    per-network hourly cap on wrong codes across all numbers;
  *  - lifetime, length and attempts are bounded, so configuration cannot quietly
- *    turn a six-digit five-minute code into something guessable.
+ *    turn a six-digit five-minute code into something guessable;
+ *  - a send that fails says which way it failed, and a failure that is ours
+ *    does not lock the person out (see [request]).
  */
 @Service
 class OtpService(
     private val redis: StringRedisTemplate,
     private val sender: OtpSender,
     props: AlmiraProperties,
+    /** SMS's timeout and retry policy. One-time codes go out through the SMS provider's account. */
+    private val calls: ProviderCalls = ProviderCalls(props),
 ) {
     private val cfg = props.otp
     private val development = props.isDevelopment
@@ -91,6 +99,27 @@ class OtpService(
         }
     }
 
+    /**
+     * When the send fails, what happens to the challenge, the cooldown and the
+     * hourly counts depends on whether the text could have gone out — because
+     * two things must both hold: a person must not be locked out by our failure,
+     * and an attacker must not get unthrottled requests out of it.
+     *
+     *  - **Timeout** (`otp_delivery_delayed`): it may still arrive. Everything
+     *    stands — the challenge, so a late text still works; the cooldown and
+     *    both counts, because as far as anyone can tell a text was sent.
+     *  - **Rejected** (`otp_delivery_failed`), **unavailable**
+     *    (`otp_provider_unavailable`), **insufficient balance**
+     *    (`otp_service_unavailable`): nothing was delivered. The challenge is
+     *    removed (no live code with nobody to receive it), the cooldown is
+     *    lifted and the per-number count is given back, so fixing a typo or
+     *    trying again once we are topped up is not refused as "too many". The
+     *    per-network count is NOT given back: that is the limit that stops one
+     *    network hammering this endpoint, and it holds whether or not our
+     *    provider is working.
+     *
+     * No code, phone number or provider detail appears in any of these errors.
+     */
     fun request(phone: String, ip: String?, purpose: String = LOGIN): OtpChallenge {
         // First, before a counter moves or a code exists. A sender that cannot
         // deliver would otherwise leave a live code with nobody to receive it —
@@ -120,7 +149,17 @@ class OtpService(
             redis.opsForValue().set(cooldownKey(phone, purpose), "1", cfg.resendCooldown)
         }
 
-        sender.send(phone, code)
+        try {
+            calls.call(SMS, "otp") { sender.send(phone, code) }
+        } catch (failure: ProviderCallFailed) {
+            if (failure.kind != FailureKind.TIMEOUT) {
+                // CONSUME removes it only if it is still this request's challenge.
+                redis.execute(CONSUME, listOf(challengeKey(phone, purpose)), requestId)
+                redis.delete(cooldownKey(phone, purpose))
+                redis.execute(GIVE_BACK, listOf("otp:rate:phone:$phone"))
+            }
+            throw sendFailed(failure.kind, requestId)
+        }
 
         return OtpChallenge(
             requestId = requestId,
@@ -187,6 +226,34 @@ class OtpService(
         }
     }
 
+    /** One code per way of failing, so a client can say the right thing. See docs/13. */
+    private fun sendFailed(kind: FailureKind, requestId: String): ApiException = when (kind) {
+        FailureKind.TIMEOUT -> ApiException(
+            HttpStatus.GATEWAY_TIMEOUT, "otp_delivery_delayed",
+            "Your code is taking longer than usual to send. If it arrives, it will work. " +
+                "If it doesn't, you can ask for another in ${cfg.resendCooldown.seconds} seconds.",
+            mapOf(
+                "requestId" to requestId,
+                "expiresInSeconds" to cfg.ttl.seconds,
+                "resendAfterSeconds" to cfg.resendCooldown.seconds,
+            ),
+        )
+        FailureKind.REJECTED -> ApiException(
+            HttpStatus.UNPROCESSABLE_ENTITY, "otp_delivery_failed",
+            "We couldn't deliver a code to that number. Please check it and try again.",
+        )
+        FailureKind.UNAVAILABLE -> ApiException(
+            HttpStatus.SERVICE_UNAVAILABLE, "otp_provider_unavailable",
+            "We couldn't reach our text message service just now, so no code was sent. " +
+                "Please try again in a few minutes.",
+        )
+        FailureKind.INSUFFICIENT_BALANCE -> ApiException(
+            HttpStatus.SERVICE_UNAVAILABLE, "otp_service_unavailable",
+            "Sign-in codes can't be sent right now. This is a problem on our side, not with " +
+                "your number, and we've been alerted. Please try again later.",
+        )
+    }
+
     private fun expired() = ApiException.badRequest(
         "otp_expired",
         "That code has expired. Ask for a new one and we'll text it right away.",
@@ -240,6 +307,21 @@ class OtpService(
     companion object {
         const val LOGIN = "login"
         const val STEP_UP = "step_up"
+
+        /** The provider configuration one-time codes are sent under. */
+        private const val SMS = "sms"
+
+        /** Returns one request to the hourly count, never below zero. */
+        private val GIVE_BACK = DefaultRedisScript(
+            """
+            local n = tonumber(redis.call('GET', KEYS[1]) or '0')
+            if n > 0 then
+              return redis.call('DECR', KEYS[1])
+            end
+            return 0
+            """.trimIndent(),
+            Long::class.javaObjectType,
+        )
 
         private const val HMAC = "HmacSHA256"
         private val MAX_TTL: Duration = Duration.ofMinutes(10)

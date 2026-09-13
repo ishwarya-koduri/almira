@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import tech.bhrigu.almira.common.PhoneNumber
 import tech.bhrigu.almira.config.AlmiraProperties
+import tech.bhrigu.almira.provider.SandboxFaults
 
 /**
  * Delivery only. The code itself is generated, stored and checked by
@@ -12,6 +13,11 @@ import tech.bhrigu.almira.config.AlmiraProperties
  * about how authentication works (docs/09 §9.3).
  */
 interface OtpSender {
+    /**
+     * Throws [tech.bhrigu.almira.provider.ProviderFailure] to say how delivery
+     * failed. Always called through ProviderCalls, which times it out and retries
+     * only what is worth retrying.
+     */
     fun send(phone: String, code: String)
 
     /**
@@ -50,7 +56,11 @@ interface OtpSender {
  */
 @Component
 @ConditionalOnProperty(name = ["almira.otp.provider"], havingValue = "log", matchIfMissing = true)
-class LoggingOtpSender(props: AlmiraProperties) : OtpSender {
+class LoggingOtpSender(
+    props: AlmiraProperties,
+    /** So a test can make sign-in's delivery time out, bounce or run out of credit. */
+    private val faults: SandboxFaults = SandboxFaults(),
+) : OtpSender {
     private val log = LoggerFactory.getLogger(javaClass)
     private val development = props.isDevelopment
 
@@ -61,6 +71,7 @@ class LoggingOtpSender(props: AlmiraProperties) : OtpSender {
         // unreachable outside development. If it is ever reached, it refuses to
         // write the code rather than trusting the caller to have checked.
         check(development) { "LoggingOtpSender.send called outside development" }
+        faults.apply("otp")
         log.warn("=== DEV OTP for {} : {} ===", PhoneNumber.mask(phone), code)
     }
 

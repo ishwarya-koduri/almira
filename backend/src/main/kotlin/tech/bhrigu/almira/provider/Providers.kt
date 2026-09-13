@@ -16,6 +16,10 @@ import java.util.UUID
  * live is a credential and a property.
  *
  * docs/13 lists, per provider, exactly what flips it.
+ *
+ * Every method below that talks to the provider says how it failed by throwing
+ * [ProviderFailure], and is called through [ProviderCalls], which owns the
+ * timeout and the retries. An adapter never retries on its own.
  */
 
 /** Where a provider is in its life: not configured, sandboxed, or actually live. */

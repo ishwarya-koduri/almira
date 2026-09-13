@@ -235,6 +235,12 @@ abstract class ApiTestBase {
             registry.add("almira.otp.max-verify-failures-per-ip-per-hour") { 100_000 }
             registry.add("almira.otp.max-per-hour") { 1_000 }
             registry.add("almira.jwt.secret") { "test-only-secret-that-is-long-enough-for-hmac256-signing" }
+            // Retries really happen in the full-stack provider failure tests, and
+            // the default half-second backoff would make each one sit through
+            // it. The backoff itself is asserted in provider/ProviderCallsTest.
+            listOf("sms", "email", "push", "digilocker", "aa", "whatsapp").forEach {
+                registry.add("almira.providers.$it.retry-backoff") { "5ms" }
+            }
         }
     }
 }

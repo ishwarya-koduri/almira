@@ -43,6 +43,23 @@ A server with no working code sender answers the request with `503` and
 `otp_unavailable`, and sends nothing. Show the message; retrying will not help.
 Today that is every server not running in development.
 
+When a sender exists but the send itself fails, the code says which way — and
+each one needs different words ([docs/13 "When a provider fails"](../13-providers-and-going-live.md#when-a-provider-fails)):
+
+| Status | Code | What to do |
+|---|---|---|
+| 504 | `otp_delivery_delayed` | Go to the code step anyway: the text may still arrive and will work. `details.requestId` is the challenge; offer a resend after `details.resendAfterSeconds`. |
+| 422 | `otp_delivery_failed` | Nothing was delivered. Let the person correct the number and ask again straight away. |
+| 503 | `otp_provider_unavailable` | Nothing was sent. Suggest trying again in a few minutes. |
+| 503 | `otp_service_unavailable` | Our account problem. Show the message; do not suggest checking the number. |
+
+Connecting DigiLocker or the Account Aggregator fails the same four ways, as
+`provider_timeout` (504), `provider_unavailable` (503), `provider_rejected` (422)
+and `provider_account_unavailable` (503), with `details.provider`. The WhatsApp
+webhook still answers 200 and sets `replyFailure` to one of those codes.
+`GET /api/v1/me/messages` lists the caller's own notifications, with `status`,
+`failure`, `attempts` and a ready-to-show `failureMessage`.
+
 ### Step-up
 
 Revealing a full account number, or opening a document, needs a **recent

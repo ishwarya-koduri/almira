@@ -62,8 +62,9 @@ Why this model and not the others:
   199 of 200 nominees with everything else complete: that is 99.875%. Rounding
   to the nearest whole number would show **100** with a policy still missing its
   nominee. Completeness rounds that way today (see known-issues 19). Here,
-  `complete` is true only when there are no gaps at all. The pure function and
-  the API are both tested for this (§8).
+  `complete` is true only when there are no gaps at all and no record is left
+  out of the family summary (§2). The pure function and the API are both tested
+  for this (§8).
 
 ### When there is no number
 
@@ -111,16 +112,56 @@ Records **not** counted:
   them.
 - **Records left out of the family summary** (`is_in_continuity = false`). The
   owner decided the family should not be handed these, so missing items on them
-  are not handover gaps. They are counted in `leftOutCount` and named in a
-  caveat, never listed.
+  are not listed as gaps and not scored. They are counted in `leftOutCount`,
+  named in `leftOut`, and turned into a to-do of their own (below).
 
-**This is the one way to move the score without fixing anything, and it is
-allowed on purpose.** If you leave the records with gaps out of the summary, the
-score rises. We did not block this. Leaving a record out is an explicit,
-per-record decision the handbook already honours. Scoring it would mean nagging
-someone about a choice docs/05 §3.4 says is theirs. Two things keep it honest:
-the caveat always states how many records are left out, and leaving *everything*
-out produces no score at all (§1).
+### Leaving a record out is a to-do, and the score stops at 99
+
+Leaving a record out is the one way to move the score without fixing anything.
+If the records with gaps are left out of the summary, their gaps vanish from
+the checks.
+
+**As first built, this was allowed on purpose, and that was wrong.** The first
+version said only a caveat ("N records are left out… and not scored"), and left
+the number and `complete` alone. A verifier showed the result: a household with
+one complete policy and one policy with every gap scored 62; setting
+`is_in_continuity = false` on the second, and fixing nothing, gave **100** and
+`complete: true`. The brief said the score must not be gamed into 100% while the
+real gap remains. A caveat under a disclosure does not stop that, because the
+number is what people read.
+
+What it does now:
+
+- **`leftOut` names the records.** Each entry is `{ recordType, recordId, title }`,
+  in title order, so the client can show them and open each one. It is one
+  to-do: *these are left out of the family summary — check this is on purpose.*
+  Their individual missing items are still not listed, because the family is
+  not being handed them.
+- **`complete` is false while `leftOutCount > 0`.**
+- **The score is at most 99 while `leftOutCount > 0`** (`ReadinessScore.withLeftOut`).
+  A score below 99 is left as it is; the cap only removes the 100. The
+  explanation says so: "While any record is left out of the family summary, it
+  stops at 99."
+- **Leaving everything out is still no score** (§1), with the same sentence. The
+  `leftOut` list is still sent, so the to-do works without a number.
+
+Why a cap and not counting the left-out records' gaps: leaving a record out is
+an explicit, per-record decision the handbook already honours (docs/05 §3.4).
+Scoring its nominee and scan would nag, item by item, about records the owner
+has said the family should not be handed. The cap and the one to-do make the
+decision visible without re-litigating each field. The cost is that someone who
+leaves a record out *deliberately* can never see 100 or `complete`. That is the
+honest answer: the score cannot vouch for what the family will not be handed.
+There is no "yes, on purpose" acknowledgement. One would reopen the same hole
+unless it expired whenever the record changed, and it was not built.
+
+**Not closed by this.** Marking a record closed, or deleting it, also takes it
+out of readiness (§6). That is not treated as gaming: it is a claim that the
+thing no longer exists, and "Still true?" is where that claim is questioned.
+Neither the web client nor the native app has a control for
+`is_in_continuity` today; it is set through the API (`isInContinuity` on the
+holding). A to-do row opens the holding, which is where such a control would
+belong.
 
 ## 3. Which checks apply to which holding
 
@@ -344,9 +385,10 @@ API (`default-property-inclusion: non_null`).
 ```
 { score: 75 | null,
   scoreExplanation: "…",               // always a sentence
-  complete: false,                      // true only when score is not null and there are no gaps
+  complete: false,                      // true only when score is not null, there are no gaps, and leftOutCount is 0
   recordCount: 12,                      // counted records (§2)
   leftOutCount: 1,
+  leftOut: [ { recordType, recordId, title } ],                    // the records behind leftOutCount (§2)
   checks: [ { code, label, done, applicable, percent | null } ],   // always all four, in order
   gaps:   [ { check, reason, recordType | null, recordId | null, title | null, fix } ],
   caveats: [ "…" ] }
@@ -368,7 +410,10 @@ API (`default-property-inclusion: non_null`).
 **Web client.** A **"Ready to hand over"** card sits at the top of *For my family*
 (`#/continuity`). It shows the score, or the null sentence, the four checks as
 `done of applicable`, and the gaps as a to-do list grouped by record. Each row
-opens the place where the item is fixed, and the card reloads after the fix. The
+opens the place where the item is fixed, and the card reloads after the fix.
+When records are left out of the family summary, the to-do list ends with one
+more item, "Left out of the family summary · N — check this is on purpose",
+with a row per record that opens it. That item counts as one in "To do". The
 caveats sit under a disclosure. Strings are in English, Telugu and Hindi
 (`ready.*`). If the endpoint fails (for example, on an older server), the card is
 simply not drawn, and the screen does not fail with it.
@@ -398,6 +443,11 @@ reason, and passed again once it was restored):
 - The "everything left out" branch removed: the score is still null, because
   the "no record check applies" rule also catches it, and only the sentence is
   wrong. With both removed, the score is 100 with `recordCount` 0.
+- Records left out of the family summary moving the score to 100 (§2): with
+  the cap and the `complete` condition removed, the API test for leaving the
+  records with gaps out gets `score` 100 and `complete: true`, where it expects
+  99 and false. `ReadinessScoreTest` gets 100 for `withLeftOut(100, 1)` with
+  the cap removed.
 - The deleted-document condition removed: a holding whose only scan was deleted
   still counts as having one.
 - The applicability table and this document disagreeing: `HandoverReadinessDocTest`
@@ -433,6 +483,15 @@ reason, and passed again once it was restored):
 - Cost at scale. The card makes one query per record kind, with correlated
   `exists` subqueries per record. That is fine at family size. It has not been
   measured at thousands of records.
+- The left-out to-do on the web card (§7) has no automated test either. It was
+  checked by hand against a development server with an FD kept in and a term
+  policy and physical gold left out: the API said `leftOutCount` 2 with both
+  named in title order, the card showed "To do · 4" (three gaps and the one
+  left-out item) with a row per left-out record, and the policy's row opened
+  the holding, and closing it redrew the card. The item's text was read back in
+  Telugu and Hindi, and in Hindi at phone width the page did not scroll
+  sideways. The 99 cap was not seen on the card; the card prints the server's
+  number, and the cap is tested at the API.
 
 **Known overlap:** the completeness card on Reports (`CompletenessService`)
 predates this and scores something related in a different way: it is weighted,

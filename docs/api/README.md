@@ -313,7 +313,10 @@ change does not. See [Doc 21](../21-still-true.md).
 `GET /continuity/readiness` returns `score` (0–100, rounded down) and
 `scoreExplanation`. `score` is left out, like any null field, when nothing
 counted applies, and the explanation then says why. Render the sentence, never a
-0. `complete` is true only when there are no gaps. `checks` always lists all four
+0. `complete` is true only when there are no gaps and nothing is left out of the
+family summary; while `leftOutCount` is above 0 the score is at most 99, and
+`leftOut` names those records so the client can show them as a to-do.
+`checks` always lists all four
 checks in order, and `gaps` names each missing item with a `reason` to
 translate, an English `fix`, and `recordType`/`recordId` as the deep link. It is
 computed as the caller, so two members can get different answers and both are

@@ -38,15 +38,31 @@ data class ReadinessGap(
     val fix: String,
 )
 
+/**
+ * A record the viewer can see that is left out of the family summary. Named so
+ * the client can show which ones, because leaving a record out is the one way to
+ * move the score without fixing anything (docs/22 §2).
+ */
+data class LeftOutRecord(
+    val recordType: String,
+    val recordId: UUID,
+    val title: String,
+)
+
 data class HandoverReadiness(
-    /** 0–100, rounded down, or null when the data cannot earn a number (docs/22 §1). */
+    /**
+     * 0–100, rounded down, or null when the data cannot earn a number (docs/22 §1).
+     * At most 99 while any record is left out of the family summary (§2).
+     */
     val score: Int?,
     /** Always a sentence: how the number was made, or why there is none. */
     val scoreExplanation: String,
-    /** True only when there is a score and nothing is missing. */
+    /** True only when there is a score, nothing is missing, and nothing is left out. */
     val complete: Boolean,
     val recordCount: Int,
     val leftOutCount: Int,
+    /** The records behind [leftOutCount], in title order: a to-do, "check this is on purpose". */
+    val leftOut: List<LeftOutRecord>,
     val checks: List<ReadinessCheck>,
     val gaps: List<ReadinessGap>,
     val caveats: List<String>,
@@ -156,6 +172,15 @@ object ReadinessScore {
         return (numerator * BigInteger.valueOf(100) / denominator).toInt()
     }
 
+    /**
+     * Leaving the records with gaps out of the family summary would otherwise
+     * lift the score to 100 with those gaps still there (docs/22 §2). While any
+     * record is left out, the number stops at 99: the score cannot vouch for
+     * what the family will not be handed.
+     */
+    fun withLeftOut(score: Int?, leftOutCount: Int): Int? =
+        if (score != null && leftOutCount > 0) minOf(score, 99) else score
+
     fun percent(done: Int, applicable: Int): Int? =
         if (applicable == 0) null else (done.toLong() * 100 / applicable).toInt()
 }
@@ -215,7 +240,10 @@ class HandoverReadinessService(
 
         val all = investments + instruments
         val counted = all.filter { it.inContinuity }
-        val leftOut = all.size - counted.size
+        val leftOutRecords = all.filterNot { it.inContinuity }
+            .sortedWith(compareBy({ it.title.lowercase() }, { it.recordId.toString() }))
+            .map { LeftOutRecord(it.recordType, it.recordId, it.title) }
+        val leftOut = leftOutRecords.size
 
         val gaps = mutableListOf<ReadinessGap>()
         val trusted = trustedContact(householdId)
@@ -261,7 +289,8 @@ class HandoverReadinessService(
             all.isEmpty() -> null to NOTHING_RECORDED
             counted.isEmpty() -> null to ALL_LEFT_OUT
             recordItems == 0 -> null to NOTHING_APPLIES
-            else -> ReadinessScore.of(checks.map { it.done to it.applicable }) to HOW_IT_IS_COUNTED
+            else -> ReadinessScore.withLeftOut(ReadinessScore.of(checks.map { it.done to it.applicable }), leftOut) to
+                (if (leftOut > 0) "$HOW_IT_IS_COUNTED $LEFT_OUT_STOPS_AT_99" else HOW_IT_IS_COUNTED)
         }
 
         val caveats = buildList {
@@ -271,7 +300,8 @@ class HandoverReadinessService(
             if (leftOut > 0) {
                 add(
                     "$leftOut ${if (leftOut == 1) "record is" else "records are"} left out of the " +
-                        "family summary on purpose, and not scored.",
+                        "family summary. Check this is on purpose: nothing on ${if (leftOut == 1) "it" else "them"} " +
+                        "is scored, and the score stays below 100 until nothing is left out.",
                 )
             }
             add(CAVEAT_STILL_TRUE)
@@ -280,9 +310,10 @@ class HandoverReadinessService(
         return HandoverReadiness(
             score = score,
             scoreExplanation = explanation,
-            complete = score != null && gaps.isEmpty(),
+            complete = score != null && gaps.isEmpty() && leftOut == 0,
             recordCount = counted.size,
             leftOutCount = leftOut,
+            leftOut = leftOutRecords,
             checks = checks,
             gaps = gaps,
             caveats = caveats,
@@ -394,6 +425,8 @@ class HandoverReadinessService(
         const val HOW_IT_IS_COUNTED =
             "Each check that applies counts equally, and within a check it is the share of your " +
                 "records that have it. Rounded down, so 100 means nothing is missing."
+        const val LEFT_OUT_STOPS_AT_99 =
+            "While any record is left out of the family summary, it stops at 99."
         const val NOTHING_RECORDED = "Nothing is recorded for your family yet, so there is nothing to score."
         const val ALL_LEFT_OUT =
             "Everything you can see is left out of the family summary, so there is nothing to score."

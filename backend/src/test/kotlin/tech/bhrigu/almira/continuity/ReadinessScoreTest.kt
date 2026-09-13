@@ -49,6 +49,14 @@ class ReadinessScoreTest {
     }
 
     @Test
+    fun `a record left out of the family summary keeps the score below 100`() {
+        assertThat(ReadinessScore.withLeftOut(100, 1)).isEqualTo(99)
+        assertThat(ReadinessScore.withLeftOut(75, 3)).isEqualTo(75)
+        assertThat(ReadinessScore.withLeftOut(100, 0)).isEqualTo(100)
+        assertThat(ReadinessScore.withLeftOut(null, 2)).isNull()
+    }
+
+    @Test
     fun `a check's own percentage is rounded down too`() {
         assertThat(ReadinessScore.percent(199, 200)).isEqualTo(99)
         assertThat(ReadinessScore.percent(0, 0)).isNull()

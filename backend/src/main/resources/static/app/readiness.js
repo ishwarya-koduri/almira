@@ -10,6 +10,11 @@
    first, then each record's missing things. Each row opens the place where that
    thing is fixed, and the card is fetched again when that place is closed.
 
+   Records left out of the family summary are a to-do of their own: leaving the
+   records with gaps out is the one way to move the score without fixing
+   anything, so they are named (with a way to open each) and the server keeps
+   the score below 100 while any remain (docs/22 §2).
+
    An older server has no endpoint. A failed load is simply no card; the family
    screen must not fail with it. */
 
@@ -53,6 +58,32 @@ function reasonText(gap) {
   return text === key ? gap.fix : text;
 }
 
+/** One to-do: these records are left out of the family summary — on purpose? Each opens the record. */
+function leftOutTodo(records, open) {
+  return el("div.stack-2", { "data-left-out": "true" },
+    el("div.stack-2", {},
+      el("span", {}, t("ready.leftOut.title", { count: records.length })),
+      el("span.caption.muted", {}, t("ready.leftOut.body")),
+    ),
+    el("div.list", {}, ...records.map((record) => {
+      const go = () => open.record(record.recordType, record.recordId);
+      return el("div.list-row", {
+        role: "button", tabIndex: 0,
+        "aria-label": `${record.title}. ${t("ready.leftOut.row")}`,
+        style: { alignItems: "flex-start" },
+        onclick: go,
+        onkeydown: (event) => { if (event.key === "Enter") go(); },
+      },
+        el("span.pill", {}, t(`where.type.${record.recordType}`)),
+        el("div.grow", {},
+          el("div.title", {}, record.title),
+          el("div.meta", {}, t("ready.leftOut.row")),
+        ),
+      );
+    })),
+  );
+}
+
 /**
  * @param readiness    the server's answer
  * @param open         { record(recordType, recordId), trusted(reason) } — where each gap is fixed
@@ -83,9 +114,12 @@ export function readinessCard(readiness, open) {
   );
 
   const groups = groupGaps(readiness.gaps);
-  const todo = groups.length === 0 ? null : el("div.stack-2", {},
-    el("span.overline", {}, t("ready.todo", { count: readiness.gaps.length })),
-    el("div.list", {}, ...groups.map((group) => {
+  // An older server sends no list; the count alone is then only a caveat.
+  const leftOut = Array.isArray(readiness.leftOut) ? readiness.leftOut : [];
+  const todoCount = readiness.gaps.length + (leftOut.length > 0 ? 1 : 0);
+  const todo = todoCount === 0 ? null : el("div.stack-2", {},
+    el("span.overline", {}, t("ready.todo", { count: todoCount })),
+    groups.length > 0 && el("div.list", {}, ...groups.map((group) => {
       const go = () => (group.recordId
         ? open.record(group.recordType, group.recordId)
         : open.trusted(group.gaps[0].reason));
@@ -102,6 +136,7 @@ export function readinessCard(readiness, open) {
         ),
       );
     })),
+    leftOut.length > 0 && leftOutTodo(leftOut, open),
   );
 
   const caveats = el("details", {},

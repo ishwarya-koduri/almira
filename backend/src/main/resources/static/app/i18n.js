@@ -193,6 +193,9 @@ const messages = {
     "ready.reason.no_trusted_contact": "Nobody is named to ask for access if you can't be reached",
     "ready.reason.trusted_contact_cannot_ask": "Nobody you named can sign in, so nobody could ask",
     "ready.reason.nobody_to_name": "Nobody else here can sign in. Invite someone you trust first.",
+    "ready.leftOut.title": "Left out of the family summary · {count}",
+    "ready.leftOut.body": "Check this is on purpose. Nothing on these is scored, and the score stays below 100 while any is left out.",
+    "ready.leftOut.row": "Left out of the family summary. On purpose?",
 
     "connect.title": "Connected services",
     "connect.sandbox": "Sandbox",
@@ -410,6 +413,9 @@ const messages = {
     "ready.reason.no_trusted_contact": "మీరు అందుబాటులో లేకపోతే యాక్సెస్ అడగడానికి ఎవరి పేరూ ఇవ్వలేదు",
     "ready.reason.trusted_contact_cannot_ask": "మీరు పేరు ఇచ్చిన వారెవరూ సైన్ ఇన్ చేయలేరు, కాబట్టి ఎవరూ అడగలేరు",
     "ready.reason.nobody_to_name": "ఇక్కడ మరెవరూ సైన్ ఇన్ చేయలేరు. ముందుగా మీరు నమ్మే వ్యక్తిని ఆహ్వానించండి.",
+    "ready.leftOut.title": "కుటుంబ సారాంశం నుండి వదిలేసినవి · {count}",
+    "ready.leftOut.body": "ఇది కావాలనే చేశారో లేదో చూసుకోండి. వీటిలో దేనినీ లెక్కించరు, ఏదైనా వదిలేసి ఉన్నంత వరకు స్కోరు 100 కంటే తక్కువగానే ఉంటుంది.",
+    "ready.leftOut.row": "కుటుంబ సారాంశం నుండి వదిలేయబడింది. కావాలనేనా?",
 
     "connect.title": "అనుసంధానించిన సేవలు",
     "connect.sandbox": "పరీక్ష",
@@ -627,6 +633,9 @@ const messages = {
     "ready.reason.no_trusted_contact": "आपसे संपर्क न हो पाने पर पहुँच माँगने के लिए किसी का नाम नहीं दिया गया",
     "ready.reason.trusted_contact_cannot_ask": "जिनका नाम आपने दिया, उनमें से कोई साइन इन नहीं कर सकता, इसलिए कोई माँग नहीं सकता",
     "ready.reason.nobody_to_name": "यहाँ और कोई साइन इन नहीं कर सकता। पहले किसी भरोसेमंद को आमंत्रित करें।",
+    "ready.leftOut.title": "परिवार के सारांश से बाहर रखे गए · {count}",
+    "ready.leftOut.body": "जाँच लें कि यह जान-बूझकर है। इनमें से किसी को नहीं गिना जाता, और जब तक कोई भी बाहर है, स्कोर 100 से कम रहता है।",
+    "ready.leftOut.row": "परिवार के सारांश से बाहर रखा गया। जान-बूझकर?",
 
     "connect.title": "जुड़ी हुई सेवाएँ",
     "connect.sandbox": "परीक्षण",

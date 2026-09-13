@@ -210,6 +210,36 @@ class HandoverReadinessApiTest : ApiTestBase() {
         assertThat(gaps(body)).containsExactly(Triple("document", "no_document", id))
     }
 
+    @Test
+    fun `leaving the records with gaps out of the family summary cannot reach 100 or complete`() {
+        completePolicy()
+        val gappy = policy(title = "Policy with every gap")
+        nameTrusted()
+        val before = readiness(owner)
+        assertThat(before.path("complete").asBoolean()).isFalse()
+        assertThat(before.path("score").asInt()).isLessThan(100)
+
+        // The gaming attempt: fix nothing, just leave the record with gaps out.
+        edit(gappy, mapOf("isInContinuity" to false))
+
+        val body = readiness(owner)
+        assertThat(gaps(body)).describedAs("its gaps are not listed as gaps").isEmpty()
+        assertThat(body.path("leftOutCount").asInt()).isEqualTo(1)
+        assertThat(body.path("score").asInt()).describedAs(body.toString()).isEqualTo(99)
+        assertThat(body.path("complete").asBoolean()).isFalse()
+        assertThat(body.path("leftOut").map {
+            Triple(it.path("recordType").asText(), it.path("recordId").asText(), it.path("title").asText())
+        }).containsExactly(Triple("investment", gappy, "Policy with every gap"))
+        assertThat(body.path("scoreExplanation").asText()).contains("stops at 99")
+        assertThat(body.path("caveats").map { it.asText() }).anyMatch { it.contains("Check this is on purpose") }
+
+        // Putting it back is the way out of the to-do; then its real gaps show again.
+        edit(gappy, mapOf("isInContinuity" to true))
+        val back = readiness(owner)
+        assertThat(back.path("leftOut")).isEmpty()
+        assertThat(gaps(back).map { it.third }).contains(gappy)
+    }
+
     // --- gaps, named and in order -----------------------------------------------------
 
     @Test
@@ -297,7 +327,11 @@ class HandoverReadinessApiTest : ApiTestBase() {
         assertThat(noScore(body)).describedAs(body.toString()).isTrue()
         assertThat(body.path("leftOutCount").asInt()).isEqualTo(1)
         assertThat(body.path("scoreExplanation").asText()).contains("left out of the family summary")
-        assertThat(gaps(body)).describedAs("a record left out on purpose is not nagged about").isEmpty()
+        assertThat(gaps(body)).describedAs("its missing items are not listed as gaps").isEmpty()
+        assertThat(body.path("complete").asBoolean()).isFalse()
+        assertThat(body.path("leftOut").map { it.path("recordId").asText() })
+            .describedAs("but the record itself is named, to check it is left out on purpose")
+            .containsExactly(id)
     }
 
     // --- per viewer ---------------------------------------------------------------------
@@ -318,6 +352,7 @@ class HandoverReadinessApiTest : ApiTestBase() {
         assertThat(spouseAfter.toString()).doesNotContain("Secret").doesNotContain(secret)
         assertThat(spouseAfter.path("recordCount").asInt()).isEqualTo(1)
         assertThat(spouseAfter.path("leftOutCount").asInt()).isZero()
+        assertThat(spouseAfter.path("leftOut")).isEmpty()
         assertThat(spouseAfter.path("score").asInt()).isEqualTo(100)
         assertThat(spouseAfter.path("checks")).isEqualTo(spouseBefore.path("checks"))
 

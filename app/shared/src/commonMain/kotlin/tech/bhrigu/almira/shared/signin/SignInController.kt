@@ -107,7 +107,7 @@ sealed interface EmailDelivery {
     data object Sent : EmailDelivery
     data class Delayed(val message: String) : EmailDelivery
     data class Failed(val message: String) : EmailDelivery
-    /** An unreadable status (an older server, no connection): stop asking. */
+    /** An unreadable status (an older server, no connection): stop asking, unconfirmed. */
     data object Unknown : EmailDelivery
 
     companion object {
@@ -125,6 +125,17 @@ sealed interface EmailDelivery {
                 status.message?.takeIf { it.startsWith(NOT_SENT) } ?: NOT_SENT,
             )
             else -> Unknown
+        }
+
+        /**
+         * What the code step shows once it stops asking. Only a status that said
+         * "sent" may leave it saying a code went; asking that never settled, or a
+         * status that could not be read, is unconfirmed and shown as a late email
+         * with resend open, never as silence.
+         */
+        fun whenAskingStops(last: EmailDelivery?): EmailDelivery = when (last) {
+            Sent, is Delayed, is Failed -> last
+            Pending, Unknown, null -> Delayed(DELAYED)
         }
     }
 }
@@ -236,22 +247,19 @@ class SignInController(
         }
         _state.update { it.copy(emailSending = true, delivery = null) }
         watching = scope.launch {
-            repeat(WATCH_ATTEMPTS) {
+            var last: EmailDelivery? = null
+            for (attempt in 0 until WATCH_ATTEMPTS) {
                 delay(1000)
-                when (val outcome = EmailDelivery.of(api.emailDelivery(requestId))) {
-                    EmailDelivery.Pending -> Unit
-                    is EmailDelivery.Delayed, is EmailDelivery.Failed -> {
-                        countdown?.cancel()
-                        _state.update { it.copy(emailSending = false, delivery = outcome, resendIn = 0) }
-                        return@launch
-                    }
-                    EmailDelivery.Sent, EmailDelivery.Unknown -> {
-                        _state.update { it.copy(emailSending = false) }
-                        return@launch
-                    }
-                }
+                last = EmailDelivery.of(api.emailDelivery(requestId))
+                if (last != EmailDelivery.Pending) break
             }
-            _state.update { it.copy(emailSending = false) }
+            when (val outcome = EmailDelivery.whenAskingStops(last)) {
+                is EmailDelivery.Delayed, is EmailDelivery.Failed -> {
+                    countdown?.cancel()
+                    _state.update { it.copy(emailSending = false, delivery = outcome, resendIn = 0) }
+                }
+                else -> _state.update { it.copy(emailSending = false) }
+            }
         }
     }
 

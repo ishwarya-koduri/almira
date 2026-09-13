@@ -91,7 +91,10 @@ class EmailSignInApiTest : ApiTestBase() {
         // Retry-after can differ by the second it took to run; nothing else may.
         val body = json.toString().replace(Regex("[0-9]+ seconds"), "N seconds")
             .replace(Regex("\"retryAfterSeconds\":[0-9]+"), "\"retryAfterSeconds\":N")
-        val headers = r.headers.keys.map { it.lowercase() }.sorted()
+        // Hop-by-hop headers describe the connection, not the answer: Tomcat closes a
+        // keep-alive connection after its 100th request with "Connection: close",
+        // and the status polls below make that land on a compared response at random.
+        val headers = r.headers.keys.map { it.lowercase() }.filterNot { it in HOP_BY_HOP }.sorted()
         return "${r.statusCode.value()} $headers $body"
     }
 
@@ -360,10 +363,16 @@ class EmailSignInApiTest : ApiTestBase() {
         /** Only a check that a test uses an address the allowlist below really has. */
         fun extraListed(address: String) = check(address in extra) { "$address is not on the test allowlist" }
 
+        /** RFC 9110 §7.6.1: per-connection, set by the server whoever asks. */
+        private val HOP_BY_HOP = setOf("connection", "keep-alive")
+
         @JvmStatic
         @DynamicPropertySource
         fun emailSignIn(registry: DynamicPropertyRegistry) {
             registry.add("almira.auth.sign-in-channels") { "phone,email" }
+            // Every other response closes its connection, so a comparison that counted
+            // the Connection header fails every run rather than one run in several.
+            registry.add("server.tomcat.max-keep-alive-requests") { "2" }
             // Typed untidily on purpose: the list is normalised as sign-in is.
             registry.add("almira.auth.email-allowlist") { (listed + extra).joinToString(" , ") { it.uppercase() } }
         }

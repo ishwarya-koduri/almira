@@ -87,6 +87,13 @@ class SignInStateTest {
         assertTrue(EmailDelivery.of(status("delayed", message = "late")) is EmailDelivery.Delayed)
         assertEquals(EmailDelivery.Unknown, EmailDelivery.of(null))
         assertEquals(EmailDelivery.Unknown, EmailDelivery.of(status("queued")))
+        // Once asking stops, only "sent" may say the code went.
+        val late = EmailDelivery.Delayed(EmailDelivery.DELAYED)
+        assertEquals(late, EmailDelivery.whenAskingStops(EmailDelivery.Pending))
+        assertEquals(late, EmailDelivery.whenAskingStops(EmailDelivery.Unknown))
+        assertEquals(late, EmailDelivery.whenAskingStops(null))
+        assertEquals(EmailDelivery.Sent, EmailDelivery.whenAskingStops(EmailDelivery.Sent))
+        assertEquals(EmailDelivery.Failed("x"), EmailDelivery.whenAskingStops(EmailDelivery.Failed("x")))
 
         val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
         val decoded = json.decodeFromString(

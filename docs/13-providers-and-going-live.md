@@ -272,6 +272,8 @@ ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
   (`otp_delivery_failed`, `otp_provider_unavailable`,
   `otp_service_unavailable`; resend open now). The web client says it in
   English, Telugu and Hindi; the native app in English, as the rest of it.
+  Only `sent` is shown as sent: a status still `sending` after 30 polls, or
+  one that cannot be read, is shown as delayed with resend open.
   A failure does to the challenge, cooldown and counts exactly what a reported
   send does ("What a failed send does to a one-time code", below): nobody is
   locked out, or charged a request, by our failure.
@@ -297,12 +299,18 @@ ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
      because a rejection is about an address, not the provider. Seeing
      "couldn't deliver to that address" therefore means *listed, and
      undeliverable*.
-  2. **A change in the provider.** Decoys replay the last real send. Between
-     the provider changing state (going down, coming back, running out of
-     credit) and the next real sign-in email, decoys still report the old
-     state. Someone probing at exactly that moment, alternating addresses,
-     could see a listed one flip first. They cannot cause the change, and
-     cannot see it without a listed address.
+  2. **A change in the provider.** Decoys replay the last real send, and only a
+     real send updates what they replay (kept a day). So after the provider
+     changes state (goes down, comes back, runs out of credit, starts timing
+     out) the window is not a moment: it stays open until some listed address
+     is next sent a code, however long that is. Inside it, every probe is a
+     clean bit — an unlisted candidate reports the old state, a listed one the
+     new — and the first listed candidate probed is itself the send that closes
+     the window. So per provider transition a prober can rule out as many
+     unlisted candidates as their per-network allowance pays for, and confirm at
+     most one listed address, unless a real tester signs in first. They cannot
+     cause a transition, but an outage can be public (the provider's status
+     page), so they need not see it through a listed address.
   3. **Latency on a tick boundary.** A real send whose latency happens to
      straddle a whole second can settle one tick apart from a decoy replaying
      the previous send's latency. It takes many requests and a provider

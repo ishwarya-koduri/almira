@@ -39,8 +39,9 @@
                  resend open now. The code step stays: the address is right
                  there to change, and resend is the retry.
      · unknown — anything else (a server without the endpoint, 404, a shape
-                 this build does not know): stop asking and say what was
-                 always said, that a code was sent.
+                 this build does not know): stop asking. Like 30 polls that
+                 never settle, it is unconfirmed, and deliveryWhenAskingStops
+                 shows it as the delayed banner with resend open, never as sent.
    ============================================================================= */
 
 export const KNOWN_CHANNELS = ["phone", "email"];
@@ -123,4 +124,20 @@ export function deliveryOutcome(status) {
     };
   }
   return { kind: "unknown" };
+}
+
+/**
+ * What the code step shows once it stops asking about the email.
+ *
+ * Only a status that said "sent" may say the code was sent. Asking that never
+ * settled (30 polls still "sending": the server's settle never ran) or a status
+ * that could not be read is unconfirmed, and unconfirmed is shown as a late
+ * email with resend open, never as a code that went: that silence is the one
+ * the code step exists to end.
+ *
+ * @param last  the last deliveryOutcome seen, or null if none was
+ */
+export function deliveryWhenAskingStops(last) {
+  if (last && (last.kind === "sent" || last.kind === "delayed" || last.kind === "failed")) return last;
+  return { kind: "delayed", resendAfterSeconds: 0 };
 }

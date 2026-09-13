@@ -411,7 +411,9 @@ before its server starts. The list stays in configuration; docs/13 §5 says why.
   `ALMIRA_SIGN_IN_CHANNELS=phone` the allowlist is not in force, so email-only
   accounts' existing sessions are left as they are (they cannot sign in again).
   If that should end them too, it is a one-line change to
-  `AlphaAllowlistAccess.inForce` — an owner's call, not made here.
+  `AlphaAllowlistAccess.inForce` — an owner's call, not made here. The startup
+  error for an empty allowlist, which offers taking email out as a way out,
+  says so, so nobody takes it for a way to end the alpha.
 - **The refresh-reuse audit row.** Unrelated, noticed here:
   `AuthService.refresh` writes `auth.refresh_reuse_detected` inside the
   transaction its own throw rolls back, so that audit row is probably never
@@ -429,7 +431,10 @@ Owner's decision: a failed email send must not be silent. The email request
 still answers before sending, but the code step now polls
 `GET /api/v1/auth/otp/email/delivery/{requestId}` and says "We couldn't send
 the code" (web: en/te/hi; native: en) with the reason, or that it is delayed,
-and opens resend at once. A failure now does what a reported phone failure
+and opens resend at once. Only a status that said "sent" is shown as sent: if
+the status never settles within 30 polls, or cannot be read, the code step
+shows the delayed banner with resend open (`deliveryWhenAskingStops`,
+`EmailDelivery.whenAskingStops`). A failure now does what a reported phone failure
 does — challenge removed, cooldown lifted, the per-address count given back —
 so it no longer costs the tester requests. Decoys for unlisted addresses settle
 through the same code, replaying the last real send's outcome and latency, so a
@@ -441,16 +446,20 @@ docs/13 §5:
 1. A synchronous **rejection** of one address is reported for a listed address
    and never for an unlisted one: "couldn't deliver to that address" means
    listed and undeliverable.
-2. Between a **change in the provider's state** and the next real sign-in
-   email, decoys report the old state.
+2. After a **change in the provider's state**, decoys report the old state
+   until a listed address is next sent a code — however long that is. In that
+   window each probe is a clean listed/unlisted bit: a prober who knows of an
+   outage (a public status page) can rule out unlisted candidates and confirm
+   one listed address per provider transition; that confirming probe closes the
+   window.
 3. A real send whose latency **straddles a whole second** can settle one tick
    away from a decoy.
 4. With **no real send in the last day** (or a fresh Redis), decoys assume a
    healthy provider.
 
 **Risk if left** Each needs either a listed, undeliverable address or probing
-timed to a provider change, and every probe spends the prober's per-network
-allowance. The operator alerts still matter: the WARN
+inside a provider transition (at most one listed address confirmed per
+transition), and every probe spends the prober's per-network allowance. The operator alerts still matter: the WARN
 `one-time code by email not confirmed sent` and the ERROR
 `PROVIDER ACCOUNT PROBLEM`.
 

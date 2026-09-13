@@ -11,7 +11,7 @@
        # or: node scripts/check-auth-outcome.js  (as an ES module)
    ============================================================================= */
 
-import { signInOutcome, usableChannels, deliveryOutcome } from "../backend/src/main/resources/static/app/auth-outcome.js";
+import { signInOutcome, usableChannels, deliveryOutcome, deliveryWhenAskingStops } from "../backend/src/main/resources/static/app/auth-outcome.js";
 
 const log = typeof print === "function" ? print : console.log;
 let failures = 0;
@@ -106,6 +106,17 @@ expect("a failure this build has no words for still says the code did not go",
   deliveryOutcome(status("failed", { failure: "otp_new_kind", message: "m" })).headlineKey, "auth.code.notSent");
 expect("an unreadable status (older server, 404) stops asking", deliveryOutcome(null), { kind: "unknown" });
 expect("a status this build does not know stops asking", deliveryOutcome(status("queued")), { kind: "unknown" });
+
+// When the code step stops asking: only "sent" may say the code went.
+expect("asking that never settled is shown as a late email with resend open, not as sent",
+  deliveryWhenAskingStops(deliveryOutcome(status("sending"))), { kind: "delayed", resendAfterSeconds: 0 });
+expect("a status that could not be read is shown as a late email, not as sent",
+  deliveryWhenAskingStops(deliveryOutcome(null)), { kind: "delayed", resendAfterSeconds: 0 });
+expect("no answer at all is shown as a late email, not as sent",
+  deliveryWhenAskingStops(null), { kind: "delayed", resendAfterSeconds: 0 });
+expect("a sent email still says sent", deliveryWhenAskingStops(deliveryOutcome(status("sent"))), { kind: "sent" });
+expect("a failure is kept as it was said",
+  deliveryWhenAskingStops(deliveryOutcome(status("failed", { failure: "otp_delivery_failed", message: "m" }))).kind, "failed");
 
 if (failures > 0) throw new Error(`${failures} check(s) failed`);
 log("auth-outcome: all checks pass");

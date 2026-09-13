@@ -18,7 +18,7 @@
 import { api } from "../api.js";
 import { el, mount, field, textInput, withBusy, toast } from "../ui.js";
 import { t } from "../i18n.js";
-import { signInOutcome, deliveryOutcome } from "../auth-outcome.js";
+import { signInOutcome, deliveryOutcome, deliveryWhenAskingStops } from "../auth-outcome.js";
 
 const CHANNELS = {
   phone: {
@@ -215,26 +215,27 @@ function showCodeStep(host, channels, channel, address, challenge, onSignedIn) {
   };
 
   const watchDelivery = async () => {
+    let outcome = null;
     for (let attempt = 0; attempt < 30; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       if (!delivery.isConnected) return;
-      const outcome = deliveryOutcome(await api.emailDelivery(challenge.requestId));
+      outcome = deliveryOutcome(await api.emailDelivery(challenge.requestId));
       if (!delivery.isConnected) return;
-      if (outcome.kind === "pending") continue;
-      if (outcome.kind === "delayed") {
-        mount(delivery, el("div.banner", { role: "status", "data-auth-delayed": "" }, t("auth.code.delayed.email")));
-        openResend();
-        return;
-      }
-      if (outcome.kind === "failed") {
-        mount(delivery, el("div.banner", { role: "alert", "data-auth-not-sent": "" },
-          el("div", {},
-            el("b", {}, t(outcome.headlineKey)), " ",
-            outcome.reasonKey ? t(outcome.reasonKey) : "")));
-        openResend();
-        return;
-      }
-      break; // sent, or nothing this build can read
+      if (outcome.kind !== "pending") break;
+    }
+    outcome = deliveryWhenAskingStops(outcome);
+    if (outcome.kind === "delayed") {
+      mount(delivery, el("div.banner", { role: "status", "data-auth-delayed": "" }, t("auth.code.delayed.email")));
+      openResend();
+      return;
+    }
+    if (outcome.kind === "failed") {
+      mount(delivery, el("div.banner", { role: "alert", "data-auth-not-sent": "" },
+        el("div", {},
+          el("b", {}, t(outcome.headlineKey)), " ",
+          outcome.reasonKey ? t(outcome.reasonKey) : "")));
+      openResend();
+      return;
     }
     mount(delivery, el("p.muted", {}, t("auth.code.sent")));
   };

@@ -41,7 +41,8 @@ class SignInChannels(props: AlmiraProperties) {
         require(OtpChannel.EMAIL !in enabled || allowlist.isNotEmpty()) {
             "Email sign-in is enabled but almira.auth.email-allowlist (ALMIRA_ALPHA_EMAIL_ALLOWLIST) " +
                 "is empty, so nobody could sign in by email. List the testers' addresses, or " +
-                "take email out of almira.auth.sign-in-channels."
+                "take email out of almira.auth.sign-in-channels. Taking email out does not sign " +
+                "anyone out: email-only testers' sessions go on until they end (known-issues 14)."
         }
 
         log.info(

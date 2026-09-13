@@ -35,6 +35,19 @@ data class OtpChallenge(
 @Serializable
 data class EmailOtpRequestBody(val email: String)
 
+/**
+ * How the email for a sign-in request went (GET /auth/otp/email/delivery/{requestId}).
+ * Added after v1 froze. `status` is `sending`, `sent`, `delayed` or `failed`.
+ */
+@Serializable
+data class OtpDeliveryStatus(
+    val requestId: String,
+    val status: String,
+    val failure: String? = null,
+    val message: String? = null,
+    val resendAfterSeconds: Int? = null,
+)
+
 @Serializable
 data class EmailOtpVerifyBody(
     val email: String,

@@ -1,6 +1,7 @@
 package tech.bhrigu.almira.shared.signin
 
 import tech.bhrigu.almira.shared.api.OtpChallenge
+import tech.bhrigu.almira.shared.api.OtpDeliveryStatus
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -64,5 +65,35 @@ class SignInStateTest {
             """{"requestId":"r","expiresInSeconds":300,"resendAfterSeconds":30,"channel":"email"}""",
         )
         assertEquals("email", new.channel)
+    }
+
+    /** GET /auth/otp/email/delivery/{requestId}, as OtpService.emailDelivery answers it. */
+    @Test
+    fun anEmailThatCouldNotBeSentIsSaidPlainly() {
+        fun status(state: String, failure: String? = null, message: String? = null) =
+            OtpDeliveryStatus("r", state, failure, message, if (state == "failed" || state == "delayed") 0 else null)
+
+        assertEquals(EmailDelivery.Pending, EmailDelivery.of(status("sending")))
+        assertEquals(EmailDelivery.Sent, EmailDelivery.of(status("sent")))
+        for (failure in listOf("otp_delivery_failed", "otp_provider_unavailable", "otp_service_unavailable")) {
+            val said = EmailDelivery.of(status("failed", failure, "We couldn't send the code. Because $failure."))
+            assertEquals(EmailDelivery.Failed("We couldn't send the code. Because $failure."), said)
+        }
+        assertEquals(
+            EmailDelivery.Failed("We couldn't send the code."),
+            EmailDelivery.of(status("failed", "otp_something_new", "")),
+            "a failure with no readable sentence still says the code did not go",
+        )
+        assertTrue(EmailDelivery.of(status("delayed", message = "late")) is EmailDelivery.Delayed)
+        assertEquals(EmailDelivery.Unknown, EmailDelivery.of(null))
+        assertEquals(EmailDelivery.Unknown, EmailDelivery.of(status("queued")))
+
+        val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
+        val decoded = json.decodeFromString(
+            OtpDeliveryStatus.serializer(),
+            """{"requestId":"r","status":"failed","failure":"otp_provider_unavailable","message":"We couldn't send the code. x","resendAfterSeconds":0}""",
+        )
+        assertEquals(EmailDelivery.Failed("We couldn't send the code. x"), EmailDelivery.of(decoded))
+        assertNull(json.decodeFromString(OtpDeliveryStatus.serializer(), """{"requestId":"r","status":"sent"}""").failure)
     }
 }

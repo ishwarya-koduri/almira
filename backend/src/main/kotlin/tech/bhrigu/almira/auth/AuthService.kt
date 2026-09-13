@@ -30,6 +30,7 @@ class AuthService(
     private val revocations: SessionRevocationCache,
     private val sessionRevoker: SessionRevoker,
     private val channels: SignInChannels,
+    private val alpha: AlphaAllowlistAccess,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -71,16 +72,24 @@ class AuthService(
      * per-network counts, a stored challenge with a request id and a lifetime,
      * the same response. The only differences are invisible from outside: no
      * email is sent, and the stored value matches no code (OtpDelivery.DECOY).
-     * For the same reason a listed address never hears how its send went —
-     * the send happens after the answer (OtpDelivery.UNREPORTED).
+     * For the same reason the send happens after the answer
+     * (OtpDelivery.DEFERRED), and how it went is read from [emailDelivery] —
+     * where a decoy reports what the provider last did for a real send, so a
+     * failing provider fails for both (docs/13 §5 has the residual signals).
      *
      * Checked after normalisation, so `ASHA@Example.com ` is the listed address.
      */
     fun requestEmailOtp(rawEmail: String, ip: String?): OtpChallenge {
         channels.requireEnabled(OtpChannel.EMAIL)
         val email = EmailAddress.normalize(rawEmail)
-        val delivery = if (channels.isAllowed(email)) OtpDelivery.UNREPORTED else OtpDelivery.DECOY
+        val delivery = if (channels.isAllowed(email)) OtpDelivery.DEFERRED else OtpDelivery.DECOY
         return otp.requestByEmail(email, ip, OtpService.LOGIN, delivery)
+    }
+
+    /** How the email for [requestId] went. Needs nothing but the id; see OtpService.emailDelivery. */
+    fun emailDelivery(requestId: String): OtpDeliveryStatus {
+        channels.requireEnabled(OtpChannel.EMAIL)
+        return otp.emailDelivery(requestId)
     }
 
     /**
@@ -188,6 +197,12 @@ class AuthService(
         }
         if (row.expiresAt.isBefore(Instant.now())) {
             throw ApiException.unauthorized("Your session has expired. Please sign in again.")
+        }
+        // Revoked in its own transaction (SessionRevoker), so the throw keeps it.
+        if (!alpha.allowsRefresh(row.userId, row.sessionId)) {
+            throw ApiException.unauthorized(
+                "This address is no longer part of the Almira alpha, so this device was signed out.",
+            )
         }
 
         val next = jwt.newRefreshToken()

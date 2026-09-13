@@ -321,6 +321,17 @@ private fun CodeStep(
             }
         }
 
+        // How the email went: said while it is sending, and said plainly
+        // when it could not be sent, rather than leaving an empty inbox to
+        // explain itself.
+        when (val delivery = state.delivery) {
+            is EmailDelivery.Failed -> Text(delivery.message, style = type.body, color = colors.caution)
+            is EmailDelivery.Delayed -> Text(delivery.message, style = type.body, color = colors.ink)
+            else -> if (state.emailSending) {
+                Text("Sending your code…", style = type.small, color = colors.inkMuted)
+            }
+        }
+
         Spacer(Modifier.height(space.x1))
 
         OtpField(

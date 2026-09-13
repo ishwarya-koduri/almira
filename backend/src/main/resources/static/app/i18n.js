@@ -248,6 +248,8 @@ const messages = {
     "auth.switched.phone": "Sign-in here is by phone. Enter your phone number and we'll send the code there.",
     "auth.dev.lead": "Development mode — ",
     "auth.dev.body": "nothing is really sent from here. The code is ",
+    "auth.code.sending": "Sending your code…",
+    "auth.code.notSent": "We couldn't send the code.",
   },
 
   te: {
@@ -468,6 +470,8 @@ const messages = {
     "auth.switched.phone": "ఇక్కడ సైన్-ఇన్ ఫోన్ ద్వారా. మీ ఫోన్ నంబర్ నమోదు చేయండి, కోడ్ అక్కడికి పంపుతాము.",
     "auth.dev.lead": "డెవలప్‌మెంట్ మోడ్ — ",
     "auth.dev.body": "ఇక్కడి నుండి నిజంగా ఏదీ పంపబడదు. కోడ్: ",
+    "auth.code.sending": "మీ కోడ్ పంపుతున్నాము…",
+    "auth.code.notSent": "మేము కోడ్ పంపలేకపోయాము.",
   },
 
   hi: {
@@ -688,6 +692,8 @@ const messages = {
     "auth.switched.phone": "यहाँ साइन-इन फ़ोन से होता है। अपना फ़ोन नंबर डालें, कोड वहीं भेजा जाएगा।",
     "auth.dev.lead": "डेवलपमेंट मोड — ",
     "auth.dev.body": "यहाँ से असल में कुछ नहीं भेजा जाता। कोड: ",
+    "auth.code.sending": "आपका कोड भेजा जा रहा है…",
+    "auth.code.notSent": "हम कोड नहीं भेज पाए।",
   },
 };
 

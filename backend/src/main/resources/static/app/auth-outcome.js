@@ -24,6 +24,23 @@
                 problem, not yours" are different advice. Nothing was sent, so
                 the code step is not opened. Any other code shows the server's
                 message as it is.
+
+   And, for email sign-in, what the code step does with the delivery status
+   (GET /auth/otp/email/delivery/{requestId}, deliveryOutcome below). The
+   request answers before the email is sent — so that an address off the alpha
+   allowlist cannot be told from one on it — and the code step polls how the
+   send went, because a failure nobody is told about looks exactly like a code
+   that never arrived:
+
+     · pending — "sending": ask again shortly.
+     · sent    — say the code was sent.
+     · delayed — the delayed banner, resend open now (resendAfterSeconds 0).
+     · failed  — "We couldn't send the code." with the reason's own sentence,
+                 resend open now. The code step stays: the address is right
+                 there to change, and resend is the retry.
+     · unknown — anything else (a server without the endpoint, 404, a shape
+                 this build does not know): stop asking and say what was
+                 always said, that a code was sent.
    ============================================================================= */
 
 export const KNOWN_CHANNELS = ["phone", "email"];
@@ -77,4 +94,33 @@ export function signInOutcome(error, channel) {
     return { kind: "error", messageKey: `${separate.key}.${channel}`, onField: separate.onField, message: error.message };
   }
   return { kind: "error", messageKey: null, onField: true, message: (error && error.message) || "" };
+}
+
+const FAILURE_REASONS = {
+  otp_delivery_failed: "auth.error.deliveryFailed.email",
+  otp_provider_unavailable: "auth.error.providerUnavailable.email",
+  otp_service_unavailable: "auth.error.serviceUnavailable.email",
+};
+
+/**
+ * @param status  the parsed body of GET /auth/otp/email/delivery/{requestId}, or null when it could not be read
+ * @returns {{kind:"pending"}} | {{kind:"sent"}} | {{kind:"delayed", resendAfterSeconds:0}}
+ *        | {{kind:"failed", headlineKey, reasonKey, message, resendAfterSeconds:0}} | {{kind:"unknown"}}
+ */
+export function deliveryOutcome(status) {
+  const state = status && status.status;
+  if (state === "sending") return { kind: "pending" };
+  if (state === "sent") return { kind: "sent" };
+  if (state === "delayed") return { kind: "delayed", resendAfterSeconds: 0 };
+  if (state === "failed") {
+    return {
+      kind: "failed",
+      headlineKey: "auth.code.notSent",
+      // A reason this build has no words for still says the code did not go.
+      reasonKey: FAILURE_REASONS[status.failure] || null,
+      message: typeof status.message === "string" ? status.message : "",
+      resendAfterSeconds: 0,
+    };
+  }
+  return { kind: "unknown" };
 }

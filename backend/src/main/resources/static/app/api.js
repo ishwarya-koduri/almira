@@ -145,9 +145,23 @@ export const api = {
 
   /**
    * Sign-in by email. The request answers the same whether or not the address
-   * may sign in, so there is nothing here to branch on: go to the code step.
+   * may sign in, so there is nothing here to branch on: go to the code step,
+   * which asks emailDelivery how the send went.
    */
   requestEmailOtp: (email) => unauthenticated("POST", "/api/v1/auth/otp/email/request", { email }),
+
+  /**
+   * How the email for a sign-in request went: sending, sent, delayed or failed.
+   * Null when it cannot be read (an older server has no such endpoint).
+   */
+  emailDelivery: async (requestId) => {
+    try {
+      const { response, payload } = await raw("GET", `/api/v1/auth/otp/email/delivery/${encodeURIComponent(requestId)}`);
+      return response.ok ? payload : null;
+    } catch {
+      return null;
+    }
+  },
 
   verifyEmailOtp: async (email, code, requestId) => {
     const payload = await unauthenticated("POST", "/api/v1/auth/otp/email/verify", {

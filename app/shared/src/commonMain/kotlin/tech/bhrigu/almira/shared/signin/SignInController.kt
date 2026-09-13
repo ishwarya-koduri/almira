@@ -13,6 +13,7 @@ import tech.bhrigu.almira.shared.api.AlmiraApi
 import tech.bhrigu.almira.shared.api.ApiException
 import tech.bhrigu.almira.shared.api.Me
 import tech.bhrigu.almira.shared.api.OtpChallenge
+import tech.bhrigu.almira.shared.api.OtpDeliveryStatus
 
 /**
  * Which of the two steps is on screen. Nothing else is ever on it.
@@ -55,6 +56,10 @@ data class SignInState(
     val challenge: OtpChallenge? = null,
     /** Seconds until another code may be asked for; 0 means now. */
     val resendIn: Int = 0,
+    /** An emailed code whose send has not settled yet. */
+    val emailSending: Boolean = false,
+    /** What the server said about an emailed code that ran late or could not be sent. */
+    val delivery: EmailDelivery? = null,
     val signedIn: Me? = null,
 ) {
     /** Ten digits, which is every Indian mobile number and no accidents. */
@@ -90,6 +95,41 @@ data class SignInState(
 }
 
 /**
+ * What the code step says about an emailed code.
+ *
+ * Email sign-in answers before the email is sent, so that an address off the
+ * alpha allowlist cannot be told from one on it; the code step then asks the
+ * server how the send went. A failure is said — "We couldn't send the code" —
+ * because silence looks exactly like a code that never arrived.
+ */
+sealed interface EmailDelivery {
+    data object Pending : EmailDelivery
+    data object Sent : EmailDelivery
+    data class Delayed(val message: String) : EmailDelivery
+    data class Failed(val message: String) : EmailDelivery
+    /** An unreadable status (an older server, no connection): stop asking. */
+    data object Unknown : EmailDelivery
+
+    companion object {
+        const val NOT_SENT = "We couldn't send the code."
+        const val DELAYED = "Your code is taking longer than usual to send. If it arrives, it will work. " +
+            "If it doesn't, you can ask for a new one now."
+
+        fun of(status: OtpDeliveryStatus?): EmailDelivery = when (status?.status) {
+            "sending" -> Pending
+            "sent" -> Sent
+            "delayed" -> Delayed(status.message?.takeIf { it.isNotBlank() } ?: DELAYED)
+            // The server's sentence already starts with the headline; one this
+            // build cannot read still says the code did not go.
+            "failed" -> Failed(
+                status.message?.takeIf { it.startsWith(NOT_SENT) } ?: NOT_SENT,
+            )
+            else -> Unknown
+        }
+    }
+}
+
+/**
  * The sign-in flow, with no Compose in it.
  *
  * Deliberately a plain class rather than an androidx ViewModel: this is the
@@ -112,6 +152,7 @@ class SignInController(
 
     private var countdown: Job? = null
     private var listening: Job? = null
+    private var watching: Job? = null
 
     fun onPhoneChanged(input: String) {
         val digits = input.filter(Char::isDigit).take(SignInState.PHONE_LENGTH)
@@ -178,6 +219,39 @@ class SignInController(
             }
             startCountdown(challenge.resendAfterSeconds)
             listenForCode()
+            watchDelivery(challenge.requestId)
+        }
+    }
+
+    /**
+     * For an emailed code: ask the server how the send went, once a second,
+     * until it has settled. Delayed or failed opens resend at once — the server
+     * lifted the cooldown — and says so.
+     */
+    private fun watchDelivery(requestId: String) {
+        watching?.cancel()
+        if (state.value.channel != SignInChannel.Email) {
+            _state.update { it.copy(emailSending = false, delivery = null) }
+            return
+        }
+        _state.update { it.copy(emailSending = true, delivery = null) }
+        watching = scope.launch {
+            repeat(WATCH_ATTEMPTS) {
+                delay(1000)
+                when (val outcome = EmailDelivery.of(api.emailDelivery(requestId))) {
+                    EmailDelivery.Pending -> Unit
+                    is EmailDelivery.Delayed, is EmailDelivery.Failed -> {
+                        countdown?.cancel()
+                        _state.update { it.copy(emailSending = false, delivery = outcome, resendIn = 0) }
+                        return@launch
+                    }
+                    EmailDelivery.Sent, EmailDelivery.Unknown -> {
+                        _state.update { it.copy(emailSending = false) }
+                        return@launch
+                    }
+                }
+            }
+            _state.update { it.copy(emailSending = false) }
         }
     }
 
@@ -217,6 +291,7 @@ class SignInController(
             // A new code means a new message, and the old listener is watching
             // for one that will never come.
             listenForCode()
+            watchDelivery(challenge.requestId)
         }
     }
 
@@ -252,7 +327,13 @@ class SignInController(
     fun editPhone() {
         listening?.cancel()
         countdown?.cancel()
-        _state.update { it.copy(step = SignInStep.Phone, code = "", error = null, challenge = null, resendIn = 0) }
+        watching?.cancel()
+        _state.update {
+            it.copy(
+                step = SignInStep.Phone, code = "", error = null, challenge = null, resendIn = 0,
+                emailSending = false, delivery = null,
+            )
+        }
     }
 
     fun dismissError() = _state.update { it.copy(error = null) }
@@ -292,5 +373,10 @@ class SignInController(
                 _state.update { it.copy(busy = false) }
             }
         }
+    }
+
+    private companion object {
+        /** Past the longest a send can take (15 s) and its settling tick. */
+        const val WATCH_ATTEMPTS = 30
     }
 }

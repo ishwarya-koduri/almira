@@ -8,6 +8,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
+import tech.bhrigu.almira.auth.AlphaAllowlistAccess
 
 /**
  * Establishes who the caller is, for both Spring Security and the database.
@@ -26,6 +27,7 @@ class JwtAuthFilter(
     private val userContext: RequestUserContext,
     private val revocations: SessionRevocationCache,
     private val activity: SessionActivity,
+    private val alpha: AlphaAllowlistAccess,
 ) : OncePerRequestFilter() {
 
     override fun doFilterInternal(
@@ -40,6 +42,10 @@ class JwtAuthFilter(
                 ?.trim()
                 ?.let(jwtService::verifyAccessToken)
                 ?.takeUnless { revocations.isRevoked(it.sessionId) }
+                // A tester taken off the email allowlist: their session is
+                // revoked here, on the first request that reaches a server
+                // with the new list, not when the token expires.
+                ?.takeIf { alpha.allowsRequest(it.userId, it.sessionId) }
                 ?.let { claims ->
                     // The session id travels with the identity: some decisions
                     // are about this device, not the account (see StepUpService).

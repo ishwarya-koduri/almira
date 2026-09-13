@@ -91,6 +91,19 @@ data class OtpChallengeResponse(
     val channel: String? = null,
 )
 
+/** How a deferred sign-in email went. Added after v1 froze. */
+data class OtpDeliveryResponse(
+    val requestId: String,
+    /** `sending`, `sent`, `delayed` or `failed`. */
+    val status: String,
+    /** When failed: `otp_delivery_failed`, `otp_provider_unavailable` or `otp_service_unavailable`. */
+    val failure: String?,
+    /** When delayed or failed: a sentence for a person, in English. */
+    val message: String?,
+    /** When delayed or failed: 0, because resend is open at once. */
+    val resendAfterSeconds: Long?,
+)
+
 /** Which sign-in endpoints this server answers, so a client shows only those. */
 data class SignInChannelsResponse(val channels: List<String>)
 
@@ -170,6 +183,19 @@ class AuthController(
         @RequestBody @jakarta.validation.Valid body: EmailOtpRequestBody,
         request: HttpServletRequest,
     ): OtpChallengeResponse = auth.requestEmailOtp(body.email, clientIp(request)).toResponse()
+
+    /**
+     * How the email for a sign-in request went: `sending`, `sent`, `delayed` or
+     * `failed` with the reason. The code step polls it, so a failed send is
+     * said on screen instead of looking like a code that never came. An address
+     * off the allowlist has a status too, settling as a listed address's would
+     * with the provider as it is now (docs/13 §5).
+     */
+    @GetMapping("/auth/otp/email/delivery/{requestId}")
+    fun emailDelivery(@PathVariable requestId: String): OtpDeliveryResponse =
+        auth.emailDelivery(requestId).let {
+            OtpDeliveryResponse(it.requestId, it.status, it.failure, it.message, it.resendAfterSeconds)
+        }
 
     @PostMapping("/auth/otp/email/verify")
     fun verifyEmailOtp(

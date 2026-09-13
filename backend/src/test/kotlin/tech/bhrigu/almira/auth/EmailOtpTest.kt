@@ -87,6 +87,8 @@ class EmailOtpTest {
         redis, phone, props,
         ProviderCalls(props, Sleeper { }, DoubleSupplier { 1.0 }, Clock.systemUTC()),
         email, background,
+        // Its own provider weather, so one test's failing provider is not the next one's.
+        "otp:email:provider-weather:test:${Random.nextLong()}",
     )
 
     private fun address() = "tester.${Random.nextLong(1, Long.MAX_VALUE)}+alpha@example.test"
@@ -101,7 +103,7 @@ class EmailOtpTest {
         redis.opsForHash<String, String>().entries("otp:email:challenge:$purpose:$email")
 
     private val login = OtpService.LOGIN
-    private val unreported = OtpDelivery.UNREPORTED
+    private val unreported = OtpDelivery.DEFERRED
 
     // --- the sender ----------------------------------------------------------
 
@@ -251,7 +253,7 @@ class EmailOtpTest {
         assertThat(mac.doFinal(email.lastCode().toByteArray()).contentEquals(realTarget)).isTrue()
     }
 
-    // --- sending after the answer -------------------------------------------------
+    // --- sending after the answer, and saying how it went ---------------------------
 
     @Test
     fun `the answer does not wait for the send`() {
@@ -271,30 +273,131 @@ class EmailOtpTest {
     }
 
     @Test
-    fun `a failed unreported send leaves the challenge unusable but in place, and everything else as it was`() {
-        for (fault in listOf(SandboxFault.REJECTED, SandboxFault.UNAVAILABLE, SandboxFault.INSUFFICIENT_BALANCE)) {
+    fun `a deferred send that fails says so, removes the code, opens resend and gives the address its request back`() {
+        val expected = mapOf(
+            SandboxFault.REJECTED to "otp_delivery_failed",
+            SandboxFault.UNAVAILABLE to "otp_provider_unavailable",
+            SandboxFault.INSUFFICIENT_BALANCE to "otp_service_unavailable",
+        )
+        for ((fault, code) in expected) {
             val email = RecordingEmailSender().apply { faults.always("email", fault) }
             val otp = service(email = email)
             val a = address()
-            val c = otp.requestByEmail(a, ip(), login, unreported)
-            assertThat(c.requestId).isNotBlank()
+            val network = ip()
+            val c = otp.requestByEmail(a, network, login, unreported)
 
-            assertThat(challenge(a)["requestId"]).describedAs(fault.name).isEqualTo(c.requestId)
-            assertThat(redis.hasKey("otp:email:cooldown:login:$a")).describedAs(fault.name).isTrue()
-            assertThat(redis.opsForValue().get("otp:rate:email:$a")).describedAs(fault.name).isEqualTo("1")
-            // A live code nobody received is worthless, and now provably so.
+            val s = otp.emailDelivery(c.requestId)
+            assertThat(s.status).describedAs(fault.name).isEqualTo("failed")
+            assertThat(s.failure).describedAs(fault.name).isEqualTo(code)
+            assertThat(s.message).describedAs(fault.name).startsWith("We couldn't send the code.")
+            assertThat(s.message).describedAs(fault.name).doesNotContain(email.lastCode(), a)
+            assertThat(s.resendAfterSeconds).describedAs(fault.name).isEqualTo(0L)
+
+            assertThat(challenge(a)).describedAs(fault.name).isEmpty()
+            assertThat(redis.hasKey("otp:email:cooldown:login:$a")).describedAs(fault.name).isFalse()
+            assertThat(redis.opsForValue().get("otp:rate:email:$a")).describedAs(fault.name).isEqualTo("0")
+            assertThat(redis.opsForValue().get("otp:rate:ip:$network")).describedAs(fault.name).isEqualTo("1")
             assertThat(refusal { otp.verifyByEmail(a, email.lastCode(), null, login) }.code)
-                .describedAs(fault.name).isEqualTo("otp_invalid")
+                .describedAs(fault.name).isEqualTo("otp_expired")
         }
     }
 
     @Test
-    fun `a timed-out unreported send keeps its code, because it may still arrive`() {
+    fun `a deferred send that times out says it is delayed, keeps its code and opens resend`() {
         val email = RecordingEmailSender().apply { faults.always("email", SandboxFault.TIMEOUT) }
         val otp = service(email = email)
         val a = address()
-        otp.requestByEmail(a, ip(), login, unreported)
+        val c = otp.requestByEmail(a, ip(), login, unreported)
+        val s = otp.emailDelivery(c.requestId)
+        assertThat(s.status).isEqualTo("delayed")
+        assertThat(s.failure).isNull()
+        assertThat(s.resendAfterSeconds).isEqualTo(0L)
+        assertThat(redis.hasKey("otp:email:cooldown:login:$a")).isFalse()
+        assertThat(redis.opsForValue().get("otp:rate:email:$a")).isEqualTo("1")
         otp.verifyByEmail(a, email.lastCode(), null, login)
+    }
+
+    @Test
+    fun `a deferred send that works says sent, and keeps the cooldown`() {
+        val email = RecordingEmailSender()
+        val otp = service(email = email)
+        val a = address()
+        val c = otp.requestByEmail(a, ip(), login, unreported)
+        assertThat(otp.emailDelivery(c.requestId).status).isEqualTo("sent")
+        assertThat(otp.emailDelivery(c.requestId).message).isNull()
+        assertThat(redis.hasKey("otp:email:cooldown:login:$a")).isTrue()
+        otp.verifyByEmail(a, email.lastCode(), null, login)
+    }
+
+    @Test
+    fun `the status is sending until the send has settled`() {
+        val email = RecordingEmailSender().apply { gate = CountDownLatch(1) }
+        val otp = service(email = email, background = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor())
+        val c = otp.requestByEmail(address(), ip(), login, unreported)
+        try {
+            assertThat(otp.emailDelivery(c.requestId).status).isEqualTo("sending")
+        } finally {
+            email.gate!!.countDown()
+        }
+    }
+
+    @Test
+    fun `a request id that was never issued is not found, whatever it looks like`() {
+        for (id in listOf(java.util.UUID.randomUUID().toString(), "not-a-uuid", "../../otp:rate:email:x")) {
+            val e = refusal { service().emailDelivery(id) }
+            assertThat(e.status).describedAs(id).isEqualTo(HttpStatus.NOT_FOUND)
+            assertThat(e.code).describedAs(id).isEqualTo("otp_request_unknown")
+        }
+    }
+
+    /** Everything a decoy or a real deferred request leaves behind that someone outside could probe. */
+    private fun observable(otp: OtpService, email: String, requestId: String, network: String) = listOf(
+        otp.emailDelivery(requestId).copy(requestId = "-"),
+        challenge(email).isEmpty(),
+        redis.hasKey("otp:email:cooldown:login:$email"),
+        redis.opsForValue().get("otp:rate:email:$email"),
+        redis.opsForValue().get("otp:rate:ip:$network"),
+    )
+
+    @Test
+    fun `a decoy settles the way the last real send did, for every way a provider can be`() {
+        for (fault in listOf(null, SandboxFault.TIMEOUT, SandboxFault.UNAVAILABLE, SandboxFault.INSUFFICIENT_BALANCE)) {
+            val sender = RecordingEmailSender().apply { fault?.let { faults.always("email", it) } }
+            val otp = service(email = sender)
+            val (listed, unlisted) = address() to address()
+            val (n1, n2) = ip() to ip()
+            val real = otp.requestByEmail(listed, n1, login, unreported)
+            val decoy = otp.requestByEmail(unlisted, n2, login, OtpDelivery.DECOY)
+            assertThat(observable(otp, unlisted, decoy.requestId, n2)).describedAs("${fault ?: "healthy"}")
+                .isEqualTo(observable(otp, listed, real.requestId, n1))
+            assertThat(sender.sent.map { it.first }).doesNotContain(unlisted)
+        }
+    }
+
+    @Test
+    fun `a rejection belongs to one address, so a decoy after it reports sent`() {
+        val sender = RecordingEmailSender().apply { faults.always("email", SandboxFault.REJECTED) }
+        val otp = service(email = sender)
+        otp.requestByEmail(address(), ip(), login, unreported)
+        val decoy = otp.requestByEmail(address(), ip(), login, OtpDelivery.DECOY)
+        assertThat(otp.emailDelivery(decoy.requestId).status).isEqualTo("sent")
+    }
+
+    @Test
+    fun `a decoy takes as long as the last real send, and both settle on the same whole second`() {
+        val sender = RecordingEmailSender(faults = SandboxFaults(java.time.Duration.ofMillis(1_300)))
+            .apply { faults.always("email", SandboxFault.HANG) }
+        val otp = service(email = sender)
+        fun settleMillis(email: String, delivery: OtpDelivery): Long {
+            val start = System.nanoTime()
+            otp.requestByEmail(email, ip(), login, delivery)
+            return java.time.Duration.ofNanos(System.nanoTime() - start).toMillis()
+        }
+        val real = settleMillis(address(), unreported)
+        val decoy = settleMillis(address(), OtpDelivery.DECOY)
+        // A 1.3 s send settles on the two-second tick; so must its shadow.
+        assertThat(real).isBetween(1_950L, 2_600L)
+        assertThat(decoy).isBetween(1_950L, 2_600L)
     }
 
     // --- reported (step-up) --------------------------------------------------------
@@ -325,7 +428,7 @@ class EmailOtpTest {
         val quick = AlmiraProperties.Otp(maxPerHour = 1_000, maxPerIpPerHour = 1_000, sendTimeout = java.time.Duration.ofMillis(200))
         val props = props(otp = quick).copy(providers = AlmiraProperties.Providers(sms = generous, email = generous))
         for (fault in SandboxFault.entries) {
-            for (delivery in listOf(OtpDelivery.REPORTED, OtpDelivery.UNREPORTED)) {
+            for (delivery in listOf(OtpDelivery.REPORTED, OtpDelivery.DEFERRED)) {
                 val email = RecordingEmailSender(faults = SandboxFaults(java.time.Duration.ofSeconds(2)))
                     .apply { faults.always("email", fault) }
                 val otp = service(email = email, props = props)

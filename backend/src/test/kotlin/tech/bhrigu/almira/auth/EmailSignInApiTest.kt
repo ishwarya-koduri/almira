@@ -70,6 +70,8 @@ class EmailSignInApiTest : ApiTestBase() {
     fun reset() {
         sender.delay = Duration.ZERO
         sender.faults.clear()
+        // The provider's last outcome is what decoys replay; no test inherits another's.
+        redis.delete(OtpService.EMAIL_WEATHER_KEY)
     }
 
     private fun requestCode(email: String) = post("/api/v1/auth/otp/email/request", body = mapOf("email" to email))
@@ -187,19 +189,101 @@ class EmailSignInApiTest : ApiTestBase() {
         sender.codeFor(insider)
     }
 
-    @Test
-    fun `a failing email provider does not change the answer for an address on the list`() {
-        val insider = listed[3]
-        val outsider = "failing-outsider-$run@example.test"
-        for ((i, fault) in listOf(SandboxFault.REJECTED, SandboxFault.INSUFFICIENT_BALANCE).withIndex()) {
-            sender.faults.always("email", fault)
-            val a = if (i == 0) insider else listed[4]
-            val b = "$i-$outsider"
-            val responses = listOf(a, b).map(::requestCode)
-            assertThat(responses[0].statusCode.value()).describedAs(fault.name).isEqualTo(200)
-            assertThat(shape(responses[0])).describedAs(fault.name).isEqualTo(shape(responses[1]))
-            sender.codeFor(a)
+    private fun delivery(requestId: String) = get("/api/v1/auth/otp/email/delivery/$requestId")
+
+    /**
+     * Polls the delivery status until it has settled: the final answer, and how
+     * long after [askedAt] (a System.nanoTime from before the request) it did.
+     */
+    private fun settled(request: ResponseEntity<String>, askedAt: Long = System.nanoTime()): Pair<ResponseEntity<String>, Long> {
+        val requestId = request.json().path("requestId").asText()
+        val start = askedAt
+        val deadline = start + Duration.ofSeconds(15).toNanos()
+        while (System.nanoTime() < deadline) {
+            val r = delivery(requestId)
+            check(r.statusCode.value() == 200) { "delivery status ${r.statusCode}: ${r.body}" }
+            if (r.json().path("status").asText() != "sending") {
+                return r to Duration.ofNanos(System.nanoTime() - start).toMillis()
+            }
+            Thread.sleep(20)
         }
+        throw AssertionError("the delivery status for $requestId never settled")
+    }
+
+    @Test
+    fun `a listed tester is told when their code could not be sent, for each way it can fail`() {
+        val expected = listOf(
+            SandboxFault.REJECTED to "otp_delivery_failed",
+            SandboxFault.UNAVAILABLE to "otp_provider_unavailable",
+            SandboxFault.INSUFFICIENT_BALANCE to "otp_service_unavailable",
+            SandboxFault.TIMEOUT to null,
+        )
+        for ((i, pair) in expected.withIndex()) {
+            val (fault, failure) = pair
+            sender.faults.always("email", fault)
+            val address = "told.$i.$run@example.test".also { extraListed(it) }
+            val request = requestCode(address)
+            assertThat(request.statusCode.value()).describedAs(fault.name).isEqualTo(200)
+            val (status, _) = settled(request)
+            val body = status.json()
+            if (failure == null) {
+                assertThat(body.path("status").asText()).describedAs(fault.name).isEqualTo("delayed")
+            } else {
+                assertThat(body.path("status").asText()).describedAs(fault.name).isEqualTo("failed")
+                assertThat(body.path("failure").asText()).describedAs(fault.name).isEqualTo(failure)
+                assertThat(body.path("message").asText()).describedAs(fault.name).startsWith("We couldn't send the code.")
+            }
+            assertThat(body.path("resendAfterSeconds").asLong(-1)).describedAs(fault.name).isEqualTo(0L)
+            assertThat(status.body).describedAs(fault.name).doesNotContain(address, sender.codeFor(address))
+            // Resend really is open: asking again is not refused as too soon.
+            assertThat(requestCode(address).statusCode.value()).describedAs(fault.name).isEqualTo(200)
+            sender.faults.clear()
+        }
+    }
+
+    @Test
+    fun `listed and unlisted addresses see the same outcome, answer and timing, with the provider healthy or failing`() {
+        // Slow enough that the send cannot hide inside the first poll.
+        sender.delay = Duration.ofMillis(600)
+        for ((i, fault) in listOf(null, SandboxFault.UNAVAILABLE, SandboxFault.INSUFFICIENT_BALANCE, SandboxFault.TIMEOUT).withIndex()) {
+            val label = fault?.name ?: "healthy"
+            sender.faults.clear()
+            fault?.let { sender.faults.always("email", it) }
+            val insider = "same.$i.$run@example.test".also { extraListed(it) }
+            val outsider = "same-outsider.$i.$run@example.test"
+
+            // The listed address first: the unlisted one replays the provider as
+            // a real send last found it, which is the state being compared.
+            fun askAndSettle(email: String): Triple<ResponseEntity<String>, ResponseEntity<String>, Long> {
+                val askedAt = System.nanoTime()
+                val request = requestCode(email)
+                val (status, millis) = settled(request, askedAt)
+                return Triple(request, status, millis)
+            }
+            val (insiderRequest, insiderStatus, insiderMillis) = askAndSettle(insider)
+            val (outsiderRequest, outsiderStatus, outsiderMillis) = askAndSettle(outsider)
+            assertThat(shape(insiderRequest)).describedAs(label).isEqualTo(shape(outsiderRequest))
+            assertThat(shape(insiderStatus)).describedAs(label).isEqualTo(shape(outsiderStatus))
+            assertThat(insiderStatus.json().path("status").asText()).describedAs(label)
+                .isEqualTo(if (fault == null) "sent" else if (fault == SandboxFault.TIMEOUT) "delayed" else "failed")
+            // Both settle on the same whole-second tick after a 600 ms send.
+            assertThat(listOf(insiderMillis, outsiderMillis)).describedAs("$label: settled after ms")
+                .allSatisfy { assertThat(it).isBetween(700L, 1_900L) }
+
+            // And what each leaves behind answers the same: resend refused for
+            // both while the code stands, open for both once it could not go.
+            val again = listOf(insider, outsider).map(::requestCode)
+            assertThat(shape(again[0])).describedAs("$label: asking again").isEqualTo(shape(again[1]))
+            assertThat(again[0].statusCode.value()).describedAs(label).isEqualTo(if (fault == null) 429 else 200)
+        }
+        assertThat(sender.sent.map { it.first }).noneMatch { it.startsWith("same-outsider") }
+    }
+
+    @Test
+    fun `an unknown request id is not found, and the status says nothing about any address`() {
+        val r = delivery(java.util.UUID.randomUUID().toString())
+        assertThat(r.statusCode.value()).isEqualTo(404)
+        assertThat(r.errorCode()).isEqualTo("otp_request_unknown")
     }
 
     @Test
@@ -271,13 +355,17 @@ class EmailSignInApiTest : ApiTestBase() {
     companion object {
         private val run = System.nanoTime()
         private val listed = (0..9).map { "alpha.tester+$it.$run@example.test" }
+        private val extra = (0..3).map { "told.$it.$run@example.test" } + (0..3).map { "same.$it.$run@example.test" }
+
+        /** Only a check that a test uses an address the allowlist below really has. */
+        fun extraListed(address: String) = check(address in extra) { "$address is not on the test allowlist" }
 
         @JvmStatic
         @DynamicPropertySource
         fun emailSignIn(registry: DynamicPropertyRegistry) {
             registry.add("almira.auth.sign-in-channels") { "phone,email" }
             // Typed untidily on purpose: the list is normalised as sign-in is.
-            registry.add("almira.auth.email-allowlist") { listed.joinToString(" , ") { it.uppercase() } }
+            registry.add("almira.auth.email-allowlist") { (listed + extra).joinToString(" , ") { it.uppercase() } }
         }
     }
 }

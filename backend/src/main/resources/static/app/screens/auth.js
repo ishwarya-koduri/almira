@@ -6,7 +6,10 @@
    presented up front, because most people have one obvious answer.
 
    The email request is answered the same way whether or not the address may
-   sign in, so this screen never learns which it was and never says.
+   sign in, so this screen never learns which it was and never says. It does
+   say when the email could not be sent: the code step asks the server how the
+   send went (deliveryOutcome in auth-outcome.js) and, if it failed, says "We
+   couldn't send the code" and opens resend, instead of waiting in silence.
 
    Anything short of a plain success goes through signInOutcome (auth-outcome.js):
    a delayed code still opens the code step, a refused channel switches to the
@@ -15,7 +18,7 @@
 import { api } from "../api.js";
 import { el, mount, field, textInput, withBusy, toast } from "../ui.js";
 import { t } from "../i18n.js";
-import { signInOutcome } from "../auth-outcome.js";
+import { signInOutcome, deliveryOutcome } from "../auth-outcome.js";
 
 const CHANNELS = {
   phone: {
@@ -163,6 +166,17 @@ function showCodeStep(host, channels, channel, address, challenge, onSignedIn) {
     if (input.value.length === 6) verify();
   });
 
+  // How the email went, filled in by watchDelivery below. A phone code's
+  // answer already said, so there is nothing to wait for.
+  const delivery = el("div", { "data-auth-delivery": "" });
+  if (challenge.delayed) {
+    // A delayed send is still a live challenge: say so plainly instead of
+    // claiming it was sent, and point at the resend button below.
+    mount(delivery, el("div.banner", { role: "status", "data-auth-delayed": "" }, t(`auth.code.delayed.${channel}`)));
+  } else {
+    mount(delivery, el("p.muted", {}, t(channel === "email" ? "auth.code.sending" : "auth.code.sent")));
+  }
+
   const resend = el("button.btn.btn-ghost.btn-block", { type: "button", disabled: true, "data-resend": "" },
     t("auth.resendIn", { seconds: challenge.resendAfterSeconds }));
   let remaining = challenge.resendAfterSeconds;
@@ -193,15 +207,43 @@ function showCodeStep(host, channels, channel, address, challenge, onSignedIn) {
     enableResend();
   }
 
+  /** Resend now: the server lifted the cooldown when the send failed or ran late. */
+  const openResend = () => {
+    clearInterval(tick);
+    remaining = 0;
+    enableResend();
+  };
+
+  const watchDelivery = async () => {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (!delivery.isConnected) return;
+      const outcome = deliveryOutcome(await api.emailDelivery(challenge.requestId));
+      if (!delivery.isConnected) return;
+      if (outcome.kind === "pending") continue;
+      if (outcome.kind === "delayed") {
+        mount(delivery, el("div.banner", { role: "status", "data-auth-delayed": "" }, t("auth.code.delayed.email")));
+        openResend();
+        return;
+      }
+      if (outcome.kind === "failed") {
+        mount(delivery, el("div.banner", { role: "alert", "data-auth-not-sent": "" },
+          el("div", {},
+            el("b", {}, t(outcome.headlineKey)), " ",
+            outcome.reasonKey ? t(outcome.reasonKey) : "")));
+        openResend();
+        return;
+      }
+      break; // sent, or nothing this build can read
+    }
+    mount(delivery, el("p.muted", {}, t("auth.code.sent")));
+  };
+
   mount(host, el("div.auth-card.card", {},
     el("form.stack-3", { onsubmit: (e) => { e.preventDefault(); verify(); } },
       el("div", {},
         el("h1", {}, t(`auth.${channel}.check`)),
-        // A delayed send is still a live challenge: say so plainly instead of
-        // claiming it was sent, and point at the resend timer below.
-        challenge.delayed
-          ? el("div.banner", { role: "status", "data-auth-delayed": "" }, t(`auth.code.delayed.${channel}`))
-          : el("p.muted", {}, t("auth.code.sent")),
+        delivery,
         channel === "email" && el("p.caption.faint", { style: { margin: 0 } }, t("auth.email.spam")),
       ),
       codeField,
@@ -227,4 +269,5 @@ function showCodeStep(host, channels, channel, address, challenge, onSignedIn) {
     ),
   ));
   input.focus();
+  if (channel === "email" && !challenge.delayed) watchDelivery();
 }

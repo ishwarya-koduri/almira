@@ -27,10 +27,19 @@ class SessionRevoker(
     private val repo: AuthRepository,
     private val revocations: SessionRevocationCache,
 ) {
+    /**
+     * True when this call ended the session; false when it had already ended.
+     *
+     * [onEnded] runs inside the same new transaction, only when this call ended
+     * it — for the audit row, which would otherwise be written in the caller's
+     * transaction and rolled back by the very throw that follows.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun revokeNow(sessionId: UUID, reason: String) {
+    fun revokeNow(sessionId: UUID, reason: String, onEnded: () -> Unit = {}): Boolean {
         repo.revokeAllForSession(sessionId)
-        repo.revokeSessionById(sessionId, reason)
+        val ended = repo.revokeSessionById(sessionId, reason) > 0
         revocations.revoke(sessionId)
+        if (ended) onEnded()
+        return ended
     }
 }

@@ -11,7 +11,7 @@
        # or: node scripts/check-auth-outcome.js  (as an ES module)
    ============================================================================= */
 
-import { signInOutcome, usableChannels } from "../backend/src/main/resources/static/app/auth-outcome.js";
+import { signInOutcome, usableChannels, deliveryOutcome } from "../backend/src/main/resources/static/app/auth-outcome.js";
 
 const log = typeof print === "function" ? print : console.log;
 let failures = 0;
@@ -85,6 +85,27 @@ expect("any other error shows the server's message on the field",
   { kind: "error", messageKey: null, onField: true, message: "Wait a moment." });
 expect("usableChannels drops unknowns and duplicates", usableChannels(["email", "fax", "email", "phone"]), ["email", "phone"]);
 expect("usableChannels of nothing is nothing", usableChannels(undefined), []);
+
+// GET /auth/otp/email/delivery/{requestId}: the exact bodies OtpService.emailDelivery answers with.
+const status = (state, extra) => ({ requestId: "d6386b03-0000-4000-8000-000000000002", status: state, ...(extra || {}) });
+expect("an email still sending is asked about again", deliveryOutcome(status("sending")), { kind: "pending" });
+expect("an email that was sent says so", deliveryOutcome(status("sent")), { kind: "sent" });
+expect("a late email shows the delayed banner and opens resend",
+  deliveryOutcome(status("delayed", { message: "late", resendAfterSeconds: 0 })),
+  { kind: "delayed", resendAfterSeconds: 0 });
+for (const [failure, reasonKey] of [
+  ["otp_delivery_failed", "auth.error.deliveryFailed.email"],
+  ["otp_provider_unavailable", "auth.error.providerUnavailable.email"],
+  ["otp_service_unavailable", "auth.error.serviceUnavailable.email"],
+]) {
+  expect(`a failed email (${failure}) says "we couldn't send the code", with its reason, and opens resend`,
+    deliveryOutcome(status("failed", { failure, message: "We couldn't send the code. x", resendAfterSeconds: 0 })),
+    { kind: "failed", headlineKey: "auth.code.notSent", reasonKey, message: "We couldn't send the code. x", resendAfterSeconds: 0 });
+}
+expect("a failure this build has no words for still says the code did not go",
+  deliveryOutcome(status("failed", { failure: "otp_new_kind", message: "m" })).headlineKey, "auth.code.notSent");
+expect("an unreadable status (older server, 404) stops asking", deliveryOutcome(null), { kind: "unknown" });
+expect("a status this build does not know stops asking", deliveryOutcome(status("queued")), { kind: "unknown" });
 
 if (failures > 0) throw new Error(`${failures} check(s) failed`);
 log("auth-outcome: all checks pass");

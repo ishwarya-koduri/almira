@@ -143,6 +143,17 @@ class AlmiraApi(
         client.post("$baseUrl/api/v1/auth/otp/email/request") { setBody(EmailOtpRequestBody(email)) }
     }
 
+    /**
+     * How the email for [requestId] went. Null when it cannot be read — an
+     * older server without the endpoint, or no connection — and the code step
+     * then says what it always said.
+     */
+    suspend fun emailDelivery(requestId: String): OtpDeliveryStatus? = try {
+        request { client.get("$baseUrl/api/v1/auth/otp/email/delivery/$requestId") }
+    } catch (_: ApiException) {
+        null
+    }
+
     suspend fun verifyEmailOtp(email: String, code: String, requestId: String?): LoginResponse {
         val login: LoginResponse = request {
             client.post("$baseUrl/api/v1/auth/otp/email/verify") {

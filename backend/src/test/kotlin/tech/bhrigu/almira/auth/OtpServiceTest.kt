@@ -546,4 +546,156 @@ class OtpServiceTest {
         assertThat(e.status).isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
         assertThat(e.message).contains("this network")
     }
+
+    // --- a resend that fails does not cost the code that did arrive (known-issues 22) ---
+
+    private fun waitOutCooldown(number: String, purpose: String = OtpService.LOGIN) =
+        redis.delete("otp:cooldown:$purpose:$number")
+
+    private fun wrongFor(code: String) = if (code == "000000") "111111" else "000000"
+
+    @Test
+    fun `a resend that fails outright leaves the earlier code working, with the guesses it had used`() {
+        for (fault in listOf(SandboxFault.REJECTED, SandboxFault.UNAVAILABLE, SandboxFault.INSUFFICIENT_BALANCE)) {
+            val (service, sender) = failingService(fault)
+            sender.faults.clear()
+            val number = phone()
+            val first = service.request(number, ip())
+            val arrived = sender.lastCode()
+            assertThat(refusal { service.verify(number, wrongFor(arrived), first.requestId) }.code).isEqualTo("otp_invalid")
+            val lifeBefore = redis.getExpire("otp:challenge:login:$number", TimeUnit.MILLISECONDS)
+
+            waitOutCooldown(number)
+            sender.faults.always("otp", fault)
+            val e = refusal { service.request(number, ip()) }
+            assertThat(e.code).describedAs(fault.name).isNotEqualTo("otp_delivery_delayed")
+
+            val stored = redis.opsForHash<String, String>().entries("otp:challenge:login:$number")
+            assertThat(stored["requestId"]).describedAs("$fault: the earlier challenge is back").isEqualTo(first.requestId)
+            assertThat(stored["attempts"]).describedAs("$fault: with the wrong code it already had").isEqualTo("1")
+            assertThat(redis.getExpire("otp:challenge:login:$number", TimeUnit.MILLISECONDS))
+                .describedAs("$fault: and no more life than it had").isLessThanOrEqualTo(lifeBefore)
+            assertThat(redis.hasKey("otp:cooldown:login:$number")).describedAs("resend is still open").isFalse()
+
+            // The text that did arrive still signs in, under the id the client still holds.
+            service.verify(number, arrived, first.requestId)
+        }
+    }
+
+    @Test
+    fun `an earlier code does not come back once a newer one may have gone out`() {
+        val (service, sender) = failingService(SandboxFault.TIMEOUT)
+        sender.faults.clear()
+        val number = phone()
+        val first = service.request(number, ip())
+        val firstCode = sender.lastCode()
+
+        // A newer send that timed out may still arrive: the first code is over.
+        waitOutCooldown(number)
+        sender.faults.always("otp", SandboxFault.TIMEOUT)
+        val delayed = refusal { service.request(number, ip()) }
+        val delayedCode = sender.lastCode()
+
+        // A third that fails outright falls back to the delayed one, not the first.
+        sender.faults.always("otp", SandboxFault.REJECTED)
+        refusal { service.request(number, ip()) }
+        assertThat(redis.opsForHash<String, String>().get("otp:challenge:login:$number", "requestId"))
+            .isEqualTo(delayed.details["requestId"])
+        assertThat(refusal { service.verify(number, firstCode, first.requestId) }.code).isEqualTo("otp_stale")
+        if (firstCode != delayedCode) {
+            assertThat(refusal { service.verify(number, firstCode, null) }.code).isEqualTo("otp_invalid")
+        }
+
+        // And a newer one that was sent ends both.
+        sender.faults.clear()
+        val sent = service.request(number, ip())
+        val sentCode = sender.lastCode()
+        waitOutCooldown(number)
+        sender.faults.always("otp", SandboxFault.UNAVAILABLE)
+        refusal { service.request(number, ip()) }
+        assertThat(redis.opsForHash<String, String>().get("otp:challenge:login:$number", "requestId"))
+            .isEqualTo(sent.requestId)
+        assertThat(refusal { service.verify(number, delayedCode.takeIf { it != sentCode } ?: wrongFor(sentCode), delayed.details["requestId"] as String) }.code)
+            .isEqualTo("otp_stale")
+        service.verify(number, sentCode, sent.requestId)
+    }
+
+    /** Blocks the send it is told to, until released, then fails or not as scripted. */
+    class GatedSender(val faults: SandboxFaults = SandboxFaults()) : OtpSender {
+        val sent = CopyOnWriteArrayList<Pair<String, String>>()
+        val gates = java.util.concurrent.ConcurrentLinkedQueue<Pair<CountDownLatch, CountDownLatch>>()
+        override fun send(phone: String, code: String) {
+            sent += phone to code
+            gates.poll()?.let { (entered, release) -> entered.countDown(); release.await(10, TimeUnit.SECONDS) }
+            faults.apply("otp")
+        }
+    }
+
+    private fun gatedService(sender: GatedSender, otp: AlmiraProperties.Otp): OtpService {
+        val props = props(otp = otp)
+        return OtpService(redis, sender, props, ProviderCalls(props, Sleeper { }, DoubleSupplier { 1.0 }, Clock.systemUTC()))
+    }
+
+    @Test
+    fun `failed resends do not buy extra guesses at the earlier code`() {
+        val sender = GatedSender()
+        val service = gatedService(sender, AlmiraProperties.Otp(maxAttempts = 3, maxPerHour = 1_000, maxPerIpPerHour = 1_000))
+        val number = phone()
+        val first = service.request(number, ip())
+        val code = sender.sent.last().second
+        assertThat(refusal { service.verify(number, wrongFor(code), null) }.code).isEqualTo("otp_invalid")
+
+        waitOutCooldown(number)
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        sender.gates += entered to release
+        sender.faults.always("otp", SandboxFault.REJECTED)
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            val resend = pool.submit<String> { refusal { service.request(number, ip()) }.code }
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue()
+            // A wrong code while the resend is in flight is judged against the resend's challenge...
+            val guess = sender.sent.last().second.let { if (it == wrongFor(code)) "222222" else wrongFor(code) }
+            assertThat(refusal { service.verify(number, guess, null) }.code).isEqualTo("otp_invalid")
+            release.countDown()
+            assertThat(resend.get(10, TimeUnit.SECONDS)).isEqualTo("otp_delivery_failed")
+        } finally {
+            pool.shutdownNow()
+        }
+
+        // ...and still counts once the earlier challenge is back: 1 + 1 of 3.
+        assertThat(redis.opsForHash<String, String>().get("otp:challenge:login:$number", "attempts")).isEqualTo("2")
+        assertThat(refusal { service.verify(number, wrongFor(code), first.requestId) }.code).isEqualTo("otp_locked")
+        assertThat(refusal { service.verify(number, code, first.requestId) }.code).isEqualTo("otp_expired")
+    }
+
+    @Test
+    fun `a challenge whose own send failed is never the one put back`() {
+        // Only reachable with no cooldown: a second request replaces a first
+        // whose send is still in flight, and then both fail outright.
+        val sender = GatedSender()
+        val service = gatedService(
+            sender, AlmiraProperties.Otp(resendCooldown = Duration.ZERO, maxPerHour = 1_000, maxPerIpPerHour = 1_000),
+        )
+        sender.faults.always("otp", SandboxFault.REJECTED)
+        val number = phone()
+        val firstIn = CountDownLatch(1); val firstGo = CountDownLatch(1)
+        val secondIn = CountDownLatch(1); val secondGo = CountDownLatch(1)
+        sender.gates += firstIn to firstGo
+        sender.gates += secondIn to secondGo
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val first = pool.submit<String> { refusal { service.request(number, ip()) }.code }
+            assertThat(firstIn.await(5, TimeUnit.SECONDS)).isTrue()
+            val second = pool.submit<String> { refusal { service.request(number, ip()) }.code }
+            assertThat(secondIn.await(5, TimeUnit.SECONDS)).isTrue()
+            firstGo.countDown()
+            assertThat(first.get(10, TimeUnit.SECONDS)).isEqualTo("otp_delivery_failed")
+            secondGo.countDown()
+            assertThat(second.get(10, TimeUnit.SECONDS)).isEqualTo("otp_delivery_failed")
+        } finally {
+            pool.shutdownNow()
+        }
+        assertThat(redis.hasKey("otp:challenge:login:$number"))
+            .describedAs("neither code was delivered, so neither is live").isFalse()
+    }
 }

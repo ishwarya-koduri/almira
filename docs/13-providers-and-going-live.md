@@ -657,7 +657,7 @@ attempt.
 | Outcome | Challenge | Cooldown | Per-number hourly count | Per-network hourly count |
 |---|---|---|---|---|
 | Timeout | kept, until a resend replaces it | **lifted** | kept | kept |
-| Rejected, unavailable, insufficient balance | removed | lifted | given back | **kept** |
+| Rejected, unavailable, insufficient balance | removed; the one it replaced is **put back** if still live | lifted | given back | **kept** |
 
 A timeout keeps the challenge because the text may still arrive, and lifts the
 cooldown because the person is looking at the screen and resend is their retry.
@@ -665,9 +665,16 @@ The counts are kept because, as far as anyone can tell, a text went: that is
 what stops timeouts buying free requests. A resend overwrites the challenge, so
 the late code then answers `otp_stale` (with its request id) or `otp_invalid`.
 
-When nothing was delivered there is no code worth keeping, and a person who
-fixes a typo — or tries again once we have topped up — is not refused as "too
-many attempts". The per-network count is never given back: that is the limit
+When nothing was delivered there is no new code worth keeping — but the code
+it replaced may have arrived, so that one is put back (known-issues 22): with
+its own lifetime, its own wrong-code count plus any wrong codes tried against
+the failed one, and answering to the failed request's id as well as its own,
+because an emailed code's step already switched to that id. It is put back only
+if nothing newer has replaced the failed request, and never after a timeout or
+a send that worked: a code that may have gone out is always the newest one.
+
+And a person who fixes a typo — or tries again once we have topped up — is not
+refused as "too many attempts". The per-network count is never given back: that is the limit
 that stops one network hammering the endpoint, and it holds whether or not our
 provider works. `OtpServiceTest` has a test for each row.
 

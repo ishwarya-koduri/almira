@@ -637,34 +637,19 @@ helper ignoring `scoreEarned` (it shows "0%").
 
 ## 20. The reminder sweep reads through row-level security on master, and finds nothing
 
-**Where** `backend/.../config/DatabaseConfig.kt` (`systemJdbc`, the
-`systemJdbcBypassingRls` bean) and its only consumer, `reminder/ReminderWorker.kt`.
+**Resolved** (2026-09-14, verified during "Failed resend keeps the earlier code").
+Kept as a stub so the number still means something where it is cited.
 
-**What** The bean is meant to be a template on the *owner* pool. Its parameter
-is `ownerDataSource: HikariDataSource`, with no `@Qualifier`. Both pools are
-`HikariDataSource` at runtime, so once both exist the parameter matches both,
-and `@Primary` on the runtime pool wins over the parameter's name. The
-template is therefore built on `almira-app`: the hourly sweep runs under
-row-level security with no user, sees no rows, sends nothing, and reports no
-error. Two separate verifiers observed this at runtime during the build; this
-entry was written from their reports and from reading the code, not from a new
-run.
-
-**Which is right** The fix already written on the unpushed branch
-`infra/deploy-and-pentest`: `@Qualifier("ownerDataSource")` on the parameter,
-with a comment explaining why, and `ReminderSweepTest` to prove the sweep sees
-rows.
-
-**Why it is still here** `DatabaseConfig.kt` is owned by the infra session, and
-the fix lives on its branch. The build that noticed it was told not to touch the
-file.
-
-**When to fix** When `infra/deploy-and-pentest` is merged. Do not fix it a
-second time on master: the two changes would conflict for nothing.
-
-**Risk if left** No reminder is ever sent from master, silently. A maturity or
-renewal date passes without the nudge the product promises. No privacy risk:
-the failure is seeing too little, not too much.
+The infra session's fix is on master (`32bfe38`, `infra/deploy-and-pentest`
+merged): `DatabaseConfig.systemJdbc` takes
+`@Qualifier("ownerDataSource") ownerDataSource: HikariDataSource`, with the
+comment explaining why, and `ReminderSweepTest` proves the sweep writes a
+notification for a due reminder. Verified at runtime, not only by reading: a
+throwaway probe on a full application context (`ApiTestBase`, throwaway
+database) found the `systemJdbcBypassingRls` template on pool `almira-owner`,
+connected as `almira` (the schema owner), and `ReminderSweepTest` passed in the
+same run. The probe was not committed: `DatabaseConfig` and its tests are the
+infra session's.
 
 ---
 
@@ -725,59 +710,56 @@ if an adapter misdeclares its provider — duplicate notifications.
 
 ## 22. A code request that replaces a live one and then fails leaves neither
 
-**Where** `auth/OtpService.issue`.
+**Resolved** (2026-09-14, "Failed resend keeps the earlier code"). Kept as a
+stub so the number still means something where it is cited.
 
-**What** A new request writes its challenge over the key of any existing one
-(`putAll` on the same `challengeKey`), so the earlier code stops working at that
-moment. If the send then fails with anything but a timeout, `CONSUME` removes
-the new challenge too. The person is left with no working code: the old one was
-overwritten, the new one was never delivered and has been deleted.
+`OtpService.issue` no longer overwrites the challenge it replaces. One Redis
+script (`REPLACE`) moves it aside under the new request's id — `RENAME`, so it
+keeps its own remaining lifetime — and writes the new one. What happens to the
+set-aside challenge depends on how the new send went:
 
-In practice the 30-second cooldown means this only happens when the earlier
-code is at least that old. The cooldown and the per-number count are given
-back, so they can ask again straight away; nothing is locked out.
+- **Sent** or **timed out**: it is deleted. A code that went out, or may have,
+  is the newest, and an older code never comes back after it.
+- **Rejected, unavailable, insufficient balance**: `FALL_BACK` removes the new
+  challenge and puts the old one back, atomically, only if the new challenge is
+  still the current one, the old one has not expired, the old request's own
+  send is not recorded as failed (`otp:not-sent:<id>`), and the old attempts
+  plus the wrong codes tried against the new challenge are under the cap. The
+  restored challenge also answers to the failed request's id, because an
+  emailed code's step switched to that id before the send.
 
-**Which is right** Either keep the previous challenge until the new send
-succeeds (write the new one under the request id, then swap on success), or put
-the previous challenge back when the send fails, if it has not been used or
-expired in the meantime.
+Throttling is unchanged: the cooldown, both hourly counts and what a failure
+gives back are exactly as before, and a failed request cannot reset or add
+guesses. Decoys go through the same scripts, so a decoy's failed resend falls
+back the way a real one does. Same for phone and email, sign-in and step-up.
+Proven by four tests in `OtpServiceTest` and three in `EmailOtpTest` (the
+`known-issues 22` sections), each watched failing.
 
-**Why it is still here** Found while reviewing the provider failure contract;
-not in that change's scope, and every path through it needs a Redis-backed
-watched-failing test of its own.
+**What is left, narrowed:**
 
-**When to fix** The next time `OtpService` is opened, and before a live SMS
-provider (whose outright rejections are what trigger it).
-
-**Risk if left** Low. Someone who asked again because the first text was slow
-can lose a code that would have worked, and has to ask a third time.
+- **While the new send is in flight** (up to `send-timeout`, 5 s, for a
+  reported send; until it settles for email) the earlier code answers
+  `otp_stale` under its own id, as before. It works again once the send has
+  failed.
+- **Only with a zero cooldown**: if a third request replaces a second whose
+  send is still in flight, and the second then fails, the first is not put
+  back when the third fails too. The default 30-second cooldown makes this
+  unreachable.
+- **The failed request's delivery status still says "We couldn't send the
+  code"** with resend open; it does not say that the earlier code still works.
+  Clients unchanged.
 
 ---
 
 ## 23. Migration V26 on the infra branch sits below V27 to V30 on master
 
-**Where** `db/migrations/V26__ciphertext_digests.sql`, which exists only on
-`infra/deploy-and-pentest`. Master skips 26, leaving the number free, and
-already has `V27` to `V30`.
+**Resolved** (2026-09-14, verified during "Failed resend keeps the earlier code").
+Kept as a stub so the number still means something where it is cited.
 
-**What** Flyway applies migrations in version order and, by default, refuses to
-start against a database that has applied a higher version than a pending one
-(`outOfOrder` is not enabled anywhere in this repo). Any database migrated from
-master, including every test database and the personal dev stack, will reject
-V26 once the infra branch is merged. Leaving the number free does not help:
-a database that has applied V30 treats a newly arrived V26 as a migration it
-skipped.
-
-**Which is right** Renumber the infra migration above the highest version on
-master at merge time (V31 today), and update the references to `V26` in that
-branch's `deploy/restore/digest-check.sql` and `docs/17-deploying.md`, which
-both name it. Turning on `outOfOrder` is not the answer: it makes the schema
-depend on the order a database happened to see the branches in.
-
-**Why it is still here** The migration belongs to the infra session's
-unpushed branch, and renumbering it there is that session's change.
-
-**When to fix** At the merge of `infra/deploy-and-pentest`, before it lands.
-
-**Risk if left** Loud, not silent: the application refuses to start with a
-Flyway validation error on any already-migrated database.
+The infra migration was renumbered before it landed: master has
+`db/migrations/V31__ciphertext_digests.sql` (`32bfe38`) and no `V26` on master
+or on `infra/deploy-and-pentest`; `deploy/restore/digest-check.sql` and
+`docs/17-deploying.md` name `V31`. Verified at runtime: a throwaway database
+migrated by the full application recorded versions 25, 27, 28, … 35 in that
+order, all successful, with 31 `ciphertext digests` between 30 and 32.
+`outOfOrder` is still not enabled anywhere.

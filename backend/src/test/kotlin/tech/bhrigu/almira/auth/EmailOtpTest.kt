@@ -482,4 +482,87 @@ class EmailOtpTest {
     }
 
     private fun wrongFor(code: String) = if (code == "000000") "111111" else "000000"
+
+    // --- a resend that fails does not cost the code that did arrive (known-issues 22) ---
+
+    @Test
+    fun `a resend whose email fails leaves the earlier emailed code working, under the id the code step now holds`() {
+        for (fault in listOf(SandboxFault.REJECTED, SandboxFault.UNAVAILABLE, SandboxFault.INSUFFICIENT_BALANCE)) {
+            val email = RecordingEmailSender()
+            val otp = service(email = email)
+            val a = address()
+            val first = otp.requestByEmail(a, ip(), login, unreported)
+            assertThat(otp.emailDelivery(first.requestId).status).isEqualTo("sent")
+            val arrived = email.lastCode()
+
+            redis.delete("otp:email:cooldown:login:$a")
+            email.faults.always("email", fault)
+            // The answer comes before the send, so the code step switches to this id.
+            val resend = otp.requestByEmail(a, ip(), login, unreported)
+            assertThat(otp.emailDelivery(resend.requestId).status).describedAs(fault.name).isEqualTo("failed")
+
+            assertThat(challenge(a)["requestId"]).describedAs("$fault: the earlier challenge is back").isEqualTo(first.requestId)
+            otp.verifyByEmail(a, arrived, resend.requestId, login)
+        }
+    }
+
+    @Test
+    fun `an earlier emailed code does not come back once a newer one was sent or may have been`() {
+        for (newer in listOf(null, SandboxFault.TIMEOUT)) {
+            val email = RecordingEmailSender()
+            val otp = service(email = email)
+            val a = address()
+            val first = otp.requestByEmail(a, ip(), login, unreported)
+            val firstCode = email.lastCode()
+
+            redis.delete("otp:email:cooldown:login:$a")
+            newer?.let { email.faults.always("email", it) }
+            val second = otp.requestByEmail(a, ip(), login, unreported)
+            val secondCode = email.lastCode()
+
+            redis.delete("otp:email:cooldown:login:$a")
+            email.faults.always("email", SandboxFault.UNAVAILABLE)
+            val third = otp.requestByEmail(a, ip(), login, unreported)
+            assertThat(otp.emailDelivery(third.requestId).status).isEqualTo("failed")
+
+            val label = newer?.name ?: "sent"
+            assertThat(challenge(a)["requestId"]).describedAs(label).isEqualTo(second.requestId)
+            assertThat(refusal { otp.verifyByEmail(a, firstCode, first.requestId, login) }.code)
+                .describedAs(label).isEqualTo("otp_stale")
+            if (firstCode != secondCode) {
+                assertThat(refusal { otp.verifyByEmail(a, firstCode, third.requestId, login) }.code)
+                    .describedAs(label).isEqualTo("otp_invalid")
+            }
+            otp.verifyByEmail(a, secondCode, third.requestId, login)
+        }
+    }
+
+    @Test
+    fun `a decoy's failed resend falls back the way a real one does`() {
+        val sender = RecordingEmailSender()
+        val otp = service(email = sender)
+        val (listed, unlisted) = address() to address()
+        val real = otp.requestByEmail(listed, ip(), login, unreported)
+        val realCode = sender.lastCode()
+        val decoy = otp.requestByEmail(unlisted, ip(), login, OtpDelivery.DECOY)
+
+        // The provider goes down: the listed address's resend fails, and so the
+        // decoy's replays a failure.
+        redis.delete("otp:email:cooldown:login:$listed")
+        redis.delete("otp:email:cooldown:login:$unlisted")
+        sender.faults.always("email", SandboxFault.UNAVAILABLE)
+        val realResend = otp.requestByEmail(listed, ip(), login, unreported)
+        val decoyResend = otp.requestByEmail(unlisted, ip(), login, OtpDelivery.DECOY)
+        assertThat(otp.emailDelivery(decoyResend.requestId).status).isEqualTo("failed")
+
+        // What someone outside can probe: a wrong code under the resend's id is
+        // judged (otp_invalid), not refused as stale or expired, for both.
+        fun probe(email: String, requestId: String, wrong: String) =
+            refusal { otp.verifyByEmail(email, wrong, requestId, login) }.code
+        assertThat(challenge(unlisted)["requestId"]).isEqualTo(decoy.requestId)
+        assertThat(challenge(listed)["requestId"]).isEqualTo(real.requestId)
+        assertThat(challenge(unlisted).keys).isEqualTo(challenge(listed).keys.map { it.replace(realResend.requestId, decoyResend.requestId) }.toSet())
+        assertThat(probe(listed, realResend.requestId, wrongFor(realCode))).isEqualTo("otp_invalid")
+        assertThat(probe(unlisted, decoyResend.requestId, wrongFor(realCode))).isEqualTo("otp_invalid")
+    }
 }

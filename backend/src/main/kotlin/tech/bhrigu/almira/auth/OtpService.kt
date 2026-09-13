@@ -213,7 +213,9 @@ class OtpService(
      *  - **Rejected** (`otp_delivery_failed`), **unavailable**
      *    (`otp_provider_unavailable`), **insufficient balance**
      *    (`otp_service_unavailable`): nothing was delivered. The challenge is
-     *    removed (no live code with nobody to receive it), the cooldown is
+     *    removed (no live code with nobody to receive it) and the one it
+     *    replaced, if still live, is put back, so an earlier code that did
+     *    arrive keeps working ([notSentFallBack]); the cooldown is
      *    lifted and the per-number count is given back, so fixing a typo or
      *    trying again once we are topped up is not refused as "too many". The
      *    per-network count is NOT given back: that is the limit that stops one
@@ -254,10 +256,12 @@ class OtpService(
         val stored = if (delivery == OtpDelivery.DECOY) unmatchable() else hash
 
         val key = challengeKey(channel, address, purpose)
-        redis.opsForHash<String, String>().putAll(
-            key, mapOf("hash" to stored, "requestId" to requestId, "attempts" to "0"),
-        )
-        redis.expire(key, cfg.ttl)
+        // The challenge this one replaces, if any, is set aside rather than
+        // overwritten, so a send that fails outright can put it back
+        // (known-issues 22). REPLACE returns its request id.
+        val previous: String? = redis.execute(
+            REPLACE, listOf(key, setAsideKey(requestId)), stored, requestId, cfg.ttl.toMillis().toString(),
+        ).takeIf { it.isNotEmpty() }
         // Redis rejects a zero or negative TTL outright, so a misconfigured
         // cooldown would turn every sign-in attempt into a 500 rather than
         // simply disabling the cooldown. Guard the config, not the user.
@@ -268,14 +272,17 @@ class OtpService(
         when (delivery) {
             OtpDelivery.REPORTED -> try {
                 timedSend(channel, address, code)
+                // Sent: this is the newest code, and the one it replaced is gone for good.
+                redis.delete(setAsideKey(requestId))
             } catch (failure: ProviderCallFailed) {
                 if (failure.kind == FailureKind.TIMEOUT) {
                     // The person may press resend now. The new challenge
                     // overwrites this one, so a late text stops working then.
+                    // It may have been sent, so the one it replaced is gone.
+                    redis.delete(setAsideKey(requestId))
                     redis.delete(cooldownKey(channel, address, purpose))
                 } else {
-                    // CONSUME removes it only if it is still this request's challenge.
-                    redis.execute(CONSUME, listOf(key), requestId)
+                    notSentFallBack(channel, address, purpose, requestId, previous)
                     redis.delete(cooldownKey(channel, address, purpose))
                     redis.execute(GIVE_BACK, listOf(rateKey(channel, address)))
                 }
@@ -285,7 +292,9 @@ class OtpService(
                 val status = deliveryKey(requestId)
                 redis.opsForHash<String, String>().putAll(status, mapOf("state" to SENDING))
                 redis.expire(status, cfg.ttl)
-                settleInBackground(channel, address, purpose, requestId, code, real = delivery == OtpDelivery.DEFERRED)
+                settleInBackground(
+                    channel, address, purpose, requestId, previous, code, real = delivery == OtpDelivery.DEFERRED,
+                )
             }
         }
 
@@ -317,7 +326,8 @@ class OtpService(
      *  - **Timeout**: it may still arrive, so the challenge stands. The cooldown
      *    is lifted. Status `delayed`.
      *  - **Rejected, unavailable, insufficient balance**: nothing was delivered.
-     *    The challenge is removed, the cooldown lifted and the per-address count
+     *    The challenge is removed and the one it replaced put back
+     *    ([notSentFallBack]), the cooldown lifted and the per-address count
      *    given back; the per-network count is kept. Status `failed`.
      *
      * The outcome is applied on a whole-second boundary from when the code was
@@ -332,6 +342,7 @@ class OtpService(
         address: String,
         purpose: String,
         requestId: String,
+        previous: String?,
         code: String,
         real: Boolean,
     ) {
@@ -356,7 +367,7 @@ class OtpService(
             }
             runCatching {
                 waitForTick(asked)
-                settle(channel, address, purpose, requestId, outcome)
+                settle(channel, address, purpose, requestId, previous, outcome)
             }.onFailure { log.warn("could not settle a one-time code by {}: {}", channel.key, it.javaClass.simpleName) }
         }
     }
@@ -417,16 +428,26 @@ class OtpService(
         if (wait > 0) Thread.sleep(wait / 1_000_000, (wait % 1_000_000).toInt())
     }
 
-    private fun settle(channel: OtpChannel, address: String, purpose: String, requestId: String, outcome: FailureKind?) {
+    private fun settle(
+        channel: OtpChannel,
+        address: String,
+        purpose: String,
+        requestId: String,
+        previous: String?,
+        outcome: FailureKind?,
+    ) {
         val fields = when (outcome) {
-            null -> mapOf("state" to SENT)
+            null -> {
+                redis.delete(setAsideKey(requestId))
+                mapOf("state" to SENT)
+            }
             FailureKind.TIMEOUT -> {
+                redis.delete(setAsideKey(requestId))
                 redis.delete(cooldownKey(channel, address, purpose))
                 mapOf("state" to DELAYED)
             }
             else -> {
-                // CONSUME removes it only if it is still this request's challenge.
-                redis.execute(CONSUME, listOf(challengeKey(channel, address, purpose)), requestId)
+                notSentFallBack(channel, address, purpose, requestId, previous)
                 redis.delete(cooldownKey(channel, address, purpose))
                 redis.execute(GIVE_BACK, listOf(rateKey(channel, address)))
                 mapOf("state" to FAILED, "failure" to outcome.code)
@@ -435,6 +456,44 @@ class OtpService(
         val status = deliveryKey(requestId)
         redis.opsForHash<String, String>().putAll(status, fields)
         redis.expire(status, cfg.ttl)
+    }
+
+    /**
+     * A send that certainly did not go out: remove this request's challenge —
+     * only if it is still the newest — and put back the one it replaced, if
+     * that one is still worth having (known-issues 22).
+     *
+     * Put back only when:
+     *  - this request's challenge is still the current one. A newer request
+     *    has replaced it otherwise, and set it aside in turn;
+     *  - the replaced challenge has not expired. It kept its own lifetime while
+     *    set aside, so it expires when it always would have;
+     *  - its own send has not been recorded as failed (a zero cooldown can let
+     *    a request replace one whose send is still in flight);
+     *  - its attempts, plus the wrong codes tried against this one while it
+     *    stood, are under the cap. Failed requests do not buy extra guesses.
+     *
+     * A restored challenge also accepts this request's id, because a client
+     * that was shown this request's id (an emailed code's answer comes before
+     * the send) still holds it, and the code it can type is the earlier one.
+     *
+     * Only a send that was never delivered falls back. A timeout may yet
+     * arrive, and a send that worked is the newest code: neither brings an
+     * older code back.
+     */
+    private fun notSentFallBack(
+        channel: OtpChannel,
+        address: String,
+        purpose: String,
+        requestId: String,
+        previous: String?,
+    ) {
+        redis.opsForValue().set(notSentKey(requestId), "1", cfg.ttl)
+        redis.execute(
+            FALL_BACK,
+            listOf(challengeKey(channel, address, purpose), setAsideKey(requestId), notSentKey(previous ?: "none")),
+            requestId, cfg.maxAttempts.toString(), MAX_FALLBACK_IDS.toString(),
+        )
     }
 
     /**
@@ -502,7 +561,7 @@ class OtpService(
         val stored = redis.opsForHash<String, String>().entries(key)
         if (stored.isEmpty()) throw expired(channel)
         val storedRequestId = stored["requestId"].orEmpty()
-        if (requestId != null && storedRequestId != requestId) {
+        if (requestId != null && storedRequestId != requestId && stored[fallbackField(requestId)] == null) {
             throw ApiException.badRequest("otp_stale", "Please use the most recent code we sent.")
         }
 
@@ -659,6 +718,14 @@ class OtpService(
 
     private fun deliveryKey(requestId: String) = "otp:email:delivery:$requestId"
 
+    /** Where the challenge a request replaced waits until that request's send has settled. */
+    private fun setAsideKey(requestId: String) = "otp:replaced-by:$requestId"
+
+    /** A request whose send certainly did not go out, so nothing falls back to its challenge. */
+    private fun notSentKey(requestId: String) = "otp:not-sent:$requestId"
+
+    private fun fallbackField(requestId: String) = "fallbackFor:$requestId"
+
     private val OtpChannel.subject get() = if (this == OtpChannel.EMAIL) "email address" else "phone"
 
     private fun mac(channel: OtpChannel, purpose: String, address: String, code: String): String {
@@ -716,6 +783,64 @@ class OtpService(
          * given up, and mobile clients and proxies start cutting the request.
          */
         val MAX_SEND_TIMEOUT: Duration = Duration.ofSeconds(15)
+
+        /** How many failed requests' ids one restored challenge will answer to. */
+        private const val MAX_FALLBACK_IDS = 16
+
+        /**
+         * KEYS: challenge, set-aside. ARGV: hash, request id, lifetime in ms.
+         * Moves any current challenge aside with its remaining lifetime (RENAME
+         * keeps it), writes the new one, and returns the replaced request id, or
+         * an empty string when there was none.
+         */
+        private val REPLACE = DefaultRedisScript(
+            """
+            local previous = ''
+            if redis.call('EXISTS', KEYS[1]) == 1 then
+              previous = redis.call('HGET', KEYS[1], 'requestId')
+              redis.call('RENAME', KEYS[1], KEYS[2])
+            end
+            redis.call('HSET', KEYS[1], 'hash', ARGV[1], 'requestId', ARGV[2], 'attempts', '0')
+            redis.call('PEXPIRE', KEYS[1], ARGV[3])
+            return previous
+            """.trimIndent(),
+            String::class.java,
+        )
+
+        /**
+         * KEYS: challenge, set-aside, the replaced request's not-sent marker.
+         * ARGV: this request id, max attempts, max fallback ids.
+         * 1 when the replaced challenge was put back. See [notSentFallBack].
+         */
+        private val FALL_BACK = DefaultRedisScript(
+            """
+            if redis.call('HGET', KEYS[1], 'requestId') ~= ARGV[1] then
+              redis.call('DEL', KEYS[2])
+              return 0
+            end
+            local misses = tonumber(redis.call('HGET', KEYS[1], 'attempts') or '0')
+            redis.call('DEL', KEYS[1])
+            if redis.call('EXISTS', KEYS[2]) == 0 then
+              return 0
+            end
+            if redis.call('EXISTS', KEYS[3]) == 1 then
+              redis.call('DEL', KEYS[2])
+              return 0
+            end
+            local attempts = tonumber(redis.call('HGET', KEYS[2], 'attempts') or '0') + misses
+            if attempts >= tonumber(ARGV[2]) then
+              redis.call('DEL', KEYS[2])
+              return 0
+            end
+            redis.call('HSET', KEYS[2], 'attempts', tostring(attempts))
+            if redis.call('HLEN', KEYS[2]) < 3 + tonumber(ARGV[3]) then
+              redis.call('HSET', KEYS[2], 'fallbackFor:' .. ARGV[1], '1')
+            end
+            redis.call('RENAME', KEYS[2], KEYS[1])
+            return 1
+            """.trimIndent(),
+            Long::class.javaObjectType,
+        )
 
         private val CONSUME = DefaultRedisScript(
             """

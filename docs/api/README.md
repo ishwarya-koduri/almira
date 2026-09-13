@@ -82,7 +82,7 @@ is not `sending`:
 | `sending` | Ask again shortly. |
 | `sent` | Nothing more to say. |
 | `delayed` | Show the delayed sentence; resend is open now (`resendAfterSeconds: 0`). The code still works if it arrives. |
-| `failed` | Say **"We couldn't send the code."** with the sentence for `failure` (`otp_delivery_failed` · `otp_provider_unavailable` · `otp_service_unavailable`, the same advice as the phone codes); resend is open now. The challenge is gone. |
+| `failed` | Say **"We couldn't send the code."** with the sentence for `failure` (`otp_delivery_failed` · `otp_provider_unavailable` · `otp_service_unavailable`, the same advice as the phone codes); resend is open now. This request's code is gone; if it replaced an earlier code that is still live, that code works again, under either request id. |
 
 Unknown or expired request ids are `404 otp_request_unknown`; treat that, a
 server without the endpoint, and any status you do not know as "stop asking".
@@ -134,7 +134,7 @@ each one needs different words ([docs/13 "When a provider fails"](../13-provider
 | Status | Code | What to do |
 |---|---|---|
 | 504 | `otp_delivery_delayed` | Go to the code step anyway: the text may still arrive and will work. `details.requestId` is the challenge; offer a resend after `details.resendAfterSeconds`, which is `0` — the server made one attempt and never retries, so resend is the retry and is open at once. A resend replaces the challenge; the late code then stops working. |
-| 422 | `otp_delivery_failed` | Nothing was delivered. Let the person correct the number and ask again straight away. |
+| 422 | `otp_delivery_failed` | Nothing was delivered. Let the person correct the number and ask again straight away. For this and the two 503s below: an earlier code from the same flow that is still live keeps working, so stay on the code step if you were on it. |
 | 503 | `otp_provider_unavailable` | Nothing was sent. Suggest trying again in a few minutes. |
 | 503 | `otp_service_unavailable` | Our account problem. Show the message; do not suggest checking the number. |
 

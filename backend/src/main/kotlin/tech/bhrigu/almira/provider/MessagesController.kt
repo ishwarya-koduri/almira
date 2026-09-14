@@ -18,7 +18,11 @@ data class OutboundMessageResponse(
     val title: String?,
     /** `sent`, `failed`, `queued` or `skipped`. */
     val status: String,
-    /** When failed: `timeout`, `unavailable`, `rejected`, `insufficient_balance` or `error`. */
+    /**
+     * When failed: `timeout`, `unavailable`, `rejected`, `insufficient_balance`, `error`, or
+     * `body_not_restored` — it was still waiting to go when the server was restored from a backup,
+     * which does not carry message bodies, so it was never sent.
+     */
     val failure: String?,
     val attempts: Int,
     /** Plain words for [failure], ready to show. Null when nothing went wrong. */
@@ -75,6 +79,8 @@ class OutboundMessages(
             "unavailable" -> "Not sent — the service wasn't reachable. Nothing for you to do."
             "rejected" -> "Not delivered — it was refused for this address or number. Check your contact details."
             "insufficient_balance" -> "Not sent — a problem on our side, not with your details. We've been alerted."
+            NotificationOutbox.BODY_NOT_RESTORED ->
+                "Not sent — it was still waiting to go out when our service was restored from a backup. Nothing for you to do."
             else -> "Not sent — something went wrong on our side."
         }
     }

@@ -157,7 +157,11 @@ Aggregator (disabled by default: cut from v1) or the WhatsApp webhook — answer
 whatever the client offers for a provider reported as `DISABLED`. `mode: OFF`
 remains in the enum for compatibility and is never sent.
 `GET /api/v1/me/messages` lists the caller's own notifications, with `status`,
-`failure`, `attempts` and a ready-to-show `failureMessage`.
+`failure`, `attempts` and a ready-to-show `failureMessage`. `failure` is one of
+`timeout`, `unavailable`, `rejected`, `insufficient_balance`, `error` or
+`body_not_restored` (it was still queued when the server was restored from a
+backup, which does not carry message bodies, so it was never sent); show
+`failureMessage` rather than mapping these yourself.
 
 ### Step-up
 

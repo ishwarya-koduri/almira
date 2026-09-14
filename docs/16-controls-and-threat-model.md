@@ -112,7 +112,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | DP-1 | Masking by default; full numbers only on opt-in, then encrypted and step-up gated |
 | DP-2 | Documents encrypted before storage; single-use, short-lived download tickets |
 | DP-3 | Exports scoped by the caller's own visibility — `reports/ExportService.kt` |
-| DP-4 | Notification bodies never logged or stored — `provider/Delivery.kt` |
+| DP-4 | Notification bodies never logged; held only while queued, in a table the runtime role cannot read and a backup leaves out — `provider/Delivery.kt`, `provider/NotificationOutbox.kt` |
 | DP-5 | IP addresses hashed where recorded at all — `sharing/ShareController.kt` |
 
 ### Audit

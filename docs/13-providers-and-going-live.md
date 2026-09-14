@@ -540,13 +540,38 @@ a provider. The worker is woken after the commit and also polls every
 locked`, sends each through `ProviderCalls` with the provider's policy, and
 records `sent` or `failed`, the failure kind and the attempts on the same row.
 The body waits in `outbound_message_bodies`, which the runtime role cannot read,
-and is deleted when the row finishes. A request or sweep that notifies no longer
+and is deleted in the same statement that records the row as finished, so a
+worker that stops just after recording leaves no body behind; any body whose row
+is no longer `queued` is also deleted at the start of every claim. Nothing else
+reads the table — `NotificationOutboxTest` fails if application code or a
+migration other than V32 names it. A request or sweep that notifies no longer
 waits on any provider (`NotificationOutboxTest` holds a hanging push to that).
 
 The worker uses the owner data source by explicit qualifier: on the runtime
 pool, row-level security shows a user-less worker no rows, and it would do
 nothing, successfully, forever. `NotificationOutboxTest` pins the pool and role,
 and shows a worker built on the runtime pool finding nothing.
+
+### After a restore: `body_not_restored`
+
+A backup does not carry queued bodies. `scripts/backup.sh` leaves the data of
+`outbound_message_bodies` out of the dump, the same way Redis is left out (the
+table itself is in it, empty), so a backup taken mid-drain holds no rendered
+message in plaintext (docs/17 §6). The cost is on the restored server: a row
+that was `queued` when the backup was taken comes back with no body.
+
+The worker does not send it — there are no words, and an empty or stand-in
+text would be worse than nothing — and does not leave it queued for a body that
+cannot come. It records the row `failed` with `failure = body_not_restored`,
+attempts unchanged, and logs one WARN per row naming only the channel and the
+message id: `outbox: a queued <channel> message has no body (a restore does not
+bring bodies back); marked failed as body_not_restored, not sent (message <id>)`.
+That holds for a row whose send had started on a channel that honours keys too;
+one on an at-most-once channel is still recorded `timeout`, because it may have
+gone. The person sees it in `/me/messages`: "Not sent — it was still waiting to
+go out when our service was restored from a backup. Nothing for you to do." The
+in-app row, which has no body to lose, is unaffected. `NotificationOutboxTest`
+holds all of this.
 
 ### Idempotency keys, and what they guarantee
 

@@ -20,6 +20,9 @@ import { openDetail } from "./detail.js";
 import { t, language } from "../i18n.js";
 import { loadReview, reviewCard } from "../review.js";
 import { trendPoints } from "../glance.js";
+import { captureForm } from "./capture.js";
+import { resumeCard } from "../draft-ui.js";
+import { shelvesCard } from "../shelves.js";
 
 export async function homeScreen(host) {
   const hid = state.household.id;
@@ -101,6 +104,11 @@ function render(host, { data, trend, inbox }) {
     // comes before what there is.
     reviewCard(state.household.id, inbox, { onChanged: refresh }),
 
+    // A form left half-filled on this phone (X-83), then the shelves still to
+    // fill (P-10): both are things to finish, so both come before what there is.
+    resumeCard((type) => captureForm(type, () => homeScreen(host))),
+    shelvesCard(state.firstSession),
+
     upcoming.length > 0 && el("div.card", {},
       el("div.section-title", {}, el("h4", {}, t("home.upcoming")), el("span.caption", {}, t("home.next90"))),
       el("div.list", {}, ...upcoming.map((item) =>
@@ -148,6 +156,8 @@ function render(host, { data, trend, inbox }) {
           t("home.whatsLeft", { amount: data.netWorthFormatted })),
       ),
     ),
+
+    el("div.row", {}, el("a.link-quiet", { href: "#/guide" }, t("guide.homeLink"))),
   ));
   return status;
 }

@@ -497,7 +497,7 @@ export async function openSealedValueAs(memberId, householdId, recordType, recor
 const valueBytes = (text) => encoder.encode(text);
 
 export async function sealField(householdId, recordType, recordId, fieldKey, text) {
-  if (!contentKey) throw new Error("Unlock zero-knowledge mode first.");
+  if (!contentKey) throw new Error("Unlock with your passphrase first.");
   const ciphertext = await seal(
     contentKey, valueBytes(text), aadFor(householdId, recordType, recordId, fieldKey),
   );
@@ -533,7 +533,7 @@ export async function readSealed(householdId, recordType, recordId) {
  * decides how to say which (docs/20).
  */
 export async function openSealedValue(householdId, recordType, recordId, fieldKey, ciphertext) {
-  if (!contentKey) throw new Error("Unlock zero-knowledge mode first.");
+  if (!contentKey) throw new Error("Unlock with your passphrase first.");
   return open(contentKey, ciphertext, aadFor(householdId, recordType, recordId, fieldKey));
 }
 

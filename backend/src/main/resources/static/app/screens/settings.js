@@ -15,6 +15,7 @@ import { accountCard } from "../lifecycle.js";
 import { howYouSignInCard } from "../sign-in-security.js";
 import { notificationsCard, quietPromiseCard } from "../notifications.js";
 import { measurementCard } from "../measurement.js";
+import { helpMark } from "../glossary.js";
 
 export async function settingsScreen(host) {
   // Settings is a stack of independent things, and it used to be an
@@ -36,6 +37,7 @@ export async function settingsScreen(host) {
     safely(() => sessionsCard()),
     safely(() => accountCard(host, () => settingsScreen(host))),
     safely(() => measurementCard()),
+    safely(() => helpCard()),
     safely(() => privacyCard()),
     safely(() => aboutCard()),
   ]);
@@ -158,7 +160,7 @@ async function securityCard(host) {
 
     body.append(
       field({
-        label: t("security.passphrase"),
+        label: [t("security.passphrase"), helpMark("passphrase")],
         control: passphrase,
         // Said out loud because neither client trims, deliberately: a space
         // belongs to the passphrase, and silently removing it in one client
@@ -210,7 +212,7 @@ async function securityCard(host) {
   }
 
   return el("div.card.stack-3", {},
-    el("h4", {}, t("security.title")),
+    el("h4.term", {}, t("security.title"), helpMark("sealed")),
     el("p.caption.muted", {}, t("security.explain")),
     body,
     el("details", {},
@@ -423,6 +425,32 @@ async function sessionsCard() {
         onclick: async () => { await api.signOut(); location.reload(); },
       }, "Sign out here"),
     ),
+  );
+}
+
+/**
+ * Help, and a person to ask (X-42, docs/03 §1.6). The channel is the deployment's
+ * to configure (almira.support.*). Unset, the card says so rather than showing
+ * an address nobody reads. A WhatsApp or email link is opened by the phone
+ * itself: nothing is sent from here, and no provider is involved.
+ */
+async function helpCard() {
+  const contact = await api.supportContact().catch(() => ({ configured: false }));
+  return el("div.card.stack-3", { "data-help": "true" },
+    el("h4", {}, t("help.title")),
+    el("p.caption", { style: { margin: 0 } }, t("help.guideLine")),
+    el("div.row", {}, el("a.btn.btn-sm", { href: "#/guide" }, t("help.openGuide"))),
+    el("h4", {}, t("help.contact")),
+    contact.configured
+      ? el("div.stack-2", {},
+          el("a.btn.btn-sm", {
+            href: contact.link, target: "_blank", rel: "noopener noreferrer",
+            style: { alignSelf: "flex-start" },
+          }, contact.channel === "whatsapp" ? t("help.whatsapp") : t("help.email")),
+          el("span.caption", {}, contact.display),
+          contact.replyTime && el("span.caption", {}, t("help.replyTime", { time: contact.replyTime })),
+        )
+      : el("p.caption", { style: { margin: 0 } }, t("help.notSetUp")),
   );
 }
 

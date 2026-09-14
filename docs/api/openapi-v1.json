@@ -3023,6 +3023,95 @@
         ],
         "type": "object"
       },
+      "FirstSessionBody": {
+        "properties": {
+          "settingUpFor": {
+            "pattern": "me|someone",
+            "type": "string"
+          },
+          "skippedShelves": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 15,
+            "minItems": 0,
+            "type": "array"
+          },
+          "someoneMemberId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FirstSessionResponse": {
+        "properties": {
+          "done": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "percent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "settingUpFor": {
+            "type": "string"
+          },
+          "shelves": {
+            "items": {
+              "$ref": "#/components/schemas/FirstSessionShelf"
+            },
+            "type": "array"
+          },
+          "skipped": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "someoneCanBeInvited": {
+            "type": "boolean"
+          },
+          "someoneMemberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "someoneName": {
+            "type": "string"
+          },
+          "total": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "percent",
+          "settingUpFor",
+          "shelves",
+          "skipped",
+          "someoneCanBeInvited",
+          "total"
+        ],
+        "type": "object"
+      },
+      "FirstSessionShelf": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "skipped": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "done",
+          "skipped"
+        ],
+        "type": "object"
+      },
       "FundingSourceResponse": {
         "properties": {
           "allocationPct": {
@@ -3533,6 +3622,49 @@
           "title",
           "typeLabel",
           "valueBasis"
+        ],
+        "type": "object"
+      },
+      "GuidanceChecklist": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "done": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GuidanceChecklistItem"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "done",
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "GuidanceChecklistItem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "done"
         ],
         "type": "object"
       },
@@ -5749,6 +5881,86 @@
         ],
         "type": "object"
       },
+      "ReadinessCheckBody": {
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "answers"
+        ],
+        "type": "object"
+      },
+      "ReadinessCheckGap": {
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "shelf": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer",
+          "question"
+        ],
+        "type": "object"
+      },
+      "ReadinessCheckResponse": {
+        "properties": {
+          "answerChoices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "answered": {
+            "type": "boolean"
+          },
+          "answeredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "answers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/ReadinessCheckGap"
+            },
+            "type": "array"
+          },
+          "questions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "readyCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "answerChoices",
+          "answered",
+          "answers",
+          "gaps",
+          "questions",
+          "readyCount"
+        ],
+        "type": "object"
+      },
       "ReadinessGap": {
         "properties": {
           "check": {
@@ -7121,6 +7333,29 @@
         ],
         "type": "object"
       },
+      "SupportContactResponse": {
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "display": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "replyTime": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured"
+        ],
+        "type": "object"
+      },
       "TaxLotResponse": {
         "properties": {
           "acquiredOn": {
@@ -8296,6 +8531,40 @@
         ],
         "type": "object"
       },
+      "WelcomeCountCard": {
+        "properties": {
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "preview": {
+            "items": {
+              "$ref": "#/components/schemas/WelcomePreviewRecord"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "preview"
+        ],
+        "type": "object"
+      },
+      "WelcomePreviewRecord": {
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "type": "object"
+      },
       "WelcomeRecord": {
         "properties": {
           "otherHolders": {
@@ -8324,6 +8593,48 @@
           "recordType",
           "title",
           "visibility"
+        ],
+        "type": "object"
+      },
+      "WelcomeResponse": {
+        "properties": {
+          "defaultVisibility": {
+            "type": "string"
+          },
+          "due": {
+            "type": "boolean"
+          },
+          "householdName": {
+            "type": "string"
+          },
+          "myRole": {
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "seen": {
+            "type": "boolean"
+          },
+          "staysYours": {
+            "$ref": "#/components/schemas/WelcomeCountCard"
+          },
+          "theyWillSeeOfYours": {
+            "$ref": "#/components/schemas/WelcomeCountCard"
+          },
+          "youWillSee": {
+            "$ref": "#/components/schemas/WelcomeCountCard"
+          }
+        },
+        "required": [
+          "defaultVisibility",
+          "due",
+          "householdName",
+          "myRole",
+          "seen",
+          "staysYours",
+          "theyWillSeeOfYours",
+          "youWillSee"
         ],
         "type": "object"
       },
@@ -12240,6 +12551,76 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/first-session": {
+      "get": {
+        "operationId": "firstSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirstSessionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "first-session-controller"
+        ]
+      },
+      "put": {
+        "operationId": "updateFirstSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FirstSessionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirstSessionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "first-session-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/goals": {
       "get": {
         "operationId": "list_7",
@@ -12620,6 +13001,40 @@
         },
         "tags": [
           "goal-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/guidance/checklists": {
+      "get": {
+        "operationId": "checklists",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GuidanceChecklist"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "checklist-controller"
         ]
       }
     },
@@ -16525,6 +16940,61 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/welcome": {
+      "get": {
+        "operationId": "welcome",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/WelcomeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "welcome-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/welcome/seen": {
+      "post": {
+        "operationId": "markWelcomeSeen",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "welcome-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/where-and-who": {
       "get": {
         "operationId": "index",
@@ -17248,6 +17718,54 @@
         ]
       }
     },
+    "/api/v1/me/readiness-check": {
+      "get": {
+        "operationId": "readinessCheck",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessCheckResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "readiness-check-controller"
+        ]
+      },
+      "put": {
+        "operationId": "answerReadinessCheck",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadinessCheckBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessCheckResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "readiness-check-controller"
+        ]
+      }
+    },
     "/api/v1/measurement/abandoned": {
       "post": {
         "operationId": "reportCaptureAbandoned",
@@ -17360,6 +17878,26 @@
         },
         "tags": [
           "guest-share-controller"
+        ]
+      }
+    },
+    "/api/v1/support/contact": {
+      "get": {
+        "operationId": "supportContact",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportContactResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "support-contact-controller"
         ]
       }
     }

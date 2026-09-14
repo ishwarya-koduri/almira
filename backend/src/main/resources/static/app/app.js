@@ -23,6 +23,10 @@ import { openCapture } from "./screens/capture.js";
 import { whereScreen } from "./where.js";
 import { rightsScreen } from "./screens/rights.js";
 import { setOwner } from "./cache.js";
+import { shelvesScreen, loadFirstSession } from "./shelves.js";
+import { guideScreen } from "./screens/guide.js";
+import { welcomeScreen } from "./screens/welcome.js";
+import { flushQueued } from "./draft-ui.js";
 
 // Labels are resolved at render time rather than here, so switching language
 // redraws the navigation without a reload. Every route that ever existed is
@@ -44,6 +48,11 @@ const routes = {
   settings: { label: "nav.settings", render: settingsScreen },
   // Reached from Settings rather than the rail: somewhere you go on purpose.
   rights: { label: "rights.title", render: rightsScreen, hidden: true },
+  // The first session (docs/03 §1): reached from Home, onboarding and an
+  // accepted invitation, never from the row of sections.
+  shelves: { label: "shelves.title", render: shelvesScreen, hidden: true },
+  welcome: { label: "welcome.overline", render: welcomeScreen, hidden: true },
+  guide: { label: "guide.title", render: guideScreen, hidden: true },
 };
 
 /**
@@ -53,7 +62,7 @@ const routes = {
  * an address (#/holdings), so a link can point at a place, not a screen.
  */
 export const DESTINATIONS = [
-  { name: "home", label: "nav.home", icon: "home", routes: ["home"] },
+  { name: "home", label: "nav.home", icon: "home", routes: ["home", "shelves", "welcome", "guide"] },
   { name: "holdings", label: "nav.holdings", icon: "holdings", routes: ["investments", "liabilities", "accounts"] },
   // Almira's clearest edge, so a main tab of its own with an almirah for an
   // icon, and never a "More" away (X-34).
@@ -160,7 +169,10 @@ async function render() {
   // No household yet: onboarding is the only sensible screen, so do not show
   // navigation that leads to empty ones.
   if (!state.household) {
-    mount(root, el("div.app", {}, onboardingScreen(async () => { await loadSession(); render(); })));
+    mount(root, el("div.app", {}, onboardingScreen(async ({ openShelves } = {}) => {
+      await loadSession();
+      if (openShelves) navigate("shelves"); else render();
+    })));
     return;
   }
 
@@ -198,6 +210,10 @@ async function loadSession() {
       api.taxonomy(household.id),
     ]);
     update({ members, taxonomy });
+    // Who the first session is for changes how several screens speak (X-32).
+    // Loaded beside the rest, and never a reason for the app not to open.
+    await loadFirstSession(household.id);
+    flushQueued(() => render());
   }
 }
 
@@ -217,6 +233,9 @@ export function redraw() { render(); }
    ----------------------------------------------------------------------------- */
 
 window.addEventListener("hashchange", render);
+
+// Saves made with no network go as soon as there is one (X-83).
+window.addEventListener("online", () => { if (state.household) flushQueued(() => render()); });
 
 // Theme, text size and data saver, before anything draws. index.html has
 // already done the same from storage; this also catches Save-Data.
@@ -242,11 +261,13 @@ window.addEventListener("unhandledrejection", (event) => {
   if (invite && auth.isSignedIn) {
     try {
       await api.acceptInvite(invite[1]);
-      toast("You've joined the household.");
+      // The second family member's first screen says what they will see, what
+      // stays theirs, and what others will see of theirs (X-80).
+      history.replaceState(null, "", `${location.pathname}#/welcome`);
     } catch (error) {
       toast(error.message, { tone: "error" });
+      history.replaceState(null, "", location.pathname);
     }
-    history.replaceState(null, "", location.pathname);
   }
   render();
 })();

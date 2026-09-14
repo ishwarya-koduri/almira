@@ -17,11 +17,13 @@ import {
   el, mount, sheet, field, textInput, moneyInput, select, categoryDot,
   withBusy, toast, rupees, icon,
 } from "../ui.js";
-import { state, myMember, findType } from "../state.js";
+import { state, myMember, findType, startingVisibility, helpingWhom } from "../state.js";
 import { t } from "../i18n.js";
 import { reload } from "../app.js";
 import { openImport } from "./import.js";
 import { reportCaptureAbandoned } from "../measurement.js";
+import { attachDraft, isOffline, queueCapture } from "../draft-ui.js";
+import { helpMark } from "../glossary.js";
 
 export function openCapture(onSaved) {
   chooseHowToAdd(onSaved);
@@ -366,13 +368,15 @@ export function captureForm(type, onSaved, prefill = null) {
   });
   loadInstitutions(institutionSelect);
 
+  // Setting things up for someone (X-32): their records are theirs by default.
+  const startingOwner = prefill?.ownerId || helpingWhom()?.id || myMember()?.id;
   const ownerSelect = select({
     options: state.members.map((m) => ({ value: m.id, label: m.isMe ? `${m.displayName} (me)` : m.displayName })),
-    value: myMember()?.id,
+    value: startingOwner,
     "aria-label": "Owner",
   });
 
-  const defaultVisibility = state.user?.defaultVisibility || state.household.defaultVisibility;
+  const defaultVisibility = startingVisibility(startingOwner);
   const visibilitySelect = select({
     options: [
       { value: "private", label: "Private — only the owner can see it" },
@@ -449,8 +453,10 @@ export function captureForm(type, onSaved, prefill = null) {
     field({ label: "Where is it held?", control: institutionSelect,
       help: "Which bank, fund house or broker — so you know what funds what." }),
     field({ label: "Whose is it?", control: ownerSelect }),
-    field({ label: "Who can see this?", control: visibilitySelect,
-      help: "Private means only the owner. Not even a household admin." }),
+    field({ label: ["Who can see this?", helpMark("private")], control: visibilitySelect,
+      help: helpingWhom()
+        ? t("capture.visibility.helping", { name: helpingWhom().displayName })
+        : "Private means only the owner. Not even a household admin." }),
     scopedPicker,
     (more.children.length > 0 || true) && el("details.more", {},
       el("summary", {}, "More details"),
@@ -487,6 +493,21 @@ export function captureForm(type, onSaved, prefill = null) {
     }
   }
 
+  // Each field is kept on this device as it is typed (X-83), so a dropped
+  // connection or a closed tab does not lose it. drafts.js decides which fields
+  // may be kept: identifiers and anything sealed never are. A form opened
+  // without a proposal picks up where the last one on this type stopped.
+  const draftFields = new Map([
+    ["title", { field: titleField, read: () => titleInput.value.trim() || null, set: (v) => { titleInput.value = v; } }],
+    ...[...controls].filter(([, control]) => control.set),
+    ["owner", { field: ownerSelect.closest?.(".field") || ownerSelect, read: () => ownerSelect.value, set: (v) => { ownerSelect.value = v; } }],
+  ]);
+  const draft = attachDraft(`capture:${type.code}`, draftFields, () => ({
+    typeCode: type.code, title: titleInput.value.trim() || undefined, householdId: state.household.id,
+  }));
+  form.insertBefore(draft.status, formError);
+  if (!prefill) draft.restore();
+
   // A nominee has no field on this form — it is recorded on the saved holding.
   // So a nominee read from the sentence is said out loud here, can be dropped,
   // and is saved straight after the holding is.
@@ -505,7 +526,9 @@ export function captureForm(type, onSaved, prefill = null) {
 
   let saved = false;
   const modal = sheet({
-    title: `Add ${type.label.toLowerCase()}`,
+    title: helpingWhom()
+      ? t("capture.titleFor", { type: type.label.toLowerCase(), name: helpingWhom().displayName })
+      : `Add ${type.label.toLowerCase()}`,
     onClose: () => { if (!saved) reportCaptureAbandoned(3); },
     body: form,
     footer: [save, saveAnother],
@@ -564,8 +587,21 @@ export function captureForm(type, onSaved, prefill = null) {
 
     await withBusy(button, async () => {
       try {
-        const created = await api.capture(state.household.id, body);
+        let created;
+        try {
+          created = await api.capture(state.household.id, body);
+        } catch (error) {
+          // No network: kept on this phone and sent when it is back (X-83).
+          if (!isOffline(error) || !queueCapture(state.household.id, body)) throw error;
+          saved = true;
+          draft.discard();
+          modal.close();
+          toast(t("draft.queuedOne", { name: body.title }));
+          if (andAnother) openCapture(onSaved);
+          return;
+        }
         saved = true;
+        draft.discard();
         if (pendingNominee && created.visibleToYou) await saveNominee(created.id, pendingNominee);
         modal.close();
         // A record saved as Private for someone else is a legitimate outcome,

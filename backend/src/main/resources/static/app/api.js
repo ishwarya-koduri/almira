@@ -12,6 +12,7 @@
    ============================================================================= */
 
 import { remember, forget, reset, peek } from "./cache.js";
+import { clearAllDrafts } from "./drafts.js";
 
 const REFRESH_KEY = "almira.refresh";
 
@@ -31,6 +32,9 @@ export const auth = {
     // Signed out, or the session ended: the last known views go with it (cache.js).
     reset();
     try { localStorage.removeItem(REFRESH_KEY); } catch { /* ignore */ }
+    // Drafts and saves waiting for a network belong to the person who typed
+    // them; the next person to sign in on this phone must not find them (X-83).
+    try { clearAllDrafts(localStorage); } catch { /* ignore */ }
   },
   get isSignedIn() { return Boolean(accessToken || auth.refreshToken); },
 };
@@ -301,6 +305,16 @@ export const api = {
   setNominees:   (hid, id, body)  =>
     api.put(`/api/v1/households/${hid}/investments/${id}/nominees`, body),
   acceptInvite:  (token)          => api.post("/api/v1/invitations/accept", { token }),
+
+  // --- the first session (docs/03 §1) ---------------------------------------
+  readinessCheck: ()              => api.get("/api/v1/me/readiness-check"),
+  answerReadinessCheck: (answers) => api.put("/api/v1/me/readiness-check", { answers }),
+  firstSession:  (hid)            => api.get(`/api/v1/households/${hid}/first-session`),
+  updateFirstSession: (hid, body) => api.put(`/api/v1/households/${hid}/first-session`, body),
+  welcome:       (hid)            => api.get(`/api/v1/households/${hid}/welcome`),
+  welcomeSeen:   (hid)            => api.post(`/api/v1/households/${hid}/welcome/seen`),
+  checklists:    (hid)            => api.get(`/api/v1/households/${hid}/guidance/checklists`),
+  supportContact: ()              => api.get("/api/v1/support/contact"),
 
   // --- goals ----------------------------------------------------------------
   goals:         (hid)            => api.get(`/api/v1/households/${hid}/goals`),

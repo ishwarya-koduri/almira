@@ -264,6 +264,9 @@ ALMIRA_PROVIDER_EMAIL_SMTP_START_TLS=true
   answer → `timeout`; could not connect, or a temporary 4xx → `unavailable`.
 - Nothing is logged but the port and whether STARTTLS is on: never the
   recipient, the subject or the body.
+- A subject is built from a title a household member typed, so every control
+  character in it becomes a space: a line break cannot add a header or a
+  recipient.
 - `LiveEmailDeliveryApiTest` runs the real application with `email: live`
   against `FakeSmtpServer` on loopback. Not watched against a real relay: TLS,
   authentication, greylisting, and bounces (which arrive later, by email, and

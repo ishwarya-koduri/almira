@@ -105,7 +105,7 @@ class SmtpEmailSender(props: AlmiraProperties) : ChannelSender {
         MimeMessageHelper(message, false, "UTF-8").apply {
             setFrom(from)
             setTo(to)
-            setSubject(notification.title)
+            setSubject(headerSafe(notification.title))
             setText(notification.body, false)
         }
         message.setHeader("Auto-Submitted", "auto-generated")
@@ -116,6 +116,17 @@ class SmtpEmailSender(props: AlmiraProperties) : ChannelSender {
         }
         return PROVIDER
     }
+
+    /**
+     * A subject is a header, and a reminder's title is typed by a household
+     * member. A title of "FD\r\nBcc: someone@elsewhere" must never become a
+     * header — or a recipient, since the envelope is read from the headers.
+     * Angus Mail 2.0 folds a bare CR LF into a continuation line, so it does not
+     * today (seen in LiveEmailDeliveryApiTest); every control character is made a
+     * space anyway, so the guarantee does not rest on one library's folding.
+     */
+    internal fun headerSafe(value: String): String =
+        value.replace(CONTROL, " ").trim().take(MAX_SUBJECT)
 
     internal fun classify(e: MailException): ProviderFailure {
         if (e is MailAuthenticationException) {
@@ -168,5 +179,8 @@ class SmtpEmailSender(props: AlmiraProperties) : ChannelSender {
 
     private companion object {
         const val PROVIDER = "smtp"
+        val CONTROL = Regex("\\p{Cntrl}")
+        /** Long subjects are folded by relays anyway; a bound keeps a pasted essay out of the header. */
+        const val MAX_SUBJECT = 200
     }
 }

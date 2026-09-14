@@ -113,6 +113,27 @@ class LiveEmailDeliveryApiTest : ApiTestBase() {
     }
 
     @Test
+    fun `a title typed with a line break cannot add a header or a recipient`() {
+        giveEmail()
+        val key = "live-test:${UUID.randomUUID()}"
+        notifier.deliver(
+            OutboundNotification(
+                userId = userId, householdId = UUID.fromString(householdId), reminderId = null,
+                template = "emergency.named", title = "SBI FD\r\nBcc: thief@elsewhere.test\r\nX-Evil: 1",
+                body = "b", idempotencyKey = key,
+            ),
+        )
+        outbox.drain()
+        assertThat(email(key)).containsEntry("status", "sent")
+        val received = smtp.received.single()
+        assertThat(received.to).describedAs("the envelope has one recipient").containsExactly(address)
+        assertThat(received.headers.split("\r\n").map { it.substringBefore(':').lowercase() })
+            .describedAs("no header was added").doesNotContain("bcc", "x-evil")
+        val subject = received.headers.split("\r\n").single { it.startsWith("Subject:") }
+        assertThat(subject).describedAs("one line, the break made a space").isEqualTo("Subject: SBI FD  Bcc: thief@elsewhere.test  X-Evil: 1")
+    }
+
+    @Test
     fun `a live channel with no address for the person records that, and nothing is sent`() {
         val key = tell()
         outbox.drain()

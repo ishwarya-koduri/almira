@@ -93,7 +93,30 @@ class ProviderCalls(
 
     /** The value only. See [execute]. */
     fun <T> call(provider: String, operation: String, idempotent: Boolean = true, block: () -> T): T =
-        execute(provider, operation, idempotent, block).value
+        execute(provider, operation, idempotent, block = block).value
+
+    /**
+     * The provider's policy, inside a total [budget] — for a call a person is
+     * waiting on that may still be retried: a DigiLocker or Account Aggregator
+     * connect call (docs/13 "Interactive and background", known-issues 21).
+     *
+     * Each attempt gets the provider's `timeout` or whatever is left of the
+     * budget, whichever is less, and no retry starts once its backoff would take
+     * it past the budget. So DigiLocker's 15 s × 3 attempts, about 46 seconds of
+     * someone looking at a spinner, becomes at most [budget].
+     */
+    fun <T> interactive(
+        provider: String,
+        operation: String,
+        budget: Duration,
+        idempotent: Boolean = true,
+        block: () -> T,
+    ): T {
+        require(!budget.isNegative && !budget.isZero && budget <= MAX_TIMEOUT) {
+            "an interactive budget must be more than zero and at most $MAX_TIMEOUT (is $budget)"
+        }
+        return execute(provider, operation, idempotent, budget, block).value
+    }
 
     /**
      * Runs [block] under [provider]'s timeout and retry policy.
@@ -110,19 +133,27 @@ class ProviderCalls(
         provider: String,
         operation: String,
         idempotent: Boolean = true,
+        budget: Duration? = null,
         block: () -> T,
     ): ProviderResult<T> {
         val config = props.providers.all()[provider]
             ?: throw IllegalArgumentException("no provider configuration named '$provider'")
+        val deadline = budget?.let { System.nanoTime() + it.toNanos() }
+        fun remaining(): Duration? = deadline?.let { Duration.ofNanos(it - System.nanoTime()) }
         var attempt = 0
         while (true) {
             attempt++
             try {
-                return ProviderResult(runAttempt(config.timeout, block), attempt)
+                val timeout = remaining()?.let { minOf(it, config.timeout) } ?: config.timeout
+                if (timeout.isNegative || timeout.isZero) throw ProviderFailure(FailureKind.TIMEOUT, "no budget left")
+                return ProviderResult(runAttempt(timeout, block), attempt)
             } catch (failure: ProviderFailure) {
-                val retry = failure.kind.retryable &&
+                val allowed = failure.kind.retryable &&
                     attempt < config.maxAttempts &&
                     (idempotent || failure.kind != FailureKind.TIMEOUT)
+                val pause = if (allowed) backoff(config.retryBackoff, attempt) else Duration.ZERO
+                // Inside a budget, a retry that could not even start in time is not made.
+                val retry = allowed && (remaining()?.let { it > pause } ?: true)
                 if (!retry) {
                     gaveUp(provider, operation, failure.kind, attempt)
                     if (failure.kind.accountLevel) raiseAccountProblem(provider, operation, failure)
@@ -132,7 +163,7 @@ class ProviderCalls(
                     "{} {}: {} on attempt {} of {}, retrying",
                     provider, operation, failure.kind.code, attempt, config.maxAttempts,
                 )
-                sleeper.sleep(backoff(config.retryBackoff, attempt))
+                sleeper.sleep(pause)
             }
         }
     }

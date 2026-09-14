@@ -176,6 +176,12 @@ data class AlmiraProperties(
         /** Account Aggregator, under the RBI framework. Cut from v1, so disabled unless asked for. */
         val aa: Provider = Provider(mode = "disabled"),
         val whatsapp: Provider = Provider(),
+        /**
+         * The most a person waits on one DigiLocker or Account Aggregator call,
+         * retries included (ProviderCalls.interactive, known-issues 21). The
+         * provider's own `timeout` still bounds each attempt; this bounds them all.
+         */
+        val connectBudget: Duration = Duration.ofSeconds(20),
     ) {
         /** Named so the startup report can print them without a `when`. */
         fun all(): Map<String, Provider> = mapOf(

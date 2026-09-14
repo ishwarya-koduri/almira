@@ -17,7 +17,7 @@ say who, which household, or what they entered.
 | `invite_sent` | Someone is invited to a household. | — |
 | `invite_accepted` | An invitation is accepted. | — |
 | `first_holding_added` | A household adds its very first holding. Counted by the database alongside `holding_added`; a holding deleted and added again is not a second first. | — |
-| `holding_added` | A holding is added (typed, from a template or a duplicate). | — |
+| `holding_added` | A holding is added: typed, from a template, a duplicate, or each row of a spreadsheet import. | — |
 | `liability_added` | A loan or other amount owed is added. | — |
 | `document_uploaded` | A document is uploaded. | — |
 | `estate_contact_added` | A contact is added to the estate plan. | — |

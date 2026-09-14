@@ -764,3 +764,70 @@ or on `infra/deploy-and-pentest`; `deploy/restore/digest-check.sql` and
 migrated by the full application recorded versions 25, 27, 28, … 35 in that
 order, all successful, with 31 `ciphertext digests` between 30 and 32.
 `outOfOrder` is still not enabled anywhere.
+
+---
+
+## 24. The privacy notice does not mention product measurement yet
+
+**Where** `docs/23-privacy-notice.md` and the in-app notice (`privacy.*` keys in
+`static/app/i18n.js`, held to docs/23 by `scripts/check-spec.py`).
+
+**What** V70 added aggregate product measurement ([What we measure](what-we-measure.md)):
+twelve events counted per day with no identifier, on by default, with a per-person
+opt-out in Settings. The Settings card and its sheet say this in plain words, but
+the privacy notice's "What Almira stores" section does not, and it should say that
+counts exist and that nothing about the person is in them.
+
+**Why it is still here** The notice is a draft awaiting legal review, is written
+in three languages, and is checked against docs/23 sentence by sentence. A
+change to it belongs with whoever owns that review, not in the change that added
+the counting, and a Telugu and Hindi sentence should not be guessed.
+
+**When to fix** At the notice's next revision: one sentence under "What Almira
+stores" linking to What we measure, in all three languages, in docs/23 and
+`i18n.js` together. The Settings strings (`measure.*`) are English only today
+and fall back in Telugu and Hindi.
+
+**Risk if left** A reader of the notice alone would not learn that per-day counts
+are kept. Nothing about them is personal, and the switch is one screen away.
+
+---
+
+## 25. With `ALMIRA_STORAGE_PROVIDER=s3`, backups do not include the documents
+
+**Where** `scripts/backup.sh`, `scripts/restore.sh`, `document/S3DocumentStorage.kt`.
+
+**What** `backup.sh` tars the documents **volume**. With the S3 provider the
+documents are in a bucket, and neither script reads or writes it, so a backup
+taken on an S3 deployment has the document rows and not their bytes.
+
+**Why it is still here** The provider is new and off by default, no deployment
+uses it, and the right answer depends on the provider chosen (object versioning,
+replication, or a `mc mirror` into the backup) — an owner's decision.
+
+**When to fix** Before any deployment sets `s3`. Either teach `backup.sh` to mirror
+the bucket prefix into the backup and `restore.sh` to push it back (with the
+manifest's hashes), or document the provider-side versioning the restore drill
+relies on. docs/17 §6 says this meanwhile.
+
+**Risk if left** None on the default. On an `s3` deployment, a restore from these
+backups alone would bring back every document as a missing file.
+
+---
+
+## 26. p95 at 20 concurrent users was over the load budget on a loaded laptop
+
+**Where** `scripts/load-test.sh`, docs/17 §9.
+
+**What** The one run so far: 2 000 requests from 20 people, 20 at a time, no
+failures, p95 1 178 ms against an 800 ms budget (dashboard p95 1 214 ms, adding a
+holding 1 322 ms). The same server at one request at a time had p95 195 ms. The
+machine had a load average of 40–66 from other test suites during the run, so
+this does not say whether the application or the laptop was the limit.
+
+**When to fix** Re-run on the first real host with nothing else on it. If the
+dashboard is still over budget there, profile `DashboardService` first: it is the
+most-called read and the slowest.
+
+**Risk if left** Unknown until measured cleanly; the five-family alpha is far
+below 20 concurrent requests.

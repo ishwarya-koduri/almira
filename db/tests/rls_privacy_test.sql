@@ -589,5 +589,62 @@ select pg_temp.as_user('ravi');
 select pg_temp.assert(not pg_temp.sees('i_private'),
   'a veto closes the window immediately, mid-session');
 
+-- ------------------------------------------------ product measurement (V70) --
+do $$ begin raise notice '--- measurement counts events, never people (V70) ---'; end $$;
+select pg_temp.as_user('ish');
+do $$
+declare blocked boolean;
+begin
+  perform pg_temp.assert(app.count_product_event('holding_added', 0::smallint, null,
+            (select v from t where k='hh'), '{}', array[(select v from t where k='i_private')]),
+    'an allowlisted event about an adult''s record is counted');
+  perform pg_temp.assert(not exists (select 1 from measurement_daily_counts),
+    'the runtime role cannot read the counts it just added to');
+
+  blocked := false;
+  begin
+    insert into measurement_daily_counts (day, event, count) values (current_date, 'holding_added', 1000);
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot write a count directly');
+
+  blocked := false;
+  begin
+    perform app.count_product_event('net_worth_viewed_by_ish');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'an event that is not on the list cannot be stored');
+
+  blocked := false;
+  begin
+    perform app.count_product_event('first_holding_added');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a first holding cannot be counted without a holding');
+
+  perform pg_temp.assert(not app.count_product_event('invite_sent', 0::smallint, null, null,
+            array[(select v from t where k='m_aarav')]),
+    'an event about a minor is not counted');
+
+  insert into measurement_opt_outs (user_id) values ((select v from t where k='ish'));
+  perform pg_temp.assert(not app.count_product_event('holding_added'),
+    'someone who opted out is not counted');
+  perform pg_temp.assert(not app.count_product_event('sign_in_completed', 0::smallint, (select v from t where k='ish')),
+    'nor when they are named as the actor before a session exists');
+
+  perform pg_temp.as_user('ravi');
+  perform pg_temp.assert(not exists (select 1 from measurement_opt_outs),
+    'one person cannot see another''s opt-out');
+  blocked := false;
+  begin
+    insert into measurement_opt_outs (user_id) values ((select v from t where k='ish'));
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor opt someone else out');
+  perform pg_temp.assert(app.count_product_event('holding_added'),
+    'and another person''s opt-out does not silence theirs');
+end $$;
+select pg_temp.as_user('ish');
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

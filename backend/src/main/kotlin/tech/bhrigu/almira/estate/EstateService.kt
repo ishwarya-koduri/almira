@@ -1,5 +1,7 @@
 package tech.bhrigu.almira.estate
 
+import tech.bhrigu.almira.measurement.ProductEvent
+import tech.bhrigu.almira.measurement.ProductMeasurement
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
@@ -92,6 +94,7 @@ class EstateService(
     private val households: HouseholdService,
     private val audit: AuditService,
     private val userContext: RequestUserContext,
+    private val measurement: ProductMeasurement,
 ) {
 
     // --- contacts -------------------------------------------------------------
@@ -121,6 +124,7 @@ class EstateService(
             householdId = householdId, actorUserId = userId, action = "contact.create",
             entityType = "contact", entityId = id, diff = mapOf("kind" to input.kind),
         )
+        measurement.record(ProductEvent.ESTATE_CONTACT_ADDED)
         return getContact(householdId, id)
     }
 

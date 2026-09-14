@@ -1,5 +1,7 @@
 package tech.bhrigu.almira.document
 
+import tech.bhrigu.almira.measurement.ProductEvent
+import tech.bhrigu.almira.measurement.ProductMeasurement
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -47,6 +49,7 @@ class DocumentService(
     private val userContext: RequestUserContext,
     transactionManager: org.springframework.transaction.PlatformTransactionManager,
     props: AlmiraProperties,
+    private val measurement: ProductMeasurement,
 ) {
     private val transactions =
         org.springframework.transaction.support.TransactionTemplate(transactionManager)
@@ -114,6 +117,13 @@ class DocumentService(
             householdId = householdId, actorUserId = userId, action = "document.upload",
             entityType = "document", entityId = id,
             diff = mapOf("fileName" to input.fileName, "docType" to input.docType),
+        )
+        measurement.record(
+            ProductEvent.DOCUMENT_UPLOADED,
+            investmentIds = input.linkTo.filter { it.first == "investment" }.map { it.second },
+            liabilityIds = input.linkTo.filter { it.first == "liability" }.map { it.second },
+            memberIds = input.linkTo.filter { it.first == "member" }.map { it.second },
+            accountIds = input.linkTo.filter { it.first == "account" }.map { it.second },
         )
         return repo.find(householdId, id)
             ?: throw ApiException.forbidden("Saved, but it's private to what it's attached to.")

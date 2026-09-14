@@ -1,5 +1,7 @@
 package tech.bhrigu.almira.household
 
+import tech.bhrigu.almira.measurement.ProductEvent
+import tech.bhrigu.almira.measurement.ProductMeasurement
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
@@ -13,6 +15,7 @@ class HouseholdService(
     private val repo: HouseholdRepository,
     private val audit: AuditService,
     private val userContext: RequestUserContext,
+    private val measurement: ProductMeasurement,
 ) {
     private val visibilities = setOf("private", "household")
 
@@ -30,6 +33,7 @@ class HouseholdService(
             defaultVisibility = visibility,
             displayName = displayName?.trim()?.ifEmpty { null } ?: "Me",
         )
+        measurement.record(ProductEvent.HOUSEHOLD_CREATED)
         return repo.find(householdId, userId)
             ?: throw IllegalStateException("household vanished immediately after creation")
     }

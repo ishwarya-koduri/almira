@@ -419,6 +419,20 @@ record.
 
 ---
 
+## Measurement
+
+Almira counts a closed list of twelve events per day and nothing about who
+([What we measure](../what-we-measure.md)). Three endpoints, all for the
+signed-in caller:
+
+- `GET /api/v1/me/measurement` → `{ "optedOut": false, "events": [ …12 codes ] }`.
+- `PUT /api/v1/me/measurement` with `{ "optedOut": true }` turns it off for this
+  person; `false` turns it back on. `optedOut` is required.
+- `POST /api/v1/measurement/abandoned` with `{ "form": "capture", "step": 1..3 }`
+  when the add form is closed without saving. `204`, whether or not it was
+  counted (an opted-out caller gets the same answer). Fire and forget: never
+  block closing a form on it.
+
 ## A cold-start lesson, learned the expensive way
 
 An early build flagged **every brand-new record** as "not confirmed in over six

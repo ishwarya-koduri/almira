@@ -1,5 +1,7 @@
 package tech.bhrigu.almira.liability
 
+import tech.bhrigu.almira.measurement.ProductEvent
+import tech.bhrigu.almira.measurement.ProductMeasurement
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -62,6 +64,7 @@ class LiabilityService(
     private val audit: AuditService,
     private val reminders: tech.bhrigu.almira.reminder.ReminderService,
     private val userContext: RequestUserContext,
+    private val measurement: ProductMeasurement,
 ) {
     private val kinds = setOf(
         "home", "car", "personal", "education", "gold", "credit_card",
@@ -118,6 +121,7 @@ class LiabilityService(
             entityType = "liability", entityId = id,
             diff = mapOf("title" to input.title, "kind" to input.kind, "visibility" to visibility),
         )
+        measurement.record(ProductEvent.LIABILITY_ADDED, liabilityIds = listOf(id))
         return (repo.find(householdId, id)
             ?: throw ApiException.forbidden("Saved, but it's private to whoever owes it."))
             .also(reminders::syncForLiability)

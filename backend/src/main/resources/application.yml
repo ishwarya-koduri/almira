@@ -69,6 +69,10 @@ almira:
   # (ops/JsonLogFormatter). The production compose file sets json.
   log:
     format: ${ALMIRA_LOG_FORMAT:text}
+  # Aggregate product events per day, about nobody (docs/what-we-measure.md).
+  # On by default, with an opt-out per person in Settings; false counts nothing.
+  measurement:
+    enabled: ${ALMIRA_MEASUREMENT_ENABLED:true}
   encryption:
     provider: ${ALMIRA_KMS_PROVIDER:local}
     # Base64, 32 bytes: openssl rand -base64 32

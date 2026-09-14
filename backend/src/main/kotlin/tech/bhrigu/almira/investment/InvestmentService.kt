@@ -1,5 +1,7 @@
 package tech.bhrigu.almira.investment
 
+import tech.bhrigu.almira.measurement.ProductEvent
+import tech.bhrigu.almira.measurement.ProductMeasurement
 import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -133,6 +135,7 @@ class InvestmentService(
     private val audit: AuditService,
     private val reminders: tech.bhrigu.almira.reminder.ReminderService,
     private val userContext: RequestUserContext,
+    private val measurement: ProductMeasurement,
 ) {
     private val visibilities = setOf("private", "household", "scoped")
     private val statuses = setOf("active", "matured", "closed", "draft", "archived")
@@ -208,6 +211,7 @@ class InvestmentService(
             entityType = "investment", entityId = id,
             diff = mapOf("title" to input.title, "type" to type.code, "visibility" to visibility),
         )
+        measurement.record(ProductEvent.HOLDING_ADDED, householdId = householdId, investmentIds = listOf(id))
 
         val readBack = repo.find(householdId, id)
         // A maturity date, a premium or a SIP implies a reminder. Creating it

@@ -1,6 +1,25 @@
 {
   "components": {
     "schemas": {
+      "AbandonedBody": {
+        "properties": {
+          "form": {
+            "pattern": "capture",
+            "type": "string"
+          },
+          "step": {
+            "format": "int32",
+            "maximum": 3,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "form",
+          "step"
+        ],
+        "type": "object"
+      },
       "AcceptedInvitation": {
         "properties": {
           "householdId": {
@@ -3704,6 +3723,35 @@
           "defaultVisibility",
           "id",
           "locale"
+        ],
+        "type": "object"
+      },
+      "MeasurementPreference": {
+        "properties": {
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "optedOut": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "events",
+          "optedOut"
+        ],
+        "type": "object"
+      },
+      "MeasurementPreferenceBody": {
+        "properties": {
+          "optedOut": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "optedOut"
         ],
         "type": "object"
       },
@@ -12804,6 +12852,54 @@
         ]
       }
     },
+    "/api/v1/me/measurement": {
+      "get": {
+        "operationId": "measurementPreference",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementPreference"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "measurement-controller"
+        ]
+      },
+      "put": {
+        "operationId": "updateMeasurementPreference",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeasurementPreferenceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementPreference"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "measurement-controller"
+        ]
+      }
+    },
     "/api/v1/me/messages": {
       "get": {
         "operationId": "mine",
@@ -12824,6 +12920,29 @@
         },
         "tags": [
           "messages-controller"
+        ]
+      }
+    },
+    "/api/v1/measurement/abandoned": {
+      "post": {
+        "operationId": "reportCaptureAbandoned",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbandonedBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "measurement-controller"
         ]
       }
     },

@@ -1,5 +1,7 @@
 package tech.bhrigu.almira.auth
 
+import tech.bhrigu.almira.measurement.ProductEvent
+import tech.bhrigu.almira.measurement.ProductMeasurement
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -31,6 +33,7 @@ class AuthService(
     private val sessionRevoker: SessionRevoker,
     private val channels: SignInChannels,
     private val alpha: AlphaAllowlistAccess,
+    private val measurement: ProductMeasurement,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -59,6 +62,7 @@ class AuthService(
         val user = existing ?: repo.createWithPhone(phone)
         return completeLogin(user, existing == null, deviceName, userAgent, ip)
             .also { log.info("login ok for {} (new={})", PhoneNumber.mask(phone), it.isNewUser) }
+            .also { measurement.record(ProductEvent.SIGN_IN_COMPLETED, actor = it.user.id) }
     }
 
     /**
@@ -122,6 +126,7 @@ class AuthService(
         val user = existing ?: repo.createWithEmail(email)
         return completeLogin(user, existing == null, deviceName, userAgent, ip)
             .also { log.info("login ok for {} by email (new={})", EmailAddress.mask(email), it.isNewUser) }
+            .also { measurement.record(ProductEvent.SIGN_IN_COMPLETED, actor = it.user.id) }
     }
 
     private fun completeLogin(

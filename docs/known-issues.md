@@ -1331,3 +1331,52 @@ decision is made.
 **Risk if left** A recorded sale that the department knows about but the
 household forgot is not caught before filing.
 
+
+---
+
+## 46. Plans have no price, no payment gateway, and no warning before they end
+
+**Where** `plans/` (`PlanProperties`, `HouseholdPlanService`,
+`PlanReadOnlyGuard`), `scripts/household-plan.sh`, [Doc 27](27-plans-and-support.md) §1–§3.
+
+**What** The shape of a plan is built — config-driven definitions priced per
+household, a `household_plans` row, the grace period, and a lapsed household
+becoming read-only (never locked). What is not: a price (every screen says none
+is decided), any payment gateway (`paymentsEnabled: false`; the only way a plan
+changes is an operator running the script as the schema owner), and any message
+to the family while a plan is in `grace`.
+
+**Which is right** A price the owner decides, a gateway that sets the same
+`paid_through` the script sets, and a reminder at the start of the grace period
+and a week before read-only, through the existing notification outbox.
+
+**Why it is still here** Price and gateway are owner decisions and need a
+merchant account; building a gateway integration without one would be a fake.
+The reminder waits for there being something to renew.
+
+**When to fix** When a price and a gateway are chosen.
+
+**Risk if left** None while no household has a plan row, which is every
+household: nothing ends. Once an operator sets a date, a family reaches
+read-only without being told first — they still keep every read, the handbook,
+Download everything and closing their account.
+
+---
+
+## 47. The native app has no plan, read-only notice or support code screens
+
+**Where** `app/shared` (the Compose app).
+
+**What** The web client shows the plan under Settings, a quiet notice while a
+household is read-only, and *Get help* for support codes. The native app shows
+none of these. A write refused with `403 plan_read_only` still reaches the
+person, as the server's own sentence, wherever the app already shows an error's
+message.
+
+**Which is right** The same three on native, from the same endpoints.
+
+**Why it is still here** This change was not allowed to touch `app/`.
+
+**When to fix** The next pass over Settings in the native app.
+
+**Risk if left** Low: nothing is locked, and the refusal explains itself.

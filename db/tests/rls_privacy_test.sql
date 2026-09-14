@@ -1416,5 +1416,153 @@ begin
 end $$;
 select set_config('app.guest_share_id', '', false);
 
+-- ---------------------------------------------------------- household plans --
+-- V101. A household's plan decides whether it can be changed, so nobody in the
+-- application may set one — not the owner, not an admin — and nobody outside
+-- the household may learn it exists. Operators set it as the schema owner.
+do $$ begin raise notice '--- a household plan is set by an operator, never through the app ---'; end $$;
+
+select pg_temp.as_user('ish');
+do $$
+declare blocked boolean;
+begin
+  blocked := false;
+  begin
+    insert into household_plans (household_id, plan_code, paid_through, set_by)
+      values ((select v from t where k='hh'), 'family', current_date + 3650, 'ish');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the owner cannot give her household a plan');
+
+  blocked := false;
+  begin
+    perform ops.set_household_plan((select v from t where k='hh'), 'family', null, null, 'ish', null);
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot reach the operator functions');
+end $$;
+
+select pg_temp.as_user('ravi');
+do $$
+declare blocked boolean; n int;
+begin
+  -- Refused by the grant, or reaching no row through RLS: either is a refusal.
+  blocked := false;
+  begin
+    update household_plans set paid_through = current_date + 3650
+      where household_id = (select v from t where k='hh');
+    get diagnostics n = row_count;
+    blocked := n = 0;
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'an admin cannot extend a plan');
+
+  blocked := false;
+  begin
+    delete from household_plans where household_id = (select v from t where k='hh');
+    get diagnostics n = row_count;
+    blocked := n = 0;
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor delete one to lift a lapse');
+end $$;
+
+select pg_temp.as_user('out');
+select pg_temp.assert(
+  not exists (select 1 from household_plans where household_id = (select v from t where k='hh')),
+  'outside the household, its plan does not exist');
+select pg_temp.as_user('ish');
+
+-- ------------------------------------------------------------ support codes --
+-- V102. A support code is its maker's alone: nobody else in the household sees
+-- it, a guest session borrowing her identity cannot, the app can take it back
+-- but never rewrite it, reopen it or fake a lookup, and nobody can delete it.
+do $$ begin raise notice '--- a support code is its maker''s, and only support records a look ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into support_codes (id, user_id, code_hash, diagnostics, expires_at)
+  values ('00000000-0000-0000-0000-00000000c0de', (select v from t where k='ish'),
+          repeat('a', 64), '{"screen":"home"}', now() + interval '24 hours');
+select pg_temp.assert(
+  (select count(*) from support_codes where id = '00000000-0000-0000-0000-00000000c0de') = 1,
+  'she sees the support code she made');
+
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into support_codes (user_id, code_hash, diagnostics, expires_at)
+      values ((select v from t where k='ravi'), repeat('b', 64), '{}', now() + interval '1 hour');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nobody can make a support code in someone else''s name');
+
+  blocked := false;
+  begin
+    insert into support_codes (user_id, code_hash, diagnostics, expires_at)
+      values ((select v from t where k='ish'), repeat('c', 64), '{}', now() + interval '48 hours');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a support code cannot outlive 24 hours');
+
+  blocked := false;
+  begin
+    update support_codes set lookups = 0, last_looked_up_at = null
+      where id = '00000000-0000-0000-0000-00000000c0de';
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the app cannot rewrite how often support looked');
+
+  blocked := false;
+  begin
+    update support_codes set diagnostics = '{"title":"SBI FD"}'
+      where id = '00000000-0000-0000-0000-00000000c0de';
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor what a code shares');
+end $$;
+
+update support_codes set revoked_at = now() where id = '00000000-0000-0000-0000-00000000c0de';
+select pg_temp.assert(
+  (select revoked_at is not null from support_codes where id = '00000000-0000-0000-0000-00000000c0de'),
+  'she can take it back');
+
+do $$
+declare blocked boolean := false; n int;
+begin
+  begin
+    update support_codes set revoked_at = null where id = '00000000-0000-0000-0000-00000000c0de';
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a code taken back stays taken back');
+
+  blocked := false;
+  begin
+    delete from support_codes where id = '00000000-0000-0000-0000-00000000c0de';
+    get diagnostics n = row_count;
+    blocked := n = 0;
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'and nobody deletes one');
+
+  blocked := false;
+  begin
+    perform * from ops.lookup_support_code('AAAAA-BBBBB', 'ish', 'curious to see');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot look a code up');
+end $$;
+
+select set_config('app.guest_share_id', (select v::text from t where k='share'), false);
+select pg_temp.assert(
+  not exists (select 1 from support_codes),
+  'a guest session borrowing her identity sees no support codes');
+select set_config('app.guest_share_id', '', false);
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert(not exists (select 1 from support_codes where user_id = (select v from t where k='ish')),
+  'ADMIN cannot see another member''s support codes');
+select pg_temp.as_user('ish');
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

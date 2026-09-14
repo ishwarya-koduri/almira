@@ -242,6 +242,78 @@ class AccountClosureApiTest : LifecycleTestSupport() {
     }
 
     @Test
+    fun `a departure he started or left through, or a memorial he marked, does not stop his erasure`() {
+        val raviId = userId(ravi)
+        val ishwaryaId = userId(ishwarya)
+        val ammaMemberId = addMember(ishwarya, householdId, "Amma").path("id").asText()
+        // He left another household once, taking his records into one of his own.
+        val oldHome = createHousehold(ishwarya, "Old home", "private", "Ishwarya").path("id").asText()
+        val hisOldMemberId = addMember(ishwarya, oldHome, "Ravi").path("id").asText()
+        val hisOwn = createHousehold(ravi, "Ravi's own", "private", "Ravi").path("id").asText()
+        val left = db.queryForObject(
+            """
+            insert into household_departures (household_id, member_id, user_id, started_by, started_by_admin,
+                                              requested_at, effective_at, completed_at, destination_household_id)
+            values (?::uuid, ?::uuid, ?::uuid, ?::uuid, false,
+                    now() - interval '30 days', now() - interval '20 days', now() - interval '20 days', ?::uuid)
+            returning id
+            """.trimIndent(),
+            UUID::class.java, oldHome, hisOldMemberId, raviId, raviId, hisOwn,
+        )!!
+        // As an admin he asked Ishwarya to leave, and it is still waiting.
+        val asked = db.queryForObject(
+            """
+            insert into household_departures (household_id, member_id, user_id, started_by, started_by_admin,
+                                              requested_at, effective_at)
+            values (?::uuid, ?::uuid, ?::uuid, ?::uuid, true, now(), now() + interval '7 days')
+            returning id
+            """.trimIndent(),
+            UUID::class.java, householdId, ishwaryaMemberId, ishwaryaId, raviId,
+        )!!
+        // He marked Amma as passed away, and reversed it.
+        val memorial = db.queryForObject(
+            """
+            insert into member_memorials (household_id, member_id, marked_by, basis, reversed_at, reversed_by)
+            values (?::uuid, ?::uuid, ?::uuid, 'admin', now(), ?::uuid)
+            returning id
+            """.trimIndent(),
+            UUID::class.java, householdId, ammaMemberId, raviId, raviId,
+        )!!
+
+        // Nobody signed in can take a name off a departure the way the purge now does.
+        val clearedBySomeone = runCatching {
+            asUser(
+                ishwaryaId,
+                "with u as (update household_departures set started_by = null where id = '$asked' returning 1) " +
+                    "select count(*) > 0 from u",
+            )
+        }
+        assertThat(clearedBySomeone.exceptionOrNull()?.message).contains("cannot be changed")
+
+        stepUp(ravi)
+        post("/api/v1/me/closure", ravi)
+        val closure = closureId(raviId)
+
+        assertThat(purge.purge(closure, Instant.now().plus(Duration.ofDays(31)))).isNotNull
+        assertThat(db.queryForObject("select count(*) from users where id = ?::uuid", Int::class.java, raviId)).isZero()
+        assertThat(db.queryForObject("select count(*) from households where id = ?::uuid", Int::class.java, hisOwn)).isZero()
+        assertThat(db.queryForObject("select count(*) from household_departures where id = ?", Int::class.java, left))
+            .describedAs("his own departure goes with him").isZero()
+        assertThat(
+            db.queryForObject(
+                "select started_by is null and started_by_admin and cancelled_at is null from household_departures where id = ?",
+                Boolean::class.java, asked,
+            ),
+        ).describedAs("Ishwarya's departure stays, without his name").isTrue()
+        assertThat(
+            db.queryForObject(
+                "select marked_by is null and reversed_by is null and reversed_at is not null from member_memorials where id = ?",
+                Boolean::class.java, memorial,
+            ),
+        ).describedAs("the memorial stays, without his name").isTrue()
+    }
+
+    @Test
     fun `an owner's household passes to the admin, and a household of one goes with its only person`() {
         stepUp(ishwarya)
         post("/api/v1/me/closure", ishwarya).also { assertThat(it.status()).describedAs(it.body).isEqualTo(HttpStatus.CREATED) }

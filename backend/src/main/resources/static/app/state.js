@@ -7,6 +7,8 @@ export const state = {
   household: null,
   members: [],
   taxonomy: [],
+  /** The household's plan (docs/27), or null when it could not be read. */
+  plan: null,
   scope: "household",
   scopeMember: null,
 };

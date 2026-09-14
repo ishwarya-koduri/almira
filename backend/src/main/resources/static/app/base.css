@@ -1008,3 +1008,21 @@ details.more[open] > summary::before { transform: rotate(90deg); }
   align-items: center; justify-content: start;
 }
 .quiet-hours .input { min-height: 44px; }
+
+/* -----------------------------------------------------------------------------
+   Your plan and Get help in Settings (plan.js, support.js; docs/27). The plan
+   name is a title in Fraunces; the price line and the promise are muted text,
+   never a coloured box; a support code is set large and spaced so it can be
+   read aloud over a phone.
+   ----------------------------------------------------------------------------- */
+.plan-name { font-family: var(--font-display); font-size: var(--text-h3); font-weight: 500; margin: 0; }
+.plan-rule { border: 0; border-top: 1px solid var(--gold); width: 3rem; margin: 0; }
+.shares { margin: 0; display: grid; grid-template-columns: minmax(8rem, auto) 1fr; gap: var(--space-2) var(--space-4); }
+.shares dt { color: var(--ink-muted); font-size: var(--text-sm); }
+.shares dd { margin: 0; font-size: var(--text-sm); overflow-wrap: anywhere; }
+@media (max-width: 480px) { .shares { grid-template-columns: 1fr; } .shares dd { margin-bottom: var(--space-2); } }
+.support-code {
+  font-family: var(--font-display); font-size: var(--text-h1); font-variant-numeric: tabular-nums;
+  letter-spacing: 0.12em; text-align: center; margin: 0; user-select: all; overflow-wrap: anywhere;
+}
+.support-row { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); align-items: center; justify-content: space-between; min-height: 44px; }

@@ -589,5 +589,315 @@ select pg_temp.as_user('ravi');
 select pg_temp.assert(not pg_temp.sees('i_private'),
   'a veto closes the window immediately, mid-session');
 
+-- ------------------------------------------------------------- closing ----
+do $$ begin raise notice '--- closing an account is the account holder''s business alone (V40) ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into account_closures (user_id, purge_after)
+  values (app.current_user_id(), now() + interval '30 days');
+select pg_temp.assert((select count(*) from account_closures) = 1,
+  'a person can ask to close their own account');
+
+do $$
+declare refused boolean := false;
+begin
+  begin
+    insert into account_closures (user_id, purge_after)
+      values (app.current_user_id(), now() + interval '1 day');
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'the thirty days cannot be shortened, and one closure waits at a time');
+end $$;
+
+do $$
+declare refused boolean := false;
+begin
+  begin
+    update account_closures set purge_after = purge_after - interval '29 days';
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'a waiting closure''s date cannot be moved');
+end $$;
+
+do $$
+declare refused boolean := false;
+begin
+  begin
+    update account_closures set purged_at = now();
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'only the sweep, with no user, records an erasure');
+end $$;
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from account_closures) = 0,
+  'an admin cannot see that someone has asked to close their account');
+do $$
+declare refused boolean := false;
+begin
+  begin
+    insert into account_closures (user_id, purge_after)
+      values ((select v from t where k='ish'), now() + interval '30 days');
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'nobody can ask to close someone else''s account');
+end $$;
+
+select pg_temp.as_user('ish');
+update account_closures set cancelled_at = now() where cancelled_at is null;
+select pg_temp.assert((select count(*) from account_closures where cancelled_at is not null) = 1,
+  'the person can keep their account by saying so');
+
+-- ---------------------------------------------------------- passing away ----
+do $$ begin raise notice '--- a memorial makes an account read-only, and only its subject undoes it (V40) ---'; end $$;
+
+select pg_temp.as_user('ravi');
+do $$
+declare refused boolean := false;
+begin
+  begin
+    insert into member_memorials (household_id, member_id, user_id, marked_by, basis)
+      values ((select v from t where k='hh'), (select v from t where k='m_ish'),
+              (select v from t where k='ish'), app.current_user_id(), 'trusted_contact');
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused,
+    'a trusted contact whose window has not opened (here: vetoed) cannot mark anyone');
+end $$;
+
+select pg_temp.as_user('ish');
+do $$
+declare refused boolean := false;
+begin
+  begin
+    insert into member_memorials (household_id, member_id, user_id, marked_by, basis)
+      values ((select v from t where k='hh'), (select v from t where k='m_ish'),
+              app.current_user_id(), app.current_user_id(), 'admin');
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'nobody can mark themselves as passed away');
+end $$;
+
+insert into member_memorials (household_id, member_id, user_id, marked_by, basis)
+  values ((select v from t where k='hh'), (select v from t where k='m_ravi'),
+          (select v from t where k='ravi'), app.current_user_id(), 'admin');
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert(not app.can_write_household((select v from t where k='hh'))
+                      and not app.can_administer_household((select v from t where k='hh')),
+  'a memorialised account loses every capability in that household, admin included');
+select pg_temp.assert(pg_temp.sees('i_ravi') and pg_temp.sees('i_joint'),
+  'and keeps sight of what it could see, so the person can sign in and see the label');
+do $$
+declare n int;
+begin
+  update investments set title = 'Changed after a memorial' where id = (select v from t where k='i_ravi');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'a memorialised account cannot change even its own records');
+end $$;
+select pg_temp.assert(
+  app.record_in_app_message((select v from t where k='hh'), (select v from t where k='ravi'),
+                            'reminder.due', 'A reminder', 'rls-test-stopped') is null,
+  'messages to a memorialised person are not written');
+select pg_temp.assert(
+  app.record_in_app_message((select v from t where k='hh'), (select v from t where k='ravi'),
+                            'lifecycle.memorial.marked', 'Marked', 'rls-test-told') is not null,
+  'except the one that tells them they were marked');
+
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from member_memorials) = 0,
+  'a memorial is not visible outside the household');
+
+select pg_temp.as_user('ish');
+do $$
+declare n int;
+begin
+  update member_memorials set reversed_at = now(), reversed_by = app.current_user_id();
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'the admin who made a memorial cannot quietly take it back');
+end $$;
+
+select pg_temp.as_user('ravi');
+update member_memorials set reversed_at = now(), reversed_by = app.current_user_id()
+ where reversed_at is null;
+select pg_temp.assert(app.can_administer_household((select v from t where k='hh')),
+  'the person it named takes it away, and every capability returns');
+
+-- --------------------------------------------------------------- leaving ----
+do $$ begin raise notice '--- leaving a household: seven days, and decisions only about what you hold (V41) ---'; end $$;
+
+select pg_temp.as_user('ravi');
+do $$
+declare refused boolean := false;
+begin
+  begin
+    insert into household_departures (household_id, member_id, user_id, started_by, started_by_admin, effective_at)
+      values ((select v from t where k='hh'), (select v from t where k='m_ravi'), app.current_user_id(),
+              app.current_user_id(), false, now() + interval '1 day');
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'a departure cannot take effect sooner than seven days');
+end $$;
+
+select gen_random_uuid() as id \gset departure_
+insert into household_departures (id, household_id, member_id, user_id, started_by, started_by_admin, effective_at)
+  values (:'departure_id', (select v from t where k='hh'), (select v from t where k='m_ravi'),
+          app.current_user_id(), app.current_user_id(), false, now() + interval '7 days');
+insert into t values ('departure', :'departure_id');
+
+insert into departure_joint_decisions (departure_id, record_type, record_id, decision)
+  values (:'departure_id', 'investment', (select v from t where k='i_joint'), 'take_my_share');
+
+do $$
+declare refused boolean := false;
+begin
+  begin
+    insert into departure_joint_decisions (departure_id, record_type, record_id, decision)
+      values ((select v from t where k='departure'), 'investment', (select v from t where k='i_scoped'), 'stays');
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'seeing a holding shared with you is not holding it: no decision about it');
+end $$;
+
+do $$
+declare refused boolean := false;
+begin
+  begin
+    insert into departure_joint_decisions (departure_id, record_type, record_id, decision)
+      values ((select v from t where k='departure'), 'investment', (select v from t where k='i_private'), 'stays');
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'and no decision about a record the leaver cannot see');
+end $$;
+
+do $$
+declare refused boolean := false;
+begin
+  begin
+    update household_departures set completed_at = now() where id = (select v from t where k='departure');
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'only the sweep completes a departure');
+end $$;
+
+select pg_temp.as_user('ish');
+select pg_temp.assert((select count(*) from household_departures) = 1,
+  'the household can see that someone is leaving');
+select pg_temp.assert((select count(*) from departure_joint_decisions) = 1,
+  'a co-holder sees the decision about the record they hold together');
+do $$
+declare n int;
+begin
+  update household_departures set cancelled_at = now() where id = (select v from t where k='departure');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'an admin cannot cancel a departure someone chose for themselves');
+end $$;
+
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from household_departures) = 0
+                      and (select count(*) from departure_joint_decisions) = 0,
+  'nothing about a departure reaches outside the household');
+
+select pg_temp.as_user('ravi');
+update household_departures set cancelled_at = now() where id = :'departure_id';
+
+do $$ begin raise notice '--- an admin learns how many records block a removal, never which (V41) ---'; end $$;
+
+-- A private holding recorded by Ishwarya in Aarav's name. By the read rule it is
+-- visible to nobody with a login — which is exactly the dead end.
+select pg_temp.as_user('ish');
+select gen_random_uuid() as id \gset i_aarav_
+insert into investments (id, household_id, type_id, title, invested_amount, visibility, created_by)
+  select :'i_aarav_id', (select v from t where k='hh'), it.id, 'Aarav''s gold coin', 50000, 'private', :'ish_id'
+    from investment_types it where it.code = 'gold_physical' and it.household_id is null;
+insert into investment_ownerships (investment_id, member_id, share_pct)
+  values (:'i_aarav_id', (select v from t where k='m_aarav'), 100);
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert(
+  (select hidden_count from app.managed_member_holdings((select v from t where k='m_aarav'))) = 1,
+  'the admin is told a record they cannot see stands in the way');
+select pg_temp.assert(
+  (select array_agg(x) from app.recorders_of_hidden_holdings((select v from t where k='m_aarav')) x)
+    = array[(select v from t where k='ish')],
+  'and who recorded it, so that person can be asked');
+select pg_temp.assert(not exists (select 1 from investments where id = :'i_aarav_id'),
+  'without the record itself becoming visible');
+
+select pg_temp.as_user('out');
+select pg_temp.assert(
+  (select hidden_count from app.managed_member_holdings((select v from t where k='m_aarav'))) = 0
+  and not exists (select 1 from app.recorders_of_hidden_holdings((select v from t where k='m_aarav'))),
+  'someone outside the household learns nothing from asking');
+
+-- ------------------------------------------------------------ succession ----
+do $$ begin raise notice '--- a successor is named by the owner and claims only on the event (V41) ---'; end $$;
+
+select pg_temp.as_user('ravi');
+do $$
+declare refused boolean := false;
+begin
+  begin
+    insert into household_successors (household_id, named_by, successor_member_id)
+      values ((select v from t where k='hh'), app.current_user_id(), (select v from t where k='m_ravi'));
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'an admin cannot name themselves the successor');
+end $$;
+
+select pg_temp.as_user('ish');
+insert into household_successors (household_id, named_by, successor_member_id)
+  values ((select v from t where k='hh'), app.current_user_id(), (select v from t where k='m_ravi'));
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from household_successors) = 1,
+  'the person named can see that they are');
+do $$
+declare refused boolean := false;
+begin
+  begin
+    perform app.claim_household_succession((select v from t where k='hh'));
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'a successor cannot claim while the owner is here');
+end $$;
+
+-- Marked as passed away by the admin who is also the successor: still not a
+-- claim for a week, during which the owner is told and can say it is wrong.
+insert into member_memorials (household_id, member_id, user_id, marked_by, basis)
+  values ((select v from t where k='hh'), (select v from t where k='m_ish'),
+          (select v from t where k='ish'), app.current_user_id(), 'admin');
+do $$
+declare refused boolean := false;
+begin
+  begin
+    perform app.claim_household_succession((select v from t where k='hh'));
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'nor in the same week as a memorial that could still be a mistake');
+end $$;
+select pg_temp.as_user('ish');
+update member_memorials set reversed_at = now(), reversed_by = app.current_user_id()
+ where reversed_at is null;
+
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from household_successors) = 0,
+  'a succession plan is not visible outside the household');
+
+-- --------------------------------------------------------- coming of age ----
+do $$ begin raise notice '--- a coming-of-age notice is the sweep''s to write (V41) ---'; end $$;
+
+select pg_temp.as_user('ish');
+do $$
+declare refused boolean := false;
+begin
+  begin
+    insert into coming_of_age_notices (member_id, household_id, turns_adult_on)
+      values ((select v from t where k='m_aarav'), (select v from t where k='hh'), current_date);
+  exception when others then refused := true;
+  end;
+  perform pg_temp.assert(refused, 'nobody writes a coming-of-age notice by hand');
+end $$;
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

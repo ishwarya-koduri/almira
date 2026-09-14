@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import java.sql.ResultSet
+import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
@@ -16,6 +17,8 @@ data class HouseholdRow(
     val myMemberId: UUID?,
     val memberCount: Int,
     val version: Int,
+    /** The caller is memorialised here: they can see, and change nothing (docs/05 §12). */
+    val readOnly: Boolean = false,
 )
 
 data class MemberRow(
@@ -30,6 +33,8 @@ data class MemberRow(
     val isMe: Boolean,
     val role: String?,
     val version: Int,
+    /** When they were marked as having passed away, while that stands. */
+    val memorialisedAt: Instant? = null,
 )
 
 @Repository
@@ -147,15 +152,23 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
         mapOf("id" to memberId),
     )
 
-    /** A member who owns anything cannot simply be removed -- see HouseholdService. */
-    fun countHoldings(memberId: UUID): Int = jdbc.queryForObject(
-        """
-        select count(*) from investment_ownerships o
-          join investments i on i.id = o.investment_id
-        where o.member_id = :id and i.deleted_at is null
-        """.trimIndent(),
-        mapOf("id" to memberId), Int::class.java,
-    ) ?: 0
+    /**
+     * What stands in the way of removing a managed member: the records naming
+     * them that the caller can see, and the number they cannot. Counted by a
+     * definer function (V41), because under row-level security the second number
+     * is always zero -- which is how a member whose holdings nobody present could
+     * see used to be removed from under them.
+     */
+    fun managedMemberHoldings(memberId: UUID): Pair<Int, Int> = jdbc.queryForObject(
+        "select visible_count, hidden_count from app.managed_member_holdings(:id)",
+        mapOf("id" to memberId),
+    ) { rs, _ -> rs.getInt("visible_count") to rs.getInt("hidden_count") } ?: (0 to 0)
+
+    /** Who recorded the records the caller cannot see: people who can move them. */
+    fun recordersOfHiddenHoldings(memberId: UUID): List<UUID> = jdbc.query(
+        "select app.recorders_of_hidden_holdings(:id) as user_id",
+        mapOf("id" to memberId),
+    ) { rs, _ -> rs.getObject("user_id", UUID::class.java) }
 
     private companion object {
         /**
@@ -165,7 +178,7 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
          */
         const val HOUSEHOLD_SELECT = """
             select h.id, h.name, h.base_currency, h.default_visibility, h.version,
-                   hm.role as my_role,
+                   hm.role as my_role, app.is_memorialised_in(h.id) as read_only,
                    (select m.id from members m
                      where m.household_id = h.id and m.user_id = :userId
                        and m.deleted_at is null limit 1) as my_member_id,
@@ -179,7 +192,9 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
 
         const val MEMBER_SELECT = """
             select m.*, app.is_minor(m.date_of_birth) as is_minor,
-                   hm.role as role
+                   hm.role as role,
+                   (select mm.marked_at from member_memorials mm
+                     where mm.member_id = m.id and mm.reversed_at is null) as memorialised_at
             from members m
             left join household_memberships hm
               on hm.household_id = m.household_id and hm.user_id = m.user_id
@@ -198,6 +213,7 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
             myMemberId = rs.getObject("my_member_id", UUID::class.java),
             memberCount = rs.getInt("member_count"),
             version = rs.getInt("version"),
+            readOnly = rs.getBoolean("read_only"),
         )
     }
 
@@ -215,6 +231,7 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
             isMe = false,
             role = rs.getString("role"),
             version = rs.getInt("version"),
+            memorialisedAt = rs.getTimestamp("memorialised_at")?.toInstant(),
         )
     }
 }

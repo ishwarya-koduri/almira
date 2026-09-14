@@ -1,6 +1,6 @@
 -- =============================================================================
 -- V80 · Readiness over time: one small row a day, per person, per household.
--- Refs: docs/22 §6, catch-up plan X-33
+-- Refs: docs/22 §1, "Movement", catch-up plan X-33
 --
 -- "Ready to hand over" was a verdict with no movement: a number, rounded down,
 -- and no way to see that last month's work counted. Movement needs a memory,

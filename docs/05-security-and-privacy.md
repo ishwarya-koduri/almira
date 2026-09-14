@@ -62,6 +62,13 @@ Search, reports, document access, and exports all pass through the **same** visi
 | Guest (link) | — | slice only | — | ✗ | link scope only | — |
 *Roles still differ on **capabilities** (edit/manage) — see [Doc 01 §11](01-product-and-scope.md) and Backend RBAC.*
 
+### 3.8 Previewing another member's view ("What Ravi sees")
+The Family screen can show Home as another member sees it. It must leak in neither direction, and it is built so that it cannot:
+- **One side only.** The server reads, as the viewer and by ordinary sight, the investments and debts the viewer can see. The other member's private records are never read, so they cannot appear as a title, a count or part of a total.
+- **One yes or no per record.** `app.member_would_see(member, type, id)` (V81) says whether that member would read the record: an active membership; an advisor sees explicit grants only; everyone else sees what they hold, what is household-shared and what is scoped to them. It is SECURITY DEFINER because a liability's grants are readable only by the member they name — so it **answers false for any record the caller cannot read**, and cannot be used to probe what someone else holds. What it can say is already on the record's "Who can see it" line.
+- The viewer's private records show as "not in Ravi's view", never as something he sees. A member with no sign-in sees nothing. Emergency access is not previewed.
+- Each preview is audited (`member.preview`, the member's id, nothing it contained). `db/tests/rls_privacy_test.sql` and `MemberPreviewApiTest` hold both directions.
+
 ## 4. Encryption
 - **In transit:** TLS 1.3, HSTS.
 - **At rest:** volume encryption + **field-level encryption** for the most sensitive columns (account/policy numbers, `mfa_secret`) via **envelope encryption** — per-household **DEK** wrapped by a **KEK** in a managed **KMS**; the DB stores only the wrapped DEK, never the KEK.

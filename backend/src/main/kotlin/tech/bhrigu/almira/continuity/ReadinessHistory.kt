@@ -10,7 +10,7 @@ import java.time.LocalDate
 import java.util.UUID
 
 /**
- * How readiness has moved since about a month ago (docs/22 §6).
+ * How readiness has moved since about a month ago (docs/22 §1, "Movement").
  *
  * [saferCount] is the net number of things done since [comparedWith]: a nominee
  * recorded, a scan attached, a location sealed, someone named. Net, so that

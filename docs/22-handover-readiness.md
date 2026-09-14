@@ -88,6 +88,34 @@ When a single check has nothing it applies to, that check is left out of the
 average. It is not counted as done. The check still appears in `checks`, with
 `applicable: 0` and `percent: null`.
 
+### Movement since last month (X-33)
+
+A bare number rounded down is a verdict. What keeps someone going is seeing that
+last month's work counted, so the response also says how far it has moved. The
+score itself is untouched: movement is said beside it and never feeds into it.
+
+- **One row a day, per person, per household** (`readiness_snapshots`, V80). It
+  holds the score and each check's `done` and `applicable` counts — no titles,
+  no record ids, no amounts. Row-level security lets only that person read or
+  write their own rows, and only while they are a member. Rows older than 400
+  days are deleted when a new one is written.
+- **Written when the person reads their readiness.** Readiness is computed as
+  the viewer (§5), so a background job would have to impersonate each person to
+  take a snapshot. It does not; no visit means no row, and the comparison is with
+  the last day they looked.
+- **"Last month"** is the latest row on or before 28 days ago.
+  `saferCount = max(0, done now − done then)`, summed over the four checks, and
+  `fewerDone` is the same the other way. Net, so a nominee added while a scan went
+  missing is not "1 thing safer".
+- Absent (`movement` left out) until there is such a row.
+
+The web client draws **one teal ring in four parts**, a quarter per check, each
+filled as far as that check is done; a check that does not apply is an empty
+dashed quarter. Above the number it writes "3 things safer than last month", or,
+with nothing to compare, "5 of 8 things done" — never a lone percentage. Gold is
+not used on it (docs/25 §2).
+
+
 ## 2. Which records count
 
 These are the records the continuity code already treats as the handover, read
@@ -428,7 +456,8 @@ API (`default-property-inclusion: non_null`).
   checks: [ { code, label, done, applicable, percent | null } ],   // always all four, in order
   gaps:   [ { check, reason, recordType | null, recordId | null, title | null, fix } ],
   caveats: [ "…" ],
-  sealedAccess: { sealedLocations, openableWithRecovery, sealedBy: [ … ], explanation } }   // §4.1, absent when nothing is sealed; never scored
+  sealedAccess: { sealedLocations, openableWithRecovery, sealedBy: [ … ], explanation },   // §4.1, absent when nothing is sealed; never scored
+  movement: { comparedWith, previousScore | null, saferCount, fewerDone } }   // §1 "Movement", absent until there is a month to compare with
 ```
 
 - `gaps` lists every gap, with no cap. The household's own gap comes first,

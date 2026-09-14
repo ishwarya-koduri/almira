@@ -12,7 +12,7 @@ import java.math.BigDecimal
 import java.time.LocalDate
 
 /**
- * Readiness shows movement (docs/22 §6, catch-up plan X-33): "N things safer
+ * Readiness shows movement (docs/22 §1, "Movement", catch-up plan X-33): "N things safer
  * than last month", from one row of counts a day per person.
  *
  * The owner connection only back-dates a row, because a month cannot pass inside

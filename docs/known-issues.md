@@ -771,8 +771,7 @@ done for V26 → V31. `outOfOrder` stays off.
 ## 24. The design revision reached the web client, not the native app, and not every screen
 
 **Where** `app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/theme/`;
-the web screens `screens/goals.js`, `screens/continuity.js`,
-`screens/investments.js`, `screens/auth.js`.
+the web screens `screens/goals.js`, `screens/continuity.js`, `screens/auth.js`.
 
 **What** Doc 25 is the token reference and `static/app/tokens.css` follows it.
 Three things do not yet:
@@ -783,9 +782,9 @@ Three things do not yet:
    five-destination navigation. Doc 25 §9 is the exact list.
 2. **One teal action per screen** is held by the shell — the + is the one teal
    fill it owns — but a few screens still draw their own primary button beside
-   it: "Add" on Investments, "New goal" on Goals, "Print" on Family plan. Each
-   is a real action; which of them stays teal is a per-screen call for whoever
-   next owns that screen.
+   it: "New goal" on Goals, "Print" on Family plan. Each is a real action;
+   which of them stays teal is a per-screen call for whoever next owns that
+   screen. ("Add" on Investments is a plain button since X-54.)
 3. **`.faint` in `screens/auth.js`** (two captions). `base.css` now draws
    `.faint` as muted ink, so they are legible; the class name is only
    misleading.
@@ -1350,3 +1349,56 @@ decision is made.
 **Risk if left** A recorded sale that the department knows about but the
 household forgot is not caught before filing.
 
+---
+
+## 46. The last known view is kept for Home and Holdings, not every tab
+
+**Where** `static/app/cache.js` (the `KEEP` list), `screens/home.js`,
+`screens/investments.js`; every other screen.
+
+**What** X-38 asked that every tab show the last view instantly and refresh
+quietly. Home (dashboard, trend, To review) and the holdings list do, and so do
+a holding's value history and readiness reads. Owed, Accounts, Goals, Family
+plan, Reports, Tax and Household still draw placeholders on each visit, because
+each fetches several things its own way and needs the same small change
+`homeScreen` has: draw from `api.peek(path)`, fetch, redraw only if different.
+
+**Which is right** The same pattern on each screen, adding each read to `KEEP`
+only after checking it carries no sealed value (the e2e, where-and-who and
+account endpoints must never be on the list).
+
+**Why it is still here** Scope: the two most-visited screens first, and the
+others are being changed in parallel work.
+
+**When to fix** The next time someone is in each of those screens.
+
+**Risk if left** A second of grey on revisiting those tabs; nothing is wrong.
+
+---
+
+## 47. To review, readiness movement, the holding panel and "What Ravi sees" are web-only and English-only
+
+**Where** `static/app/review.js`, `readiness.js`, `screens/detail.js`,
+`screens/family.js`, `i18n.js`; the native `app/` tree; server sentences in
+`review/ReviewInbox.kt` and `household/MemberPreview.kt`.
+
+**What** The new strings (`review.*`, `ready.movement.*`, `ready.scoreIs`,
+`ready.outOf100`, `detail.*`, `holding.ownedBy`, `privacy.pill.*`,
+`family.role.*`, `family.relationship.*`, `family.preview.*`, `home.trend.*`,
+`home.allocation.summary`, `block.updatedNow`, `block.notRefreshed`, and the
+Home labels that were English literals) exist in English only; Telugu and Hindi
+fall back to English. The server's `detail`, `summary`, `explanation` and
+`caveats` sentences are English, as Doc 14 says server sentences are for now.
+The phone app has none of these screens. Three limits are by design and worth
+knowing: readiness movement needs a visit about a month earlier (no visit, no
+row, no movement); the member preview shows ordinary sight only, never what an
+emergency unlock would reveal; and a debt in the preview is labelled by its
+kind code, not the translated kind.
+
+**Why it is still here** Translations should be written by someone fluent, not
+guessed, and the native app is being worked on elsewhere.
+
+**When to fix** With the next Telugu and Hindi pass, and when the native Home and
+Family screens are built.
+
+**Risk if left** A Telugu or Hindi reader sees these cards in English.

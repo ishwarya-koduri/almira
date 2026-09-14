@@ -9,6 +9,7 @@ import { reload, redraw } from "../app.js";
 import { t, language, LANGUAGES } from "../i18n.js";
 import { e2e, enable as enableE2e, unlock as unlockE2e } from "../e2e.js";
 import { privacyLink } from "../privacy.js";
+import { accountCard } from "../lifecycle.js";
 
 export async function settingsScreen(host) {
   // Settings is a stack of independent things, and it used to be an
@@ -24,6 +25,7 @@ export async function settingsScreen(host) {
     safely(() => connectCard(host)),
     safely(() => trashCard()),
     safely(() => sessionsCard()),
+    safely(() => accountCard(host, () => settingsScreen(host))),
     safely(() => privacyCard()),
     safely(() => aboutCard()),
   ]);

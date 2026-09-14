@@ -610,3 +610,34 @@ details.more[open] > summary::before { transform: rotate(90deg); }
 }
 .table th { color: var(--ink-muted); font-weight: 600; }
 .table tr:last-child td { border-bottom: 0; }
+
+/* =============================================================================
+   Lifecycle — closing, leaving, a memorial (app/lifecycle.js, docs/05 §12).
+   Notices are muted text with an info mark, never a coloured box: these screens
+   are read at difficult moments, and nothing on them should look like an alarm.
+   ============================================================================= */
+
+.lifecycle-text { margin: 0; font-size: var(--text-sm); line-height: 1.55; }
+.lifecycle-notice {
+  display: flex; gap: var(--space-2); align-items: flex-start; margin: 0;
+  font-size: var(--text-sm); line-height: 1.55; color: var(--ink-muted);
+}
+.lifecycle-mark {
+  flex: none; display: inline-grid; place-items: center;
+  width: 1.25em; height: 1.25em; margin-top: 0.1em; border-radius: 50%;
+  border: 1px solid currentColor; font-size: 0.85em; font-style: italic; font-family: var(--font-display);
+}
+.lifecycle-columns { display: grid; gap: var(--space-4); }
+@media (min-width: 640px) { .lifecycle-columns { grid-template-columns: 1fr 1fr; } }
+.lifecycle-column {
+  padding: var(--space-4); border: 1px solid var(--hairline); border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.lifecycle-column h5 { margin: 0 0 var(--space-3); font-family: var(--font-display); font-size: var(--text-lg); font-weight: 500; }
+.lifecycle-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.lifecycle-lines li { display: grid; gap: 2px; }
+.lifecycle-line-title { font-size: var(--text-sm); font-weight: 500; overflow-wrap: anywhere; }
+.lifecycle-line-where,
+.lifecycle-line-detail { font-size: var(--text-sm); color: var(--ink-muted); overflow-wrap: anywhere; }
+.lifecycle-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
+.lifecycle-actions .btn-sm { min-height: 44px; }

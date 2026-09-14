@@ -1878,3 +1878,49 @@ row and the text to the new number are unchanged. Proven by
 number, so where the attacker already receives that number's texts (a SIM swap)
 the extra text reaches them too. It helps when step-up was done another way (an
 authenticator, a recovery code, an already elevated stolen session).
+
+---
+
+## 65. A household can be left with no owner when its successor or admin is gone by purge time
+
+**Where** `lifecycle/AccountPurge.kt` (`purge`, `handOver`),
+`lifecycle/DepartureCompletion.kt` (`carryOut`), `lifecycle/LifecycleRecords.kt`
+(`otherPeopleWithLogin`, `nextOwner`), `lifecycle/LifecycleWrites.kt`
+(`longestStanding`).
+
+**What** `owner_needs_successor` is checked only when a sole owner asks to close
+their account or leave (`AccountClosureService.closurePreview`,
+`Departures.blockers`). Nothing checks it again when the thirty days are up, and
+nothing during those days looks at a pending closure or departure: the named
+successor or the only admin can still leave, be asked to leave, or be marked as
+passed away. At purge, `otherPeopleWithLogin` counts every other active
+membership, advisors and memorialised people included, so the household is not
+erased; `nextOwner` finds nobody and `longestStanding` also skips advisors and
+memorialised people, so no one is made owner. The purge completes and the
+household carries on — children's and other members' records included — with
+nobody able to invite, remove, or handle departures. It happens only when every
+remaining login is an advisor or memorialised; an ordinary member with a login
+is picked by `longestStanding`. No data crosses a household boundary.
+
+**Why not fixed** Each way out is a product decision, and each is irreversible
+or breaks a promise:
+- *Erase the household* (treat advisors and memorialised people as nobody, as the
+  no-login branch does). This destroys a memorialised person's records that heir
+  mode exists to keep, because someone else closed their account — and the
+  closure preview had told the owner the household would stay.
+- *Postpone the purge* until a successor is named. This breaks the thirty-day
+  erasure promised in docs/05 §8 and on the closure screen, and the person who
+  asked may never come back to choose.
+- *Hand it to an advisor*, or leave it ownerless for a support repair. The first
+  gives a household to someone outside the family; the second needs a runbook
+  and a way to find such households (today the purge neither logs nor audits it).
+- *Refuse* marking passed away, leaving, or removal of the last successor/admin
+  while the owner's closure is pending. A death cannot be refused, so this closes
+  only part of the gap.
+
+**When to fix** When the owner decides which of the above applies; the same
+answer should go into `DepartureCompletion.carryOut`, which has the same shape.
+
+**Risk if left** Rare (needs that sequence within thirty days), but a household
+nobody can run, with family records still in it, fixed only by hand in the
+database.

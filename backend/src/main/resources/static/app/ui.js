@@ -217,9 +217,13 @@ export function toast(message, { action, onAction, tone = "" } = {}) {
    Focus is trapped and Escape closes, because a modal you cannot leave by
    keyboard is a trap in the literal sense. `wide` gives a record's detail a
    wider panel on a desktop (X-53), with the list it came from still beside it.
+   Sheets stack (a "?" over the form it explains, step-up over a record): only
+   the top one answers Escape and Tab, so one Escape closes one sheet, and the
+   page scrolls again only once the last one is gone.
    ----------------------------------------------------------------------------- */
 
 let sheetCount = 0;
+const openSheets = [];
 
 export function sheet({ title, body, footer, onClose, wide = false }) {
   const previousFocus = document.activeElement;
@@ -228,9 +232,12 @@ export function sheet({ title, body, footer, onClose, wide = false }) {
   const returnTo = [previousFocus, ...(previousFocus?.closest?.(".sheet")?.returnTo || [])];
 
   const close = () => {
+    const at = openSheets.indexOf(panel);
+    if (at === -1) return;
+    openSheets.splice(at, 1);
     scrim.remove();
     document.removeEventListener("keydown", onKey);
-    document.body.style.overflow = "";
+    if (!openSheets.length) document.body.style.overflow = "";
     onClose?.();
     // Back to what opened it (X-85). When closing redrew the screen and that
     // control is gone, to the screen's title instead of the top of the page.
@@ -246,6 +253,7 @@ export function sheet({ title, body, footer, onClose, wide = false }) {
   };
 
   const onKey = (event) => {
+    if (openSheets[openSheets.length - 1] !== panel) return;
     if (event.key === "Escape") { event.preventDefault(); close(); }
     if (event.key !== "Tab") return;
     const focusable = panel.querySelectorAll(
@@ -275,6 +283,7 @@ export function sheet({ title, body, footer, onClose, wide = false }) {
   }, panel);
 
   document.body.append(scrim);
+  openSheets.push(panel);
   document.body.style.overflow = "hidden";
   document.addEventListener("keydown", onKey);
   panel.querySelector("input, select, textarea, button")?.focus();

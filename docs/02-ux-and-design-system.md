@@ -182,14 +182,15 @@ WCAG **AA+** contrast; visible focus rings; full keyboard nav; screen-reader lab
 | Moving between screens | Focus lands on the new screen's title, so it is announced; a redraw in another language keeps focus on the button pressed (X-05) | `app.js`, `redraw.js` |
 | Controls | Every button, link and field has a name: its words, its label, or an `aria-label` when it is only an icon. A list of identical buttons ("Invite to sign in") names whose row each is | `ui.field`, screens |
 | Fields | The help line is read with the field (`aria-describedby`); "required" is said, the `*` is not; an error is announced when it appears and marks the field invalid | `ui.field` |
-| Sheets | A modal dialog named by its title. Tab stays inside, Escape closes, and focus goes back to what opened it — or, when that has gone, to the screen's title | `ui.sheet` |
+| Sheets | A modal dialog named by its title. Tab stays inside, Escape closes — only the sheet on top, so a "?" or step-up over a form closes without the form — and focus goes back to what opened it — or, when that has gone, to the screen's title | `ui.sheet` |
 | Announcements | Confirmations in a polite live region; failures, form errors and a dry run's result as they happen | `ui.toast`, screens |
 | Money | The full ₹42,00,000 is read and the short ₹42 L is hidden from the reader; the net worth, term cover and capital-gains total are followed by the amount in words, in the reader's language | `ui.money`, `ui.amountWords` |
 | Charts | Every chart is an image named by a one-sentence summary; the trend also prints its sentence; a meter or ring says what its figure is of | `ui.areaTrend`, `ui.donut`, `ui.ring` |
 
 **Checked automatically.** `scripts/check-a11y.js` (jsc): the heading outline,
 a name on every `el("button…")` in the files the app loads, a summary on every
-chart, and the promises above in `ui.js`. `scripts/browser-checks/a11y-audit.js`
+chart, and the promises above in `ui.js`; `scripts/check-sheets.js` (jsc) that
+stacked sheets close one Escape at a time. `scripts/browser-checks/a11y-audit.js`
 runs in the page against the live app — computed names, one level-1 heading,
 named landmarks and dialogs, dangling `aria-*` references and duplicate ids,
 44px targets and nothing under 13px. It was run on Home, Holdings (list and a

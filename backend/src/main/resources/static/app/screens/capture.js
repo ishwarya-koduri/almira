@@ -329,7 +329,8 @@ export function captureForm(type, onSaved, prefill = null) {
   // There is no location column any more (V33, docs/20 §1). Where the original
   // is gets recorded sealed, on the saved record; this form posts in plain
   // text, so it never asks, and the server refuses the old field if sent.
-  const knownColumns = new Set(["currency", "invested_amount", "quantity", "start_date", "maturity_date"]);
+  const columnOrder = ["currency", "invested_amount", "quantity", "start_date", "maturity_date"];
+  const knownColumns = new Set(columnOrder);
   const ordered = [
     ...Object.entries(schema.common || {})
       .filter(([key]) => knownColumns.has(key))

@@ -57,8 +57,27 @@ object TestInfra {
         // The test suite signs users up and deletes records. Running it against
         // a database called `almira` would mean running it against someone's
         // real data, so refuse rather than trust the caller got it right.
-        require(!dbUrl.trimEnd('/').endsWith("/almira")) {
-            "ALMIRA_TEST_DB_URL points at the development database ($dbUrl). " +
+        //
+        // This is the check in front of EVERY connection the tests make, not
+        // only the application's: Kotlin initialises this object on the first
+        // read of dbUrl, so a seed in @DynamicPropertySource, a DriverManager
+        // connection or a hand-built SpringApplication cannot reach the URL
+        // without passing it. TestDatabaseGuard, which runs later, only compares
+        // the application's properties with this same URL.
+        refuseDevelopmentDatabase(externalDbUrl)
+    }
+
+    /**
+     * Refuses an external URL whose database is `almira`, the development
+     * database. The name is read from the URL's path, without its query: the
+     * first version compared the URL's ending, so `.../almira?sslmode=disable`
+     * passed.
+     */
+    fun refuseDevelopmentDatabase(url: String?) {
+        if (url == null) return
+        val database = url.substringBefore('?').substringBefore(';').trimEnd('/').substringAfterLast('/')
+        require(!database.equals("almira", ignoreCase = true)) {
+            "ALMIRA_TEST_DB_URL points at the development database ($url). " +
                 "Use almira_test — the test suite writes and deletes data."
         }
     }

@@ -164,6 +164,8 @@ services:
       ALMIRA_WEBAUTHN_RP_NAME:
       ALMIRA_WEBAUTHN_ORIGINS:
       ALMIRA_OUTBOX_POLL_INTERVAL:
+      # The public address one-tap continuity links point at (docs/27 §2).
+      ALMIRA_PUBLIC_URL:
       ALMIRA_PROVIDER_SMS_MODE:
       ALMIRA_PROVIDER_SMS_BASE_URL:
       ALMIRA_PROVIDER_SMS_API_KEY:

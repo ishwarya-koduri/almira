@@ -435,6 +435,8 @@ class HandbookService(
     private fun sealedLabel(fieldKey: String) = when (fieldKey) {
         WhereAndWho.ORIGINAL_LOCATION -> "Where the original is"
         WhereAndWho.KEY_HOLDER -> "Who holds the key"
+        WhereAndWho.KEY_HOLDER_2 -> "If they can't be reached"
+        WhereAndWho.KEY_HOLDER_3 -> "And after them"
         else -> "A sealed note"
     }
 

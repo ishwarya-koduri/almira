@@ -41,6 +41,20 @@ data class WhereAndWhoRecord(
     val title: String,
     val originalLocation: WhereAndWhoValue?,
     val keyHolder: WhereAndWhoValue?,
+    /** Who to go to if the key holder can't be reached — sealed, like the first (docs/27 §6). */
+    val keyHolder2: WhereAndWhoValue? = null,
+    /** And after them. */
+    val keyHolder3: WhereAndWhoValue? = null,
+    /** A dated tick per position in the chain that the person who sealed it has confirmed. */
+    val chain: List<ChainTick> = emptyList(),
+)
+
+/** "Checked with them": plaintext is only the position and the date; the name stays sealed. */
+data class ChainTick(
+    /** 1 is [WhereAndWhoRecord.keyHolder], 2 and 3 the backups. */
+    val position: Int,
+    val confirmedAt: Instant,
+    val confirmedByMe: Boolean,
 )
 
 data class WhereAndWhoIndex(
@@ -48,6 +62,8 @@ data class WhereAndWhoIndex(
     val fieldKeys: Map<String, String> = mapOf(
         "originalLocation" to WhereAndWho.ORIGINAL_LOCATION,
         "keyHolder" to WhereAndWho.KEY_HOLDER,
+        "keyHolder2" to WhereAndWho.KEY_HOLDER_2,
+        "keyHolder3" to WhereAndWho.KEY_HOLDER_3,
     ),
     val records: List<WhereAndWhoRecord>,
     val caveats: List<String> = WhereAndWho.CAVEATS,
@@ -56,6 +72,22 @@ data class WhereAndWhoIndex(
 object WhereAndWho {
     const val ORIGINAL_LOCATION = "original_location"
     const val KEY_HOLDER = "key_holder"
+
+    /**
+     * The access chain (docs/27 §6): who to go to when the key holder can't be
+     * reached, then who after them. Sealed exactly like [KEY_HOLDER], because
+     * where holder names are sealed the chain must be too.
+     */
+    const val KEY_HOLDER_2 = "key_holder_2"
+    const val KEY_HOLDER_3 = "key_holder_3"
+
+    /** Position in the chain for a field key, or null for one that is not in it. */
+    fun chainPosition(fieldKey: String): Int? = when (fieldKey) {
+        KEY_HOLDER -> 1
+        KEY_HOLDER_2 -> 2
+        KEY_HOLDER_3 -> 3
+        else -> null
+    }
 
     val CAVEATS = listOf(
         "Where the original is and who holds the key are sealed with your passphrase. " +
@@ -91,6 +123,7 @@ class WhereAndWhoService(
     private val households: HouseholdService,
     private val userContext: RequestUserContext,
     private val sealedAccess: SealedAccessService,
+    private val mapper: com.fasterxml.jackson.databind.ObjectMapper,
 ) {
 
     @Transactional(readOnly = true)
@@ -126,7 +159,19 @@ class WhereAndWhoService(
                    loc.sealed_by as loc_sealed_by, locm.id as loc_member_id, locm.display_name as loc_name,
                    kh.ciphertext as kh_ciphertext, kh.key_version as kh_key_version,
                    kh.updated_at as kh_updated_at, kh.sealed_by = :uid as kh_mine,
-                   kh.sealed_by as kh_sealed_by, khm.id as kh_member_id, khm.display_name as kh_name
+                   kh.sealed_by as kh_sealed_by, khm.id as kh_member_id, khm.display_name as kh_name,
+                   kh2.ciphertext as kh2_ciphertext, kh2.key_version as kh2_key_version,
+                   kh2.updated_at as kh2_updated_at, kh2.sealed_by = :uid as kh2_mine,
+                   kh2.sealed_by as kh2_sealed_by, kh2m.id as kh2_member_id, kh2m.display_name as kh2_name,
+                   kh3.ciphertext as kh3_ciphertext, kh3.key_version as kh3_key_version,
+                   kh3.updated_at as kh3_updated_at, kh3.sealed_by = :uid as kh3_mine,
+                   kh3.sealed_by as kh3_sealed_by, kh3m.id as kh3_member_id, kh3m.display_name as kh3_name,
+                   (select coalesce(json_agg(json_build_object(
+                             'position', t.position, 'confirmedAt', t.confirmed_at, 'mine', t.confirmed_by = :uid)
+                             order by t.position)::text, '[]')
+                      from access_chain_confirmations t
+                     where t.record_type = r.record_type and t.record_id = r.id
+                       and t.household_id = r.household_id) as chain
             from records r
             left join sealed_values loc
               on loc.record_type = r.record_type and loc.record_id = r.id
@@ -138,6 +183,16 @@ class WhereAndWhoService(
              and kh.household_id = r.household_id and kh.field_key = :holder
             left join members khm
               on khm.household_id = r.household_id and khm.user_id = kh.sealed_by and khm.deleted_at is null
+            left join sealed_values kh2
+              on kh2.record_type = r.record_type and kh2.record_id = r.id
+             and kh2.household_id = r.household_id and kh2.field_key = :holder2
+            left join members kh2m
+              on kh2m.household_id = r.household_id and kh2m.user_id = kh2.sealed_by and kh2m.deleted_at is null
+            left join sealed_values kh3
+              on kh3.record_type = r.record_type and kh3.record_id = r.id
+             and kh3.household_id = r.household_id and kh3.field_key = :holder3
+            left join members kh3m
+              on kh3m.household_id = r.household_id and kh3m.user_id = kh3.sealed_by and kh3m.deleted_at is null
             where (cast(:type as text) is null or r.record_type = cast(:type as text))
               and (cast(:rid as uuid) is null or r.id = cast(:rid as uuid))
             order by r.record_type, lower(r.title), r.id
@@ -146,7 +201,9 @@ class WhereAndWhoService(
                 .addValue("hid", householdId).addValue("uid", userId)
                 .addValue("type", recordType).addValue("rid", recordId)
                 .addValue("location", WhereAndWho.ORIGINAL_LOCATION)
-                .addValue("holder", WhereAndWho.KEY_HOLDER),
+                .addValue("holder", WhereAndWho.KEY_HOLDER)
+                .addValue("holder2", WhereAndWho.KEY_HOLDER_2)
+                .addValue("holder3", WhereAndWho.KEY_HOLDER_3),
         ) { rs, _ ->
             WhereAndWhoRecord(
                 recordType = rs.getString("record_type"),
@@ -154,9 +211,24 @@ class WhereAndWhoService(
                 title = rs.getString("title"),
                 originalLocation = slot(rs, "loc", WhereAndWho.ORIGINAL_LOCATION, recovery),
                 keyHolder = slot(rs, "kh", WhereAndWho.KEY_HOLDER, recovery),
+                keyHolder2 = slot(rs, "kh2", WhereAndWho.KEY_HOLDER_2, recovery),
+                keyHolder3 = slot(rs, "kh3", WhereAndWho.KEY_HOLDER_3, recovery),
+                chain = chain(rs.getString("chain")),
             )
         }
         return WhereAndWhoIndex(records = records)
+    }
+
+    private fun chain(json: String?): List<ChainTick> {
+        if (json.isNullOrBlank()) return emptyList()
+        return mapper.readTree(json).map {
+            ChainTick(
+                position = it.path("position").asInt(),
+                // json_build_object writes a timestamptz as ISO-8601 with an offset.
+                confirmedAt = java.time.OffsetDateTime.parse(it.path("confirmedAt").asText()).toInstant(),
+                confirmedByMe = it.path("mine").asBoolean(),
+            )
+        }
     }
 
     private fun slot(

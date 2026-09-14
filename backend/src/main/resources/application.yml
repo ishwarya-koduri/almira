@@ -103,6 +103,12 @@ almira:
   outbox:
     poll-interval: ${ALMIRA_OUTBOX_POLL_INTERVAL:PT2S}
     batch-size: 50
+  # The public address of the web client, for the one-tap "I'm here" and
+  # "still reachable" links a sweep puts in a message (docs/27 §2). Empty means
+  # no link is made and the message says to open Almira instead. https only,
+  # except for localhost.
+  continuity:
+    link-base-url: ${ALMIRA_PUBLIC_URL:}
   # Who answers a complaint about personal data, and within how many days
   # (DPDP Act s.13, Rules 9 and 14(3); docs/23 "Your data rights"). Shown in
   # every rights reply. Unset name or email is reported as "not named yet",

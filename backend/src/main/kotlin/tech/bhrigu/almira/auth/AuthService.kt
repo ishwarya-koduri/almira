@@ -74,8 +74,10 @@ class AuthService(
      * email is sent, and the stored value matches no code (OtpDelivery.DECOY).
      * For the same reason the send happens after the answer
      * (OtpDelivery.DEFERRED), and how it went is read from [emailDelivery] —
-     * where a decoy reports what the provider last did for a real send, so a
-     * failing provider fails for both (docs/13 §5 has the residual signals).
+     * where a decoy reports a real call to the provider made at the same
+     * moment to the decoy sink, so a failing provider fails for both, and a
+     * provider's refusal of one address is shown to nobody (docs/13 §5
+     * classifies every signal).
      *
      * Checked after normalisation, so `ASHA@Example.com ` is the listed address.
      */

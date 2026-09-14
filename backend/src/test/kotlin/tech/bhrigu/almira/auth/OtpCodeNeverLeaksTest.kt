@@ -265,13 +265,14 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
             keep(post("/api/v1/auth/step-up/verify", token, mapOf("code" to stepUp)))
         }
 
+        // The decoy's code, sent to the decoy sink, is looked for as well.
         val codes = emailCodes.map { it.second }
-        assertThat(emailCodes.map { it.first }).containsExactly(listed, listed)
+        assertThat(emailCodes.map { it.first }).containsExactly(listed, OtpService.DEFAULT_EMAIL_DECOY_SINK, listed)
         // The harness really walked the paths that log: the sandbox channel spoke
-        // for both codes, the unreadable bodies reached ApiErrorHandler's
+        // for all three codes, the unreadable bodies reached ApiErrorHandler's
         // refusal line (INFO; it was the catch-all's ERROR before 2026-09-13),
         // the validation failures reached the resolver.
-        assertThat(capture.texts.count { "sandbox email: template=otp_email" in it }).isEqualTo(2)
+        assertThat(capture.texts.count { "sandbox email: template=otp_email" in it }).isEqualTo(3)
         assertThat(capture.texts.count { it.startsWith("INFO | tech.bhrigu.almira.common.ApiErrorHandler") && "HttpMessageNotReadableException" in it })
             .isEqualTo(9)
         assertThat(capture.texts.filter { it.startsWith("ERROR") }).describedAs("ERROR log events").isEmpty()
@@ -301,9 +302,11 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
 
     private fun awaitEmailCode(nth: Int): String {
         val deadline = System.nanoTime() + java.time.Duration.ofSeconds(10).toNanos()
-        while (emailCodes.size < nth && System.nanoTime() < deadline) Thread.sleep(10)
-        check(emailCodes.size >= nth) { "email code #$nth was never sent" }
-        return emailCodes[nth - 1].second
+        // To the listed address: a decoy's code goes to the decoy sink in between.
+        fun toListed() = emailCodes.filter { it.first == listed }
+        while (toListed().size < nth && System.nanoTime() < deadline) Thread.sleep(10)
+        check(toListed().size >= nth) { "email code #$nth was never sent" }
+        return toListed()[nth - 1].second
     }
 
     private fun wrongFor(code: String) = if (code == "00000000") "11111111" else "00000000"

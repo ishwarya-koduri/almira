@@ -246,13 +246,15 @@ application.
 ALMIRA_SIGN_IN_CHANNELS=email
 ALMIRA_ALPHA_EMAIL_ALLOWLIST=asha@example.com,ravi.k+alpha@example.com
 ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
+ALMIRA_ALPHA_EMAIL_DECOY_SINK=...      # required with live: an address that discards mail
 ```
 
 - **Switch.** `almira.auth.sign-in-channels` is `phone`, `email` or both;
   `phone` when unset, so development and every suite are unchanged. A value it
   does not understand, an empty list, a malformed allowlist entry, email
-  with an empty allowlist, or email with `almira.providers.email.mode=disabled`
-  all refuse to start (`SignInChannels`). The startup
+  with an empty allowlist, email with `almira.providers.email.mode=disabled`,
+  email on a `live` provider without a decoy sink, and a sink that is not an
+  address or is on the allowlist all refuse to start (`SignInChannels`). The startup
   log says how many addresses are listed, never which.
 - **Sender.** `ChannelEmailOtpSender` hands the code to whichever email
   `ChannelSender` the mode selected, with the address as `recipientHint` and
@@ -270,8 +272,8 @@ ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
   channels does not double them.
 - **No enumeration.** An address off the allowlist gets a *decoy*: the same
   cooldown, counts, stored challenge, request id, lifetime and response, with a
-  random stored value no code matches and no email sent. For that to hold, an
-  allowlisted address's email is sent **after** the response
+  random stored value no code matches and no email to that address. For that
+  to hold, an allowlisted address's email is sent **after** the response
   (`OtpDelivery.DEFERRED`) — otherwise the answer would take a provider round
   trip longer. The send is still one interactive attempt through
   `ProviderCalls` (`almira.otp.send-timeout`, no retry, the
@@ -282,55 +284,133 @@ ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
   never arrived*). The code step polls
   `GET /api/v1/auth/otp/email/delivery/{requestId}`: `sending`, then `sent`,
   `delayed` (resend open now) or `failed` with the reason
-  (`otp_delivery_failed`, `otp_provider_unavailable`,
-  `otp_service_unavailable`; resend open now). The web client says it in
-  English, Telugu and Hindi; the native app in English, as the rest of it.
-  Only `sent` is shown as sent: a status still `sending` after 30 polls, or
-  one that cannot be read, is shown as delayed with resend open.
-  A failure does to the challenge, cooldown and counts exactly what a reported
-  send does ("What a failed send does to a one-time code", below): nobody is
-  locked out, or charged a request, by our failure.
+  (`otp_provider_unavailable`, `otp_service_unavailable`; resend open now).
+  The web client says it in English, Telugu and Hindi; the native app in
+  English, as the rest of it. Only `sent` is shown as sent: a status still
+  `sending` after 30 polls, or one that cannot be read, is shown as delayed
+  with resend open. A failure does to the challenge, cooldown and counts
+  exactly what a reported send does ("What a failed send does to a one-time
+  code", below): nobody is locked out, or charged a request, by our failure.
+  **One exception, by the owner's enumeration rule below:** the provider
+  refusing one address (`otp_delivery_failed`) is not reported on this path —
+  Signal 1.
 
-  **How a decoy stays indistinguishable.** A decoy's status is settled by the
-  same code on the same executor as a real send, with one line different: in
-  place of the provider call it waits as long as the **last real email send**
-  took and ends the way that send ended (`otp:email:provider-weather` in Redis,
-  shared by every instance). So with the provider healthy both say `sent`; with
-  it timing out, unreachable or out of credit both say `delayed` or `failed`
-  with the same reason, lift the same cooldown and give back the same count.
-  Every outcome, real or decoy, is applied on a whole-second tick from the
-  request, so a real send's variable latency and a decoy's replayed one land
-  on the same tick. `EmailSignInApiTest` holds a listed and an unlisted address
-  to the same request, the same settled status (status, fields, headers), the
-  same settling time class and the same answer to asking again — with the
-  provider healthy, unavailable, out of credit and timing out.
+  **How a decoy stays indistinguishable.** A decoy runs the same code on the
+  same executor as a real send and makes the **same provider call**, under the
+  same timeout, addressed to the *decoy sink* instead of the address
+  (`ALMIRA_ALPHA_EMAIL_DECOY_SINK`: an address that accepts and discards
+  mail, such as the provider's mailbox simulator; required once the email
+  provider is `live`, refused if it is on the allowlist; in the sandbox a
+  placeholder `decoy-sink@almira.invalid` that nothing delivers to). So a decoy
+  fails, times out or succeeds with the provider as it is at that moment. Every
+  outcome, real or decoy, is applied at one moment — `almira.otp.send-timeout`
+  plus one second after the request (six seconds by default) — however long
+  its call took. `EmailSignInApiTest` holds a listed and an unlisted address to
+  the same request, settled status (status, fields, headers), settling time,
+  resend answer and wrong-code answer with the provider healthy, unavailable,
+  out of credit, timing out and refusing the listed address; probes the refusal
+  three times over; and changes the provider's state five times with unlisted
+  probes before any listed address. `EmailOtpTest` does the same against Redis
+  directly, in both orders, and times seven latencies including a refusal and a
+  timeout.
 
-  **What is still distinguishable, plainly:**
-  1. **A rejection.** When the provider refuses one address synchronously
-     (a suppression list, a mailbox it knows is dead), the listed address
-     reports `failed` / `otp_delivery_failed`; an unlisted address never does,
-     because a rejection is about an address, not the provider. Seeing
-     "couldn't deliver to that address" therefore means *listed, and
-     undeliverable*.
-  2. **A change in the provider.** Decoys replay the last real send, and only a
-     real send updates what they replay (kept a day). So after the provider
-     changes state (goes down, comes back, runs out of credit, starts timing
-     out) the window is not a moment: it stays open until some listed address
-     is next sent a code, however long that is. Inside it, every probe is a
-     clean bit — an unlisted candidate reports the old state, a listed one the
-     new — and the first listed candidate probed is itself the send that closes
-     the window. So per provider transition a prober can rule out as many
-     unlisted candidates as their per-network allowance pays for, and confirm at
-     most one listed address, unless a real tester signs in first. They cannot
-     cause a transition, but an outage can be public (the provider's status
-     page), so they need not see it through a listed address.
-  3. **Latency on a tick boundary.** A real send whose latency happens to
-     straddle a whole second can settle one tick apart from a decoy replaying
-     the previous send's latency. It takes many requests and a provider
-     latency near a second to see, and each request costs the prober their
-     per-network allowance.
-  4. **A fresh Redis**, or a day without any real send: decoys assume a
-     healthy provider answering in 300 ms until one real send is seen.
+  **The enumeration rule** (owner, 2026-09): *acceptable* — a signal that only
+  confirms membership to someone who already knows the exact address;
+  *not acceptable* — a signal that lets someone discover or enumerate addresses
+  they did not already have. Applied strictly: an answer that differs per
+  submitted address and can be asked again, for a guessed or harvested list of
+  candidates (name variants at a family domain), discovers addresses, even
+  though each query needs an exact string. A signal is acceptable only if it
+  cannot be used to test candidates at scale — it needs something only the
+  address's holder has, or fires once and the prober cannot make it fire again.
+
+  **Every signal, classified** (2026-09-14):
+
+  1. **The provider refusing a listed address — not acceptable; closed.**
+     A suppression list or a mailbox the provider knows is dead refuses one
+     address and accepts the next. Only a listed address is ever sent to, so
+     only a listed address could be refused, and the refusal showed four ways:
+     the status (`failed` / `otp_delivery_failed`), the cooldown (lifted, so a
+     resend was answered instead of `429`), the per-address count (given back),
+     and the challenge (removed, so a wrong code answered `otp_expired` rather
+     than `otp_invalid`, and the earlier request id came back). Each is an
+     answer per submitted address, repeatable against a candidate list at
+     every probe — it discovers every listed address the provider will not
+     deliver to. **What was done:** on the sign-in path a refusal is applied as
+     a sent code in every respect a stranger can probe — status `sent`, cooldown
+     kept, count kept, challenge kept (its code reached nobody), nothing put
+     back — and logged at ERROR, `SIGN-IN EMAIL REFUSED`, with the masked
+     address, for the operator. **The conflict with the earlier decision, plainly:**
+     a tester whose address the provider refuses is no longer told "we couldn't
+     send the code" on screen. That cannot be kept without the leak. The tester
+     and a prober typing the tester's address send identical requests, and the
+     tester of a refused address holds nothing a prober lacks — the one thing
+     only they have is the mailbox, which is exactly what is not receiving. So
+     anything the server shows the tester about that refusal it shows everyone
+     who types the address, and an unlisted address can never show it back,
+     because nothing is sent to it (mirroring would mean emailing strangers).
+     The smallest remaining gap is therefore not a leak but that silence, for
+     this one failure: the tester sees `sent`, the web client's standing line
+     ("If it hasn't arrived in a minute, look in your spam folder") and the
+     change-address button, and the operator has the ERROR line to reach them.
+     Step-up by email still reports a refusal: the caller is signed in and
+     already owns the address. If the owner prefers the notice to the
+     protection, the change is one line (`OtpService.settleInBackground`), and
+     this signal returns to *not acceptable*.
+  2. **A change in the provider's state — not acceptable; closed.** Decoys used
+     to replay the last real send (`otp:email:provider-weather`), so after the
+     provider went down, came back, ran out of credit or began timing out,
+     every probe of an unlisted address reported the old state until a listed
+     address was next sent a code. Inside that window each probe was a clean
+     listed/unlisted bit: it ruled out unlisted candidates as far as the
+     prober's per-network allowance paid, and confirmed one listed address per
+     transition. That tests candidates at scale; that a transition cannot be
+     caused matters little, since outages are public. **What was done:** the
+     replay is gone. A decoy makes its own provider call to the decoy sink, so
+     its outcome is the provider's state at that moment, as a real send's is.
+     The weather key is no longer written or read.
+  3. **Latency on a tick boundary — not acceptable; closed.** Outcomes were
+     applied on the whole second after the call, and a decoy's call was a
+     replay of an earlier send's latency, so a send straddling a second settled
+     a tick apart from a decoy. Statistical and slow (5 requests an hour per
+     address), but still an answer per submitted address that can be asked
+     again, so under the strict rule not acceptable. **What was done:** every
+     outcome is applied at the same moment after the request, so how long any
+     call took is not visible at all.
+  4. **A fresh Redis, or a day with no real send — not acceptable; closed.**
+     Decoys assumed a healthy provider answering in 300 ms until a real send
+     was seen, which is Signal 2 with the window open from the start. **What
+     was done:** gone with the replay; a decoy has nothing to assume.
+  5. **A probe of a listed address rewrote what the next decoy reported — not
+     acceptable; closed.** Not in the earlier list. Because a real send wrote
+     the weather and decoys read it, a prober could ask for candidate X and
+     then for an address of their own: if the second answer's settling time or
+     outcome followed X's send rather than the one before, X was listed. It
+     needed no provider transition, only a provider whose latency varied, and
+     could be repeated for every candidate. **What was done:** as Signal 2 —
+     nothing a real send does is read by any other request.
+  6. **What else was checked, and is the same for both** (acceptable, because
+     none differs): the request's status, body, headers and response time; the
+     `429` cooldown and its `Retry-After`; the per-address and per-network
+     `429`s and their counters (a decoy counts as a request); the `400`
+     `email_invalid`; the `503` `otp_unavailable` (checked before the address
+     matters); the delivery status's `404` for an unknown or expired id; a wrong
+     code's `otp_invalid` and attempts remaining, `otp_locked`, `otp_stale`,
+     `otp_expired`; the restore of an earlier code after an outright provider
+     failure (a decoy's challenge is restored the same way); and the
+     development echo (development only). The **right code** does sign a
+     listed address in and never an unlisted one: that needs the code from the
+     mailbox, information only the holder has — *acceptable* by the rule.
+  7. **Introduced by the fix, for the live adapter to hold — not yet
+     verifiable.** A decoy's call goes to one sink address. If the provider
+     throttled or suppressed *that recipient* separately (a per-recipient rate
+     limit hit by many probes), decoys could fail while listed sends did not —
+     and a prober could try to cause it. So the live adapter must classify
+     anything about one recipient as `rejected` (applied as sent, above), never
+     as `unavailable`, and the sink must be one the provider does not throttle
+     per recipient (a mailbox simulator). Each decoy is also a billed send,
+     bounded by the per-network request cap (20 an hour). Neither can be tested
+     until a live email adapter exists; add both to its watched-failing list.
 - **Taking a tester off the list ends their access** (owner's decision,
   2026-09). The list is configuration, so removal is a restart with the
   address gone. `AlphaAllowlistAccess` then enforces it three times: at startup,
@@ -709,7 +789,8 @@ provider works. `OtpServiceTest` has a test for each row.
 
 Email **sign-in** follows the same table, applied after the response and
 reported through `GET /auth/otp/email/delivery/{requestId}` rather than in it
-(§5), and a decoy follows it too, replaying the last real send.
+(§5), except that a rejection is applied as sent (§5, Signal 1); and a decoy
+follows it too, from its own call to the decoy sink.
 
 The existing 503 `otp_unavailable` is a different thing again: no sender is
 configured at all, and nothing is generated.
@@ -738,9 +819,12 @@ names plus `otp`.
   timeout, not the provider's, cutting off a hang; resend at once after a timeout
   and the late code refused.
 - `EmailOtpTest` — the same for email, plus its own HMAC key, the decoy that no
-  code of the million can complete, and a send that happens after the answer.
+  code of the million can complete, a send that happens after the answer, and
+  a decoy that matches a real send under every provider state, a refusal and a
+  change of state, applied at one moment.
 - `EmailSignInApiTest`, `SignInChannelSwitchApiTest` — the allowlist cannot be
-  seen from outside; a switched-off channel refuses; step-up by email.
+  seen from outside, under a healthy, failing, refusing and changing provider,
+  probed repeatedly; a switched-off channel refuses; step-up by email.
 - `ProviderDisabledStartupTest` — the real application starts with each provider
   `disabled` alone, all six together, and with nothing set (`aa` disabled).
 - `ProviderDisabledApiTest` — all six disabled, over HTTP: status `DISABLED` and

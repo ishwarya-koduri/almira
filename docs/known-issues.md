@@ -426,8 +426,8 @@ by `AlphaAllowlistEndedAtStartupApiTest`.
 
 ## 15. A failed sign-in email is invisible to the tester, and costs them requests
 
-**Resolved, with named residual signals** (2026-09-13, "Allowlist and visible
-failure"). Kept as a stub.
+**Resolved** (2026-09-13, "Allowlist and visible failure"; residual signals
+classified and closed 2026-09-14, "Allowlist enumeration"). Kept as a stub.
 
 Owner's decision: a failed email send must not be silent. The email request
 still answers before sending, but the code step now polls
@@ -439,31 +439,29 @@ shows the delayed banner with resend open (`deliveryWhenAskingStops`,
 `EmailDelivery.whenAskingStops`). A failure now does what a reported phone failure
 does — challenge removed, cooldown lifted, the per-address count given back —
 so it no longer costs the tester requests. Decoys for unlisted addresses settle
-through the same code, replaying the last real send's outcome and latency, so a
-failing provider fails for both (`EmailSignInApiTest`, `EmailOtpTest`).
+through the same code, from their own provider call to the decoy sink
+(`ALMIRA_ALPHA_EMAIL_DECOY_SINK`), so a failing provider fails for both at the
+same moment (`EmailSignInApiTest`, `EmailOtpTest`).
 
-**What is still distinguishable** — the full list, with conditions, is in
-docs/13 §5:
+**The residual signals, classified** (2026-09-14, "Allowlist enumeration"). The
+owner's rule: a signal that only confirms an address someone already has is
+acceptable; one that lets someone discover addresses from a guessed list is
+not. Every signal that was listed here — a provider's **rejection** of one
+listed address, the window after a **provider state change**, **latency on a
+tick boundary**, a **fresh Redis** — and one that was not (a probe of a listed
+address rewrote what the next decoy reported) was not acceptable, and is
+closed: decoys make their own provider call, every outcome is applied at one
+moment after the request, and a rejection on the sign-in path is applied as
+sent in every probeable respect. The cost, stated plainly in docs/13 §5
+(Signal 1): a tester whose address the provider refuses is not told on screen;
+the operator gets `ERROR SIGN-IN EMAIL REFUSED` with the masked address.
 
-1. A synchronous **rejection** of one address is reported for a listed address
-   and never for an unlisted one: "couldn't deliver to that address" means
-   listed and undeliverable.
-2. After a **change in the provider's state**, decoys report the old state
-   until a listed address is next sent a code — however long that is. In that
-   window each probe is a clean listed/unlisted bit: a prober who knows of an
-   outage (a public status page) can rule out unlisted candidates and confirm
-   one listed address per provider transition; that confirming probe closes the
-   window.
-3. A real send whose latency **straddles a whole second** can settle one tick
-   away from a decoy.
-4. With **no real send in the last day** (or a fresh Redis), decoys assume a
-   healthy provider.
-
-**Risk if left** Each needs either a listed, undeliverable address or probing
-inside a provider transition (at most one listed address confirmed per
-transition), and every probe spends the prober's per-network allowance. The operator alerts still matter: the WARN
-`one-time code by email not confirmed sent` and the ERROR
-`PROVIDER ACCOUNT PROBLEM`.
+**Risk if left** None known from outside. Two conditions for the live email
+adapter, untestable until it exists (docs/13 §5, item 7): anything about one
+recipient must be classified `rejected`, never `unavailable`, and the sink must
+not be throttled per recipient. Each decoy is a billed send, bounded by the
+per-network cap. Operator alerts: WARN `one-time code by email not confirmed
+sent`, ERROR `PROVIDER ACCOUNT PROBLEM`, ERROR `SIGN-IN EMAIL REFUSED`.
 
 ---
 

@@ -82,15 +82,19 @@ is not `sending`:
 | `sending` | Ask again shortly. |
 | `sent` | Nothing more to say. |
 | `delayed` | Show the delayed sentence; resend is open now (`resendAfterSeconds: 0`). The code still works if it arrives. |
-| `failed` | Say **"We couldn't send the code."** with the sentence for `failure` (`otp_delivery_failed` · `otp_provider_unavailable` · `otp_service_unavailable`, the same advice as the phone codes); resend is open now. This request's code is gone; if it replaced an earlier code that is still live, that code works again, under either request id. |
+| `failed` | Say **"We couldn't send the code."** with the sentence for `failure` (`otp_provider_unavailable` · `otp_service_unavailable`, the same advice as the phone codes; keep handling `otp_delivery_failed` too, though sign-in no longer sends it — see below); resend is open now. This request's code is gone; if it replaced an earlier code that is still live, that code works again, under either request id. |
 
 Unknown or expired request ids are `404 otp_request_unknown`; treat that, a
 server without the endpoint, and any status you do not know as "stop asking".
 An address that is not allowed gets a status too, and it settles the way an
 allowed address's would with the email provider as it is — so a failing
-provider fails for both, and nothing here needs a branch either. Outcomes are
-applied on whole-second ticks from the request. What is still distinguishable,
-and when, is in [Doc 13 §5](../13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha).
+provider fails for both, and nothing here needs a branch either. Every outcome
+is applied at one moment after the request (the send timeout plus a second, six
+seconds by default), so expect `sending` for that long. When the provider
+refuses one address, the status says `sent`: only an allowed address can ever be
+refused, so reporting it would tell anyone who is listed. Every signal that was
+considered, and how each is classified, is in
+[Doc 13 §5](../13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha).
 
 **Taking an address off the allowlist signs that tester out.** Once a server
 runs without the address, the account's refresh token answers `401` and its

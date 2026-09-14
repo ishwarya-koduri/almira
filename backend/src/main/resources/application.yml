@@ -170,6 +170,11 @@ almira:
   auth:
     sign-in-channels: ${ALMIRA_SIGN_IN_CHANNELS:phone}
     email-allowlist: ${ALMIRA_ALPHA_EMAIL_ALLOWLIST:}
+    # Where an unlisted address's sign-in email goes instead: an address that
+    # accepts and discards (a provider's mailbox simulator). Required when the
+    # email provider is live; unset elsewhere, a placeholder the sandbox never
+    # delivers to (docs/13 §5).
+    email-decoy-sink: ${ALMIRA_ALPHA_EMAIL_DECOY_SINK:}
 
   otp:
     provider: ${ALMIRA_OTP_PROVIDER:log}

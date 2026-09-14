@@ -147,6 +147,18 @@ data class AlmiraProperties(
          * creates cannot be completed (AuthService.requestEmailOtp).
          */
         val emailAllowlist: List<String> = emptyList(),
+        /**
+         * Where an address off the allowlist has its sign-in email sent instead:
+         * an address that accepts mail and throws it away (a provider's mailbox
+         * simulator, or a discarding catch-all the owner runs). A decoy calls the
+         * email provider exactly as a real sign-in does, only to this address,
+         * so it fails, times out or succeeds with the provider as it is at that
+         * moment — the thing a replay of the last real send could not do
+         * (docs/13 §5). Required when the email provider is `live`; anywhere
+         * else the sandbox sends nothing and [OtpService.DEFAULT_EMAIL_DECOY_SINK]
+         * stands in.
+         */
+        val emailDecoySink: String = "",
     )
 
     /**

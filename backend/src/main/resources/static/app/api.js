@@ -302,6 +302,12 @@ export const api = {
       ...(fy ? { fy } : {}), ...(member ? { member } : {}),
     })}`),
 
+  // The files a CA needs (docs/tax/capital-gains.md), fetched with the bearer
+  // token by downloadAuthenticated. `query` is a URLSearchParams of fy and member.
+  taxPackPdfUrl: (hid, query)     => `/api/v1/households/${hid}/tax/pack/pdf?${query}`,
+  schedule112aUrl: (hid, query)   => `/api/v1/households/${hid}/tax/schedule-112a?${query}`,
+  setFmv2018:    (hid, id, body)  => api.put(`/api/v1/households/${hid}/tax/grandfathering/${id}`, body),
+
   // --- templates ------------------------------------------------------------
   templates:     (hid)            => api.get(`/api/v1/households/${hid}/templates`),
   createTemplate: (hid, body)     => api.post(`/api/v1/households/${hid}/templates`, body),

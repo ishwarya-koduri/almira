@@ -82,6 +82,8 @@ data class TaxPack(
     val capitalGains: CapitalGains,
     val interestIncome: InterestIncome,
     val disclaimer: String,
+    /** The lot-by-lot statement behind [capitalGains], for a CA (docs/tax/capital-gains.md). */
+    val capitalGainsSchedule: CapitalGainsSchedule,
 )
 
 /**
@@ -104,6 +106,7 @@ class TaxService(
     private val jdbc: NamedParameterJdbcTemplate,
     private val households: HouseholdService,
     private val mapper: ObjectMapper,
+    private val statements: CapitalGainsService,
 ) {
 
     private val disclaimer =
@@ -119,14 +122,16 @@ class TaxService(
                 ?: throw ApiException.notFound("We couldn't find that person.")
         }
 
+        val schedule = statements.schedule(householdId, member?.id, fy)
         return TaxPack(
             financialYear = fy.label,
             memberId = member?.id,
             memberName = member?.displayName,
             deductions = deductions(householdId, member?.id, fy),
-            capitalGains = capitalGains(householdId, member?.id, fy),
+            capitalGains = capitalGains(householdId, member?.id, fy, schedule),
             interestIncome = interestIncome(householdId, member?.id, fy),
             disclaimer = disclaimer,
+            capitalGainsSchedule = schedule,
         )
     }
 
@@ -263,40 +268,39 @@ class TaxService(
     // --- capital gains --------------------------------------------------------
 
     @Transactional(readOnly = true)
-    fun capitalGains(householdId: UUID, memberId: UUID?, fy: FinancialYear): CapitalGains {
-        val realized = jdbc.query(
-            """
-            select d.gain_term, sum(d.proceeds) as proceeds, sum(d.cost_basis) as cost,
-                   sum(d.gain) as gain, count(*) as n
-            from tax_lot_disposals d
-            join investments i on i.id = d.investment_id
-            where i.household_id = :hid and i.deleted_at is null
-              and d.disposed_on between :from and :until
-              and (cast(:memberId as uuid) is null or exists (
-                    select 1 from investment_ownerships o
-                    where o.investment_id = i.id and o.member_id = cast(:memberId as uuid)))
-            group by d.gain_term
-            """.trimIndent(),
-            MapSqlParameterSource()
-                .addValue("hid", householdId).addValue("memberId", memberId)
-                .addValue("from", fy.start).addValue("until", fy.end),
-        ) { rs, _ ->
-            val term = rs.getString("gain_term")
-            val gain = rs.getBigDecimal("gain")
+    fun capitalGains(householdId: UUID, memberId: UUID?, fy: FinancialYear): CapitalGains =
+        capitalGains(householdId, memberId, fy, statements.schedule(householdId, memberId, fy))
+
+    /**
+     * Short and long are taken from the lot-by-lot statement rather than from
+     * the term stored on each disposal. The stored term was decided when the
+     * lots were last rebuilt, by the holding period of that moment; the
+     * statement decides it by the rule on the date of the sale, and knows the
+     * sales that are short-term whatever their age (section 50AA). Two figures
+     * for the same sale would be one too many.
+     */
+    private fun capitalGains(
+        householdId: UUID,
+        memberId: UUID?,
+        fy: FinancialYear,
+        schedule: CapitalGainsSchedule,
+    ): CapitalGains {
+        val realized = schedule.lines.groupBy { it.term }.map { (term, lines) ->
+            val gain = lines.fold(BigDecimal.ZERO) { acc, l -> acc + l.gain }
             GainsBucket(
                 term = term,
                 label = if (term == "long") "Long-term" else "Short-term",
-                proceeds = rs.getBigDecimal("proceeds"),
-                costBasis = rs.getBigDecimal("cost"),
+                proceeds = lines.fold(BigDecimal.ZERO) { acc, l -> acc + l.proceeds },
+                costBasis = lines.fold(BigDecimal.ZERO) { acc, l -> acc + l.costOfAcquisition },
                 gain = gain,
                 gainFormatted = IndianNumbers.rupees(gain),
-                disposals = rs.getInt("n"),
+                disposals = lines.size,
             )
         }
 
         val unrealized = jdbc.query(
             """
-            select i.id, i.title, i.attributes, c.code as category_code,
+            select i.id, i.title, i.attributes, c.code as category_code, t.code as type_code,
                    v.effective_value,
                    coalesce(sum(l.remaining_qty * l.unit_cost), 0) as held_cost,
                    min(l.acquired_on) as oldest_lot
@@ -309,7 +313,7 @@ class TaxService(
               and (cast(:memberId as uuid) is null or exists (
                     select 1 from investment_ownerships o
                     where o.investment_id = i.id and o.member_id = cast(:memberId as uuid)))
-            group by i.id, i.title, i.attributes, c.code, v.effective_value
+            group by i.id, i.title, i.attributes, c.code, t.code, v.effective_value
             """.trimIndent(),
             MapSqlParameterSource().addValue("hid", householdId).addValue("memberId", memberId),
         ) { rs, _ ->
@@ -318,7 +322,7 @@ class TaxService(
             val attributes: Map<String, Any?> = mapper.readValue(rs.getString("attributes"))
             val oldest = rs.getDate("oldest_lot")?.toLocalDate()
             val months = tech.bhrigu.almira.returns.HoldingPeriod
-                .monthsFor(rs.getString("category_code"), attributes)
+                .monthsFor(rs.getString("category_code"), attributes, rs.getString("type_code"))
             UnrealizedPosition(
                 investmentId = rs.getObject("id", UUID::class.java),
                 title = rs.getString("title"),
@@ -340,7 +344,7 @@ class TaxService(
             netRealizedFormatted = IndianNumbers.rupees(net),
             unrealized = unrealized.sortedByDescending { it.unrealizedGain },
             disclaimer = "Gains are worked out from the units you recorded selling, oldest " +
-                "first. Informational — not tax advice.",
+                "first, by the rules on the date of each sale. Informational — not tax advice.",
         )
     }
 

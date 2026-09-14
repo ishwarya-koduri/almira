@@ -1274,3 +1274,79 @@ most-called read and the slowest.
 
 **Risk if left** Unknown until measured cleanly; the five-family alpha is far
 below 20 concurrent requests.
+
+---
+
+## 43. A guest link has no page to open
+
+**Where** `ShareService.create` returns `url = <base>/share/<token>`;
+`backend/src/main/resources/static` has no route for `/share/…`, and
+`SecurityConfig` permits only `/api/v1/share/**` without a token.
+
+**What** Opening the link a sharer is given answers `401` JSON ("Please sign in
+to continue."), not a page. The data behind it is served correctly at
+`/api/v1/share/<token>`, and a tax-pack link's PDF at
+`/api/v1/share/<token>/tax-pack.pdf` opens in any browser — so "Share with my
+CA" on the tax screen hands out the PDF link and not the page link. The
+settings screen's generic "Share something" still shows the page link.
+
+**Which is right** A guest page: unauthenticated, static, reading
+`/api/v1/share/<token>` and rendering the slice read-only, with no service-worker
+caching of the payload.
+
+**Why it is still here** Found while building the CA pack (ws/tax); a new
+unauthenticated surface deserves its own change and review, not a side effect.
+
+**When to fix** Before any guest link other than a tax pack is sent to a real
+person.
+
+**Risk if left** A sharer sends a link that does not open, and resends
+something less careful by email.
+
+---
+
+## 44. The CA pack cannot print Telugu or Devanagari
+
+**Where** `backend/.../tax/TaxPackPdf.kt` (`Fonts.safe`).
+
+**What** The PDF embeds Fraunces and Inter, which carry Latin and the rupee
+sign but no Indic scripts. A holding or person named in Telugu or Hindi prints
+with those characters replaced by `?`, the same trade the holdings PDF export
+makes — better than a pack that fails to save.
+
+**Which is right** Noto Serif/Sans Telugu and Devanagari embedded as fallback
+faces, per docs/02, with complex-script shaping (PDFBox does not shape; this
+needs a shaping step or pre-shaped glyph runs).
+
+**Why it is still here** The Noto files are not in the repository, and shaping
+is a change of its own.
+
+**When to fix** When the first household with Indic-script holding names asks
+for a tax pack, or with the design-system typography work.
+
+**Risk if left** Unreadable names in a document sent to a CA; the figures, ISINs
+and dates are unaffected.
+
+---
+
+## 45. AIS and Form 26AS reconciliation is not built
+
+**Where** `docs/tax/capital-gains.md` §7; docs/01 §9 ("optional AIS/26AS
+reconciliation later"); docs/10 story 2.3.3.
+
+**What** Nothing compares the recorded sales, interest and dividends with the
+Annual Information Statement or Form 26AS.
+
+**Which is right** An import of the taxpayer's own downloaded AIS (JSON) or 26AS
+(PDF/text), matched to recorded sales, interest and TDS, with each mismatch
+shown as a line to look at — config-gated, no portal credentials ever stored.
+
+**Why it is still here** It needs real taxpayer statements to build and test
+against, and a decision on whether a downloaded AIS may be stored at all.
+
+**When to fix** When a household offers a statement for testing and the storage
+decision is made.
+
+**Risk if left** A recorded sale that the department knows about but the
+household forgot is not caught before filing.
+

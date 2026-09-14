@@ -63,9 +63,9 @@ From invested amount + transactions + valuations: **absolute return, CAGR** (lum
 
 ## 9. Tax layer (India) — *informational, not tax advice*
 - **Deduction meters:** 80C (ELSS/PPF/EPF/LIC/NSC/SSY/home-loan principal/tax-saver FD), 80D (health), 80CCD(1B) (NPS +₹50k), 24(b) (home-loan interest) — auto-derived from tagged records.
-- **Capital gains:** per tax lot → STCG/LTCG with holding-period + equity/debt rules; realized FY summary; unrealized view for planning.
+- **Capital gains:** per tax lot → STCG/LTCG with holding-period + equity/debt rules **by the date of each sale** (the 23 July 2024 change included); section 111A/112A/112/50AA/115BBH, 31 January 2018 grandfathering, indexation where it survives; realized FY summary; unrealized view for planning. See [Capital gains for a CA](tax/capital-gains.md).
 - **TDS on FD interest**; yearly interest-income summary; optional **AIS/26AS** reconciliation later.
-- **FY tax pack** export (deductions, interest income, realized gains) for the user or their CA (via scoped sharing).
+- **FY tax pack** export (deductions, interest income, realized gains) for the user or their CA: a CA-ready PDF with a one-page cover, a Schedule 112A-shaped CSV, and **Share with my CA** — a scoped, expiring guest link for one taxpayer's pack.
 
 ## 10. Estate, legal, contacts & continuity
 - **Nominee ≠ heir:** in India a nominee is a *custodian/receiver*, not the legal owner; assets pass to **heirs** per will/succession. Almira records both and **flags mismatches** ("policy nominee is your brother, but your will leaves it to your spouse").

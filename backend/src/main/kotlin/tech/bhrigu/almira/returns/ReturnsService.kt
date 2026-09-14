@@ -155,11 +155,9 @@ class ReturnsService(
                 quantity = it.quantity, amount = it.amount, price = it.price, ratio = it.ratio,
             )
         }
-        val replay = TaxLotEngine.replay(
-            transactions = transactions,
-            costBasisMethod = investment.costBasisMethod,
-            holdingPeriodMonths = HoldingPeriod.monthsFor(investment.categoryCode, investment.attributes),
-        )
+        val replay = TaxLotEngine.replay(transactions, investment.costBasisMethod) { soldOn ->
+            HoldingPeriod.monthsFor(investment.categoryCode, investment.attributes, investment.typeCode, soldOn)
+        }
         repo.replaceLots(investmentId, replay.lots)
         repo.replaceDisposals(investmentId, replay.disposals)
     }

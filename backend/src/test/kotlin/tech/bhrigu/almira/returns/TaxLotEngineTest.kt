@@ -125,6 +125,25 @@ class TaxLotEngineTest {
             .isEqualTo("short")
     }
 
+    /**
+     * The threshold is the one in force on the day of each sale. Gold needed 36
+     * months until 22 July 2024 and 24 from the next day, so the same purchase
+     * sold on either side of that date is classified differently.
+     */
+    @Test
+    fun `the holding period is asked for on the date of each sale`() {
+        val result = TaxLotEngine.replay(
+            listOf(
+                buy("2022-01-10", "20", "100"),
+                sell("2024-07-01", "10", "150"),
+                sell("2024-08-01", "10", "150"),
+            ),
+            "fifo",
+        ) { soldOn -> if (soldOn.isBefore(LocalDate.parse("2024-07-23"))) 36 else 24 }
+
+        assertThat(result.disposals.map { it.gainTerm }).containsExactly("short", "long")
+    }
+
     // --- corporate actions ---------------------------------------------------
 
     /**

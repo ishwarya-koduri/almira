@@ -2,6 +2,7 @@ package tech.bhrigu.almira.capture
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import tech.bhrigu.almira.common.ApiException
 import tech.bhrigu.almira.document.DocumentService
 import tech.bhrigu.almira.document.DocumentUpload
 import java.util.UUID
@@ -42,7 +43,14 @@ class DocumentCaptureService(
         fileName: String,
         mimeType: String?,
         bytes: ByteArray,
+        deviceText: String? = null,
     ): DocumentCapture {
+        if (deviceText != null && deviceText.length > MAX_DEVICE_TEXT) {
+            throw ApiException.badRequest(
+                "text_too_long", "That's more text than one document holds. Try a single page.",
+            )
+        }
+
         val stored = documents.upload(
             householdId,
             DocumentUpload(
@@ -57,7 +65,15 @@ class DocumentCaptureService(
             ),
         )
 
-        val extracted = extractor.extract(bytes, mimeType, fileName)
+        // The file's own text layer wins when there is one: it is exact, and a
+        // device's reading of a photo of the same page can only be worse.
+        val extracted = extractor.extract(bytes, mimeType, fileName).let { own ->
+            if (own.text.isBlank() && !deviceText.isNullOrBlank()) {
+                ExtractedText(deviceText, "device-ocr", null)
+            } else {
+                own
+            }
+        }
         if (extracted.text.isBlank()) {
             return DocumentCapture(
                 documentId = stored.id,
@@ -117,6 +133,9 @@ class DocumentCaptureService(
         text.replace(Regex("""\s+"""), " ").trim().take(2000)
 
     private companion object {
+        /** A dense A4 page is about 4,000 characters; five pages is plenty. */
+        const val MAX_DEVICE_TEXT = 20_000
+
         val REFERENCE_PATTERNS: List<Triple<String, String, Regex>> = listOf(
             Triple(
                 "policy_no", "Policy number",

@@ -39,13 +39,20 @@ class CaptureController(
      * The file is stored as an encrypted proof either way — including when
      * nothing can be read from it. The proof is the durable thing; losing the
      * upload because the parse was disappointing would be backwards.
+     *
+     * `text` is what the person's own device read from a photo or a scan
+     * (docs/03 §3, P-13). The server cannot read a picture, so it is used only
+     * when the file has no text layer of its own — and it is parsed exactly as
+     * typed shorthand is, never trusted as anything more than words.
      */
     @PostMapping("/parse-document", consumes = [org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE])
     fun parseDocument(
         @PathVariable householdId: UUID,
         @org.springframework.web.bind.annotation.RequestPart("file")
         file: org.springframework.web.multipart.MultipartFile,
+        @org.springframework.web.bind.annotation.RequestParam("text", required = false)
+        text: String? = null,
     ): DocumentCapture = documentCapture.capture(
-        householdId, file.originalFilename ?: "document", file.contentType, file.bytes,
+        householdId, file.originalFilename ?: "document", file.contentType, file.bytes, text,
     )
 }

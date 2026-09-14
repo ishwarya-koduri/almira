@@ -865,6 +865,9 @@
       },
       "ColumnMapping": {
         "properties": {
+          "currentValue": {
+            "type": "string"
+          },
           "institution": {
             "type": "string"
           },
@@ -875,6 +878,9 @@
             "type": "string"
           },
           "notes": {
+            "type": "string"
+          },
+          "owner": {
             "type": "string"
           },
           "quantity": {
@@ -9533,6 +9539,14 @@
             "required": true,
             "schema": {
               "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "text",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }

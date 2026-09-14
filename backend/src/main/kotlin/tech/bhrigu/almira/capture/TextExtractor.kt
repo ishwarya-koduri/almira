@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component
 
 data class ExtractedText(
     val text: String,
-    /** "pdf-text-layer", "ocr", or "none". */
+    /** "pdf-text-layer", "ocr", "device-ocr" (read on the person's own device), or "none". */
     val source: String,
     val note: String?,
 )

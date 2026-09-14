@@ -111,7 +111,7 @@ class CaptureApiTest : ApiTestBase() {
         }
     }
 
-    private fun uploadDocument(bytes: ByteArray, name: String, type: String) =
+    private fun uploadDocument(bytes: ByteArray, name: String, type: String, text: String? = null) =
         http.exchange(
             url("/api/v1/households/$householdId/capture/parse-document"),
             HttpMethod.POST,
@@ -120,6 +120,7 @@ class CaptureApiTest : ApiTestBase() {
                     add("file", object : ByteArrayResource(bytes) {
                         override fun getFilename() = name
                     })
+                    text?.let { add("text", it) }
                 },
                 HttpHeaders().apply {
                     contentType = MediaType.MULTIPART_FORM_DATA
@@ -195,5 +196,45 @@ class CaptureApiTest : ApiTestBase() {
         val result = mapper.readTree(uploadDocument(pdf(emptyList()), "scan.pdf", "application/pdf").body)
         assertThat(result.path("note").asText()).contains("scan rather than text")
         assertThat(result.path("documentId").asText()).isNotBlank()
+    }
+
+    // --- read on the device (P-13) ---------------------------------------------
+
+    /**
+     * The server cannot read a photo. The person's own browser can, and sends
+     * the words it found alongside the picture, which is still stored as proof.
+     */
+    @Test
+    fun `a photo's words read on the device are parsed like a document's`() {
+        val result = mapper.readTree(
+            uploadDocument(
+                "a photo".toByteArray(), "bond.jpg", "image/jpeg",
+                text = "LIFE INSURANCE CORPORATION OF INDIA\nPolicy No: 5567123456\nSum assured 1000000",
+            ).body,
+        )
+
+        assertThat(result.path("extractedFrom").asText()).isEqualTo("device-ocr")
+        val fields = result.path("fields").associateBy { it.path("key").asText() }
+        assertThat(fields["attributes.policy_no"]!!.path("value").asText()).isEqualTo("5567123456")
+        assertThat(result.path("documentId").asText()).isNotBlank()
+    }
+
+    @Test
+    fun `a PDF's own text layer wins over what a device read`() {
+        val bytes = pdf(listOf("Policy No: 5567123456"))
+        val result = mapper.readTree(
+            uploadDocument(bytes, "lic.pdf", "application/pdf", text = "Policy No: 1111111111").body,
+        )
+
+        assertThat(result.path("extractedFrom").asText()).isEqualTo("pdf-text-layer")
+        val fields = result.path("fields").associateBy { it.path("key").asText() }
+        assertThat(fields["attributes.policy_no"]!!.path("value").asText()).isEqualTo("5567123456")
+    }
+
+    @Test
+    fun `more device text than a document holds is refused`() {
+        val response = uploadDocument("a photo".toByteArray(), "bond.jpg", "image/jpeg", text = "x".repeat(20_001))
+        assertThat(response.statusCode.value()).isEqualTo(400)
+        assertThat(mapper.readTree(response.body).path("error").path("code").asText()).isEqualTo("text_too_long")
     }
 }

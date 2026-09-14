@@ -203,6 +203,12 @@ const messages = {
     "money.asOf": "as of",
     "money.notConverted": "Not included in the total",
 
+    "money.rateLine": "1 {from} = {rate} {to} · rate as of {date} · {source}",
+    "money.rateUnavailable": "We couldn't fetch a rate just now.",
+    "money.source.ecb": "ECB reference rate",
+    "money.source.seed": "a rate that shipped with the app",
+    "money.source.manual": "your rate",
+
     "capture.parse.unclear": "Didn't understand",
     "capture.parse.unclearHelp": "Those words weren't used. Fill them in on the next step if they matter.",
     "capture.field.typeId": "Type",

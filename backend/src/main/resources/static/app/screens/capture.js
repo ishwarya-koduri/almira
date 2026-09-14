@@ -313,13 +313,22 @@ export function captureForm(type, onSaved, prefill = null) {
   // There is no location column any more (V33, docs/20 §1). Where the original
   // is gets recorded sealed, on the saved record; this form posts in plain
   // text, so it never asks, and the server refuses the old field if sent.
-  const columnOrder = ["invested_amount", "quantity", "start_date", "maturity_date"];
+  const columnOrder = ["currency", "invested_amount", "quantity", "start_date", "maturity_date"];
   for (const key of columnOrder) {
     const def = schema.common?.[key];
     if (!def) continue;
     const control = buildColumnControl(key, def);
     controls.set(key, control);
     (def.group === "essential" ? essentials : more).append(control.field);
+  }
+
+  // A type that asks for its currency (something held abroad) is entered in
+  // that currency: the ₹ in front of the amount changes with the choice, so a
+  // dollar balance is never typed against a rupee sign.
+  const currencyControl = controls.get("currency");
+  const amountControl = controls.get("invested_amount");
+  if (currencyControl && amountControl) {
+    currencyControl.onChange((code) => amountControl.setCurrency(code));
   }
 
   /* --- type-specific attributes -------------------------------------------- */
@@ -600,20 +609,40 @@ async function saveNominee(investmentId, nominee) {
    ----------------------------------------------------------------------------- */
 
 function buildColumnControl(key, def) {
+  if (key === "currency") {
+    const input = select({
+      options: [{ value: "", label: "—" }, ...FOREIGN_CURRENCIES.map((code) => ({ value: code, label: code }))],
+      "aria-label": def.label,
+    });
+    const wrapper = field({ label: def.label, required: def.required, control: input, help: def.help });
+    return {
+      field: wrapper,
+      read: () => input.value || null,
+      set: (value) => { input.value = String(value).toUpperCase(); input.dispatchEvent(new Event("change")); },
+      onChange: (listener) => input.addEventListener("change", () => listener(input.value || null)),
+    };
+  }
+
   if (key === "invested_amount") {
     const control = moneyInput({ placeholder: "0" });
     const wrapper = field({ label: def.label, required: def.required, control, help: def.help });
+    let currency = null;
     // The helper reassures rather than validates: seeing "≈ ₹15,873/g" is how
     // you catch a missing zero before it is saved (docs/02 §7).
     control.input.addEventListener("blur", () => {
       const value = control.value();
       wrapper.setError("");
       if (def.required && value === null) wrapper.setError(`${def.label} is needed`);
-      else if (value !== null) wrapper.querySelector(".help").textContent = `${rupees(value)}`;
+      else if (value !== null) wrapper.querySelector(".help").textContent = inCurrency(value, currency);
     });
     return {
       field: wrapper, read: () => control.value(),
       set: (value) => { control.input.value = String(value); control.input.dispatchEvent(new Event("input")); },
+      setCurrency: (code) => {
+        currency = code && code !== "INR" ? code : null;
+        const sign = control.querySelector(".rupee");
+        if (sign) sign.textContent = currency || "₹";
+      },
     };
   }
 
@@ -733,6 +762,21 @@ function titlePlaceholder(type) {
     universal: "A stake in Meera's bakery",
   };
   return examples[type.code] || type.label;
+}
+
+/**
+ * The currencies an Indian family most often holds abroad, most common first.
+ * Any three-letter code is accepted by the server; these are the ones offered.
+ */
+const FOREIGN_CURRENCIES = [
+  "USD", "AED", "GBP", "EUR", "SGD", "CAD", "AUD", "SAR", "QAR", "KWD", "OMR", "BHD",
+  "CHF", "JPY", "HKD", "MYR", "NZD", "THB",
+];
+
+/** Rupees in Indian grouping; anything else with its code, grouped the way its statement is. */
+function inCurrency(value, code) {
+  if (!code) return rupees(value);
+  return `${code} ${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
 const camel = (snake) => snake.replace(/_([a-z])/g, (_, c) => c.toUpperCase());

@@ -213,6 +213,7 @@ is missing from the table fails the same test.
 | `savings_buffer` | yes | no | no |
 | `cash_on_hand` | no | no | yes |
 | `loan_given` | no | yes | yes |
+| `foreign_asset` | yes | yes | no |
 | `universal` | no | yes | yes |
 <!-- handover-applicability:end -->
 
@@ -232,6 +233,7 @@ A household's own custom type takes its category's row:
 | `real_estate` | no | yes | yes |
 | `alternatives` | no | yes | yes |
 | `cash` | no | no | yes |
+| `foreign` | yes | yes | no |
 | `universal` | no | yes | yes |
 <!-- handover-category-defaults:end -->
 

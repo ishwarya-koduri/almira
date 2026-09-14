@@ -96,6 +96,7 @@ class QuickAddService(
             "savings_buffer" to setOf("savings", "buffer", "emergency fund"),
             "cash_on_hand" to setOf("cash"),
             "loan_given" to setOf("lent", "loan given"),
+            "foreign_asset" to setOf("abroad", "overseas", "foreign", "401k", "us stocks"),
             "universal" to setOf("other", "misc"),
         )
     }

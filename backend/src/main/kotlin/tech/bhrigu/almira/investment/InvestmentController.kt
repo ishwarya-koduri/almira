@@ -295,7 +295,7 @@ internal fun InvestmentRow.toResponse() = InvestmentResponse(
     color = color, status = status, investedAmount = investedAmount, quantity = quantity,
     unit = unit, currency = currency,
     value = effectiveValue,
-    valueFormatted = effectiveValue?.let { IndianNumbers.rupees(it) },
+    valueFormatted = effectiveValue?.let { IndianNumbers.money(it, currency) },
     valueBasis = valueBasis, valuedOn = valuedOn,
     startDate = startDate, maturityDate = maturityDate,
     institutionId = institutionId, institutionName = institutionName,

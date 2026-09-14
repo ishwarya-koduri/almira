@@ -282,6 +282,9 @@ export const api = {
   // --- currencies and providers ---------------------------------------------
   rates:         (hid, quote)     => api.get(`/api/v1/households/${hid}/rates?quote=${quote || "INR"}`),
   recordRate:    (hid, body)      => api.post(`/api/v1/households/${hid}/rates`, body),
+  convert:       (hid, amount, from, to) =>
+    api.get(`/api/v1/households/${hid}/rates/convert?amount=${encodeURIComponent(amount)}` +
+      `&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to || "INR")}`),
   providers:     (hid)            => api.get(`/api/v1/households/${hid}/connect/providers`),
 
   // --- zero-knowledge mode --------------------------------------------------

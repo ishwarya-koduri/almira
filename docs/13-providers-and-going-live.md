@@ -394,6 +394,49 @@ registration would need, are in [providers/push.md](providers/push.md).
 
 ---
 
+## 6 · Market data — prices and exchange rates
+
+Not a provider in the sense above: no account, no contract, no key. AMFI, NSE,
+BSE and the European Central Bank publish these files for anyone. It lives here
+because it is the one other place the server reaches out, and the rule is the
+same — **off unless switched on**. With the defaults, no class that can make the
+request is even created (`LiveRateSourceTest` asserts it), and nothing about a
+household is ever sent: each fetch is a plain download of a public file, over
+HTTPS, with redirects refused and a size cap (`HttpMarketFileFetcher`).
+
+| Setting | Default | What it does |
+|---|---|---|
+| `ALMIRA_MARKET_FX_ENABLED` | `false` | Daily ECB euro reference rates |
+| `ALMIRA_MARKET_FX_CRON` | `0 15 21 * * *` (IST) | After the ECB publishes, around 16:00 CET |
+
+### Exchange rates — `LiveRateSource`
+
+A `RateSource` (the interface V23 left for this). Once a day it reads
+`eurofxref-daily.xml` and:
+
+- records a **shared rupee rate** for every currency the ECB publishes, crossed
+  through the euro, marked `source = 'ecb'` and dated with the ECB's own date —
+  so the stored-rate lookup serves it, every converted figure can be traced, and
+  a restart loses nothing. A second run the same day records nothing new;
+- keeps the day's file in memory to answer a pair nobody stored (USD→GBP),
+  consulted **after** stored rates.
+
+It never outranks a household: a rate the household recorded still wins, because
+they know what they actually got. It simply beats the rates that shipped with the
+app by being newer. Currencies the ECB does not publish — the Gulf currencies
+among them — keep the seeded or household rate, and a holding in a currency with
+no rate at all is still left out of the total and said out loud (docs/07 §1).
+
+The web shows both amounts side by side on a holding held abroad: its own
+("USD 12,500"), and "≈ ₹11,94,439" beneath with `1 USD = 95.5551 INR · rate as of
+11 Sep 2026 · ECB reference rate`.
+
+**To switch on:** set `ALMIRA_MARKET_FX_ENABLED=true`. Nothing else is needed.
+**Not watched failing:** a failed fetch logs one WARN (`exchange-rate refresh
+skipped`) and the last recorded rate stays, with its date.
+
+---
+
 ## What "the stand-in" means now
 
 Notifications remain a stand-in, but not an unverifiable one. Every outbound

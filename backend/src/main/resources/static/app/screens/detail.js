@@ -8,6 +8,7 @@ import {
 import { state, findType } from "../state.js";
 import { reload } from "../app.js";
 import { whereWhoCard } from "../where.js";
+import { t } from "../i18n.js";
 
 export async function openDetail(id, onChanged) {
   const body = el("div.stack-3", {}, el("div.skeleton", { style: { height: "200px" } }));
@@ -41,6 +42,7 @@ export async function openDetail(id, onChanged) {
           el("div", { style: { fontFamily: "var(--font-display)", fontSize: "var(--text-h2)" } },
             record.valueFormatted || "Not known yet"),
           el("div.caption.muted", {}, valueExplanation(record)),
+          inBaseCurrency(record),
         ),
         el("button.btn.btn-sm", { type: "button", onclick: () => updateValue() }, "Update value"),
       ),
@@ -383,6 +385,50 @@ export async function openDetail(id, onChanged) {
   }
 
   draw();
+}
+
+/**
+ * Something held abroad shows both amounts side by side: its own, which is the
+ * true one, and the household's currency beside it with the rate and the date
+ * that rate is from (docs/07 §1). With no rate the second figure is not
+ * guessed — the server says what is missing, and that sentence is shown.
+ */
+function inBaseCurrency(record) {
+  const base = state.household.baseCurrency || "INR";
+  if (!record.currency || record.currency === base || record.value === null || record.value === undefined) {
+    return null;
+  }
+  const host = el("div.stack-2", { "aria-live": "polite" });
+  (async () => {
+    try {
+      const converted = await api.convert(state.household.id, record.value, record.currency, base);
+      if (converted.convertedAmount === null || converted.convertedAmount === undefined) {
+        mount(host, el("p.caption.muted", {}, converted.note || t("money.notConverted")));
+        return;
+      }
+      mount(host,
+        el("div", { style: { fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" } },
+          `≈ ${base === "INR" ? rupees(converted.convertedAmount) : `${base} ${converted.convertedAmount}`}`),
+        el("div.caption.muted", {}, t("money.rateLine", {
+          from: record.currency,
+          rate: Number(converted.rate).toLocaleString("en-IN", { maximumFractionDigits: 4 }),
+          to: base,
+          date: formatDate(converted.rateAsOf),
+          source: rateSourceLabel(converted.rateSource),
+        })),
+      );
+    } catch {
+      mount(host, el("p.caption.muted", {}, t("money.rateUnavailable")));
+    }
+  })();
+  return host;
+}
+
+function rateSourceLabel(source) {
+  const plain = String(source || "").replace(" (inverted)", "");
+  const key = `money.source.${plain}`;
+  const label = t(key);
+  return label === key ? plain : label;
 }
 
 function valueExplanation(record) {

@@ -22,6 +22,7 @@
 --   e2e_keys.wrapped_key       an envelope, as above
 --   e2e_keys.verifier          an envelope, as above
 --   e2e_keys.iterations        ≥ 100 000
+--   e2e_recovery_wraps.kdf_salt, .wrapped_key, .verifier   as for e2e_keys (V55)
 --
 -- WHAT IT CANNOT SEE: a flipped bit inside the body of a well-formed envelope.
 -- It parses perfectly and will not open. That is what the stored digest is for
@@ -113,13 +114,27 @@ create temp view sweep_defects as
   select 'e2e_keys', k.id, 'iterations',
          case when k.iterations < 100000 then format('is %s; the floor is 100000', k.iterations) end,
          format('household %s · user %s', k.household_id, k.user_id)
-    from e2e_keys k;
+    from e2e_keys k
+  union all
+  -- A recovery copy that will not open is a sheet in a drawer that opens nothing.
+  select 'e2e_recovery_wraps', w.id, 'kdf_salt', pg_temp.salt_defect(w.kdf_salt),
+         format('household %s · user %s · %s', w.household_id, w.user_id, w.kind)
+    from e2e_recovery_wraps w
+  union all
+  select 'e2e_recovery_wraps', w.id, 'wrapped_key', pg_temp.envelope_defect(w.wrapped_key),
+         format('household %s · user %s · %s', w.household_id, w.user_id, w.kind)
+    from e2e_recovery_wraps w
+  union all
+  select 'e2e_recovery_wraps', w.id, 'verifier', pg_temp.envelope_defect(w.verifier),
+         format('household %s · user %s · %s', w.household_id, w.user_id, w.kind)
+    from e2e_recovery_wraps w;
 
 \echo 'Structural sweep of zero-knowledge ciphertext (docs/17 §6)'
-select (select count(*) from sealed_values) as sealed_values_checked,
-       (select count(*) from e2e_keys)      as e2e_keys_checked
+select (select count(*) from sealed_values)      as sealed_values_checked,
+       (select count(*) from e2e_keys)           as e2e_keys_checked,
+       (select count(*) from e2e_recovery_wraps) as recovery_wraps_checked
 \gset
-\echo '  rows checked: ' :sealed_values_checked ' sealed values, ' :e2e_keys_checked ' passphrase envelopes'
+\echo '  rows checked: ' :sealed_values_checked ' sealed values, ' :e2e_keys_checked ' passphrase envelopes, ' :recovery_wraps_checked ' recovery copies'
 
 select count(*) as defect_count, count(*) > 0 as has_defects
   from sweep_defects where defect is not null

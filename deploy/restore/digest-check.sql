@@ -26,10 +26,20 @@ create temp view digest_mismatches as
   union all
   select 'e2e_keys', id, 'verifier', format('household %s · user %s', household_id, user_id)
     from e2e_keys
+   where verifier_sha256 is distinct from sha256(convert_to(verifier, 'UTF8'))
+  union all
+  -- V55: recovery copies carry the same two digests.
+  select 'e2e_recovery_wraps', id, 'wrapped_key', format('household %s · user %s · %s', household_id, user_id, kind)
+    from e2e_recovery_wraps
+   where wrapped_key_sha256 is distinct from sha256(convert_to(wrapped_key, 'UTF8'))
+  union all
+  select 'e2e_recovery_wraps', id, 'verifier', format('household %s · user %s · %s', household_id, user_id, kind)
+    from e2e_recovery_wraps
    where verifier_sha256 is distinct from sha256(convert_to(verifier, 'UTF8'));
 
 \echo 'Stored-digest check of zero-knowledge ciphertext (docs/17 §6)'
-select (select count(*) from sealed_values) + 2 * (select count(*) from e2e_keys) as values_checked,
+select (select count(*) from sealed_values) + 2 * (select count(*) from e2e_keys)
+       + 2 * (select count(*) from e2e_recovery_wraps) as values_checked,
        (select count(*) from digest_mismatches) as mismatch_count,
        (select count(*) from digest_mismatches) > 0 as has_mismatches
 \gset

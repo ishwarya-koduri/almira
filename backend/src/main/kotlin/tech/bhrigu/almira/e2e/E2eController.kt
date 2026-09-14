@@ -23,7 +23,8 @@ data class E2eStatus(
 
 private val CAVEATS = listOf(
     "Sealed fields can't be searched, sorted or read by anything on the server — including the app itself.",
-    "There is no recovery. If you forget the passphrase, what you sealed is gone, and that is what makes it worth doing.",
+    "We cannot recover your passphrase. If you forget it, what you sealed is gone — unless you made a " +
+        "recovery sheet or recovery shares, which open it without us ever seeing them.",
     "Everything else about the record — its name, its value, who owns it — is unchanged and still visible as usual.",
 )
 

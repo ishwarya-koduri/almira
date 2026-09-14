@@ -833,7 +833,7 @@ details.more[open] > summary::before { transform: rotate(90deg); }
 .table th { color: var(--ink-muted); font-weight: 600; }
 .table tr:last-child td { border-bottom: 0; }
 
-/* =============================================================================
+/* ======================================================================
    Clear (D-12): the same layout with a border on every block and underlined
    links, so nothing depends on a subtle tint to be found.
    ============================================================================= */
@@ -874,3 +874,46 @@ details.more[open] > summary::before { transform: rotate(90deg); }
 .lifecycle-line-detail { font-size: var(--text-sm); color: var(--ink-muted); overflow-wrap: anywhere; }
 .lifecycle-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
 .lifecycle-actions .btn-sm { min-height: 44px; }
+=======
+/* -----------------------------------------------------------------------------
+   Sealing and recovery (docs/12 §10, docs/20). A notice is muted text with an
+   info mark, not a coloured box; nothing here is below 13px; every control
+   keeps a 44px target.
+   ----------------------------------------------------------------------------- */
+.text-sm { font-size: var(--text-sm); }
+/* Scoped to the recovery notices (a text "i" mark) so the shared .notice (ui.js notice()) keeps its own layout. */
+.notice:has(> .info-mark) { display: inline-flex; gap: var(--space-2); align-items: baseline; color: var(--ink-muted); font-size: var(--text-sm); margin: 0; }
+.info-mark {
+  flex: none; display: inline-grid; place-items: center; width: 1.1em; height: 1.1em;
+  border: 1px solid currentColor; border-radius: 50%; font-size: .8em; font-weight: 700; font-style: italic;
+  font-family: var(--font-display);
+}
+.seal-note { display: flex; gap: var(--space-2); align-items: center; color: var(--ink-muted); font-size: var(--text-sm); margin: 0; }
+.lock-mark { flex: none; display: inline-flex; color: var(--ink-muted); }
+.lock-mark svg { display: block; overflow: visible; }
+.lock-mark .shackle { transition: transform var(--slow) var(--spring); transform: translateY(-2.5px); }
+.lock-mark[data-closed="true"] { color: var(--accent); }
+.lock-mark[data-closed="true"] .shackle { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) { .lock-mark .shackle { transition: none; } }
+.tick-mark { flex: none; display: inline-flex; color: var(--positive); }
+.tick-mark svg { animation: rise var(--slow) var(--spring); }
+.practice-ok { gap: var(--space-3); align-items: center; }
+.sealed-line { display: flex; gap: var(--space-2); align-items: flex-start; color: var(--ink-muted); font-size: var(--text-sm); }
+.sealed-line .lock-mark { margin-top: .15em; }
+.code-block { border: 1px solid var(--hairline); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); background: var(--surface-sunken); }
+.code-text { font-family: var(--font-mono); font-size: var(--text-lg); letter-spacing: .06em; word-break: break-word; margin: var(--space-1) 0 0; user-select: all; }
+.code-input { font-family: var(--font-mono); letter-spacing: .04em; }
+.check-row { gap: var(--space-3); align-items: center; min-height: 44px; font-size: var(--text-sm); cursor: pointer; }
+.check-row input { width: 22px; height: 22px; accent-color: var(--accent); }
+.recovery-row + .recovery-row { border-top: 1px solid var(--hairline); padding-top: var(--space-4); }
+
+.print-sheet { display: none; }
+@media print {
+  body > *:not(.print-sheet) { display: none !important; }
+  .print-sheet { display: block; color: black; background: white; font-family: var(--font-ui); }
+  .print-page { page-break-after: always; break-after: page; padding: 24mm 18mm; }
+  .print-page:last-child { page-break-after: auto; break-after: auto; }
+  .print-page h1 { font-family: var(--font-display); font-size: 22pt; margin: 0 0 8mm; }
+  .print-page p { font-size: 12pt; line-height: 1.5; margin: 0 0 4mm; max-width: 150mm; }
+  .print-page .print-code { font-family: var(--font-mono); font-size: 18pt; letter-spacing: .08em; border: 1px solid black; padding: 6mm; margin: 6mm 0; }
+}

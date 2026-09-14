@@ -171,6 +171,52 @@ class HandoverReadinessApiTest : ApiTestBase() {
             .anyMatch { it.contains("passphrase") }
     }
 
+    /**
+     * "Someone can actually open it" is said beside the score and never moves
+     * it (docs/22 §4.1): the same household scores 100 before and after a
+     * recovery copy exists, and only the count of openable locations changes.
+     */
+    @Test
+    fun `whether anyone else could open a sealed location is said, and does not change the score`() {
+        completePolicy()
+        nameTrusted()
+
+        val before = readiness(owner)
+        assertThat(before.path("score").asInt()).isEqualTo(100)
+        val access = before.path("sealedAccess")
+        assertThat(access.path("sealedLocations").asInt()).isEqualTo(1)
+        assertThat(access.path("openableWithRecovery").asInt()).isZero()
+        assertThat(access.path("sealedBy").single().path("isMe").asBoolean()).isTrue()
+        assertThat(access.path("sealedBy").single().path("memberId").asText()).isEqualTo(ownerMemberId)
+        assertThat(access.path("explanation").asText()).contains("does not change the score")
+
+        // A recovery copy, put in place as stored state: this test is about the
+        // count, and RecoveryApiTest makes copies through the API.
+        val ownerUserId = db.queryForObject("select user_id::text from members where id = ?::uuid", String::class.java, ownerMemberId)
+        db.update("update e2e_keys set content_key_id = 'AAAAAAAAAAAAAAAAAAAAAA' where household_id = ?::uuid", householdId)
+        val wrap = db.queryForObject(
+            """
+            insert into e2e_recovery_wraps (household_id, user_id, kind, kdf_salt, wrapped_key, verifier, content_key_id)
+            values (?::uuid, ?::uuid, 'recovery_key', ?, ?, ?, 'AAAAAAAAAAAAAAAAAAAAAA') returning id::text
+            """.trimIndent(),
+            String::class.java, householdId, ownerUserId, b64(ByteArray(16)), envelope() + envelope(), envelope(),
+        )
+        db.update(
+            "insert into e2e_recovery_slots (wrap_id, household_id, user_id, kind, holders) values (?::uuid, ?::uuid, ?::uuid, 'recovery_key', '{Ravi}')",
+            wrap, householdId, ownerUserId,
+        )
+
+        val after = readiness(owner)
+        assertThat(after.path("score").asInt()).isEqualTo(100)
+        assertThat(after.path("complete").asBoolean()).isTrue()
+        assertThat(after.path("checks")).isEqualTo(before.path("checks"))
+        assertThat(after.path("sealedAccess").path("openableWithRecovery").asInt()).isEqualTo(1)
+        assertThat(after.path("sealedAccess").path("sealedBy").single().path("hasRecoveryKey").asBoolean()).isTrue()
+
+        // The spouse cannot see the private policy, so nothing about its sealing is said to them.
+        assertThat(readiness(spouse).has("sealedAccess")).isFalse()
+    }
+
     @Test
     fun `a trusted contact who cannot sign in does not count, so the score cannot reach 100`() {
         completePolicy()

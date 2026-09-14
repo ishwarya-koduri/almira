@@ -332,6 +332,12 @@ export const api = {
     api.put(`/api/v1/households/${hid}/e2e/values/${type}/${id}/${field}`, body),
   unsealValue:   (hid, type, id, field) =>
     api.del(`/api/v1/households/${hid}/e2e/values/${type}/${id}/${field}`),
+  // Recovery copies of the content key (docs/12 §10). Codes and shares never go here.
+  recovery:      (hid)            => api.get(`/api/v1/households/${hid}/e2e/recovery`),
+  recoveryFor:   (hid, memberId)  => api.get(`/api/v1/households/${hid}/e2e/recovery/members/${memberId}`),
+  putRecovery:   (hid, kind, body) => api.put(`/api/v1/households/${hid}/e2e/recovery/${kind}`, body),
+  removeRecovery: (hid, kind)     => api.del(`/api/v1/households/${hid}/e2e/recovery/${kind}`),
+  practiseRecovery: (hid, kind)   => api.post(`/api/v1/households/${hid}/e2e/recovery/${kind}/practice`),
   // Every record with a physical original, with its two sealed slots (docs/20).
   whereAndWho:   (hid, type, id)  => api.get(
     `/api/v1/households/${hid}/where-and-who${type ? `?recordType=${type}&recordId=${id}` : ""}`),

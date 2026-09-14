@@ -10,6 +10,9 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.common.IndianNumbers
+import tech.bhrigu.almira.e2e.SealedAccessService
+import tech.bhrigu.almira.e2e.SealedLine
+import tech.bhrigu.almira.e2e.WhereAndWho
 import tech.bhrigu.almira.household.HouseholdService
 import java.io.ByteArrayOutputStream
 import java.math.BigDecimal
@@ -35,6 +38,12 @@ data class HandbookEntry(
     val hasProof: Boolean,
     /** One line, so the printed page says what to do rather than only what exists. */
     val howToClaim: String,
+    /**
+     * What is sealed on this holding, and who could open it (docs/20 §1.2). The
+     * words stay sealed; a sealed line is never shown as blank, because blank
+     * reads as "nothing recorded".
+     */
+    val sealed: List<SealedLine> = emptyList(),
 )
 
 data class HandbookDebt(
@@ -54,6 +63,10 @@ data class HandbookInstrument(
     val location: String? = null,
     val executedOn: LocalDate?,
     val executors: List<String>,
+    /** The instrument's id, so a client can open its sealed "where the original is". */
+    val estateDocumentId: UUID? = null,
+    /** As on [HandbookEntry.sealed]. */
+    val sealed: List<SealedLine> = emptyList(),
 )
 
 data class FamilyHandbook(
@@ -90,6 +103,7 @@ data class FamilyHandbook(
 class HandbookService(
     private val jdbc: NamedParameterJdbcTemplate,
     private val households: HouseholdService,
+    private val sealedAccess: SealedAccessService,
 ) {
 
     @Transactional(readOnly = true)
@@ -182,7 +196,7 @@ class HandbookService(
 
         val instruments = jdbc.query(
             """
-            select e.kind, e.title, e.executed_on, m.display_name as member_name,
+            select e.id, e.kind, e.title, e.executed_on, m.display_name as member_name,
                    coalesce(array_agg(coalesce(rm.display_name, rc.name, r.person_name))
                             filter (where r.id is not null), '{}') as executors
             from estate_documents e
@@ -192,12 +206,13 @@ class HandbookService(
             left join members rm on rm.id = r.member_id
             left join contacts rc on rc.id = r.contact_id
             where e.household_id = :hid and e.deleted_at is null and e.status = 'executed'
-            group by e.kind, e.title, e.executed_on, m.display_name
+            group by e.id, e.kind, e.title, e.executed_on, m.display_name
             order by e.executed_on desc nulls last
             """.trimIndent(),
             mapOf("hid" to householdId),
         ) { rs, _ ->
             HandbookInstrument(
+                estateDocumentId = rs.getObject("id", UUID::class.java),
                 kind = rs.getString("kind"),
                 title = rs.getString("title"),
                 forMember = rs.getString("member_name"),
@@ -232,15 +247,20 @@ class HandbookService(
             Int::class.javaObjectType,
         ) ?: 0
 
-        val total = withPeople.mapNotNull { it.value }.fold(BigDecimal.ZERO, BigDecimal::add)
+        val entrySeals = sealedAccess.lines(householdId, "investment", withPeople.map { it.investmentId })
+        val instrumentSeals = sealedAccess.lines(householdId, "estate_document", instruments.mapNotNull { it.estateDocumentId })
+        val sealedEntries = withPeople.map { it.copy(sealed = entrySeals[it.investmentId].orEmpty()) }
+        val sealedInstruments = instruments.map { it.copy(sealed = instrumentSeals[it.estateDocumentId].orEmpty()) }
+
+        val total = sealedEntries.mapNotNull { it.value }.fold(BigDecimal.ZERO, BigDecimal::add)
 
         return FamilyHandbook(
             householdName = household.name,
             preparedOn = LocalDate.now(),
             preparedFor = me?.displayName ?: "the family",
-            entries = withPeople,
+            entries = sealedEntries,
             debts = debts,
-            instruments = instruments,
+            instruments = sealedInstruments,
             contacts = contacts,
             totalIncluded = total,
             totalIncludedFormatted = IndianNumbers.rupees(total),
@@ -340,6 +360,7 @@ class HandbookService(
             entry.contacts.forEach { line("  Call: ${it.name}${it.phone?.let { p -> " — $p" } ?: ""}") }
             line("  Proof: ${if (entry.hasProof) "a scan is in the vault" else "no document attached"}")
             line("  To claim: ${entry.howToClaim}")
+            entry.sealed.forEach { line("  ${sealedLabel(it.fieldKey)}: ${it.sentence}") }
         }
 
         if (handbook.debts.isNotEmpty()) {
@@ -366,6 +387,7 @@ class HandbookService(
                 if (instrument.executors.isNotEmpty()) {
                     line("  Executor: ${instrument.executors.joinToString(", ")}")
                 }
+                instrument.sealed.forEach { line("  ${sealedLabel(it.fieldKey)}: ${it.sentence}") }
             }
         }
 
@@ -403,6 +425,13 @@ class HandbookService(
         document.save(out)
         document.close()
         return out.toByteArray()
+    }
+
+    /** The printed name of a sealed line. Its words are never here: the server cannot read them. */
+    private fun sealedLabel(fieldKey: String) = when (fieldKey) {
+        WhereAndWho.ORIGINAL_LOCATION -> "Where the original is"
+        WhereAndWho.KEY_HOLDER -> "Who holds the key"
+        else -> "A sealed note"
     }
 
     private fun basisInWords(basis: String) = when (basis) {

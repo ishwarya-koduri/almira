@@ -8,6 +8,7 @@ import { state, update } from "../state.js";
 import { reload, redraw } from "../app.js";
 import { t, language, LANGUAGES } from "../i18n.js";
 import { e2e, enable as enableE2e, unlock as unlockE2e } from "../e2e.js";
+import { recoveryCard, forgotPassphrase } from "../recovery.js";
 import { privacyLink } from "../privacy.js";
 import { prefs, THEMES, TEXT_SIZES, DATA_MODES } from "../prefs.js";
 import { accountCard } from "../lifecycle.js";
@@ -23,6 +24,7 @@ export async function settingsScreen(host) {
     safely(() => languageCard(host)),
     safely(() => howYouSignInCard(() => settingsScreen(host))),
     safely(() => securityCard(host)),
+    safely(() => recoverySettings(host)),
     safely(() => sharingCard(host)),
     safely(() => ratesCard(host)),
     safely(() => connectCard(host)),
@@ -34,6 +36,13 @@ export async function settingsScreen(host) {
   ]);
 
   mount(host, el("div.stack", {}, el("h1", {}, t("nav.settings")), ...cards));
+}
+
+/** "Who else can open this?" — only once there is something to open (docs/12 §10). */
+async function recoverySettings(host) {
+  const status = await api.e2eStatus(state.household.id).catch(() => null);
+  if (!status?.enabled) return null;
+  return recoveryCard(host, () => settingsScreen(host));
 }
 
 async function safely(render) {
@@ -150,10 +159,10 @@ async function securityCard(host) {
         // belongs to the passphrase, and silently removing it in one client
         // and not the other is the same unrecoverable failure as a mismatched
         // Unicode form. Warning is honest; "helping" is not.
-        help: "Spaces count, including one at the end. There is no way to recover this.",
+        help: t("security.passphraseHelp"),
       }),
       field({ label: "Type it again", control: confirm }),
-      el("div.banner", {}, t("security.noRecovery")),
+      el("p.notice", {}, el("span.info-mark", { "aria-hidden": "true" }, "i"), t("security.recoveryNote")),
       error,
       el("div.row", {}, button),
     );
@@ -188,7 +197,10 @@ async function securityCard(host) {
         `${status.sealedFieldCount} sealed`)),
       field({ label: t("security.passphrase"), control: passphrase }),
       error,
-      el("div.row", {}, button),
+      el("div.row.wrap", {}, button,
+        el("button.btn.btn-ghost", {
+          type: "button", onclick: () => forgotPassphrase(() => settingsScreen(host)),
+        }, t("recovery.forgot.link"))),
     );
   }
 

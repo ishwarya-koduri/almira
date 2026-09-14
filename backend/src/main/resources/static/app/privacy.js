@@ -22,6 +22,7 @@ const SECTIONS = [
     "privacy.keyHolder.guidance",
     "privacy.keyHolder.pending",
   ]],
+  ["privacy.recovery.title", ["privacy.recovery.body"]],
   ["privacy.never.title", ["privacy.never.body"]],
 ];
 

@@ -18,7 +18,9 @@ import {
 } from "../ui.js";
 import { state } from "../state.js";
 import { t } from "../i18n.js";
-import { whereWhoCard } from "../where.js";
+import { whereWhoCard, FIELD } from "../where.js";
+import { lockMark, sealedLineText, openTheirs } from "../recovery.js";
+import { e2e, openSealedValueAs } from "../e2e.js";
 import { loadReadiness, readinessCard } from "../readiness.js";
 import { openDetail } from "./detail.js";
 import { navigate } from "../app.js";
@@ -45,8 +47,9 @@ export async function continuityScreen(host) {
 
     readiness && readinessCard(readiness, fixers(estate, host)),
     mismatches.length > 0 && mismatchCard(mismatches),
+    theirSealedCard(handbook, requests, host),
     handbookCard(handbook, host),
-    estateCard(estate, host),
+    estateCard(estate, host, handbook),
     contactsCard(contacts, host),
     emergencyCard(trusted, requests, host),
   ));
@@ -157,6 +160,7 @@ function handbookCard(handbook, host) {
               : t("continuity.noNominee"),
           ].filter(Boolean).join(" · "),
         ),
+        ...sealedLines(entry.sealed),
       ),
       el("div.amount", {}, el("b", {}, entry.valueFormatted || "—")),
     ))),
@@ -229,7 +233,130 @@ async function openTransmission(entry, host) {
    Wills, powers of attorney, and the people who hold them
    ----------------------------------------------------------------------------- */
 
-function estateCard(documents, host) {
+/**
+ * A sealed line is never blank (docs/20 §1.2): it says it is sealed, by whom,
+ * and who holds a way to open it. The words themselves stay sealed.
+ */
+function sealedLabel(fieldKey) {
+  if (fieldKey === FIELD.originalLocation) return t("where.location");
+  if (fieldKey === FIELD.keyHolder) return t("where.keyHolder");
+  return t("note.title");
+}
+
+function sealedLines(lines) {
+  return (lines || []).map((line) => el("div.sealed-line", { "data-sealed-line": line.fieldKey },
+    lockMark(true),
+    el("span", {}, `${sealedLabel(line.fieldKey)}: ${sealedLineText(line)}`),
+  ));
+}
+
+/* -----------------------------------------------------------------------------
+   Open what someone sealed, with their recovery sheet or shares (docs/12 §10.5)
+
+   Offered only to the person holding an open emergency window on them, and only
+   for someone who made a recovery copy. The key opened lives in this session's
+   memory beside the reader's own and is dropped by Lock or a reload.
+   ----------------------------------------------------------------------------- */
+
+function theirSealedCard(handbook, requests, host) {
+  const open = new Set(requests
+    .filter((request) => request.requestedByMe && request.status === "open")
+    .map((request) => request.subjectMemberId));
+  const people = new Map();
+  for (const line of [...handbook.entries, ...(handbook.instruments || [])].flatMap((item) => item.sealed || [])) {
+    if (line.sealedByMe || !line.sealedByMemberId || !open.has(line.sealedByMemberId)) continue;
+    if (!line.hasRecoveryKey && !line.hasRecoveryShares) continue;
+    people.set(line.sealedByMemberId, {
+      memberId: line.sealedByMemberId, name: line.sealedByName,
+      hasRecoveryKey: line.hasRecoveryKey, hasRecoveryShares: line.hasRecoveryShares, access: line,
+    });
+  }
+  if (people.size === 0) return null;
+
+  return el("div.card.stack-3", { "data-their-sealed": "true" },
+    el("h3", {}, t("recovery.theirs.cardTitle")),
+    ...[...people.values()].map((person) => el("div.stack-2", {},
+      el("p", {}, sealedLineText(person.access)),
+      e2e.hasKeyFor(person.memberId)
+        ? el("div.row.wrap", { style: { gap: "8px" } },
+            el("button.btn.btn-primary", { type: "button", onclick: () => showTheirs(person, handbook) },
+              t("recovery.theirs.show", { name: person.name })),
+            el("button.btn.btn-ghost", { type: "button", onclick: () => { e2e.lock(); continuityScreen(host); } },
+              t("security.lock")))
+        : el("div.row", {},
+            el("button.btn.btn-primary", {
+              type: "button",
+              onclick: () => openTheirs(person, async () => { await continuityScreen(host); showTheirs(person, handbook); }),
+            }, t("recovery.theirs.open", { name: person.name }))),
+    )),
+  );
+}
+
+/** Everything this person sealed on what the reader can see, opened on this device. */
+async function showTheirs(person, handbook) {
+  const body = el("div.stack-3", {}, skeletonRows(3));
+  sheet({ title: t("recovery.theirs.shownTitle", { name: person.name }), body });
+  const index = await api.whereAndWho(state.household.id);
+  const rows = [];
+  for (const record of index.records) {
+    const lines = [];
+    for (const [slot, fieldKey, label] of [["originalLocation", FIELD.originalLocation, "where.location"], ["keyHolder", FIELD.keyHolder, "where.keyHolder"]]) {
+      const value = record[slot];
+      if (!value || value.access?.sealedByMemberId !== person.memberId) continue;
+      let text;
+      try {
+        text = await openSealedValueAs(person.memberId, state.household.id, record.recordType, record.recordId, fieldKey, value.ciphertext);
+      } catch {
+        text = t("where.unreadable");
+      }
+      lines.push(el("div.row-between", { style: { fontSize: "var(--text-sm)", alignItems: "flex-start" } },
+        el("span.muted", {}, t(label)), el("span", { style: { textAlign: "right", whiteSpace: "pre-wrap" } }, text)));
+    }
+    if (lines.length) {
+      rows.push(el("div.card.card-tight.stack-2", {},
+        el("div.row-between", {}, el("b", {}, record.title), el("span.muted.text-sm", {}, t(`where.type.${record.recordType}`))),
+        ...lines));
+    }
+  }
+  // Sealed notes and anything else they sealed, on the records the handbook names.
+  const items = [
+    ...handbook.entries.map((entry) => ({ recordType: "investment", recordId: entry.investmentId, title: entry.title, sealed: entry.sealed })),
+    ...(handbook.instruments || []).map((item) => ({ recordType: "estate_document", recordId: item.estateDocumentId, title: item.title, sealed: item.sealed })),
+  ];
+  for (const item of items) {
+    const keys = (item.sealed || [])
+      .filter((line) => line.sealedByMemberId === person.memberId && !Object.values(FIELD).includes(line.fieldKey))
+      .map((line) => line.fieldKey);
+    if (!item.recordId || keys.length === 0) continue;
+    const values = await api.sealedValues(state.household.id, item.recordType, item.recordId).catch(() => []);
+    const lines = [];
+    for (const value of values.filter((candidate) => keys.includes(candidate.fieldKey))) {
+      let text;
+      try {
+        text = await openSealedValueAs(person.memberId, state.household.id, item.recordType, item.recordId, value.fieldKey, value.ciphertext);
+      } catch {
+        text = t("where.unreadable");
+      }
+      lines.push(el("div.stack-2", { style: { fontSize: "var(--text-sm)" } },
+        el("span.muted", {}, sealedLabel(value.fieldKey)), el("span", { style: { whiteSpace: "pre-wrap" } }, text)));
+    }
+    if (lines.length) {
+      rows.push(el("div.card.card-tight.stack-2", {},
+        el("div.row-between", {}, el("b", {}, item.title), el("span.muted.text-sm", {}, t(`where.type.${item.recordType}`))),
+        ...lines));
+    }
+  }
+
+  mount(body,
+    el("p.seal-note", {}, lockMark(true), el("span", {}, t("recovery.theirs.local"))),
+    rows.length ? rows : el("p.muted", {}, t("recovery.theirs.nothing")),
+  );
+}
+
+function estateCard(documents, host, handbook) {
+  const sealedByDocument = new Map((handbook?.instruments || [])
+    .filter((instrument) => instrument.estateDocumentId)
+    .map((instrument) => [instrument.estateDocumentId, instrument.sealed || []]));
   return el("div.card.stack-3", {},
     el("div.row-between.wrap", {},
       el("h3", {}, t("estate.title")),
@@ -249,6 +376,7 @@ function estateCard(documents, host) {
               onclick: () => openWhere(document, host),
             }, t("where.cardTitle")),
           ),
+          ...sealedLines(sealedByDocument.get(document.id)),
           document.roles.length > 0 && el("div.caption.muted", {},
             `${t("estate.executor")}: ${document.roles.map((r) => r.name).join(", ")}`),
           document.beneficiaries.length > 0 && el("div.caption.muted", {},

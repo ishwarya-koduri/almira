@@ -348,7 +348,12 @@ vector.
   double `enable()`) overwrites the wrapped key and makes every sealed value
   permanently unreadable. `key_version` is not checked to increase, so an old
   `e2e_keys` row (a leaked-then-rotated passphrase) can be rolled back.
-- **A lost passphrase.** No recovery, by design.
+- **A lost passphrase.** Recoverable only with a recovery sheet or two of three
+  recovery shares the owner made on the device (docs/12 §10, V55); the server
+  holds a wrapped copy it cannot open. Worth attacking: the step-up on making a
+  copy, `app.emergency_open_on_user` (who reads a copy), and whether a key write
+  can orphan one (it must name the same `contentKeyId` while copies exist, which
+  also narrows the blind-upsert bullet above for anyone who has made one).
 - **Server-chosen KDF cost.** The client accepts whatever iteration count the
   server sends; a tampered low count is not flagged, only fails to open.
 - **Offline guessing** by a dump-holder: one guess = 600k SHA-256 + one GCM tag

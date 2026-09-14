@@ -49,6 +49,7 @@ check it.*
 | Account and policy numbers | Anyone with a database dump | Envelope encryption, per-household DEK, KEK outside the DB, AAD binding to household/table/column | `EnvelopeCipherTest`, `AccountApiTest` |
 | Document contents | The same | Encrypted before storage; short-lived single-use download tickets after a step-up | `DocumentApiTest` |
 | Sealed fields | The operator, a subpoena, a full backup | Client-side AES-GCM under a PBKDF2 key the server never sees | `E2eApiTest` — searches the database for the plaintext |
+| Recovery copies of the sealed-field key | The operator, a database dump, a borrowed unlocked session, a member who is not the owner | The copy is wrapped under HKDF of a 168-bit secret printed on the device and never sent; making, replacing or removing one needs a step-up; readable only by the owner and by whoever holds an open emergency window on them; a passphrase write cannot orphan a copy | `RecoveryApiTest` — searches every recovery row and the audit log for the code, the shares and the secret; SQL suite recovery section |
 | A session | Token theft, a borrowed unlocked phone | Single-use refresh with reuse-detection (audited in the revoking transaction); step-up for sensitive reads | `AuthApiTest`, `RefreshReuseApiTest` |
 | An account | A stranger given a recycled number, a SIM swap | Second factor after the one-time code; factor changes need the factor; two ways in; every new sign-in announced | `SecondFactorApiTest`, `PasskeyApiTest`, `PhoneChangeApiTest` |
 | A guest link | Anyone who receives or guesses one | 256-bit token stored hashed; scope materialised at creation; read-only guest transaction; expiry, view cap, revocation | `ShareApiTest`, SQL suite guest section |
@@ -87,6 +88,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | AC-7 | Guest sessions are read-only in the database — `V21__guests_are_read_only.sql` |
 | AC-8 | Emergency access reveals continuity records only, and only to the requester — `V20`, `EmergencyService.kt` |
 | AC-9 | The emergency window opens only after real inactivity by the person it concerns — `V25__emergency_needs_real_inactivity.sql`, `security/SessionActivity.kt` |
+| AC-10 | A recovery copy is readable by its owner and by the person holding an open window on that owner only; who holds a share only by members who can see a value that person sealed — `V55__recovery_for_sealed_fields.sql` (`app.emergency_open_on_user`) |
 
 ### Cryptography
 | | |
@@ -95,6 +97,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | CR-2 | KEK outside the database; refuses to start without one outside development — `crypto/LocalKeyManagement.kt` |
 | CR-3 | AAD binds ciphertext to household, table and column — `crypto/EnvelopeCipher.kt` |
 | CR-4 | Zero-knowledge fields: PBKDF2-SHA-256 ≥ 100k (600k for new keys), AES-256-GCM, AAD-bound — `app/e2e.js`, `e2e/SealedFieldService.kt`, [Doc 12](12-end-to-end-encryption.md) |
+| CR-7 | Zero-knowledge recovery: a printed recovery key or 2-of-3 Shamir shares over GF(256), made on the device; HKDF-SHA-256 wrap of the same content key; content key id keeps copies consistent with the passphrase row — `app/recovery-codes.js`, `app/e2e.js`, `e2e/Recovery.kt`, `V55`, [Doc 12 §10](12-end-to-end-encryption.md#10-recovery) |
 | CR-5 | No key material in the repository; a test fails the build if any appears — `crypto/LocalKeyManagementTest.kt` — "no key material is committed anywhere in the source tree" |
 | CR-6 | Tokens (refresh, download tickets, guest links) stored only as SHA-256 hashes |
 
@@ -103,7 +106,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 |---|---|
 | ID-1 | Phone + OTP; no stored passwords |
 | ID-2 | Single-use refresh tokens with reuse revocation — `auth/AuthService.kt`, `auth/SessionRevoker.kt` |
-| ID-3 | Step-up re-authentication for sensitive reads, scoped to the session — `auth/StepUpService.kt` |
+| ID-3 | Step-up re-authentication for sensitive reads, and for making, replacing or removing a recovery copy, scoped to the session — `auth/StepUpService.kt`, `e2e/Recovery.kt` |
 | ID-4 | OTP purposes namespaced so a sign-in code cannot elevate a session |
 | ID-5 | Rate limits per phone and per IP — `auth/OtpService.kt` |
 | ID-6 | Second factor after the one-time code for any account that has one: authenticator (RFC 6238, replay-guarded), passkey (WebAuthn), recovery code; five tries per pending sign-in, ten misses an hour per account — `auth/SecondFactorService.kt`, `auth/PasskeyService.kt` |
@@ -165,6 +168,9 @@ disbelieving:
    read-only.
 3. **Seal a field, then look in the database.** `select * from sealed_values`
    should tell you nothing, and neither should a full `pg_dump`.
+4. **Make a recovery sheet, then look again.** Nothing in `e2e_recovery_wraps`,
+   `e2e_recovery_slots` or `activity_log` should contain the printed code, and
+   the sheet should still open everything after the passphrase is changed.
 
 ---
 
@@ -173,7 +179,8 @@ disbelieving:
 | | |
 |---|---|
 | No external penetration test has been performed | To be scheduled against a deployed environment |
-| The zero-knowledge scheme has had no third-party cryptographic review | Doc 12 is written so one is possible |
+| The zero-knowledge scheme has had no third-party cryptographic review | Doc 12 is written so one is possible. Recovery (§10) adds a hand-written Shamir split over GF(256); it is pinned to FIPS-197 vectors and exhaustive single-share uniformity, which is evidence, not review |
+| Recovery adds ways in | Whoever holds the sheet, or any two shares, opens everything the owner sealed; two share holders can collude; who holds a share is plain text to members who can see a sealed value; a hostile server can delete or corrupt a copy, silently until a practice unlock fails. Doc 12 §10.7 states each; the yearly practice prompt and V31/V55 digests are the detection, not prevention |
 | Browser-delivered E2E depends on the server serving honest code | Mitigated only by a native client with a signed binary |
 | Key rotation cadence is undocumented; DR is only the manual backup and restore in Doc 17 §6 | Operational, and out of scope for a codebase that has not been deployed |
 | Incident and breach response is written ([Doc 26](26-incident-response.md)) but has no named owners, no counsel review and no rehearsal | Known-issues 25 |

@@ -271,7 +271,7 @@ class E2eApiTest : ApiTestBase() {
         val stored = db.queryForList(
             "select * from e2e_keys where household_id = ?::uuid", householdId,
         ).single()
-        assertThat(stored.values.map { it.toString() })
+        assertThat(stored.values.map { it?.toString().orEmpty() })
             .describedAs("nothing that resembles the passphrase")
             .noneMatch { it.contains("correct horse") }
         assertThat(stored["iterations"] as Int).isGreaterThanOrEqualTo(100_000)
@@ -280,7 +280,7 @@ class E2eApiTest : ApiTestBase() {
         assertThat(status.path("enabled").asBoolean()).isTrue()
         assertThat(status.path("caveats").map { it.asText() })
             .describedAs("the trade-offs are stated, not buried")
-            .anyMatch { it.contains("no recovery") || it.contains("There is no recovery") }
+            .anyMatch { it.contains("cannot recover your passphrase") && it.contains("recovery sheet") }
     }
 
     /**
@@ -644,6 +644,31 @@ class E2eApiTest : ApiTestBase() {
         assertThat(get("/api/v1/households/$householdId/e2e/values", spouse).json())
             .describedAs("that a private record has a sealed field is itself information")
             .isEmpty()
+    }
+
+    /**
+     * `|` separates the AAD's components and is not escaped (docs/12 §4). Both
+     * clients refuse one; the server now does too, so a third client cannot
+     * store a key that stays unambiguous only while no fifth component exists.
+     */
+    @Test
+    fun `a field key containing the AAD separator is refused`() {
+        val (_, contentKey) = enable()
+        val id = capture(
+            owner, householdId, "gold_physical", "Gold", BigDecimal("1"), visibility = "household",
+        ).path("id").asText()
+
+        val refused = call(
+            HttpMethod.PUT, "/api/v1/households/$householdId/e2e/values/investment/$id/notes|extra", owner,
+            mapOf("ciphertext" to gcmSeal(contentKey, secret.toByteArray(), aadFor(id, "notes|extra"))),
+        )
+        assertThat(refused.status()).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(refused.errorCode()).isEqualTo("field_invalid")
+        assertThat(
+            db.queryForObject(
+                "select count(*) from sealed_values where record_id = ?::uuid", Int::class.java, id,
+            ),
+        ).isZero()
     }
 
     @Test

@@ -11,6 +11,7 @@ import {
 } from "../ui.js";
 import { state, myMember } from "../state.js";
 import { whereWhoCard } from "../where.js";
+import { sealedNoteCard } from "../sealed-notes.js";
 import { reload } from "../app.js";
 
 const KINDS = [
@@ -190,6 +191,7 @@ export async function accountsScreen(host) {
 
       // A locker is the canonical case: which branch, and who has the key.
       whereWhoCard("account", id),
+      sealedNoteCard("account", id),
     ));
 
     /**

@@ -568,6 +568,66 @@ select pg_temp.assert(pg_temp.sees('i_private'),
 select pg_temp.assert(not pg_temp.sees('i_excluded'),
   'a record left out of continuity stays invisible even under emergency access');
 
+-- ------------------------------------------------------ recovery copies ----
+-- V55: a wrapped copy of the content key is readable by its owner and by the
+-- person holding an open emergency window on her. Nobody else, and nobody can
+-- replace it but her. Who holds a share is readable by members who can see a
+-- value she sealed. The values below are shaped like envelopes and mean nothing.
+do $$ begin raise notice '--- recovery copies follow the owner and the open window ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into e2e_keys (household_id, user_id, kdf_salt, iterations, wrapped_key, verifier, content_key_id)
+  values ((select v from t where k='hh'), (select v from t where k='ish'),
+          'AAAAAAAAAAAAAAAAAAAAAA', 600000, repeat('A', 88), repeat('A', 60), 'AAAAAAAAAAAAAAAAAAAAAA');
+select gen_random_uuid() as id \gset wrap_
+insert into e2e_recovery_wraps (id, household_id, user_id, kind, kdf_salt, wrapped_key, verifier, content_key_id)
+  values (:'wrap_id', (select v from t where k='hh'), (select v from t where k='ish'), 'recovery_shares',
+          'AAAAAAAAAAAAAAAAAAAAAA', repeat('A', 88), repeat('A', 60), 'AAAAAAAAAAAAAAAAAAAAAA');
+insert into e2e_recovery_slots (wrap_id, household_id, user_id, kind, threshold, share_count, holders)
+  values (:'wrap_id', (select v from t where k='hh'), (select v from t where k='ish'), 'recovery_shares',
+          2, 3, array['Amma', 'Ravi']);
+insert into t values ('wrap', :'wrap_id');
+
+select pg_temp.assert((select count(*) from e2e_recovery_wraps) = 1
+                      and (select count(*) from e2e_recovery_slots) = 1,
+  'the owner sees her own recovery copy and who holds it');
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from e2e_recovery_wraps
+                        where user_id = (select v from t where k='ish')) = 1,
+  'the person holding an open window on her can read her recovery copy');
+
+do $$
+declare n int;
+begin
+  update e2e_recovery_wraps set wrapped_key = repeat('B', 88)
+    where id = (select v from t where k='wrap');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'an open window reads a recovery copy; it cannot swap it for a dud');
+  update e2e_recovery_slots set holders = array['Someone else']
+    where wrap_id = (select v from t where k='wrap');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor change who holds the shares');
+end $$;
+
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into e2e_recovery_wraps (household_id, user_id, kind, kdf_salt, wrapped_key, verifier, content_key_id)
+      values ((select v from t where k='hh'), (select v from t where k='ish'), 'recovery_key',
+              'AAAAAAAAAAAAAAAAAAAAAA', repeat('A', 88), repeat('A', 60), 'AAAAAAAAAAAAAAAAAAAAAA');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nobody can make a recovery copy in someone else''s name');
+end $$;
+
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from e2e_recovery_wraps) = 0
+                      and (select count(*) from e2e_recovery_slots) = 0,
+  'someone in another household sees no recovery copy and no holder');
+select pg_temp.as_user('ravi');
+
 -- An unlock is a read, and only a read. Someone acting for a family that
 -- cannot answer must not be able to change what they find.
 do $$
@@ -588,6 +648,33 @@ update emergency_requests set vetoed_at = now() where id = :'request_id';
 select pg_temp.as_user('ravi');
 select pg_temp.assert(not pg_temp.sees('i_private'),
   'a veto closes the window immediately, mid-session');
+
+select pg_temp.assert((select count(*) from e2e_recovery_wraps
+                        where user_id = (select v from t where k='ish')) = 0,
+  'a veto closes the recovery copy along with the records');
+select pg_temp.assert((select count(*) from e2e_recovery_slots
+                        where user_id = (select v from t where k='ish')) = 0,
+  'and a member who can see nothing she sealed does not learn who holds her shares');
+
+-- She seals a value on the household's shared gold, which Ravi can see.
+select pg_temp.as_user('ish');
+insert into sealed_values (household_id, record_type, record_id, field_key, ciphertext, sealed_by)
+  values ((select v from t where k='hh'), 'investment', (select v from t where k='i_shared'),
+          'original_location', repeat('A', 60), app.current_user_id());
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from e2e_recovery_slots
+                        where user_id = (select v from t where k='ish')) = 1,
+  'a member who can see something she sealed is told who holds a recovery share');
+select pg_temp.assert((select count(*) from e2e_recovery_wraps
+                        where user_id = (select v from t where k='ish')) = 0,
+  'and is still not given the copy itself');
+
+select set_config('app.guest_share_id', (select v from t where k='share')::text, false);
+select pg_temp.as_user('ish');
+select pg_temp.assert((select count(*) from e2e_recovery_wraps) = 0
+                      and (select count(*) from e2e_recovery_slots) = 0,
+  'a guest link reaches no recovery copy and no holder, even the sharer''s own');
+select set_config('app.guest_share_id', '', false);
 
 -- ------------------------------------------------------------- closing ----
 do $$ begin raise notice '--- closing an account is the account holder''s business alone (V40) ---'; end $$;

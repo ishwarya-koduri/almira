@@ -33,7 +33,7 @@ components and nothing else:
 | `householdId` | uuid | the household the record belongs to |
 | `recordType` | one of `investment`, `liability`, `account`, `member`, `estate_document`, `document` | a closed vocabulary the server enforces |
 | `recordId` | uuid | the record |
-| `fieldKey` | 1–64 characters, non-blank | chosen by the client, not by the server |
+| `fieldKey` | 1–64 characters, non-blank, no `\|` | chosen by the client, not by the server |
 
 There is no registry of sealable field names. `fieldKey` is whatever the client
 calls it — `locker_address`, `who_holds_it` — and the server stores it without
@@ -57,8 +57,9 @@ Two limits apply to the ciphertext:
 The consequences are stated in the UI, not buried:
 
 - a sealed field **cannot be searched, sorted or OCR'd** on the server;
-- there is **no recovery** — a forgotten passphrase means the data is gone, and
-  that is exactly what "the server cannot read it" costs when it is true;
+- **the server cannot recover it** — a forgotten passphrase means the data is
+  gone, unless the person made a recovery sheet or recovery shares (§10), which
+  are made on the device and never reach the server;
 - everything else about the record is unchanged.
 
 ---
@@ -88,8 +89,8 @@ A passphrase is re-typed independently on every client, and "ఖ" or "é" has mo
 than one valid Unicode spelling: a browser IME and an Android IME can emit
 different bytes for the same keystrokes. PBKDF2 turns one differing byte into an
 entirely different key, so without this the passphrase works in one client,
-fails in the other, is indistinguishable from a typo, and — because there is no
-recovery — takes the data with it.
+fails in the other, is indistinguishable from a typo, and — because the server
+cannot recover it — takes the data with it.
 
 Nothing is **trimmed**: a trailing space belongs to the passphrase, both clients
 keep it byte for byte, and the interface says so rather than quietly helping.
@@ -110,8 +111,8 @@ knows the passphrase was right, without having to fetch and attempt a record.
 Both wrapped key and verifier use the envelope format in §3 with no AAD.
 
 The server stores `kdf`, `kdf_salt`, `iterations`, `wrap_algorithm`,
-`wrapped_key`, `verifier`, `key_version` — and never the passphrase, the
-wrapping key or the content key.
+`wrapped_key`, `verifier`, `key_version`, and (since V55) `content_key_id`
+(§10.4) — and never the passphrase, the wrapping key or the content key.
 
 ---
 
@@ -178,10 +179,9 @@ Turkish device the locale-sensitive one is a different answer.
 
 **No component may contain `|` (U+007C).** The separator is not escaped, so a
 component holding one would make the AAD ambiguous. Both clients refuse at AAD
-construction. The server does **not** enforce this on `fieldKey` — see
-`docs/known-issues.md` — which is unexploitable today only because the three
-components before it cannot contain a pipe, and stops being unexploitable the
-day a fifth component is added.
+construction, and the server refuses a `fieldKey` holding one with
+`400 field_invalid` (known-issues 7, closed), so the rule holds where the data
+lands and not only in the clients that happen to exist today.
 
 Without this, anyone able to write the database could move a ciphertext to
 another record and have the client decrypt it there — the same reasoning as the
@@ -200,6 +200,12 @@ PUT    /api/v1/households/{id}/e2e/key                    → store or rotate th
 GET    /api/v1/households/{id}/e2e/values?recordType&recordId
 PUT    /api/v1/households/{id}/e2e/values/{recordType}/{recordId}/{fieldKey}
 DELETE /api/v1/households/{id}/e2e/values/{recordType}/{recordId}/{fieldKey}
+
+GET    /api/v1/households/{id}/e2e/recovery                   → your recovery copies (§10)
+GET    /api/v1/households/{id}/e2e/recovery/members/{memberId} → someone's, under an open emergency window
+PUT    /api/v1/households/{id}/e2e/recovery/{kind}            → make or replace a copy (step-up)
+DELETE /api/v1/households/{id}/e2e/recovery/{kind}            → remove a copy (step-up)
+POST   /api/v1/households/{id}/e2e/recovery/{kind}/practice   → record a practice unlock
 ```
 
 The server performs exactly one check on what it is given: that it is
@@ -220,16 +226,17 @@ itself information.
 1. Unlock with the old passphrase and hold the content key.
 2. Derive a new wrapping key from the new passphrase with a **new salt**.
 3. Wrap the same content key; increment `key_version`.
-4. `PUT /e2e/key`.
+4. `PUT /e2e/key`, with `contentKeyId` (§10.4).
 
 No field is rewritten, because none needs to be. A client that wants to
 re-encrypt under a genuinely new content key must read, decrypt, re-encrypt and
 write every value — which is a migration, not a rotation, and should show
 progress rather than pretending to be instant.
 
-**The write is atomic, and it has to be.** There is no recovery in this scheme,
-so a vault left with a new salt and an old wrapped key is not a bug to fix on
-Monday — it is every sealed field in that household, gone. Three things make a
+**The write is atomic, and it has to be.** The server cannot recover anything,
+and a recovery copy (§10) exists only if the person made one, so a vault left
+with a new salt and an old wrapped key is not a bug to fix on Monday — it is
+every sealed field in that household, gone. Three things make a
 torn write impossible rather than unlikely:
 
 1. The whole rotation is **one request**. The client sends salt, iterations,
@@ -400,8 +407,10 @@ halves behave oppositely and conflating them produces a wrong test:**
 ### 8.4 And the server holds none of it
 
 After any acceptance run, the plaintext of every sealed value must appear in
-**zero** rows of `sealed_values`, and no row of `e2e_keys` may contain the
-passphrase or a plaintext verifier. This is a grep against the live database,
+**zero** rows of `sealed_values`, no row of `e2e_keys` may contain the
+passphrase or a plaintext verifier, and no row of `e2e_recovery_wraps`,
+`e2e_recovery_slots` or `activity_log` may contain a recovery code, a share or
+the secret behind them (§10.8). This is a grep against the live database,
 not an inspection of the code.
 
 ### 8.5 What has been proved, and on what
@@ -518,5 +527,222 @@ So, in order of what actually helps:
 
 Only the first two are cheap enough to be obvious. The third is real, and it is
 worth doing once there is a production database whose backups matter.
+
+---
+
+## 10. Recovery
+
+A forgotten passphrase used to be the end of everything sealed, and a family
+could read "where the will is" only if someone had told them the passphrase.
+Both are the same missing thing: a second way to reach the content key that is
+not the passphrase. §10 adds it without the server learning anything. Built in
+V55, the web client and the backend; the native app does not make or use copies
+yet (known-issues 31).
+
+### 10.1 What exists
+
+Up to **two copies** of the content key per person per household, each optional:
+
+| `kind` | what the person keeps | opens with |
+|---|---|---|
+| `recovery_key` | a **recovery sheet**: one 40-character code, printed, kept with the will | the code |
+| `recovery_shares` | **three recovery shares**: three codes, one for each of three people | any two of them |
+
+Each copy is the content key wrapped under a key derived from a **secret the
+server never receives**, exactly as the passphrase wrap is (§2). A copy is not a
+second content key: every sealed value, and every rotation, stays as it was.
+
+### 10.2 The secret and the code
+
+The secret is **21 random bytes** (168 bits) from `crypto.getRandomValues`, a
+different one for each copy. A code is 25 bytes written in Crockford's base32
+(`0123456789ABCDEFGHJKMNPQRSTVWXYZ`, no I, L, O or U), 40 characters, printed
+as 8 groups of 5:
+
+| bytes | |
+|---|---|
+| 0 | type: `0x01` recovery sheet, `0x02` share |
+| 1 | x: `0` for a sheet, `1`, `2` or `3` for a share |
+| 2–22 | the secret (sheet) or this share's 21 bytes (share) |
+| 23–24 | CRC-16/CCITT-FALSE (poly `0x1021`, init `0xFFFF`) of bytes 0–22, big-endian |
+
+Reading one: upper-case, drop spaces and dashes, read `O` as `0` and `I`/`L` as
+`1`. A wrong length, a character outside the alphabet, or a checksum mismatch is
+refused **before** anything is derived, with a sentence that says which. Every
+single-character substitution is caught (a character is 5 bits, a burst CRC-16
+always detects). A QR code on the sheet would carry
+`ALMIRA-RECOVERY:` followed by the 40 characters; the web client does not draw
+one yet (known-issues 31).
+
+### 10.3 Shares
+
+Shamir's secret sharing, **2 of 3, byte by byte over GF(2⁸)** with the AES
+polynomial x⁸ + x⁴ + x³ + x + 1:
+
+- For each secret byte `s`, one coefficient `a`, **uniform over all 256 values,
+  zero included**. Share `x` is `s ⊕ a·x` for x = 1, 2, 3. Excluding zero
+  would make a share byte never equal its secret byte, which is information.
+- Combining is Lagrange interpolation at zero over whichever shares are given:
+  `s = Σ yⱼ · Π_{m≠j} xₘ / (xₘ ⊕ xⱼ)`. Inversion is `a²⁵⁴`, square-and-multiply,
+  with no tables.
+- Two shares from **different** sets, or a share typed into the wrong slot,
+  do not fail: they combine into a different 21 bytes. So a combined secret is
+  never trusted until the wrap's GCM tag accepts it, and then the verifier and
+  the key id confirm it (§10.4). That is also why the checksum sits on each
+  share: a typo is caught on the typo, not as a vague "doesn't open".
+
+One share alone says nothing: for any secret byte and any x ≠ 0 the map a → share
+byte is a bijection, so every secret is equally likely. Both implementations test
+exactly that for all 256 × 256 × 3 cases.
+
+### 10.4 Keys, wraps, and keeping them consistent
+
+| | |
+|---|---|
+| KDF | **HKDF-SHA256** (RFC 5869), not PBKDF2: stretching slows guesses at something a person chose, and nobody chose 168 random bits |
+| salt | 16 random bytes per copy, `kdf_salt` |
+| info | UTF-8 `almira recovery v1\|{kind}`, so a sheet's secret can never open the shares' copy |
+| output | 256 bits, imported as an AES-GCM key |
+| `wrapped_key` | the §3 envelope of the raw content key, no AAD |
+| `verifier` | the §3 envelope of `almira` under the content key, no AAD |
+| `content_key_id` | HMAC-SHA256(content key, `almira content key id v1`), first 16 bytes, base64url: 22 characters |
+
+The **content key id** is a PRF output: it says *which* key without saying
+anything *about* it, which lets the server keep copies consistent without being
+able to open any of them. It is enforced in two places, both under a lock on the
+person's `e2e_keys` row so neither can interleave with the other:
+
+- **A copy of the wrong key is refused.** `PUT /e2e/recovery/{kind}` answers
+  `409 recovery_key_mismatch` when its `contentKeyId` is not the one the
+  passphrase row records. A row that recorded none (written before V55, or by a
+  client that does not send it) takes the first copy's id; the client unlocked
+  before it could wrap the key.
+- **The key cannot move out from under a copy.** While any copy exists,
+  `PUT /e2e/key` must carry `contentKeyId` equal to the copies'. A rotation
+  (§6) does, and every copy keeps opening. A different key, or a write that does
+  not say, answers `409 recovery_copies_would_break` and changes nothing. A key
+  write without the field when no copies exist stores the id as unknown rather
+  than leaving a stale one.
+
+A copy and its holders are written in **one transaction**, so neither exists
+without the other. Making, replacing and removing a copy need a **step-up**
+(`403 step_up_required`): a copy is a second way into everything sealed, and a
+borrowed unlocked browser should be enough neither to make one and walk away with
+the paper nor to swap the one in the drawer for a dud. Replacing resets
+`practiced_at`; the old paper stops working, and the interface says so.
+
+**The order on the device matters.** The web client makes the secret, the wrap
+and the codes, shows the codes to print, and saves the copy only after the
+person says they have printed or written them down. The secret is wiped from
+the function's memory before it returns; the codes stay in the open sheet's
+closure and go when it closes.
+
+**Practice** (`POST …/{kind}/practice`) happens on the device: decode, combine,
+derive, unwrap, check the verifier and the key id, then record the date. The
+server cannot check it happened, because checking would need the key, so the
+interface says "you practised", never "we confirmed". It changes nothing else,
+not even the lock state.
+
+**Forgot the passphrase:** open the copy, derive a new passphrase wrap with a new
+salt, and `PUT /e2e/key` at `keyVersion + 1` with the same `contentKeyId`. That
+is §6 with the copy in place of the old passphrase, so it is one atomic write,
+and the other copy keeps working.
+
+### 10.5 The family
+
+- `e2e_recovery_wraps` is readable by its owner and by the person holding an
+  **open emergency window on that person** (`app.emergency_open_on_user`, the
+  same conditions as V25, narrowed to one subject). Nobody but the owner can
+  write one. `GET /e2e/recovery/members/{memberId}` answers `404` to anyone
+  else, whether or not copies exist.
+- `e2e_recovery_slots` holds `holders` — roles as the family says them, "Amma",
+  "our lawyer" — and `practiced_at`. **Plain text on purpose**, readable by
+  household members who can see a value that person sealed (the check runs
+  under the reader's own row-level security), never by a guest. The interface
+  asks for a role, never a place.
+- A sealed line in the handbook, its PDF, the where-and-who index and the
+  emergency view is **never blank**: "Sealed by Ishwarya · our lawyer keeps the
+  recovery sheet · ask our lawyer". No pronouns: the server does not know them.
+- With the sheet or two shares, the person under the window opens the key in
+  memory, beside their own, and reads what that person sealed on the records the
+  window shows. Lock or a reload drops it. They can read; they cannot rewrite
+  the value, which stays the sealer's (docs/20 §5).
+
+### 10.6 Fixed answers
+
+Asserted identically by `RecoveryReferenceTest` (JVM), `scripts/check-recovery.js`
+(the web client's arithmetic, under `jsc -m`) and `recoverySelfTest()` in
+`e2e.js` (WebCrypto, in a browser). They were produced by a third, independent
+implementation first, for the reason in §8.1.
+
+| | |
+|---|---|
+| GF(2⁸) | `57·83 = c1`, `57·13 = fe`, `53⁻¹ = ca` (FIPS-197) |
+| HKDF | RFC 5869 test case 1 |
+| CRC-16/CCITT-FALSE | `"123456789"` → `29b1` |
+| base32 | `"foobar"` → `CSQPYRK1E8` |
+| secret | the 21 bytes `00 01 … 14`; share coefficient for byte i is `a0 + i` |
+| sheet code | `04000-0820C-20A1G-7104G-M2RC1-M70Y4-0H289-H8JCE` |
+| share codes | `080T1-850M2-GA185-0M2GA-1850M-2GA18-50M2G-A0JJ3`, `0815P-P2XBS-BN8MA-J8D04-AHJF9-H4MMT-V8DNQ-6E5SC`, `081ZQ-YFZZQ-SZ3XZ-NXFMY-ZVF3W-7KYBP-YSVZE-X7EZW` |
+| wrapping key, salt `00 … 0f` | sheet `94b5b1c89dd4196ad9b6de8cdd669f446013310874b9eb4d0bcea169811061ce`, shares `716457295b3df062e884456a9d4d37945b5cc88f5390a0da4d5045d3d50beb64` |
+| key id of the key `40 41 … 5f` | `VrqqDb7VVhHIkN5-ZUdCvQ` |
+
+### 10.7 What this changes about §9
+
+Recovery adds ways in, so it adds ways to lose. Stated as plainly as §9:
+
+- **The paper is the key.** Anyone with the sheet, or any two shares, can open
+  everything the person sealed, forever, until the copy is replaced or removed.
+  That is the feature. Where the paper lives is the person's decision, and the
+  interface says so where it is made.
+- **Two share holders can collude.** 2-of-3 means exactly that.
+- **Who holds a share is not sealed.** A member who can see something the person
+  sealed learns "Amma holds a recovery share". A database dump learns it too.
+  That is why the field asks for a role and is refused over 60 characters.
+- **A server that serves hostile JavaScript sees the code as it is typed**, the
+  same limit §9 states for the passphrase, and no worse.
+- **A malicious or broken server can delete or corrupt a copy.** It cannot
+  forge one that opens (it has no key to wrap), and it cannot make a good secret
+  open a dud without the tag refusing. What it can do is make the sheet stop
+  working, silently. Practising is the defence, which is why the interface asks
+  for it yearly, and V55 extends V31's stored digests and the restore sweep to
+  the copies.
+- **Nothing to stretch, nothing to guess.** 168 bits is beyond search, so HKDF's
+  lack of a work factor costs nothing. A code read aloud loses no entropy to the
+  checksum, which is extra bytes, not part of the secret.
+- **An open emergency window plus the sheet opens it.** Also the feature. A
+  window alone does not: the wrap is useless without the secret, and a trusted
+  contact with no paper reads the same "ask our lawyer" as anyone else.
+
+### 10.8 What is verified, and what is not
+
+**Verified:** `RecoveryApiTest` (the JVM half through the real API: a sheet and
+shares open the key; no code, share or secret appears in any recovery row or the
+audit log; creating, replacing and removing need a step-up; practising changes
+no wrap column; a rotation keeps both copies opening; a different key, or a
+write without the id, is refused and changes nothing; a copy of the wrong key is
+refused; a forgotten passphrase is replaced from the sheet and a sealed value
+opens again; someone else's copies are 404 until a window opens and then open
+with the sheet; malformed bodies are refused without echo). `RecoveryReferenceTest`
+and `scripts/check-recovery.js` (§10.6, the round trips, single-share uniformity,
+every single-character typo). `SealedAccessApiTest` (the sentences, in the
+handbook, its PDF and the index, only to someone who can see the value). The SQL
+privacy suite (who reads and writes each table, the veto, guests). In a browser
+against a local server: `selfTest()` and `recoverySelfTest()` pass; a sheet was
+made, saved after a step-up, practised with a typo (refused) and in lower case
+with `l` for `1` (a tick); "Forgot it?" set a new passphrase from the sheet and
+the old one was refused; a spouse under an open window opened the location, the
+key holder and a sealed note with the sheet.
+
+**Watched failing:** the step-up removed from making a copy (the API test got
+`200` where it wants `403`); the passphrase-write guard removed (a different key
+was stored, `200` where it wants `409`); the copies' read policy without its
+owner-or-open-window condition (the SQL suite stopped at "a veto closes the
+recovery copy along with the records").
+
+**Not verified:** the native app (it neither makes nor uses copies); the printed
+page on paper (the print stylesheet was not sent to a printer); a QR code (not
+drawn); the recovery screens at phone width, in Telugu or Hindi (their strings
+fall back to English), and at 200% text.
 
 [‹ Index](README.md)

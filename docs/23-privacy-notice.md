@@ -57,6 +57,16 @@ Whether recording another person this way needs their consent is pending
 legal review. We have not reached a conclusion, and this notice will change when
 there is one.
 
+
+### Recovery sheets and shares
+
+If you make a recovery sheet or recovery shares, the codes are made on your
+device and never sent to us. We keep a copy of your key locked with them, which
+we cannot open. We do store, **not sealed**, who you said keeps the sheet or
+each share, and when you last practised: family members who can see something
+you sealed are told who to ask. Write a role, such as “our lawyer”, and never
+where anything is. Anyone with the sheet, or two of the shares, can open what
+you sealed.
 ### What we never do
 
 Almira never moves money, never holds funds and never asks for a bank password.

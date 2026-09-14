@@ -187,15 +187,20 @@ class DocumentService(
     }
 
     /**
-     * Redeems a ticket. Single use: the key is deleted before the bytes are
-     * read, so a token that leaks through a log or a shared screenshot is
-     * already spent.
+     * Redeems a ticket. Single use: the key is taken and deleted in one Redis
+     * command (GETDEL) before the bytes are read, so a token that leaks through
+     * a log or a shared screenshot is already spent — and of two requests
+     * racing with the same token, exactly one gets it.
+     *
+     * It used to be a GET and then a DEL. The DEL was what made the ticket
+     * single-use, it came after the check, and its answer was never looked at:
+     * two requests could both read the ticket before either deleted it, and
+     * both were served.
      */
     fun redeem(token: String): DocumentContent {
         val key = ticketKey(token)
-        val value = redis.opsForValue().get(key)
+        val value = redis.opsForValue().getAndDelete(key)
             ?: throw ApiException.notFound("That link has expired. Open the document again.")
-        redis.delete(key)
 
         val (householdId, documentId, userId) = value.split(":").map(UUID::fromString)
 

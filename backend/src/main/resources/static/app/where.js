@@ -110,7 +110,7 @@ export function unlockForm(onUnlocked) {
   const passphrase = textInput({
     type: "password", autocomplete: "current-password", "aria-label": t("security.passphrase"),
   });
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+  const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
   const button = el("button.btn.btn-primary.btn-sm", { type: "button" }, t("security.unlock"));
   const submit = () => withBusy(button, async () => {
     error.textContent = "";

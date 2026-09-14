@@ -173,6 +173,60 @@ Validation on blur; errors inline and specific; the form **autosaves as a draft*
 ## 9. Accessibility & inclusivity
 WCAG **AA+** contrast; visible focus rings; full keyboard nav; screen-reader labels on every value and control; **dynamic type** (layouts reflow, never clip); min 44px targets; meaning never by color alone. **Simple Mode** (elder): larger type, fewer options, "just my things," bigger tap targets. Full **dark mode** parity. Right-to-left ready; **regional-language** support planned (Telugu/Hindi first).
 
+### 9.1 Screen readers, as built in the web client (X-85)
+
+| | What a TalkBack or VoiceOver user gets | Where |
+|---|---|---|
+| Landmarks | One `<main>`; the destinations and the row of sections are two named `<nav>`s. On every width the screen comes before the navigation in reading order, so the first swipe after a page loads reaches the screen, not the tabs | `app.js` |
+| Headings | Exactly one level-1 heading per screen — its own h1, its title where it draws an h2, or a hidden one naming it — and no level skipped below. Tags keep their look; `aria-level` carries the outline, recomputed as cards arrive | `headings.js` |
+| Moving between screens | Focus lands on the new screen's title, so it is announced; a redraw in another language keeps focus on the button pressed (X-05) | `app.js`, `redraw.js` |
+| Controls | Every button, link and field has a name: its words, its label, or an `aria-label` when it is only an icon. A list of identical buttons ("Invite to sign in") names whose row each is | `ui.field`, screens |
+| Fields | The help line is read with the field (`aria-describedby`); "required" is said, the `*` is not; an error is announced when it appears and marks the field invalid | `ui.field` |
+| Sheets | A modal dialog named by its title. Tab stays inside, Escape closes, and focus goes back to what opened it — or, when that has gone, to the screen's title | `ui.sheet` |
+| Announcements | Confirmations in a polite live region; failures, form errors and a dry run's result as they happen | `ui.toast`, screens |
+| Money | The full ₹42,00,000 is read and the short ₹42 L is hidden from the reader; the net worth, term cover and capital-gains total are followed by the amount in words, in the reader's language | `ui.money`, `ui.amountWords` |
+| Charts | Every chart is an image named by a one-sentence summary; the trend also prints its sentence; a meter or ring says what its figure is of | `ui.areaTrend`, `ui.donut`, `ui.ring` |
+
+**Checked automatically.** `scripts/check-a11y.js` (jsc): the heading outline,
+a name on every `el("button…")` in the files the app loads, a summary on every
+chart, and the promises above in `ui.js`. `scripts/browser-checks/a11y-audit.js`
+runs in the page against the live app — computed names, one level-1 heading,
+named landmarks and dialogs, dangling `aria-*` references and duplicate ids,
+44px targets and nothing under 13px. It was run on Home, Holdings (list and a
+holding's four sections), What's owed and a loan, Accounts, For my family,
+Where it is, Goals, Reports, Tax, You, Household, Your data rights, the guide
+and the shelves, and on the Add, type picker, capture form, account, loan,
+person, goal and share sheets, at 375px and at 1280px, with no problems left.
+At the largest text size, in all three languages, no screen scrolls sideways.
+
+**Checked by a person — before a release that changes a screen.** No script
+can say whether a sentence makes sense read aloud. With TalkBack (Android,
+Chrome) and VoiceOver (iPhone, Safari), text size at the largest, in English
+and then Telugu:
+
+1. Open Almira signed in. The first thing read after the page loads is the
+   screen's title, then its content; the tabs come after.
+2. Swipe through Home. The net worth is read as a figure and then in words;
+   nothing is read twice; the trend and "Where it sits" are each one sentence.
+3. Use the headings rotor (VoiceOver) or heading navigation (TalkBack) on You →
+   Settings. Each card is a level-2 heading under "Settings"; nothing jumps.
+4. Tap the ＋. The sheet's title is read; swiping never leaves the sheet; the
+   Close button is reachable; closing returns to the ＋.
+5. In the capture form, leave the name empty and save. "Give it a name" is
+   read at once, and the field is announced as invalid when you return to it.
+6. Open a holding. The four section buttons say which one is pressed; moving
+   to Family reads "Ownership & privacy" and each owner by name.
+7. Move a holding to trash. "Moved to trash" is read with Undo; Undo works.
+8. In You → Language, choose తెలుగు. The page does not go blank, focus stays on
+   the button, and the next swipe reads Telugu.
+9. Turn the phone off the network and try to save. The failure is read without
+   having to find it.
+10. At the largest text size, nothing on those screens is cut off or needs
+    sideways scrolling, and every button is still a full thumb's width tall.
+
+Write down what was read wrongly, on which phone and reader version, in
+`docs/known-issues.md`.
+
 ## 10. Voice & microcopy
 Warm, plain, reassuring; short sentences; explain don't lecture. Money in words alongside figures. Never alarmist about debt or dues — factual and calm. Avoid jargon; when a term is unavoidable, one-tap explainer.
 

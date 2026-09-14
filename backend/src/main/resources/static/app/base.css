@@ -421,6 +421,11 @@ main > .notice { margin-bottom: var(--space-4); }
 
 /* A quiet link-looking hint inside a row, e.g. "Add amount" (X-71). */
 .link-quiet { color: var(--accent-text); font-size: var(--text-sm); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
+/* A quiet link on a line of its own is still a 44px target (X-85): the padding
+   reaches the size, and the negative margin gives the space back to the line. */
+.row > .link-quiet, .stack > .link-quiet, .stack-2 > .link-quiet, .stack-3 > .link-quiet {
+  display: inline-flex; align-items: center; min-height: 44px; margin-block: -12px;
+}
 
 /* =============================================================================
    Fields — label above, helper space reserved so nothing jumps on error

@@ -48,6 +48,8 @@ const SHELL_FILES = [
   "/app/app.js",
   // app.js imports it: a redraw keeps the screen until the new one is ready (X-05).
   "/app/redraw.js",
+  // app.js imports it too: headings a screen reader can jump between (X-85).
+  "/app/headings.js",
   "/app/api.js",
   // api.js imports it: sign-out clears drafts kept on the device (X-83).
   "/app/drafts.js",

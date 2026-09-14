@@ -33,6 +33,7 @@ import { loadPlan, readOnlyNotice } from "./plan.js";
 import { noteScreen } from "./support.js";
 import { offlineScreen, readOfflineCopy, keepOfflineCopy } from "./offline.js";
 import { drawInPlace } from "./redraw.js";
+import { outlinePage, pageTitle } from "./headings.js";
 
 // Labels are resolved at render time rather than here, so switching language
 // redraws the navigation without a reload. Every route that ever existed is
@@ -159,10 +160,12 @@ function sections(active) {
 }
 
 /**
- * @param inPlace keep the screen that is showing until its replacement is drawn
- *                (X-05) — for a redraw of the same screen, never for navigation
+ * @param inPlace   keep the screen that is showing until its replacement is drawn
+ *                  (X-05) — for a redraw of the same screen, never for navigation
+ * @param navigated someone went to another screen: focus moves to its title, so a
+ *                  screen reader says where they are (X-85)
  */
-async function render({ inPlace = false } = {}) {
+async function render({ inPlace = false, navigated = false } = {}) {
   if (!auth.isSignedIn) { mount(root, authScreen(afterSignIn)); return; }
 
   if (!state.user) {
@@ -203,6 +206,7 @@ async function render({ inPlace = false } = {}) {
 
   const name = currentRoute();
   noteScreen(name);
+  screenTitle = t(routes[name].label);
   const view = el("div#view", {});
   const showing = inPlace ? document.getElementById("view") : null;
   // Read before the shell is rebuilt: moving the old screen blurs whatever had focus.
@@ -222,10 +226,37 @@ async function render({ inPlace = false } = {}) {
   try {
     if (showing) await drawInPlace(showing, view, routes[name].render, window, focused);
     else await routes[name].render(view);
+    if (navigated) focusTitle(main);
   } catch (error) {
     if (await showOfflineCopy(error, root)) return;
     mount(view, el("div.banner", {}, error.message || t("app.somethingWrong")));
   }
+}
+
+/* -----------------------------------------------------------------------------
+   The outline a screen reader reads (X-85, headings.js). Screens add cards as
+   their data arrives, so the outline is kept up to date as the page changes,
+   once a frame at most, rather than by each screen remembering to ask.
+   ----------------------------------------------------------------------------- */
+
+let screenTitle = "";
+let outlineQueued = false;
+
+function queueOutline() {
+  if (outlineQueued) return;
+  outlineQueued = true;
+  requestAnimationFrame(() => {
+    outlineQueued = false;
+    outlinePage(root.querySelector("main"), screenTitle);
+  });
+}
+
+function focusTitle(main) {
+  outlinePage(main, screenTitle);
+  const title = pageTitle(main);
+  if (!title) return;
+  if (!title.hasAttribute("tabindex")) title.setAttribute("tabindex", "-1");
+  title.focus({ preventScroll: true });
 }
 
 /**
@@ -291,7 +322,9 @@ export function redraw() { render({ inPlace: true }); }
    Bootstrap
    ----------------------------------------------------------------------------- */
 
-window.addEventListener("hashchange", render);
+window.addEventListener("hashchange", () => render({ navigated: true }));
+// The body, not #root: sheets are appended to <body>, and fill in after they open.
+new MutationObserver(queueOutline).observe(document.body, { childList: true, subtree: true });
 
 // Saves made with no network go as soon as there is one (X-83).
 window.addEventListener("online", () => { if (state.household) flushQueued(() => render()); });

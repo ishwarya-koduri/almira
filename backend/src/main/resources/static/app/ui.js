@@ -200,7 +200,8 @@ export function toast(message, { action, onAction, tone = "" } = {}) {
     toastHost = el("div.toast-host", { role: "status", "aria-live": "polite" });
     document.body.append(toastHost);
   }
-  const node = el(`div.toast${tone === "error" ? ".toast-error" : ""}`, {},
+  // A failure is said at once, over whatever is being read; a confirmation waits its turn (X-85).
+  const node = el(`div.toast${tone === "error" ? ".toast-error" : ""}`, { role: tone === "error" ? "alert" : null },
     el("span", {}, message),
     action && el("button", {
       type: "button",
@@ -218,15 +219,30 @@ export function toast(message, { action, onAction, tone = "" } = {}) {
    wider panel on a desktop (X-53), with the list it came from still beside it.
    ----------------------------------------------------------------------------- */
 
+let sheetCount = 0;
+
 export function sheet({ title, body, footer, onClose, wide = false }) {
   const previousFocus = document.activeElement;
+  // Where focus goes back to, nearest first: what opened this sheet, and when
+  // that was inside a sheet that has since closed, what opened that one.
+  const returnTo = [previousFocus, ...(previousFocus?.closest?.(".sheet")?.returnTo || [])];
 
   const close = () => {
     scrim.remove();
     document.removeEventListener("keydown", onKey);
     document.body.style.overflow = "";
-    previousFocus?.focus?.();
     onClose?.();
+    // Back to what opened it (X-85). When closing redrew the screen and that
+    // control is gone, to the screen's title instead of the top of the page.
+    const back = returnTo.find((node) => node?.isConnected && node !== document.body);
+    if (back) back.focus?.();
+    else {
+      const title = document.querySelector("main h1, main [aria-level='1']");
+      if (title) {
+        if (!title.hasAttribute("tabindex")) title.setAttribute("tabindex", "-1");
+        title.focus({ preventScroll: true });
+      }
+    }
   };
 
   const onKey = (event) => {
@@ -241,15 +257,18 @@ export function sheet({ title, body, footer, onClose, wide = false }) {
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
 
-  const panel = el(`div.sheet${wide ? ".sheet-wide" : ""}`, { role: "dialog", "aria-modal": "true", "aria-label": title },
-    el("div.grabber"),
+  const titleId = `sheet-title-${++sheetCount}`;
+  const panel = el(`div.sheet${wide ? ".sheet-wide" : ""}`, { role: "dialog", "aria-modal": "true", "aria-labelledby": titleId },
+    el("div.grabber", { "aria-hidden": "true" }),
     el("div.sheet-head", {},
-      el("h3.grow", {}, title),
-      el("button.btn.btn-ghost.btn-sm", { type: "button", "aria-label": t("app.close"), onclick: close }, t("app.close")),
+      el(`h3#${titleId}.grow`, {}, title),
+      el("button.btn.btn-ghost.btn-sm", { type: "button", onclick: close }, t("app.close")),
     ),
     el("div.sheet-body", {}, body),
     footer && el("div.sheet-foot", {}, footer),
   );
+
+  panel.returnTo = returnTo;
 
   const scrim = el("div.scrim", {
     onclick: (event) => { if (event.target === scrim) close(); },
@@ -267,17 +286,35 @@ export function sheet({ title, body, footer, onClose, wide = false }) {
    Form fields
    ----------------------------------------------------------------------------- */
 
+let fieldCount = 0;
+
 export function field({ label, required, help, control, id }) {
+  const helpId = `field-help-${++fieldCount}`;
   const node = el("label.field", { for: id },
-    el("span", {}, label, required && el("span.req", {}, "*")),
+    el("span", {}, label, required && el("span.req", { "aria-hidden": "true" }, "*")),
     control,
-    el("span.help", {}, help || ""),
+    el(`span#${helpId}.help`, {}, help || ""),
   );
+  // The help line, and an error when there is one, is read with the control
+  // (X-85); "required" is said in words, where the * is only a mark.
+  const input = control?.matches?.("input, select, textarea") ? control : control?.querySelector?.("input, select, textarea");
+  if (input) {
+    input.setAttribute("aria-describedby", [input.getAttribute("aria-describedby"), helpId].filter(Boolean).join(" "));
+    if (required) input.setAttribute("aria-required", "true");
+  }
   node.setError = (message) => {
     node.dataset.invalid = message ? "true" : "false";
     const helpNode = node.querySelector(".help");
+    // Said when it appears, not only when someone returns to the field: the
+    // role goes on before the words do, or the change is not announced.
+    if (message) helpNode.setAttribute("role", "alert");
+    else helpNode.removeAttribute("role");
     helpNode.textContent = message || help || "";
     helpNode.classList.toggle("error", Boolean(message));
+    if (input) {
+      if (message) input.setAttribute("aria-invalid", "true");
+      else input.removeAttribute("aria-invalid");
+    }
   };
   return node;
 }

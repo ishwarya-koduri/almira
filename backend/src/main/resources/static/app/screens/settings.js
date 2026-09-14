@@ -399,6 +399,7 @@ async function trashCard() {
                 await reload();
               });
             },
+            "aria-label": `${t("trash.restore")}: ${row.title}`,
           }, t("trash.restore")),
         ))),
   );
@@ -422,6 +423,7 @@ async function sessionsCard() {
             settingsScreen(document.getElementById("view"));
           });
         },
+        "aria-label": `${t("sessions.signOut")}: ${session.deviceName || t("sessions.unknownDevice")}`,
       }, t("sessions.signOut")),
     ))),
     el("div.row", {},

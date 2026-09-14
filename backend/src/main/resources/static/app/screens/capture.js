@@ -322,15 +322,25 @@ export function captureForm(type, onSaved, prefill = null) {
   const essentials = el("div.stack-3", {});
   const more = el("div.stack-3", {});
 
-  /* --- first-class columns, relabelled by the type ------------------------- */
+  /* --- columns relabelled by the type, and its own attributes, by `sort` ---- */
+  // One list, ordered by the schema's `sort`, exactly as the native app's
+  // toFormFields does (known-issues 1): a Fixed Deposit's interest rate (30)
+  // sits between Principal (20) and Opened on (40), as on the receipt, instead
+  // of below every column. Array sort is stable, so on equal numbers columns
+  // come first, in the schema's own order — the app's tie-break too.
   // There is no location column any more (V33, docs/20 §1). Where the original
   // is gets recorded sealed, on the saved record; this form posts in plain
   // text, so it never asks, and the server refuses the old field if sent.
   const columnOrder = ["currency", "invested_amount", "quantity", "start_date", "maturity_date"];
-  for (const key of columnOrder) {
-    const def = schema.common?.[key];
-    if (!def) continue;
-    const control = buildColumnControl(key, def);
+  const knownColumns = new Set(columnOrder);
+  const ordered = [
+    ...Object.entries(schema.common || {})
+      .filter(([key]) => knownColumns.has(key))
+      .map(([key, def]) => ({ sort: def.sort ?? 100, key, def, column: true })),
+    ...(schema.fields || []).map((def) => ({ sort: def.sort ?? 100, key: `attr:${def.key}`, def, column: false })),
+  ].sort((a, b) => a.sort - b.sort);
+  for (const { key, def, column } of ordered) {
+    const control = column ? buildColumnControl(key, def) : buildAttributeControl(def);
     controls.set(key, control);
     (def.group === "essential" ? essentials : more).append(control.field);
   }
@@ -344,12 +354,6 @@ export function captureForm(type, onSaved, prefill = null) {
     currencyControl.onChange((code) => amountControl.setCurrency(code));
   }
 
-  /* --- type-specific attributes -------------------------------------------- */
-  for (const def of schema.fields || []) {
-    const control = buildAttributeControl(def);
-    controls.set(`attr:${def.key}`, control);
-    (def.group === "essential" ? essentials : more).append(control.field);
-  }
   // Every holding can have an original somewhere, so every form says where
   // that gets recorded — sealed, on the saved record (docs/20 §1).
   essentials.append(el("p.caption.muted", { "data-sealed-pointer": "original_location" },

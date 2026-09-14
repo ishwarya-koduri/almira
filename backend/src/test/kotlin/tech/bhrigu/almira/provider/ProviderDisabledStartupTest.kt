@@ -102,11 +102,12 @@ class ProviderDisabledStartupTest {
             names.associateWith { "disabled" },
             names.associateWith { ProviderMode.DISABLED },
         )
-        // Nothing set: application.yml's defaults, which cut Account Aggregator.
+        // Nothing set: application.yml's defaults, which cut Account Aggregator
+        // and keep DigiLocker hidden.
         val defaults = startsWith(
-            "nothing set — Account Aggregator is disabled, the rest are sandbox",
+            "nothing set — Account Aggregator and DigiLocker are disabled, the rest are sandbox",
             emptyMap(),
-            names.associateWith { if (it == "aa") ProviderMode.DISABLED else ProviderMode.SANDBOX },
+            names.associateWith { if (it in setOf("aa", "digilocker")) ProviderMode.DISABLED else ProviderMode.SANDBOX },
         )
         return oneAtATime + allAtOnce + defaults
     }

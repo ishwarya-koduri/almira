@@ -10,7 +10,12 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
-data class CompleteConnectionBody(val code: String)
+/**
+ * [state] is the value `start` returned, echoed back from the redirect. Optional
+ * in the schema only because v1 is additive-only; a `complete` without the
+ * matching state is refused with 400 `connect_state_mismatch` (known-issues 10).
+ */
+data class CompleteConnectionBody(val code: String, val state: String? = null)
 data class ImportDocumentsBody(val uris: List<String>)
 
 /**
@@ -37,7 +42,7 @@ class ConnectController(private val service: ConnectService) {
     fun completeDigiLocker(
         @PathVariable householdId: UUID,
         @RequestBody body: CompleteConnectionBody,
-    ): List<VaultDocument> = service.completeDocumentVault(householdId, body.code)
+    ): List<VaultDocument> = service.completeDocumentVault(householdId, body.code, body.state)
 
     /**
      * The documents an active connection offers. What to call when `complete`

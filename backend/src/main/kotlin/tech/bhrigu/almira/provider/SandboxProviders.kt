@@ -233,6 +233,7 @@ class SandboxWhatsAppGateway(
             text = message.at("/text/body").asText(""),
             receivedAt = Instant.now(),
             mediaId = message.at("/image/id").asText(null),
+            messageId = message.path("id").asText(null)?.takeIf { it.isNotBlank() },
         )
     }
 

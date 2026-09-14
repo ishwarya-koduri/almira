@@ -45,7 +45,7 @@ provider name `digilocker`:
 | API | Adapter call | Operation name | Retried after a timeout? |
 |---|---|---|---|
 | `POST …/connect/digilocker/start` | `authorizationUrl` | — (no network) | — |
-| `POST …/connect/digilocker/complete` `{code}` | `exchange`, then `list` | `exchange`, `list` | `exchange`: **no** (a code redeems once). `list`: yes |
+| `POST …/connect/digilocker/complete` `{code, state}` | `exchange`, then `list` | `exchange`, `list` | `exchange`: **no** (a code redeems once). `list`: yes |
 | `POST …/connect/digilocker/import` `{uris}` | `list`, then `fetch` per uri | `list`, `fetch` | yes |
 
 **Timeouts** `ALMIRA_PROVIDER_DIGILOCKER_TIMEOUT=15s`, `MAX_ATTEMPTS=3`,
@@ -68,22 +68,24 @@ Found by reading `ConnectService` in this stage. Harmless against a fake;
 each is a real defect against the real service, and each needs a change above
 the adapter.
 
-1. **The OAuth `state` is never checked.** `startDocumentVault` generates one
-   and stores it; `completeDocumentVault(householdId, code)` does not take it
-   and so cannot compare. Against a real authorisation server that is a
-   login-CSRF: someone can make a household import *their* DigiLocker. The
-   `complete` endpoint needs a `state` field (additive to v1) and a comparison.
-2. **The session token is stored in plaintext in the wrong column.**
-   `upsertConnection` writes `session.token` into
-   `provider_connections.external_ref`, a column V24 documents as "never a
-   credential". V24 already has `access_token_enc` (for the household DEK) and
-   `expires_at`; neither is written. A live bearer token in `external_ref` is
-   readable by any household member through RLS and by anyone with a backup.
-3. **Expiry is invented.** `activeSession` rebuilds a session with
-   `expiresAt = now + 1h` on every read, whatever the real token says. There is
-   no refresh; an expired token will come back from the provider as `REJECTED`,
-   and the person will be told to start again — acceptable, but it should be
-   read from `expires_at`, not made up.
+1. ~~**The OAuth `state` is never checked.**~~ **Closed** (2026-09-14).
+   `start` now hands out 32 random bytes and keeps only their SHA-256, who
+   started, and a fifteen-minute expiry in `detail`. `complete` takes `state`
+   (additive to v1) and, before the code is redeemed, refuses with
+   `400 connect_state_mismatch` a state that is missing, different, someone
+   else's (even inside the household) or stale. A successful completion spends
+   it. `DigiLockerSessionApiTest`.
+2. ~~**The session token is stored in plaintext in the wrong column.**~~
+   **Closed** (2026-09-14). The token is encrypted with the household's data
+   key (`EnvelopeCipher`, AAD `provider_connections.access_token_enc`) into
+   `access_token_enc`; `external_ref` stays empty. V100 removed the
+   sandbox-only tokens already in `external_ref` and marked those connections
+   expired. `DigiLockerSessionApiTest` checks the stored bytes and that a blob
+   copied to another household does not decrypt.
+3. ~~**Expiry is invented.**~~ **Closed** (2026-09-14). `expires_at` and `scope`
+   come from the session the exchange returned, and an expired one is refused
+   locally with `400 connection_expired` instead of being sent. There is still
+   no refresh: connecting again is the answer.
 4. **The authorisation URL is an in-app page.** A live `authorizationUrl`
    points at DigiLocker, with a registered redirect URI that lands on the web
    client and posts the code (and state) to `complete`. Whether PKCE is
@@ -115,9 +117,8 @@ place failures can be rehearsed. Budget for that.
 1. GST registration; GSTN verification; API Setu onboarding; receive client
    credentials and the spec.
 2. Move (or confirm) the deployment host to an Indian region.
-3. Close gaps 1–3 above: `state` on `complete`, token into `access_token_enc`
-   with `expires_at`, expiry read not invented. Each with a test watched
-   failing (remove the comparison / write plaintext → test red).
+3. ~~Close gaps 1–3 above.~~ Done (2026-09-14), with `DigiLockerSessionApiTest`.
+   Before going live, also decide whether the partner requires PKCE (gap 4).
 4. Write `LiveDocumentVault` against the spec, plus `LiveDocumentVaultContractTest`
    against a local fake HTTP server: a success, and one response per failure
    kind in the table above, each watched failing by breaking the
@@ -150,8 +151,8 @@ place failures can be rehearsed. Budget for that.
 |---|---|
 | The OAuth flow, the document list and fetch against DigiLocker | No live adapter; no sandbox exists to write one against (FAQ Q47) |
 | The error classification table above | The partner's error codes have not been seen; the table is a proposal |
-| `state` verification | Not implemented (gap 1) |
-| Token at rest encrypted | Not implemented (gap 2) |
+| `state` verification | Tested against the sandbox (gap 1); never against DigiLocker's redirect |
+| Token at rest encrypted | Tested against the sandbox token (gap 2) |
 | Hosting in India | A deployment property, not a code property; nothing checks it |
 
 What would make it watched: steps 3–4 above, each test observed red with its

@@ -96,6 +96,7 @@ async function request(method, path, body, { retry = true } = {}) {
 
   if (!response.ok) {
     const error = payload?.error || {};
+    rememberErrorCode(error.code);
     throw new ApiError(
       response.status,
       error.code || "unknown",
@@ -109,6 +110,21 @@ async function request(method, path, body, { retry = true } = {}) {
   else forget();
   return payload;
 }
+
+/*
+ * The last error codes the server answered with, newest first, for a support
+ * code (support.js, docs/28 §4). Codes only — never a message, a path or a
+ * body — kept in memory, so a reload forgets them.
+ */
+const errorCodes = [];
+
+function rememberErrorCode(code) {
+  if (typeof code !== "string" || !/^[a-z][a-z0-9_]{1,63}$/.test(code)) return;
+  errorCodes.unshift(code);
+  errorCodes.length = Math.min(errorCodes.length, 10);
+}
+
+export function recentErrorCodes() { return [...errorCodes]; }
 
 /** Sign-in calls: no token, no refresh, and the server's error as an ApiError. */
 async function unauthenticated(method, path, body) {
@@ -534,6 +550,7 @@ async function upload(path, file, fields = {}) {
   }
   if (!response.ok) {
     const error = payload?.error || {};
+    rememberErrorCode(error.code);
     throw new ApiError(response.status, error.code || "unknown",
       error.message || "Something went wrong.", error.details);
   }

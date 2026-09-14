@@ -122,6 +122,17 @@ almira:
   # every rights reply. Unset name or email is reported as "not named yet",
   # never filled in with something invented. The period must be 1 to 90 days or
   # the server refuses to start.
+  # Plans (docs/28 §1). No price has been decided and there is no payment
+  # gateway, so every household is on the default plan with nothing ending. A
+  # price is `price-inr` under a definition: whole rupees for the whole
+  # household, never per person. Left out, the price page says none is decided.
+  plans:
+    default-plan: ${ALMIRA_PLANS_DEFAULT_PLAN:family}
+    grace-days: ${ALMIRA_PLANS_GRACE_DAYS:30}
+    definitions:
+      family:
+        name: Family plan
+        period: year
   privacy:
     grievance:
       name: ${ALMIRA_GRIEVANCE_NAME:}
@@ -188,7 +199,7 @@ almira:
       max-attempts: ${ALMIRA_PROVIDER_PUSH_MAX_ATTEMPTS:3}
       retry-backoff: ${ALMIRA_PROVIDER_PUSH_RETRY_BACKOFF:500ms}
     digilocker:
-      mode: ${ALMIRA_PROVIDER_DIGILOCKER_MODE:sandbox}
+      mode: ${ALMIRA_PROVIDER_DIGILOCKER_MODE:disabled}
       base-url: ${ALMIRA_PROVIDER_DIGILOCKER_BASE_URL:}
       client-id: ${ALMIRA_PROVIDER_DIGILOCKER_CLIENT_ID:}
       client-secret: ${ALMIRA_PROVIDER_DIGILOCKER_CLIENT_SECRET:}

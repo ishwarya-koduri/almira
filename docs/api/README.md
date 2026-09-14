@@ -697,6 +697,16 @@ contract never declared, that reported a server fault for input the server
 rejected, corrected to a documented 4xx. Newest first. Additive changes to the
 contract itself are in `openapi-v1.json` and are not listed here.
 
+### 2026-09-14 — a DigiLocker completion needs the state it was started with
+
+`POST /households/{id}/connect/digilocker/complete` takes `state` beside `code`
+(the value `…/digilocker/start` returned). A completion whose `state` is
+missing, not the one handed out, handed to a different person, or older than
+fifteen minutes answers `400 connect_state_mismatch`, and the code is not
+redeemed. A session that has run out answers `400 connection_expired` on
+`…/documents` and `…/import`. DigiLocker is `disabled` by default, and no client
+has ever called these, so nothing that shipped is affected (known-issues 10).
+
 ### 2026-09-14 — removing a member who has their own login is refused
 
 `DELETE /households/{id}/members/{memberId}` on a member with a login used to

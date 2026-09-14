@@ -196,11 +196,13 @@ data class AlmiraProperties(
      * with a config change" is not a claim you can make about a property that
      * exists only inside an annotation.
      *
-     * `sandbox` is the default for all of them but `aa`, so a fresh checkout
-     * runs with no configuration and talks to nothing real. `aa` defaults to
-     * `disabled`: Account Aggregator is cut from v1, because production access
-     * needs an FIU regulated by RBI, SEBI, IRDAI or PFRDA (owner's decision,
-     * docs/providers/account-aggregator.md). Keep these defaults in step with
+     * `sandbox` is the default for all of them but `aa` and `digilocker`, so a
+     * fresh checkout runs with no configuration and talks to nothing real. `aa`
+     * defaults to `disabled`: Account Aggregator is cut from v1, because
+     * production access needs an FIU regulated by RBI, SEBI, IRDAI or PFRDA
+     * (owner's decision, docs/providers/account-aggregator.md). `digilocker` is
+     * `disabled` too: no client offers it yet, and it stays hidden until one
+     * does (docs/providers/digilocker.md). Keep these defaults in step with
      * application.yml, `.env.production.example` and ProviderModeCheck.DEFAULT_MODES.
      */
     data class Providers(
@@ -208,7 +210,8 @@ data class AlmiraProperties(
         val sms: Provider = Provider(),
         val email: Provider = Provider(),
         val push: Provider = Provider(),
-        val digilocker: Provider = Provider(),
+        /** DigiLocker. Hidden until a client offers it, so disabled unless asked for. */
+        val digilocker: Provider = Provider(mode = "disabled"),
         /** Account Aggregator, under the RBI framework. Cut from v1, so disabled unless asked for. */
         val aa: Provider = Provider(mode = "disabled"),
         val whatsapp: Provider = Provider(),

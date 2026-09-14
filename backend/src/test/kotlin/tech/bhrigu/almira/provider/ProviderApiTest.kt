@@ -19,7 +19,7 @@ import java.math.BigDecimal
 // kept, and this suite is what keeps it honest, so it asks for it by name
 // (ProviderDisabledApiTest covers the default). One shared context for both
 // provider suites — the same properties are the same cache key.
-@TestPropertySource(properties = ["almira.providers.aa.mode=sandbox"])
+@TestPropertySource(properties = ["almira.providers.aa.mode=sandbox", "almira.providers.digilocker.mode=sandbox"])
 @DisplayName("Provider adapters, in sandbox")
 class ProviderApiTest : ApiTestBase() {
 
@@ -78,10 +78,10 @@ class ProviderApiTest : ApiTestBase() {
 
     @Test
     fun `a document imported from DigiLocker lands in the vault, encrypted like any other`() {
-        post("/api/v1/households/$householdId/connect/digilocker/start", owner)
+        val state = post("/api/v1/households/$householdId/connect/digilocker/start", owner).json().path("state").asText()
         val available = post(
             "/api/v1/households/$householdId/connect/digilocker/complete", owner,
-            mapOf("code" to "sandbox-code"),
+            mapOf("code" to "sandbox-code", "state" to state),
         ).json()
         assertThat(available.map { it.path("name").asText() }).contains("LIC term policy")
 
@@ -114,10 +114,10 @@ class ProviderApiTest : ApiTestBase() {
 
     @Test
     fun `importing a document nobody offered is skipped rather than invented`() {
-        post("/api/v1/households/$householdId/connect/digilocker/start", owner)
+        val state = post("/api/v1/households/$householdId/connect/digilocker/start", owner).json().path("state").asText()
         post(
             "/api/v1/households/$householdId/connect/digilocker/complete", owner,
-            mapOf("code" to "sandbox-code"),
+            mapOf("code" to "sandbox-code", "state" to state),
         )
         val imported = post(
             "/api/v1/households/$householdId/connect/digilocker/import", owner,

@@ -159,6 +159,9 @@ class ProviderModeCheck : EnvironmentPostProcessor {
         fun credentialKeys(): List<String> = CREDENTIAL_KEYS
 
         val KNOWN_MODES = setOf("disabled", "sandbox", "live")
+
+        /** Cut from v1 (aa), or hidden until a client offers it (digilocker). */
+        private val DISABLED_BY_DEFAULT = setOf("digilocker", "aa")
         val PROVIDERS = listOf("sms", "email", "push", "digilocker", "aa", "whatsapp")
 
         /**
@@ -166,7 +169,7 @@ class ProviderModeCheck : EnvironmentPostProcessor {
          * defaults in application.yml and AlmiraProperties; used only when a
          * property source without application.yml is checked.
          */
-        val DEFAULT_MODES: Map<String, String> = PROVIDERS.associateWith { if (it == "aa") "disabled" else "sandbox" }
+        val DEFAULT_MODES: Map<String, String> = PROVIDERS.associateWith { if (it in DISABLED_BY_DEFAULT) "disabled" else "sandbox" }
 
         fun defaultMode(name: String): String = DEFAULT_MODES.getValue(name)
 

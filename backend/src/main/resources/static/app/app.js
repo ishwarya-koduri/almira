@@ -29,6 +29,8 @@ import { welcomeScreen } from "./screens/welcome.js";
 import { flushQueued } from "./draft-ui.js";
 import { heirScreen } from "./screens/heir.js";
 import { hereScreen } from "./continuity-signals.js";
+import { loadPlan, readOnlyNotice } from "./plan.js";
+import { noteScreen } from "./support.js";
 
 // Labels are resolved at render time rather than here, so switching language
 // redraws the navigation without a reload. Every route that ever existed is
@@ -193,11 +195,15 @@ async function render() {
   }
 
   const name = currentRoute();
+  noteScreen(name);
   const view = el("div#view", {});
   const main = el("main", {},
     // X-72: say once, quietly, that the page is saving data and why a chart
     // might wait for a tap.
     savingData() && notice(t("data.lightMode"), { role: "note" }),
+    // A plan that has ended leaves the household read-only, never locked
+    // (docs/28 §2). Said once, at the top, with where to read what still works.
+    readOnlyNotice(state.plan),
     sections(name),
     view);
   mount(root, el("div.app", {}, topbar(), main, navigation(name)));
@@ -221,11 +227,12 @@ async function loadSession() {
   update({ user, households, household });
 
   if (household) {
-    const [members, taxonomy] = await Promise.all([
+    const [members, taxonomy, plan] = await Promise.all([
       api.members(household.id),
       api.taxonomy(household.id),
+      loadPlan(household.id),
     ]);
-    update({ members, taxonomy });
+    update({ members, taxonomy, plan });
     // Who the first session is for changes how several screens speak (X-32).
     // Loaded beside the rest, and never a reason for the app not to open.
     await loadFirstSession(household.id);

@@ -16,6 +16,8 @@ import { howYouSignInCard } from "../sign-in-security.js";
 import { notificationsCard, quietPromiseCard } from "../notifications.js";
 import { measurementCard } from "../measurement.js";
 import { helpMark } from "../glossary.js";
+import { planCard } from "../plan.js";
+import { supportCard } from "../support.js";
 
 export async function settingsScreen(host) {
   // Settings is a stack of independent things, and it used to be an
@@ -38,6 +40,8 @@ export async function settingsScreen(host) {
     safely(() => accountCard(host, () => settingsScreen(host))),
     safely(() => measurementCard()),
     safely(() => helpCard()),
+    safely(() => planCard()),
+    safely(() => supportCard()),
     safely(() => privacyCard()),
     safely(() => aboutCard()),
   ]);

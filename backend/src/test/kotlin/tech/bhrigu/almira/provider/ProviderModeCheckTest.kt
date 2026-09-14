@@ -69,13 +69,13 @@ class ProviderModeCheckTest {
     }
 
     @Test
-    fun `the defaults start, and are sandbox for everything but aa, which is disabled`() {
+    fun `the defaults start, and are sandbox for everything but aa and digilocker, which are disabled`() {
         run()
         assertThat(ProviderModeCheck.DEFAULT_MODES)
-            .describedAs("Account Aggregator is cut from v1; every other provider defaults to its sandbox")
-            .containsEntry("aa", "disabled")
+            .describedAs("Account Aggregator is cut from v1 and DigiLocker is hidden; the rest default to a sandbox")
+            .containsEntry("aa", "disabled").containsEntry("digilocker", "disabled")
             .containsEntry("sms", "sandbox").containsEntry("email", "sandbox").containsEntry("push", "sandbox")
-            .containsEntry("digilocker", "sandbox").containsEntry("whatsapp", "sandbox")
+            .containsEntry("whatsapp", "sandbox")
     }
 
     /**

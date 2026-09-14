@@ -64,6 +64,11 @@ almira:
   # the Dockerfile and the production compose file to production, the test
   # suite to development. Anything else has to choose.
   environment: ${ALMIRA_ENV:}
+  # text (default) for a terminal, json for a log collector: one object per
+  # line, no MDC and no exception messages, emails and long digit runs scrubbed
+  # (ops/JsonLogFormatter). The production compose file sets json.
+  log:
+    format: ${ALMIRA_LOG_FORMAT:text}
   encryption:
     provider: ${ALMIRA_KMS_PROVIDER:local}
     # Base64, 32 bytes: openssl rand -base64 32

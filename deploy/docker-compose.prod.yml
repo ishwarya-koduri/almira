@@ -147,6 +147,9 @@ services:
       ALMIRA_NOTIFY_PROVIDER: ${ALMIRA_NOTIFY_PROVIDER:-log}
       ALMIRA_STORAGE_PROVIDER: ${ALMIRA_STORAGE_PROVIDER:-filesystem}
       ALMIRA_STORAGE_ROOT: /app/var/documents
+      # One JSON object per line for a log collector, with no MDC and no
+      # exception messages (docs/17 §8). `text` for reading by eye.
+      ALMIRA_LOG_FORMAT: ${ALMIRA_LOG_FORMAT:-json}
     volumes:
       - documents:/app/var
     ports:

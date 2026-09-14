@@ -80,13 +80,15 @@ export function notice(...children) {
 
 /** Two columns that become one on a phone, each a heading and a plain list. */
 function twoColumns(leftTitle, left, rightTitle, right) {
+  // Which household a line is in is worth saying only when there is more than one.
+  const several = new Set([...left, ...right].map((line) => line.householdId).filter(Boolean)).size > 1;
   const column = (title, lines) => el("section.lifecycle-column", {},
     el("h5", {}, title),
     lines.length === 0
       ? el("p.lifecycle-text.muted", {}, t("lifecycle.nothing"))
       : el("ul.lifecycle-lines", {}, ...lines.map((line) => el("li", {},
           el("span.lifecycle-line-title", {}, line.title),
-          line.householdName && line.kind !== "household" && el("span.lifecycle-line-where", {}, line.householdName),
+          several && line.householdName && line.kind !== "household" && el("span.lifecycle-line-where", {}, line.householdName),
           line.detail && el("span.lifecycle-line-detail", {}, line.detail),
         ))),
   );

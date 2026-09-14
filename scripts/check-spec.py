@@ -407,8 +407,13 @@ def check_plaintext_location_retired() -> None:
          not offenders, "; ".join(offenders[:8]))
 
     web_where = code_only(read("backend/src/main/resources/static/app/where.js"))
+    # The key-holder line is drawn by holderStep, which is handed its help key
+    # and renders it with t(helpKey) — so either spelling is the guidance shown.
+    key_holder_help = ('t("where.keyHolderHelp")' in web_where
+                       or (re.search(r'holderStep\(\s*"keyHolder"\s*,[^)]*"where\.keyHolderHelp"', web_where)
+                           and "t(helpKey)" in web_where))
     want("the web editor gives both sealed lines their guidance",
-         't("where.keyHolderHelp")' in web_where and 't("where.locationHelp")' in web_where)
+         bool(key_holder_help) and 't("where.locationHelp")' in web_where)
     # The owner's decision: guide people toward "Amma" or "the CA", not full
     # names. A suggestion list fed from members or contacts puts full names one
     # tap away from that guidance (docs/20 §4).

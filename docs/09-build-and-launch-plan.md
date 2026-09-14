@@ -231,6 +231,6 @@ Ties to [Doc 05](05-security-and-privacy.md). Before any real user data: TLS + H
 - [ ] Android: 12 testers × 14 days done, production access granted.
 - [ ] iOS: TestFlight beta passed, review approved (demo login provided).
 - [ ] Sentry, analytics (opt-in), uptime monitoring live.
-- [ ] Account deletion + data export available in-app.
+- [ ] Account deletion + data export available in-app. *(API and web client: [Doc 05 §12](05-security-and-privacy.md#12-the-end-of-an-account-and-the-changes-in-between). Native app: not yet, known-issues 27.)*
 
 [‹ Index](README.md) · [‹ Prev: Differentiation & Standout](08-differentiation-and-standout.md) · [Next › Phases & DoD](10-phases-user-stories-and-dod.md)

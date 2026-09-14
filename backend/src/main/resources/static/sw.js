@@ -18,7 +18,7 @@
 
 // Bump this when the shell changes. Old caches are removed on activate, so the
 // version is the only bookkeeping.
-const VERSION = "almira-v25";
+const VERSION = "almira-v26";
 const SHELL = `${VERSION}-shell`;
 
 /**

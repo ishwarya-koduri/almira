@@ -291,7 +291,9 @@ household and holds nothing, so it cannot affect a total or a privacy check, and
 hand-deleting a `users` row risks orphaning its sessions and audit entries for
 no gain. It is also the live case for reproducing this issue. It should go when
 there is a proper account-deletion flow to remove it with — not by row
-surgery.
+surgery. That flow now exists (docs/05 §12.1): sign in as it on the web client,
+Settings → Close my account, and the lifecycle sweep erases it thirty days
+later. A household-less account has nothing to preview and nothing to hand on.
 
 ---
 
@@ -846,3 +848,86 @@ together.
 **Risk if left** A breach handled with nobody named and a notice written in a
 hurry; a public page in a language nobody checked.
 
+---
+
+## 26. Sealed values do not move with a departure
+
+**Where** `backend/.../lifecycle/DepartureCompletion.kt` (`move`).
+
+**What** When someone leaves a household and takes what is theirs, the rows move
+and the server-encrypted fields are re-encrypted for the new household. Sealed
+values (Doc 12) cannot be: their AAD is `householdId|recordType|recordId|fieldKey`,
+so a ciphertext moved to another household no longer opens, and the server
+cannot re-seal what it cannot read. They are dropped from the old household. The
+person's "Download everything" has them as ciphertext, the departure preview
+counts them (`sealedFieldsThatStayBehind`), and the Leave household sheet says
+"seal them again afterwards".
+
+**Which is right** A client-side step: before the seven days are up, a device
+that is unlocked opens each sealed value on the records that will move and
+seals it again under the destination household's id once the move lands. That
+needs the destination id before completion (it is created at completion today)
+and a client flow neither client has.
+
+**Why it is still here** The client half is a Doc 12 change in two clients, one
+of which cannot seal a field yet (known issue 8).
+
+**When to fix** With known issue 8, or the first time someone asks for their
+sealed "where it is" lines to survive a move.
+
+**Risk if left** A person who leaves with sealed fields must re-enter them from
+their download. Nothing leaks: the values are dropped, not moved somewhere they
+open.
+
+---
+
+## 27. The lifecycle flows have a web client and no native screens
+
+**Where** `app/shared/...` — the Compose app.
+
+**What** Closing an account, Download everything, Leave household, Mark as
+passed away, a successor and the coming-of-age welcome are in the API and the
+web client (`static/app/lifecycle.js`) only. Apple requires in-app account
+deletion for an app with sign-up (Doc 09), so the native app cannot ship to the
+App Store until it has at least Close my account. Doc 09's and Doc 10's launch
+checkboxes stay unticked for this reason.
+
+**Also open, in the same area**
+- The `lifecycle.*` strings are English only; Telugu and Hindi fall back to
+  English (docs/14).
+- The privacy notice (Doc 23) does not yet say that security records are kept
+  for a year after an account closes. The closure screen does. Changing the
+  notice needs all three languages and belongs with its legal review.
+- The readable PDF in the download uses the standard PDF fonts, so Telugu and
+  Devanagari names print as question marks there; the CSV and JSON carry them
+  exactly, and the README in the zip says so.
+- The coming-of-age month is India's month, not the household's `time_zone`.
+- A memorial stops messages from the moment it is made; a message already queued
+  to the outbox a second earlier can still go.
+
+**When to fix** The native screens before an App Store submission; the rest when
+someone is next in those files.
+
+**Risk if left** No App Store release; otherwise cosmetic.
+
+---
+
+## 28. Testcontainers cannot reach Docker Engine 29 without an API version
+
+**Where** `backend/build.gradle.kts` (the `test` task), on a machine running
+Docker Desktop with Engine 29.
+
+**What** `./gradlew test` without `ALMIRA_TEST_DB_URL` fails every integration
+test with "Could not find a valid Docker environment": the docker-java client
+inside Testcontainers negotiates an API version the engine no longer accepts
+(`400` on `/info`). Setting the client's version fixes it:
+
+    JAVA_TOOL_OPTIONS=-Dapi.version=1.44 ./gradlew test --tests '…'
+
+**Why it is still here** Found while building the lifecycle flows; the durable
+fix (pass `api.version` to the test JVM from the build script, or a Testcontainers
+release that negotiates) is a build change outside that work.
+
+**When to fix** The next time someone is in `build.gradle.kts`.
+
+**Risk if left** Development friction only. CI uses service containers.

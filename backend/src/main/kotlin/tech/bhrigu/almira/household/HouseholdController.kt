@@ -55,6 +55,12 @@ data class HouseholdResponse(
     val myMemberId: UUID?,
     val memberCount: Int,
     val version: Int,
+    /**
+     * You have been marked as having passed away in this household. Everything
+     * you could see is still there; nothing can be changed until you say the
+     * label is wrong (docs/05 §12).
+     */
+    val readOnly: Boolean = false,
 )
 
 data class MemberResponse(
@@ -68,6 +74,9 @@ data class MemberResponse(
     val isMe: Boolean,
     val role: String?,
     val version: Int,
+    /** Marked as having passed away. A quiet label on the roster, nothing more. */
+    val passedAway: Boolean = false,
+    val memorialisedAt: java.time.Instant? = null,
 )
 
 @RestController
@@ -129,10 +138,11 @@ class HouseholdController(private val service: HouseholdService) {
     }
 
     private fun HouseholdRow.toResponse() = HouseholdResponse(
-        id, name, baseCurrency, defaultVisibility, myRole, myMemberId, memberCount, version,
+        id, name, baseCurrency, defaultVisibility, myRole, myMemberId, memberCount, version, readOnly,
     )
 
     private fun MemberRow.toResponse() = MemberResponse(
         id, displayName, relationship, dateOfBirth, isMinor, isManaged, isMe, role, version,
+        passedAway = memorialisedAt != null, memorialisedAt = memorialisedAt,
     )
 }

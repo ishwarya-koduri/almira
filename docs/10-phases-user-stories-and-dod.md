@@ -234,7 +234,7 @@ The delivery backlog for **Almira**, organised by the phases in [Doc 07 §2](07-
 ### Epic 3.7 — Trust proofs
 **3.7.1 Whitepaper, audit, data rights** — *As any user, I want evidence the app is trustworthy.*
 - [ ] A published **security whitepaper**; a completed third-party penetration test with findings resolved.
-- [ ] In-app **account deletion** and **data export** available and tested.
+- [ ] In-app **account deletion** and **data export** available and tested. *(API and web client done and tested — [Doc 05 §12](05-security-and-privacy.md#12-the-end-of-an-account-and-the-changes-in-between); the native app has no screen for them yet, known-issues 27.)*
 
 ### ✅ Phase 3 Definition of Done
 - [ ] Estate/legal, contacts, Transmission Assistant, scoped sharing, emergency access, optional E2E, and trust proofs all shipped and visibility-safe.

@@ -4,6 +4,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.reminder.Notifier
+import tech.bhrigu.almira.reminder.OutboundNotification
 import tech.bhrigu.almira.security.RequestUserContext
 import java.time.LocalDate
 import java.util.UUID
@@ -13,6 +15,7 @@ class HouseholdService(
     private val repo: HouseholdRepository,
     private val audit: AuditService,
     private val userContext: RequestUserContext,
+    private val notifiers: List<Notifier>,
 ) {
     private val visibilities = setOf("private", "household")
 
@@ -134,37 +137,98 @@ class HouseholdService(
     }
 
     /**
-     * Removing a member is refused while they still own something. Deleting the
+     * Removing a member is refused while records still name them. Deleting the
      * person would orphan the holding and silently change everyone's totals;
      * the honest answer is to say what is in the way (docs/07 §1).
+     *
+     * Only for someone without a login. A person with their own login leaves
+     * through a departure — seven days, and what is theirs goes with them — so an
+     * admin asks them to go rather than deleting them (docs/05 §12).
+     *
+     * The dead end this used to be: the count ran under the admin's own
+     * row-level security, so a holding private to whoever recorded it was
+     * invisible to the admin, counted as nothing, and the member was removed
+     * from under it. Now the admin is told how many they cannot see, and the
+     * people who recorded those are told that something of theirs is in the way
+     * — without the admin learning what, or the recorder learning anything the
+     * roster does not already say.
+     *
+     * Not rolled back by the refusal: the refusal is the answer, and the notes to
+     * the recorders and the audit line are what makes it more than a wall.
      */
-    @Transactional
+    @Transactional(noRollbackFor = [ApiException::class])
     fun removeMember(householdId: UUID, memberId: UUID) {
         val userId = userContext.require()
-        requireAdmin(get(householdId))
+        val household = get(householdId)
+        requireAdmin(household)
         val member = repo.member(householdId, memberId, userId)
             ?: throw ApiException.notFound("We couldn't find that person.")
 
         if (member.userId == userId) {
             throw ApiException.badRequest(
                 "cannot_remove_self",
-                "You can't remove yourself from your own household.",
+                "To leave this household, choose Leave household. What is yours goes with you.",
             )
         }
-        val holdings = repo.countHoldings(memberId)
-        if (holdings > 0) {
+        if (member.userId != null) {
+            throw ApiException.conflict(
+                "member_has_login",
+                "${member.displayName} has their own login. Ask them to leave instead — what is " +
+                    "theirs goes with them, and nothing changes for seven days.",
+            )
+        }
+        val (visible, hidden) = repo.managedMemberHoldings(memberId)
+        val total = visible + hidden
+        if (total > 0) {
+            if (hidden > 0) tellRecorders(householdId, member)
             throw ApiException.conflict(
                 "member_has_holdings",
-                "${member.displayName} still owns $holdings " +
-                    (if (holdings == 1) "holding" else "holdings") +
-                    ". Reassign or remove those first.",
-                mapOf("holdings" to holdings),
+                "${member.displayName} still has $total " + (if (total == 1) "record" else "records") +
+                    " in their name. " +
+                    when {
+                        hidden == 0 -> "Reassign or remove those first."
+                        visible == 0 -> "They're private to the people who added them. We've asked " +
+                            "those people to move them; we haven't told you what they are."
+                        else -> "You can reassign $visible. The other $hidden " +
+                            (if (hidden == 1) "is" else "are") + " private to the people who added " +
+                            "them, and we've asked those people to move them."
+                    },
+                mapOf("holdings" to total, "visible" to visible, "hidden" to hidden),
             )
         }
         repo.softDeleteMember(memberId)
         audit.record(
             householdId = householdId, actorUserId = userId, action = "member.delete",
             entityType = "member", entityId = memberId,
+        )
+    }
+
+    /**
+     * One neutral line to each person who recorded something the admin cannot
+     * see. Keyed by the member and the day, so an admin trying three times in an
+     * afternoon asks once.
+     */
+    private fun tellRecorders(householdId: UUID, member: MemberRow) {
+        val day = LocalDate.now()
+        repo.recordersOfHiddenHoldings(member.id).forEach { recorder ->
+            notifiers.forEach { notifier ->
+                runCatching {
+                    notifier.deliver(
+                        OutboundNotification(
+                            userId = recorder, householdId = householdId, reminderId = null,
+                            template = "household.member_removal_blocked",
+                            title = "Something you added is still in ${member.displayName}'s name",
+                            body = "An admin would like to remove ${member.displayName} from the household. " +
+                                "Open Almira and move or remove what you added for them.",
+                            idempotencyKey = "member-removal-blocked:${member.id}:$recorder:$day",
+                        ),
+                    )
+                }
+            }
+        }
+        audit.record(
+            householdId = householdId, actorUserId = userContext.currentUserId(),
+            action = "member.delete_blocked", entityType = "member", entityId = member.id,
         )
     }
 

@@ -6,12 +6,20 @@ import { api } from "../api.js";
 import { el, mount, sheet, field, textInput, select, withBusy, toast, empty } from "../ui.js";
 import { state } from "../state.js";
 import { reload } from "../app.js";
+import {
+  loadFamilyLifecycle, memorialNotice, memberLifecycle, leaveCard, successorCard, welcomeCard,
+} from "../lifecycle.js";
 
 export async function familyScreen(host) {
   const members = state.members;
-  const canManage = ["owner", "admin"].includes(state.household.myRole);
+  const canManage = ["owner", "admin"].includes(state.household.myRole) && !state.household.readOnly;
+  // Leaving, a successor, a memorial, coming of age (docs/05 §12). Each part
+  // fails on its own and the roster draws regardless.
+  const lifecycle = await loadFamilyLifecycle();
+  const me = members.find((member) => member.isMe);
 
   mount(host, el("div.stack", {},
+    state.household.readOnly && me && memorialNotice(me),
     el("div.row-between.wrap", {},
       el("div", {},
         el("h1", {}, state.household.name),
@@ -22,19 +30,26 @@ export async function familyScreen(host) {
     ),
 
     el("div.card.card-tight", {},
-      el("div.list", {}, ...members.map((member) => el("div.list-row", { style: { cursor: "default" } },
-        el("div.grow", {},
-          el("div.title", {}, member.displayName, member.isMe && el("span.pill", { style: { marginLeft: "8px" } }, "You")),
-          el("div.meta", {}, [
-            member.relationship,
-            member.isMinor && "minor",
-            member.isManaged ? "no login yet" : member.role,
-          ].filter(Boolean).join(" · ")),
-        ),
-        canManage && member.isManaged && el("button.btn.btn-sm", {
-          type: "button", onclick: () => invite(member),
-        }, "Invite to sign in"),
-      ))),
+      el("div.list", {}, ...members.map((member) => {
+        const { meta, actions } = memberLifecycle(member, lifecycle);
+        return el("div.list-row.wrap", { style: { cursor: "default" } },
+          el("div.grow", {},
+            el("div.title", {}, member.displayName, member.isMe && el("span.pill", { style: { marginLeft: "8px" } }, "You")),
+            el("div.meta", {}, [
+              member.relationship,
+              member.isMinor && "minor",
+              member.isManaged ? "no login yet" : member.role,
+              ...meta,
+            ].filter(Boolean).join(" · ")),
+          ),
+          el("div.lifecycle-actions", {},
+            canManage && member.isManaged && !member.passedAway && el("button.btn.btn-sm", {
+              type: "button", onclick: () => invite(member),
+            }, "Invite to sign in"),
+            ...actions,
+          ),
+        );
+      })),
     ),
 
     el("div.banner.banner-accent", {},
@@ -45,6 +60,10 @@ export async function familyScreen(host) {
         "Private entries stay private, including from the household owner.",
       ),
     ),
+
+    welcomeCard(lifecycle),
+    !state.household.readOnly && successorCard(lifecycle, members),
+    !state.household.readOnly && leaveCard(lifecycle),
   ));
 
   function addMember() {

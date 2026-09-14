@@ -408,15 +408,19 @@ class RecoveryApiTest : ApiTestBase() {
 
         // The five minutes pass for this person's session, and nobody else's.
         val ownerUserId = db.queryForObject("select user_id::text from members where id = ?::uuid", String::class.java, ownerMemberId)
-        val elevated = redis.keys("session:elevated:*").filter { redis.opsForValue().get(it) == ownerUserId }
-        elevated.forEach { redis.delete(it) }
+        // The value is "userId|how" since V50 (StepUpService.elevate); keep it whole to put it back.
+        val elevated = redis.keys("session:elevated:*")
+            .associateWith { redis.opsForValue().get(it) }
+            .filterValues { it?.substringBefore('|') == ownerUserId }
+        assertThat(elevated).describedAs("the owner's session was elevated").isNotEmpty()
+        elevated.keys.forEach { redis.delete(it) }
         val refused = delete("/api/v1/households/$householdId/e2e/recovery/${Recovery.SHARES}", owner)
         assertThat(refused.status()).isEqualTo(HttpStatus.FORBIDDEN)
         assertThat(refused.errorCode()).isEqualTo("step_up_required")
         assertThat(slots()).hasSize(1)
 
         // Confirmed again (a second code inside a minute is rate limited, so the elevation is put back).
-        elevated.forEach { redis.opsForValue().set(it, ownerUserId!!, java.time.Duration.ofMinutes(5)) }
+        elevated.forEach { (key, value) -> redis.opsForValue().set(key, value!!, java.time.Duration.ofMinutes(5)) }
         assertThat(delete("/api/v1/households/$householdId/e2e/recovery/${Recovery.SHARES}", owner).status())
             .isEqualTo(HttpStatus.NO_CONTENT)
         assertThat(slots()).isEmpty()

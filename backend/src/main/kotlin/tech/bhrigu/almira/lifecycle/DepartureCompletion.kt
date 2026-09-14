@@ -583,8 +583,12 @@ class DepartureCompletion(
                 )
                 owner.update(
                     """
-                    insert into valuations (investment_id, as_of_date, value, quantity, source, note)
-                    select :newId, as_of_date, value * :fraction, quantity * :fraction, source, 'Your part, when you left'
+                    insert into valuations (investment_id, as_of_date, value, quantity, source, note,
+                                            price_source, unit_price, instrument)
+                    select :newId, as_of_date, value * :fraction, quantity * :fraction, source, 'Your part, when you left',
+                           -- A price-fed figure keeps its labels (V66 price_feed_valuation_is_labelled):
+                           -- the price per unit is the same, only the units held are his part.
+                           price_source, unit_price, instrument
                       from valuations where investment_id = :id order by as_of_date desc limit 1
                     """.trimIndent(),
                     p + mapOf("newId" to newId, "fraction" to fraction),

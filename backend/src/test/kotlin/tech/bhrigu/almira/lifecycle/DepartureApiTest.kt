@@ -202,6 +202,45 @@ class DepartureApiTest : LifecycleTestSupport() {
     }
 
     @Test
+    fun `his part of a joint holding valued from the day's prices keeps where that price came from`() {
+        val ids = seed()
+        val joint = UUID.fromString(ids["joint"])
+        db.update(
+            """
+            insert into valuations (investment_id, as_of_date, value, quantity, source, price_source, unit_price, instrument)
+            values (?, current_date + 1, 1200000, 100, 'price_feed', 'amfi', 12000, '122639')
+            """.trimIndent(),
+            joint,
+        )
+        stepUp(ravi)
+        leave(ravi)
+        val id = departureId(ravi)
+        val decided = patch(
+            "/api/v1/households/$householdId/departures/$id", ravi,
+            mapOf("decisions" to listOf(mapOf("recordType" to "investment", "recordId" to ids["joint"], "decision" to "take_my_share"))),
+        )
+        assertThat(decided.status()).describedAs(decided.body).isEqualTo(HttpStatus.OK)
+
+        val result = completion.complete(UUID.fromString(id), Instant.now().plus(Duration.ofDays(8)))!!
+        assertThat(result.copiesTaken).isEqualTo(1)
+        assertThat(members(ishwarya, householdId).map { it.path("id").asText() }).doesNotContain(raviMemberId)
+
+        val copy = db.queryForMap(
+            """
+            select v.value, v.quantity, v.source, v.price_source, v.unit_price, v.instrument
+              from valuations v join investments i on i.id = v.investment_id
+             where i.household_id = ? and i.title = 'Joint gold (my part)' and v.source = 'price_feed'
+            """.trimIndent(),
+            result.destinationHouseholdId,
+        )
+        assertThat(copy["value"] as BigDecimal).isEqualByComparingTo("480000")
+        assertThat(copy["quantity"] as BigDecimal).isEqualByComparingTo("40")
+        assertThat(copy["price_source"]).isEqualTo("amfi")
+        assertThat(copy["unit_price"] as BigDecimal).isEqualByComparingTo("12000")
+        assertThat(copy["instrument"]).isEqualTo("122639")
+    }
+
+    @Test
     fun `choosing to erase leaves no household behind and nothing of his`() {
         val ids = seed()
         stepUp(ravi)

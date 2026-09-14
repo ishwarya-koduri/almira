@@ -2004,6 +2004,21 @@
         ],
         "type": "object"
       },
+      "CreatedSupportCode": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "supportCode": {
+            "$ref": "#/components/schemas/SupportCodeView"
+          }
+        },
+        "required": [
+          "code",
+          "supportCode"
+        ],
+        "type": "object"
+      },
       "CustomFieldInput": {
         "properties": {
           "countsTowardValue": {
@@ -3784,6 +3799,52 @@
         ],
         "type": "object"
       },
+      "HouseholdPlanView": {
+        "properties": {
+          "alwaysAvailable": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "paidThrough": {
+            "format": "date",
+            "type": "string"
+          },
+          "planCode": {
+            "type": "string"
+          },
+          "planName": {
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/PlanPrice"
+          },
+          "promise": {
+            "type": "string"
+          },
+          "readOnly": {
+            "type": "boolean"
+          },
+          "readOnlyFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "alwaysAvailable",
+          "planCode",
+          "planName",
+          "price",
+          "promise",
+          "readOnly",
+          "state"
+        ],
+        "type": "object"
+      },
       "HouseholdResponse": {
         "properties": {
           "baseCurrency": {
@@ -5474,6 +5535,87 @@
         ],
         "type": "object"
       },
+      "PlanCatalogue": {
+        "properties": {
+          "alwaysAvailable": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "neverDo": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "paymentsEnabled": {
+            "type": "boolean"
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/PlanOffer"
+            },
+            "type": "array"
+          },
+          "promise": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "alwaysAvailable",
+          "neverDo",
+          "paymentsEnabled",
+          "plans",
+          "promise"
+        ],
+        "type": "object"
+      },
+      "PlanOffer": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/PlanPrice"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "price"
+        ],
+        "type": "object"
+      },
+      "PlanPrice": {
+        "properties": {
+          "amountInr": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "decided": {
+            "type": "boolean"
+          },
+          "perHousehold": {
+            "type": "boolean"
+          },
+          "period": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decided",
+          "perHousehold",
+          "summary"
+        ],
+        "type": "object"
+      },
       "PreferencesBody": {
         "properties": {
           "defaultVisibility": {
@@ -6938,6 +7080,103 @@
           "canClaim",
           "named",
           "youAreTheSuccessor"
+        ],
+        "type": "object"
+      },
+      "SupportCodeBody": {
+        "properties": {
+          "appVersion": {
+            "type": "string"
+          },
+          "errorCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "flags": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object"
+          },
+          "language": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "screen": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SupportCodePreview": {
+        "properties": {
+          "diagnostics": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "never": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "validForHours": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "diagnostics",
+          "never",
+          "validForHours"
+        ],
+        "type": "object"
+      },
+      "SupportCodeView": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "diagnostics": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastLookedUpAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "lookups": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "createdAt",
+          "diagnostics",
+          "expiresAt",
+          "id",
+          "lookups"
         ],
         "type": "object"
       },
@@ -14359,6 +14598,37 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/plan": {
+      "get": {
+        "operationId": "householdPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdPlanView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "household-plan-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/rates": {
       "get": {
         "operationId": "list_3",
@@ -16997,6 +17267,118 @@
         ]
       }
     },
+    "/api/v1/me/support-codes": {
+      "get": {
+        "operationId": "supportCodes",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupportCodeView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "support-code-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createSupportCode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupportCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedSupportCode"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "support-code-controller"
+        ]
+      }
+    },
+    "/api/v1/me/support-codes/preview": {
+      "post": {
+        "operationId": "previewSupportCode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupportCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportCodePreview"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "support-code-controller"
+        ]
+      }
+    },
+    "/api/v1/me/support-codes/{id}/revoke": {
+      "post": {
+        "operationId": "revokeSupportCode",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportCodeView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "support-code-controller"
+        ]
+      }
+    },
     "/api/v1/measurement/abandoned": {
       "post": {
         "operationId": "reportCaptureAbandoned",
@@ -17017,6 +17399,26 @@
         },
         "tags": [
           "measurement-controller"
+        ]
+      }
+    },
+    "/api/v1/plans": {
+      "get": {
+        "operationId": "planCatalogue",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanCatalogue"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "household-plan-controller"
         ]
       }
     },

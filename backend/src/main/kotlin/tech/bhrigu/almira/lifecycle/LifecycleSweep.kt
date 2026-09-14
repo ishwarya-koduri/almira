@@ -4,6 +4,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 /** What one run did. Counts only. */
 data class LifecycleSweepResult(
@@ -29,6 +31,7 @@ data class LifecycleSweepResult(
 class LifecycleSweep(
     private val purge: AccountPurge,
     private val departures: DepartureCompletion,
+    private val comingOfAge: ComingOfAgeNotices,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -50,6 +53,14 @@ class LifecycleSweep(
                 .onSuccess { if (it != null) departed++ }
                 .onFailure { log.warn("departure {} failed: {}", departure, it.javaClass.simpleName) }
         }
-        return LifecycleSweepResult(accountsErased = erased, departuresCompleted = departed)
+        val noticed = runCatching { comingOfAge.run(LocalDate.ofInstant(asOf, INDIA)) }
+            .onFailure { log.warn("coming-of-age notices failed: {}", it.javaClass.simpleName) }
+            .getOrDefault(0)
+        return LifecycleSweepResult(accountsErased = erased, departuresCompleted = departed, comingOfAgeNotices = noticed)
+    }
+
+    private companion object {
+        /** The birthday month is India's month; a household elsewhere is a day out at most. */
+        val INDIA: ZoneId = ZoneId.of("Asia/Kolkata")
     }
 }

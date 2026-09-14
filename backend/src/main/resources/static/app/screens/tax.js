@@ -56,14 +56,18 @@ export async function taxScreen(host, { fy = null, member = null } = {}) {
     ...state.members.map((m) => ({ value: m.id, label: m.displayName })),
   ];
   const memberSelect = select({ options: memberOptions, value: member || "", "aria-label": t("tax.whose") });
+  memberSelect.style.maxWidth = "100%";
   memberSelect.addEventListener("change", () =>
     taxScreen(host, { fy: year, member: memberSelect.value || null }));
 
   mount(host, el("div.stack", {},
     el("div.row-between.wrap", {},
       el("h2", {}, t("nav.tax")),
-      el("div.row.wrap", { style: { gap: "8px" } },
-        segmented(years, year, (value) => taxScreen(host, { fy: value, member })),
+      // Four years do not fit a phone; the years scroll inside their own strip
+      // so the page never scrolls sideways.
+      el("div.row.wrap", { style: { gap: "8px", maxWidth: "100%", minWidth: "0" } },
+        el("div", { style: { overflowX: "auto", maxWidth: "100%" } },
+          segmented(years, year, (value) => taxScreen(host, { fy: value, member }))),
         memberSelect,
       ),
     ),

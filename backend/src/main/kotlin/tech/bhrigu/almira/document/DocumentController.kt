@@ -136,17 +136,39 @@ class DocumentDownloadController(private val service: DocumentService) {
     @GetMapping("/download")
     fun download(@RequestParam token: String): ResponseEntity<ByteArrayResource> {
         val content = service.redeem(token)
-        return ResponseEntity.ok()
+        val declared = runCatching { MediaType.parseMediaType(content.mimeType) }.getOrNull()
+        // The stored type is whatever the uploader said. This endpoint is on the
+        // app's own origin, so a declared text/html or image/svg+xml shown inline
+        // would run its script as the viewer. Only types that cannot carry script
+        // are shown in the browser; everything else is a download of opaque bytes.
+        val safe = declared?.let { d -> INLINE_TYPES.firstOrNull { it.equalsTypeAndSubtype(d) } }
+        val disposition = if (safe != null) ContentDisposition.inline() else ContentDisposition.attachment()
+        val response = ResponseEntity.ok()
             .header(
                 HttpHeaders.CONTENT_DISPOSITION,
-                ContentDisposition.inline().filename(content.fileName).build().toString(),
+                disposition.filename(content.fileName).build().toString(),
             )
             // Never cached: the ticket is single-use, and a cached copy would
             // outlive the permission that produced it.
             .header(HttpHeaders.CACHE_CONTROL, "no-store, private")
-            .contentType(runCatching { MediaType.parseMediaType(content.mimeType) }
-                .getOrDefault(MediaType.APPLICATION_OCTET_STREAM))
+        // Whatever the bytes turn out to be, they get no script, no origin and
+        // no subresources. Not on a PDF: browsers refuse to open their PDF viewer
+        // in a sandboxed document, and that viewer never runs script as the page.
+        if (safe != MediaType.APPLICATION_PDF) {
+            response.header("Content-Security-Policy", "sandbox; default-src 'none'")
+        }
+        return response
+            .contentType(safe ?: MediaType.APPLICATION_OCTET_STREAM)
             .body(ByteArrayResource(content.bytes))
+    }
+
+    private companion object {
+        val INLINE_TYPES = listOf(
+            MediaType.APPLICATION_PDF,
+            MediaType.IMAGE_PNG,
+            MediaType.IMAGE_JPEG,
+            MediaType.parseMediaType("image/webp"),
+        )
     }
 }
 

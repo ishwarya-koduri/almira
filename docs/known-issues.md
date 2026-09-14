@@ -1771,3 +1771,39 @@ policies.
 
 **Risk if left** A private holding recorded for someone else has no value until
 its owner adds one; totals for them under-count it.
+
+---
+
+## 62. A paper's type is whatever its uploader said, and papers are served from the app's origin
+
+**Where** `document/DocumentController.kt` (`upload`, `DocumentDownloadController`),
+`document/DocumentService.kt` (`upload`).
+
+**What changed** Redeeming a download ticket used to answer with the stored
+type and `Content-Disposition: inline`. A household member could attach an SVG
+or an HTML file (the type comes from the multipart part, so a hand-built request
+can say `text/html`), and when someone else opened it from Papers its script ran
+on the app's origin and could read `localStorage["almira.refresh"]`. Now only
+`application/pdf`, `image/png`, `image/jpeg` and `image/webp` are shown in the
+browser, under their own type. Everything else, SVG and HTML included, is sent
+as `attachment` with `application/octet-stream`. Every download except a PDF also
+carries `Content-Security-Policy: sandbox; default-src 'none'`. PDFs do not,
+because browsers will not open their PDF viewer in a sandboxed document
+(`DocumentApiTest`, "a paper that could run script…"). The `mimeType` in the
+document list is unchanged.
+
+**What is still open** Uploads are not checked against an allowlist or
+re-sniffed, so a paper can still be stored with a misleading type. Documents
+are still served from the same origin as `/app`.
+
+**Which is right** Probably both: refuse (or relabel as octet-stream) types
+outside the allowlist on upload, and serve downloads from a separate host.
+Refusing on upload is a product decision, because it would turn away papers
+that some members already attach (Word files, spreadsheets). A separate host is
+a deployment change.
+
+**When to fix** The next change to document upload, or when the deployment
+gains a second hostname.
+
+**Risk if left** Low while the download is served as an attachment. A future
+change that serves the stored type inline again would reopen the hole.

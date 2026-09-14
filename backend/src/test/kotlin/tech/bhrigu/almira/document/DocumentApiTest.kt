@@ -54,13 +54,16 @@ class DocumentApiTest : ApiTestBase() {
         name: String = "policy.pdf",
         bytes: ByteArray = secretText,
         linkTo: Pair<String, String>? = null,
+        partType: String? = null,
     ): org.springframework.http.ResponseEntity<String> {
         val body = LinkedMultiValueMap<String, Any>().apply {
+            val resource = object : ByteArrayResource(bytes) {
+                override fun getFilename() = name
+            }
             add(
                 "file",
-                object : ByteArrayResource(bytes) {
-                    override fun getFilename() = name
-                },
+                if (partType == null) resource
+                else HttpEntity(resource, HttpHeaders().apply { contentType = MediaType.parseMediaType(partType) }),
             )
         }
         val headers = HttpHeaders().apply {
@@ -128,6 +131,36 @@ class DocumentApiTest : ApiTestBase() {
         // Single use: a token that leaks through a log or a screenshot is spent.
         assertThat(get("/api/v1/documents/download?token=$token").status())
             .isEqualTo(HttpStatus.NOT_FOUND)
+    }
+
+    private fun download(token: String, name: String, bytes: ByteArray, partType: String) =
+        mapper.readTree(uploadFile(token, name = name, bytes = bytes, partType = partType).body)
+            .path("id").asText()
+            .let { id -> post("/api/v1/households/$householdId/documents/$id/access", token).json() }
+            .let { get("/api/v1/documents/download?token=${it.path("token").asText()}") }
+
+    @Test
+    fun `a paper that could run script is handed over as a download, never shown as a page`() {
+        stepUp(owner)
+        val svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>".toByteArray()
+        for ((name, type) in listOf("proof.svg" to "image/svg+xml", "proof.html" to "text/html")) {
+            val response = download(owner, name, svg, type)
+            assertThat(response.status()).isEqualTo(HttpStatus.OK)
+            assertThat(response.headers.getFirst(HttpHeaders.CONTENT_DISPOSITION)).describedAs(type)
+                .startsWith("attachment")
+            assertThat(response.headers.contentType).describedAs(type)
+                .isEqualTo(MediaType.APPLICATION_OCTET_STREAM)
+            assertThat(response.headers.getFirst("Content-Security-Policy")).describedAs(type)
+                .contains("sandbox")
+        }
+
+        val pdf = download(owner, "policy.pdf", secretText, "application/pdf")
+        assertThat(pdf.headers.getFirst(HttpHeaders.CONTENT_DISPOSITION)).startsWith("inline")
+        assertThat(pdf.headers.contentType).isEqualTo(MediaType.APPLICATION_PDF)
+
+        val png = download(owner, "receipt.png", byteArrayOf(-119, 80, 78, 71), "image/png")
+        assertThat(png.headers.getFirst(HttpHeaders.CONTENT_DISPOSITION)).startsWith("inline")
+        assertThat(png.headers.getFirst("Content-Security-Policy")).contains("sandbox")
     }
 
     @Test

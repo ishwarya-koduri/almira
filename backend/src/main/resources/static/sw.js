@@ -21,7 +21,7 @@
 // does (backend/build.gradle.kts, known-issues 3). Bumping the number by hand
 // is still allowed and no longer required. Old caches are removed on activate,
 // so the version is the only bookkeeping.
-const VERSION = "almira-v33";
+const VERSION = "almira-v34";
 const SHELL = `${VERSION}-shell`;
 
 /**
@@ -37,6 +37,8 @@ const SHELL_FILES = [
   "/app/base.css",
   "/app/app.js",
   "/app/api.js",
+  // api.js imports it: sign-out clears drafts kept on the device (X-83).
+  "/app/drafts.js",
   "/app/ui.js",
   "/app/format.js",
   "/app/prefs.js",

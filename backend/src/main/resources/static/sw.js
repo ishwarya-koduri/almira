@@ -16,8 +16,11 @@
                         message instead of a browser error page
    ============================================================================= */
 
-// Bump this when the shell changes. Old caches are removed on activate, so the
-// version is the only bookkeeping.
+// The build appends a fingerprint of every other static file to this, so the
+// served value is "almira-v24+<12 hex>" and changes whenever any shell asset
+// does (backend/build.gradle.kts, known-issues 3). Bumping the number by hand
+// is still allowed and no longer required. Old caches are removed on activate,
+// so the version is the only bookkeeping.
 const VERSION = "almira-v24";
 const SHELL = `${VERSION}-shell`;
 

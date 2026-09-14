@@ -1,3 +1,6 @@
+import java.security.MessageDigest
+
+
 plugins {
     kotlin("jvm") version "2.1.21"
     kotlin("plugin.spring") version "2.1.21"
@@ -62,7 +65,62 @@ val syncMigrations by tasks.registering(Sync::class) {
 }
 
 sourceSets.main { resources.srcDir(layout.buildDirectory.dir("generated/migrations")) }
-tasks.named("processResources") { dependsOn(syncMigrations) }
+
+// The service worker serves the web shell cache-first, versioned by VERSION in
+// static/sw.js, so a shell change a browser has already cached stays invisible
+// until that constant changes (known-issues 3). Remembering to bump it by hand
+// failed in practice. The build now appends a fingerprint of every other static
+// file to it, so any change to an asset changes the worker's bytes and its cache
+// name. The hand-written part stays, and may still be bumped; it no longer has to be.
+// The same fingerprint is recomputed by ServiceWorkerVersionTest.
+val shellFingerprint by tasks.registering {
+    val staticDir = file("src/main/resources/static")
+    val out = layout.buildDirectory.file("generated/shell-fingerprint.txt")
+    inputs.dir(staticDir).withPathSensitivity(PathSensitivity.RELATIVE)
+    outputs.file(out)
+    doLast {
+        val digest = MessageDigest.getInstance("SHA-256")
+        staticDir.walkTopDown()
+            .filter { it.isFile && it.relativeTo(staticDir).invariantSeparatorsPath != "sw.js" }
+            .sortedBy { it.relativeTo(staticDir).invariantSeparatorsPath }
+            .forEach { f ->
+                digest.update(f.relativeTo(staticDir).invariantSeparatorsPath.toByteArray())
+                digest.update(0)
+                digest.update(f.readBytes())
+                digest.update(0)
+            }
+        val hex = digest.digest().joinToString("") { "%02x".format(it) }.take(12)
+        out.get().asFile.writeText(hex)
+    }
+}
+
+tasks.named<ProcessResources>("processResources") {
+    dependsOn(syncMigrations, shellFingerprint)
+    val fingerprintFile = shellFingerprint.map { it.outputs.files.singleFile }
+    inputs.file(fingerprintFile)
+    val versionLine = Regex("""^const VERSION = "([^"+]+)(\+[0-9a-f]*)?";$""")
+    filesMatching("static/sw.js") {
+        val fingerprint = fingerprintFile.get().readText().trim()
+        filter { line ->
+            versionLine.matchEntire(line)
+                ?.let { "const VERSION = \"${it.groupValues[1]}+$fingerprint\";" }
+                ?: line
+        }
+    }
+    // Loud, not quiet: a renamed or reformatted VERSION line would otherwise
+    // ship a worker whose cache never turns over.
+    doLast {
+        val fingerprint = fingerprintFile.get().readText().trim()
+        val built = destinationDir.resolve("static/sw.js")
+        val stamped = built.readLines().count { it.endsWith("+$fingerprint\";") && it.startsWith("const VERSION = ") }
+        if (stamped != 1) {
+            throw GradleException(
+                "static/sw.js must have exactly one line `const VERSION = \"almira-vN\";` " +
+                    "for the build to stamp the shell fingerprint onto; found $stamped (known-issues 3).",
+            )
+        }
+    }
+}
 
 // `bootRun` is the development launcher, so it chooses development explicitly.
 // The checks that relax in development (docs/17 §3) refuse on a MISSING

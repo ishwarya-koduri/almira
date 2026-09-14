@@ -79,23 +79,20 @@ bad part never in the response or any log at INFO or above),
 
 ## 3. A static-asset change needs a service-worker version bump
 
-**Where** `backend/src/main/resources/static/sw.js` (`VERSION`).
+**Resolved** (2026-09-14, "Ops catch-up"). Kept as a stub so the number still
+means something where it is cited.
 
-**What** The shell is cached cache-first, deliberately (docs/17), so an edit to
-`base.css`, `app.js` or any other shell asset is invisible to a browser that
-has already installed the worker until `VERSION` changes. During development
-this reads as "my change did nothing" — it cost a build and a wrong diagnosis
-while building the phone navigation.
-
-**Why it is still here** It is the cache strategy working as designed, not a
-defect. Writing it down is cheaper than rediscovering it.
-
-**When to fix** Not a fix — a habit. Bump `VERSION` in the same commit as any
-shell asset change. If this keeps biting, the durable answer is to derive the
-version from a build property rather than a hand-edited constant.
-
-**Risk if left** Development friction only. Released builds are fine, because a
-release always changes the version.
+The durable answer this entry named is in: `backend/build.gradle.kts` computes a
+fingerprint (first 12 hex of a SHA-256 over the path and bytes of every file
+under `static/` except `sw.js`) and `processResources` appends it to `VERSION`,
+so the served worker says `almira-v24+352f1ee77391` and any asset change turns
+the cache over. The hand-written part is kept and may still be bumped. The build
+**fails**, naming this entry, if `sw.js` does not have exactly one
+`const VERSION = "…";` line to stamp — watched failing with the line renamed to
+`let`. Proven by `ServiceWorkerVersionTest` (the classpath worker carries the
+fingerprint of the current sources; one changed CSS line changes it; the
+worker's own bytes do not). `scripts/check-service-worker.js` reads the source
+file, so it still sees the unstamped value, which it never asserts on.
 
 ---
 

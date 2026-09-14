@@ -63,7 +63,7 @@ export async function openDetail(id, onChanged) {
 
     el("div.card.card-tight.stack-2", {},
       el("div.overline", {}, "Details"),
-      record.investedAmount && row("Amount invested", rupees(record.investedAmount)),
+      record.investedAmount && row("Amount invested", inOwnCurrency(record.investedAmount, record.currency)),
       record.quantity && row("Quantity", `${record.quantity} ${record.unit || ""}`.trim()),
       record.startDate && row(schema.common?.start_date?.label || "Started", formatDate(record.startDate)),
       record.maturityDate && row(schema.common?.maturity_date?.label || "Matures", formatDate(record.maturityDate)),
@@ -423,6 +423,12 @@ function inBaseCurrency(record) {
     }
   })();
   return host;
+}
+
+/** Rupees in Indian grouping; money held abroad with its code, as its statement writes it. */
+function inOwnCurrency(amount, currency) {
+  if (!currency || currency === "INR") return rupees(amount);
+  return `${currency} ${Number(amount).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
 function rateSourceLabel(source) {

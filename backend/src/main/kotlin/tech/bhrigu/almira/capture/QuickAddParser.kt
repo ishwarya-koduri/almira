@@ -704,13 +704,17 @@ object QuickAddParser {
     /**
      * Splits what nobody read into a name and the words that were not understood.
      *
-     * The name is the first run of leftover words, together with any later run
-     * separated from it only by words that say what the thing is — the type, the
-     * institution. So in "1L gold wedding coins at ICICI" the name is "wedding".
-     * But once a fact sits in between — an amount, a rate, a date, a nominee —
-     * what follows is not part of the name: in "SBI FD 2L 7% joint with Sita"
-     * the name is "SBI", and "joint with Sita" comes back as not understood,
-     * where it can be seen and dealt with, instead of being saved as a name.
+     * A run of leftover words can be the name in two places only: before the
+     * first fact (an amount, a rate, a date, a nominee), or right beside the
+     * words that say what the thing is — the type or the institution. So in
+     * "1L gold wedding coins at ICICI" the name is "wedding", and in "SBI FD 2L
+     * 7% joint with Sita" it is "SBI". Anywhere else a run is words we did not
+     * understand: in "HDFC FD 3 lakh 7.1% matures 5 March 2028 nominee Aarav
+     * joint with Sita" there is no name at all, and "joint with Sita" comes back
+     * as not understood — where it can be seen and dealt with — instead of being
+     * saved as the name of a deposit because it happened to be left over.
+     *
+     * Qualifying runs join into one name unless a fact sits between them.
      */
     private fun nameAndLeftovers(text: String, found: List<Found>, consumed: List<IntRange>): Pair<WordSpan?, List<WordSpan>> {
         val runs = mutableListOf<WordSpan>()
@@ -721,22 +725,33 @@ object QuickAddParser {
             while (index < text.length && consumed.none { index in it }) index++
             trimRun(text, start, index)?.let { runs += it }
         }
-        // A run that opens with a cue — "matures in March 2028", "nominee" with
-        // nothing readable after it — is a fact we could not read, and the one
-        // thing it certainly is not is the name.
-        val first = runs.indexOfFirst { it.text.substringBefore(' ').lowercase().trimEnd(':', '.') !in CUE_WORDS }
-        if (first < 0) return null to runs
 
         val facts = found.filter { it.isFact }.flatMap { it.ranges }
-        var joined = first + 1
-        while (joined < runs.size) {
-            val gap = runs[joined - 1].end until runs[joined].start
-            if (overlaps(gap, facts) || runs[joined].text.substringBefore(' ').lowercase() in CUE_WORDS) break
-            joined++
+        val labels = found.filterNot { it.isFact }.flatMap { it.ranges }
+        val firstFact = facts.minOfOrNull { it.first }
+
+        fun couldBeName(run: WordSpan): Boolean {
+            // A run that opens with a cue — "matures in March 2028" — is a fact
+            // we could not read, and the one thing it certainly is not is a name.
+            if (run.text.substringBefore(' ').lowercase().trimEnd(':', '.') in CUE_WORDS) return false
+            if (firstFact == null || run.end <= firstFact) return true
+            val left = (facts + labels).filter { it.last < run.start }.maxByOrNull { it.last }
+            val right = (facts + labels).filter { it.first >= run.end }.minByOrNull { it.first }
+            return (left != null && left in labels) || (right != null && right in labels)
         }
-        val parts = runs.subList(first, joined)
+
+        val first = runs.indexOfFirst(::couldBeName)
+        if (first < 0) return null to runs
+
+        val parts = mutableListOf(runs[first])
+        val rest = runs.filterIndexed { i, _ -> i < first }.toMutableList()
+        for (run in runs.drop(first + 1)) {
+            val gap = parts.last().end until run.start
+            if (parts.last() === runs[runs.indexOf(run) - 1] && couldBeName(run) && !overlaps(gap, facts)) parts += run
+            else rest += run
+        }
         val name = WordSpan(parts.joinToString(" ") { it.text }, parts.first().start, parts.last().end)
-        return name to (runs.subList(0, first) + runs.subList(joined, runs.size))
+        return name to rest.sortedBy { it.start }
     }
 
     private val CUE_WORDS = setOf(

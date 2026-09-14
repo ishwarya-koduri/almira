@@ -87,7 +87,7 @@ class CaptureApiTest : ApiTestBase() {
         val amount = fields["investedAmount"]!!
         assertThat(text.substring(amount.path("start").asInt(), amount.path("end").asInt())).isEqualTo("3 lakh")
         assertThat(amount.path("hint").asText()).isEqualTo("Three Lakh Rupees")
-        assertThat(fields["title"]?.path("value")?.asText()).doesNotContain("joint")
+        assertThat(fields["title"]?.path("value")?.asText() ?: "").doesNotContain("joint")
         assertThat(parsed.path("notUnderstood").map { it.path("text").asText() }).containsExactly("joint with Sita")
     }
 

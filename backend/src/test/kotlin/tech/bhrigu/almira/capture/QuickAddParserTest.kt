@@ -420,7 +420,22 @@ class QuickAddParserTest {
     }
 
     @Test
-    fun `a name either side of the type is still one name`() {
-        assertThat(parse("gold coins 20g for Meera's wedding").field("title")?.value).isEqualTo("Meera's wedding")
+    fun `a name beside the type is the name, wherever the type is`() {
+        assertThat(parse("gold coins for Meera's wedding 20g").field("title")?.value).isEqualTo("Meera's wedding")
+    }
+
+    /**
+     * Seen in the browser: with the bank recognised, the words left after the
+     * nominee were the only leftover run, and became the deposit's name.
+     */
+    @Test
+    fun `leftover words after the facts are not the name just because nothing else is`() {
+        val result = parse("HDFC FD 3 lakh 7.1% matures 5 March 2028 nominee Aarav joint with Sita")
+        assertThat(result.field("title")).isNull()
+        assertThat(result.notUnderstood.map { it.text }).containsExactly("joint with Sita")
+
+        val afterWeight = parse("gold coins 20g for Meera's wedding")
+        assertThat(afterWeight.field("title")).isNull()
+        assertThat(afterWeight.notUnderstood.map { it.text }).containsExactly("Meera's wedding")
     }
 }

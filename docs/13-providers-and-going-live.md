@@ -683,6 +683,12 @@ The promise Settings makes ("Our quiet promise"): **at most one reminder a day,
 none in your quiet hours, never a sales message, and every reminder says why it
 came.** `DeliveryPacing` keeps it as the worker claims each row:
 
+0. **A stop made while it waited holds.** Before pacing, the worker asks again
+   what queueing asked (V108): a person since marked as passed away
+   (`skipped`, `notifications_stopped`, except the warnings V103 lets through),
+   or a reminder or digest for someone who has since withdrawn consent to
+   messages (`skipped`, `consent_withdrawn`). A row waiting out quiet hours or
+   the daily limit does not go after either.
 1. **Essential messages go.** Emergency-access notices (`emergency.*`) and
    notices about the person's own account (`lifecycle.*`, and the sign-in
    security notices `auth.*`) are not reminders:

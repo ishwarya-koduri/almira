@@ -224,9 +224,13 @@ class NotificationOutbox(
         val chosenToday = mutableMapOf<UUID, String>()
         candidates.forEach { row ->
             val sender = byChannel[row.channel]
-            // A row already started is past pacing: it was allowed once, and whatever happens
-            // to it now is the idempotency rule's, not the calendar's.
-            val decision = if (sender == null || row.started) {
+            // Asked when the row was queued, and again now: a row can wait days for quiet hours
+            // or the daily limit, and a withdrawal or a memorial made in between stops it.
+            val stopped = if (row.started) null else stoppedFor(row)
+            // A row already started is past pacing (and past the stops above): it was allowed once,
+            // and whatever happens to it now is the idempotency rule's, not the calendar's.
+            // A stopped row is not paced either, so it cannot take the day's one message.
+            val decision = if (sender == null || row.started || stopped != null) {
                 DeliveryPacing.Decision.Send
             } else {
                 pacing.decide(
@@ -239,6 +243,10 @@ class NotificationOutbox(
                 )
             }
             when {
+                stopped != null -> {
+                    finishUnsent(row.id, "skipped", stopped, addAttempt = false)
+                    finished += OutboxDrainResult(skipped = 1)
+                }
                 decision is DeliveryPacing.Decision.Skip -> {
                     finishUnsent(row.id, "skipped", decision.reason, addAttempt = false)
                     finished += OutboxDrainResult(skipped = 1)
@@ -420,6 +428,25 @@ class NotificationOutbox(
     private fun zoneOf(name: String?): java.time.ZoneId =
         name?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() } ?: DEFAULT_ZONE
 
+    /**
+     * The two stops `app.enqueue_outbound_message` (V108) applies, asked again as a row is
+     * claimed, as a reason or null: the person is memorialised, or withdrew consent to messages
+     * for a reminder or the digest. The worker is on the owner connection, which may ask both.
+     */
+    private fun stoppedFor(row: Candidate): String? = jdbc.queryForObject(
+        """
+        select case
+                 when not app.never_stopped_by_memorial(cast(:template as text))
+                      and app.notifications_stopped(cast(:uid as uuid), cast(:hid as uuid)) then '$NOTIFICATIONS_STOPPED'
+                 when (cast(:template as text) like 'reminder.%' or cast(:template as text) = 'still_true.digest')
+                      and app.messages_consent_withdrawn(cast(:uid as uuid)) then '$CONSENT_WITHDRAWN'
+               end
+        """.trimIndent(),
+        MapSqlParameterSource()
+            .addValue("template", row.template).addValue("uid", row.userId.toString()).addValue("hid", row.householdId?.toString()),
+        String::class.java,
+    )
+
     private fun finishUnsent(id: UUID, status: String, failure: String?, addAttempt: Boolean) {
         jdbc.update(
             """
@@ -474,5 +501,7 @@ class NotificationOutbox(
         /** A message that belongs to no household is paced in India's time. */
         val DEFAULT_ZONE: java.time.ZoneId = java.time.ZoneId.of("Asia/Kolkata")
         val LEASE_MARGIN: Duration = Duration.ofMinutes(1)
+        const val NOTIFICATIONS_STOPPED = "notifications_stopped"
+        const val CONSENT_WITHDRAWN = "consent_withdrawn"
     }
 }

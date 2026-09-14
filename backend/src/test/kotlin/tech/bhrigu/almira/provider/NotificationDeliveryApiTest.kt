@@ -277,6 +277,54 @@ class NotificationDeliveryApiTest : ApiTestBase() {
     }
 
     @Test
+    fun `a message waiting out quiet hours does not go once consent to messages is withdrawn`() {
+        pacing.paceSandboxChannels = true
+        at(LocalTime.of(22, 0))
+        val reminder = tell()
+        val emergency = tell(template = "emergency.requested")
+        outbox.drain()
+        assertThat(row(reminder, "sms").deferredFor).isEqualTo("quiet_hours")
+
+        at(LocalTime.of(23, 0))
+        val withdrawn = post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to false))
+        assertThat(withdrawn.statusCode.is2xxSuccessful).describedAs(withdrawn.body).isTrue()
+
+        at(LocalTime.of(8, 1), plusDays = 1)
+        outbox.drain()
+        listOf("sms", "email", "push").forEach {
+            assertThat(row(reminder, it)).describedAs(it).extracting("status", "failure")
+                .containsExactly("skipped", "consent_withdrawn")
+        }
+        assertThat(row(reminder, "in_app").status).isEqualTo("sent")
+        assertThat(row(emergency, "sms").status).describedAs("a safety notice is not under consent to messages").isEqualTo("sent")
+    }
+
+    @Test
+    fun `a message waiting out quiet hours does not go to someone marked as passed away meanwhile`() {
+        pacing.paceSandboxChannels = true
+        at(LocalTime.of(22, 0))
+        val reminder = tell()
+        outbox.drain()
+        assertThat(row(reminder, "email").deferredFor).isEqualTo("quiet_hours")
+
+        db.update(
+            """
+            insert into member_memorials (household_id, member_id, user_id, marked_by, basis)
+            select household_id, id, user_id, user_id, 'admin' from members
+             where household_id = ?::uuid and user_id = ?::uuid
+            """.trimIndent(),
+            householdId, userId.toString(),
+        )
+
+        at(LocalTime.of(8, 1), plusDays = 1)
+        outbox.drain()
+        listOf("sms", "email", "push").forEach {
+            assertThat(row(reminder, it)).describedAs(it).extracting("status", "failure")
+                .containsExactly("skipped", "notifications_stopped")
+        }
+    }
+
+    @Test
     fun `a message held back for a week is dropped from the channel and kept in the app`() {
         pacing.paceSandboxChannels = true
         at(LocalTime.of(10, 0))

@@ -899,8 +899,12 @@ checkboxes stay unticked for this reason.
   Devanagari names print as question marks there; the CSV and JSON carry them
   exactly, and the README in the zip says so.
 - The coming-of-age month is India's month, not the household's `time_zone`.
-- A memorial stops messages from the moment it is made; a message already queued
-  to the outbox a second earlier can still go.
+- A memorial stops messages from the moment it is made. The outbox worker asks
+  again as it claims each queued row, as it does for withdrawn consent to
+  messages, so an email, text or push waiting out quiet hours or the daily limit
+  is recorded `skipped` (`notifications_stopped`, `consent_withdrawn`) instead of
+  going. Only a send already started when the memorial or withdrawal lands can
+  still arrive.
 - A memorial does not stop the warnings a living person needs in order to say
   no (V103, `app.never_stopped_by_memorial`): an emergency request or check-in
   about them, a successor claiming the household, being asked to leave, and

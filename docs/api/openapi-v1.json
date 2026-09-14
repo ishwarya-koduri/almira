@@ -412,6 +412,78 @@
         ],
         "type": "object"
       },
+      "CapitalGainsSchedule": {
+        "properties": {
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/GainBucket"
+            },
+            "type": "array"
+          },
+          "disclaimer": {
+            "type": "string"
+          },
+          "exemption112A": {
+            "type": "number"
+          },
+          "exemption112AFormatted": {
+            "type": "string"
+          },
+          "financialYear": {
+            "type": "string"
+          },
+          "grandfathering": {
+            "items": {
+              "$ref": "#/components/schemas/GrandfatheringEntry"
+            },
+            "type": "array"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/GainLine"
+            },
+            "type": "array"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "netGain": {
+            "type": "number"
+          },
+          "netGainFormatted": {
+            "type": "string"
+          },
+          "netGainInWords": {
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assumptions",
+          "buckets",
+          "disclaimer",
+          "financialYear",
+          "grandfathering",
+          "lines",
+          "netGain",
+          "netGainFormatted",
+          "netGainInWords",
+          "warnings"
+        ],
+        "type": "object"
+      },
       "Cashflow": {
         "properties": {
           "from": {
@@ -1476,6 +1548,10 @@
             "format": "int32",
             "type": "integer"
           },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "note": {
             "type": "string"
           },
@@ -2500,6 +2576,190 @@
         ],
         "type": "object"
       },
+      "GainBucket": {
+        "properties": {
+          "exemptionApplied": {
+            "type": "number"
+          },
+          "gain": {
+            "type": "number"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lines": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "proceeds": {
+            "type": "number"
+          },
+          "ratePercent": {
+            "type": "number"
+          },
+          "section": {
+            "type": "string"
+          },
+          "sectionNewAct": {
+            "type": "string"
+          },
+          "taxAtRate": {
+            "type": "number"
+          },
+          "taxAtRateFormatted": {
+            "type": "string"
+          },
+          "taxableGain": {
+            "type": "number"
+          },
+          "taxableGainFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "exemptionApplied",
+          "gain",
+          "label",
+          "lines",
+          "period",
+          "periodLabel",
+          "proceeds",
+          "section",
+          "taxableGain",
+          "taxableGainFormatted"
+        ],
+        "type": "object"
+      },
+      "GainLine": {
+        "properties": {
+          "acquiredOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "actualCost": {
+            "type": "number"
+          },
+          "assetClass": {
+            "type": "string"
+          },
+          "assetClassLabel": {
+            "type": "string"
+          },
+          "basis": {
+            "type": "string"
+          },
+          "costOfAcquisition": {
+            "type": "number"
+          },
+          "deemedShortTerm": {
+            "type": "boolean"
+          },
+          "fmvMissing": {
+            "type": "boolean"
+          },
+          "fmvPerUnit2018": {
+            "type": "number"
+          },
+          "fmvTotal2018": {
+            "type": "number"
+          },
+          "gain": {
+            "type": "number"
+          },
+          "gainFormatted": {
+            "type": "string"
+          },
+          "grandfatheredValue": {
+            "type": "number"
+          },
+          "indexationApplied": {
+            "type": "boolean"
+          },
+          "indexedCost": {
+            "type": "number"
+          },
+          "indexedGain": {
+            "type": "number"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isin": {
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "period": {
+            "type": "string"
+          },
+          "proceeds": {
+            "type": "number"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "ratePercent": {
+            "type": "number"
+          },
+          "section": {
+            "type": "string"
+          },
+          "sectionNewAct": {
+            "type": "string"
+          },
+          "taxAtRate": {
+            "type": "number"
+          },
+          "taxableGain": {
+            "type": "number"
+          },
+          "term": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "transferredOn": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "acquiredOn",
+          "actualCost",
+          "assetClass",
+          "assetClassLabel",
+          "basis",
+          "costOfAcquisition",
+          "deemedShortTerm",
+          "fmvMissing",
+          "gain",
+          "gainFormatted",
+          "indexationApplied",
+          "investmentId",
+          "notes",
+          "period",
+          "proceeds",
+          "quantity",
+          "section",
+          "taxableGain",
+          "term",
+          "title",
+          "transferredOn"
+        ],
+        "type": "object"
+      },
       "GainsBucket": {
         "properties": {
           "costBasis": {
@@ -2651,6 +2911,40 @@
           "version",
           "visibility",
           "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "GrandfatheringEntry": {
+        "properties": {
+          "fmvPerUnit": {
+            "type": "number"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isin": {
+            "type": "string"
+          },
+          "lotsAffected": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sourceNote": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "investmentId",
+          "lotsAffected",
+          "title"
         ],
         "type": "object"
       },
@@ -4751,6 +5045,17 @@
         ],
         "type": "object"
       },
+      "SetFmv2018": {
+        "properties": {
+          "fmvPerUnit": {
+            "type": "number"
+          },
+          "sourceNote": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "SetNomineesBody": {
         "properties": {
           "nominees": {
@@ -4769,6 +5074,9 @@
         "properties": {
           "createdAt": {
             "format": "date-time",
+            "type": "string"
+          },
+          "downloadUrl": {
             "type": "string"
           },
           "expiresAt": {
@@ -4792,6 +5100,10 @@
           "maxViews": {
             "format": "int32",
             "type": "integer"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
           },
           "note": {
             "type": "string"
@@ -5019,6 +5331,9 @@
           "capitalGains": {
             "$ref": "#/components/schemas/CapitalGains"
           },
+          "capitalGainsSchedule": {
+            "$ref": "#/components/schemas/CapitalGainsSchedule"
+          },
           "deductions": {
             "items": {
               "$ref": "#/components/schemas/DeductionMeter"
@@ -5044,6 +5359,7 @@
         },
         "required": [
           "capitalGains",
+          "capitalGainsSchedule",
           "deductions",
           "disclaimer",
           "financialYear",
@@ -12138,6 +12454,54 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/tax/capital-gains/schedule": {
+      "get": {
+        "operationId": "capitalGainsSchedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fy",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapitalGainsSchedule"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "tax-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/tax/deductions": {
       "get": {
         "operationId": "deductions",
@@ -12178,6 +12542,87 @@
                     "$ref": "#/components/schemas/DeductionMeter"
                   },
                   "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "tax-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/tax/grandfathering/{investmentId}": {
+      "delete": {
+        "operationId": "clearFmv2018",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "investmentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "tax-controller"
+        ]
+      },
+      "put": {
+        "operationId": "setFmv2018",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "investmentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetFmv2018"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrandfatheringEntry"
                 }
               }
             },
@@ -12274,6 +12719,104 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/TaxPack"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "tax-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/tax/pack/pdf": {
+      "get": {
+        "operationId": "packPdf",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fy",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "tax-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/tax/schedule-112a": {
+      "get": {
+        "operationId": "schedule112A_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "member",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fy",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
                 }
               }
             },
@@ -12846,6 +13389,68 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/GuestPayload"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "guest-share-controller"
+        ]
+      }
+    },
+    "/api/v1/share/{token}/schedule-112a.csv": {
+      "get": {
+        "operationId": "schedule112A",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "guest-share-controller"
+        ]
+      }
+    },
+    "/api/v1/share/{token}/tax-pack.pdf": {
+      "get": {
+        "operationId": "taxPackPdf",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
                 }
               }
             },

@@ -589,5 +589,75 @@ select pg_temp.as_user('ravi');
 select pg_temp.assert(not pg_temp.sees('i_private'),
   'a veto closes the window immediately, mid-session');
 
+-- ------------------------------------------------ 31 January 2018 values ----
+-- V75. The value an owner enters for section 55(2)(ac) grandfathering is a
+-- fact about a holding, and must be exactly as visible as the holding.
+do $$ begin raise notice '--- a 31 January 2018 value follows its holding''s visibility ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into investment_fmv_2018 (investment_id, fmv_per_unit)
+  values ((select v from t where k='i_private'), 1200);
+insert into investment_fmv_2018 (investment_id, fmv_per_unit)
+  values ((select v from t where k='i_shared'), 5000);
+select pg_temp.assert(
+  (select count(*) from investment_fmv_2018) = 2,
+  'the owner sees the values she entered');
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert(
+  not exists (select 1 from investment_fmv_2018
+              where investment_id = (select v from t where k='i_private')),
+  'ADMIN cannot see the 2018 value on another member''s private holding');
+select pg_temp.assert(
+  exists (select 1 from investment_fmv_2018
+          where investment_id = (select v from t where k='i_shared')),
+  'admin sees the 2018 value on a household holding');
+
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into investment_fmv_2018 (investment_id, fmv_per_unit)
+      values ((select v from t where k='i_private'), 1);
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'admin cannot put a 2018 value on a private holding');
+end $$;
+
+do $$
+declare n int;
+begin
+  update investment_fmv_2018 set fmv_per_unit = 1
+    where investment_id = (select v from t where k='i_private');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor change one that is there');
+end $$;
+
+select pg_temp.as_user('out');
+select pg_temp.assert(
+  (select count(*) from investment_fmv_2018) = 0,
+  'outside the household there are no 2018 values at all');
+
+-- The guest link from above names only the shared gold.
+select pg_temp.as_user('ish');
+select set_config('app.guest_share_id', (select v::text from t where k='share'), false);
+select pg_temp.assert(
+  (select count(*) from investment_fmv_2018) = 1,
+  'a guest sees the 2018 value on the linked holding and no other');
+
+do $$
+declare blocked boolean := false; n int;
+begin
+  begin
+    update investment_fmv_2018 set fmv_per_unit = 1
+      where investment_id = (select v from t where k='i_shared');
+    get diagnostics n = row_count;
+    if n = 0 then blocked := true; end if;
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a guest cannot change a 2018 value it can see');
+end $$;
+select set_config('app.guest_share_id', '', false);
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

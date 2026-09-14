@@ -13,6 +13,9 @@ import tech.bhrigu.almira.continuity.HandbookService
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.security.JwtService
 import tech.bhrigu.almira.security.RequestUserContext
+import tech.bhrigu.almira.reports.Export
+import tech.bhrigu.almira.tax.FinancialYear
+import tech.bhrigu.almira.tax.TaxExportService
 import tech.bhrigu.almira.tax.TaxPack
 import tech.bhrigu.almira.tax.TaxService
 import java.security.SecureRandom
@@ -27,6 +30,11 @@ data class CreateShare(
     val scope: String,
     /** The financial year, for a tax pack. */
     val financialYear: String? = null,
+    /**
+     * Whose tax pack, for a tax pack. A return has one taxpayer, so a link for a
+     * CA usually names one; omitted, the pack is the household view.
+     */
+    val memberId: UUID? = null,
     val investmentIds: List<UUID> = emptyList(),
     val recipientHint: String? = null,
     val note: String? = null,
@@ -58,6 +66,13 @@ data class ShareRow(
     val createdAt: Instant,
     /** Returned exactly once, when the link is made. Never stored. */
     val url: String? = null,
+    /** For a tax pack: whose. Null is the household view. */
+    val memberId: UUID? = null,
+    /**
+     * For a tax pack: the CA-ready PDF behind the same token, which a browser
+     * opens directly. Returned exactly once, like [url].
+     */
+    val downloadUrl: String? = null,
 )
 
 data class ShareViewRow(val viewedAt: Instant, val userAgent: String?)
@@ -137,6 +152,17 @@ class ShareService(
                 "scope_invalid", "A link shares a tax pack, the family handbook, or specific records.",
             )
         }
+        if (input.memberId != null) {
+            if (input.scope != "tax_pack") {
+                throw ApiException.badRequest(
+                    "member_not_applicable", "Only a tax pack is shared for one person.",
+                )
+            }
+            if (households.members(householdId).none { it.id == input.memberId }) {
+                throw ApiException.notFound("We couldn't find that person.")
+            }
+        }
+        if (input.scope == "tax_pack") FinancialYear.parse(input.financialYear)
         if (input.expiresInDays !in 1..90) {
             throw ApiException.badRequest(
                 "expiry_invalid", "A link lasts between a day and ninety days.",
@@ -151,9 +177,9 @@ class ShareService(
             """
             insert into guest_shares (id, household_id, label, scope, scope_detail, token_hash,
                                       recipient_hint, note, include_documents, expires_at,
-                                      max_views, created_by)
+                                      max_views, created_by, scope_member_id)
             values (:id, :hid, :label, :scope, :detail, :hash, :recipient, :note,
-                    :includeDocuments, :expiresAt, :maxViews, :createdBy)
+                    :includeDocuments, :expiresAt, :maxViews, :createdBy, :member)
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("id", id).addValue("hid", householdId).addValue("label", input.label.trim())
@@ -161,7 +187,8 @@ class ShareService(
                 .addValue("hash", jwt.hash(token)).addValue("recipient", input.recipientHint)
                 .addValue("note", input.note).addValue("includeDocuments", input.includeDocuments)
                 .addValue("expiresAt", java.sql.Timestamp.from(expiresAt))
-                .addValue("maxViews", input.maxViews).addValue("createdBy", userId),
+                .addValue("maxViews", input.maxViews).addValue("createdBy", userId)
+                .addValue("member", input.memberId),
         )
 
         val items = resolveScope(householdId, input)
@@ -189,6 +216,7 @@ class ShareService(
 
         return get(householdId, id).copy(
             url = "$baseUrl/share/$token",
+            downloadUrl = if (input.scope == "tax_pack") "$baseUrl/api/v1/share/$token/tax-pack.pdf" else null,
             scopeNote = describe(householdId, items),
         )
     }
@@ -234,11 +262,14 @@ class ShareService(
     private fun resolveScope(householdId: UUID, input: CreateShare): List<Pair<String, UUID>> =
         when (input.scope) {
             "tax_pack" -> {
-                val pack = tax.pack(householdId, null, input.financialYear)
+                val pack = tax.pack(householdId, input.memberId, input.financialYear)
                 val fromDeductions = pack.deductions.flatMap { meter -> meter.sources.map { it.investmentId } }
                 val fromGains = pack.capitalGains.unrealized.map { it.investmentId }
+                // A holding sold outright has no unrealised position left, but its
+                // sale is the heart of the statement a CA was sent for.
+                val fromSales = pack.capitalGainsSchedule.lines.map { it.investmentId }
                 val fromInterest = pack.interestIncome.bySource.map { it.investmentId }
-                (fromDeductions + fromGains + fromInterest).distinct().map { "investment" to it }
+                (fromDeductions + fromGains + fromSales + fromInterest).distinct().map { "investment" to it }
             }
 
             "handbook" -> {
@@ -397,11 +428,19 @@ class ShareService(
             note = share.note,
         )
         return when (share.scope) {
-            "tax_pack" -> base.copy(taxPack = tax.pack(lookup.householdId, null, share.scopeDetail))
+            "tax_pack" -> base.copy(
+                taxPack = tax.pack(lookup.householdId, scopeMember(share.id), share.scopeDetail),
+            )
             "handbook" -> base.copy(handbook = handbook.build(lookup.householdId))
             else -> base.copy(records = records(lookup.householdId))
         }
     }
+
+    /** Whose pack a tax-pack link names. Read as the sharer, whose own row it is. */
+    private fun scopeMember(shareId: UUID): UUID? = jdbc.query(
+        "select scope_member_id from guest_shares where id = :id",
+        mapOf("id" to shareId),
+    ) { rs, _ -> rs.getObject("scope_member_id", UUID::class.java) }.firstOrNull()
 
     private fun records(householdId: UUID): List<GuestRecord> = jdbc.query(
         """
@@ -440,6 +479,24 @@ class ShareService(
         val sharedBy: String,
     )
 
+    /**
+     * The CA-ready PDF or the Schedule 112A CSV behind a tax-pack link.
+     *
+     * Opened exactly like the link itself — same token check, same view count,
+     * same audit, same clamped read-only session — and then rendered from the
+     * payload that session produced, so the file cannot hold more than the page
+     * would. Any other kind of link has no such file, and says "not found".
+     */
+    fun openTaxPackFile(token: String, kind: String, ipHash: String?, userAgent: String?): Export {
+        val payload = open(token, ipHash, userAgent)
+        val pack = payload.taxPack
+            ?: throw ApiException.notFound("That link doesn't work. It may have expired or been withdrawn.")
+        return when (kind) {
+            "pdf" -> TaxExportService.pdfOf(pack, payload.householdName)
+            else -> TaxExportService.csvOf(pack)
+        }
+    }
+
     private fun mapShare(rs: java.sql.ResultSet) = ShareRow(
         id = rs.getObject("id", UUID::class.java),
         label = rs.getString("label"),
@@ -454,7 +511,19 @@ class ShareService(
         viewCount = rs.getInt("view_count"),
         itemCount = rs.getInt("item_count"),
         createdAt = rs.getTimestamp("created_at").toInstant(),
+        memberId = optionalUuid(rs, "scope_member_id"),
     )
+
+    /** app.resolve_guest_share predates the column, so its rows do not carry it. */
+    private fun optionalUuid(rs: java.sql.ResultSet, column: String): UUID? {
+        val meta = rs.metaData
+        for (i in 1..meta.columnCount) {
+            if (meta.getColumnLabel(i).equals(column, ignoreCase = true)) {
+                return rs.getObject(i, UUID::class.java)
+            }
+        }
+        return null
+    }
 
     /** 256 bits, URL-safe. Long enough that guessing is not a strategy. */
     private fun newToken(): String {

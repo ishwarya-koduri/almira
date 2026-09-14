@@ -2,7 +2,9 @@ package tech.bhrigu.almira.sharing
 
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -63,6 +65,26 @@ class GuestShareController(private val service: ShareService) {
     @GetMapping("/{token}")
     fun open(@PathVariable token: String, request: HttpServletRequest): GuestPayload =
         service.open(token, ipHash(request), request.getHeader("User-Agent"))
+
+    /**
+     * The CA-ready PDF behind a tax-pack link, so a CA can open it straight
+     * from the link in a browser. Opening it counts as a view, like the page.
+     */
+    @GetMapping("/{token}/tax-pack.pdf")
+    fun taxPackPdf(@PathVariable token: String, request: HttpServletRequest): ResponseEntity<ByteArray> =
+        file(service.openTaxPackFile(token, "pdf", ipHash(request), request.getHeader("User-Agent")))
+
+    /** The Schedule 112A-shaped CSV behind a tax-pack link. */
+    @GetMapping("/{token}/schedule-112a.csv")
+    fun schedule112A(@PathVariable token: String, request: HttpServletRequest): ResponseEntity<ByteArray> =
+        file(service.openTaxPackFile(token, "csv", ipHash(request), request.getHeader("User-Agent")))
+
+    private fun file(export: tech.bhrigu.almira.reports.Export): ResponseEntity<ByteArray> =
+        ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + export.fileName + "\"")
+            .header(HttpHeaders.CACHE_CONTROL, "no-store")
+            .contentType(MediaType.parseMediaType(export.contentType))
+            .body(export.bytes)
 
     /**
      * Hashed, and never stored raw: enough to notice one link being opened from

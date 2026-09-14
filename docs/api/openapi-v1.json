@@ -1,6 +1,17 @@
 {
   "components": {
     "schemas": {
+      "AcceptNoticeBody": {
+        "properties": {
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
       "AcceptWelcomeBody": {
         "properties": {
           "choices": {
@@ -32,6 +43,47 @@
         "required": [
           "householdId",
           "role"
+        ],
+        "type": "object"
+      },
+      "AccessSummary": {
+        "properties": {
+          "generatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "grievance": {
+            "$ref": "#/components/schemas/GrievanceContact"
+          },
+          "held": {
+            "items": {
+              "$ref": "#/components/schemas/HeldItem"
+            },
+            "type": "array"
+          },
+          "identity": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "purposes": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessingPurpose"
+            },
+            "type": "array"
+          },
+          "sharedWith": {
+            "$ref": "#/components/schemas/SharedWith"
+          }
+        },
+        "required": [
+          "generatedAt",
+          "grievance",
+          "held",
+          "identity",
+          "purposes",
+          "sharedWith"
         ],
         "type": "object"
       },
@@ -584,6 +636,21 @@
         ],
         "type": "object"
       },
+      "ChangeConsentBody": {
+        "properties": {
+          "given": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "given",
+          "purpose"
+        ],
+        "type": "object"
+      },
       "ChangeGoalVisibilityBody": {
         "properties": {
           "visibility": {
@@ -988,6 +1055,57 @@
           "expiresAt",
           "handle",
           "status"
+        ],
+        "type": "object"
+      },
+      "ConsentHistoryEntry": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "noticeVersion": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "at",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "ConsentState": {
+        "properties": {
+          "changedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "given": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "purpose",
+          "required"
         ],
         "type": "object"
       },
@@ -1614,6 +1732,23 @@
           "leadDays",
           "recurrence",
           "title"
+        ],
+        "type": "object"
+      },
+      "CreateRightsRequestBody": {
+        "properties": {
+          "details": {
+            "maxLength": 2000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "details",
+          "kind"
         ],
         "type": "object"
       },
@@ -2816,6 +2951,21 @@
         ],
         "type": "object"
       },
+      "GiveParentalConsentBody": {
+        "properties": {
+          "capacity": {
+            "type": "string"
+          },
+          "confirmAdult": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "capacity",
+          "confirmAdult"
+        ],
+        "type": "object"
+      },
       "GoalProgress": {
         "properties": {
           "monthlyToClose": {
@@ -2931,6 +3081,28 @@
           "version",
           "visibility",
           "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "GrievanceContact": {
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "respondWithinDays": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configured",
+          "respondWithinDays"
         ],
         "type": "object"
       },
@@ -3220,6 +3392,22 @@
           "leftOutCount",
           "recordCount",
           "scoreExplanation"
+        ],
+        "type": "object"
+      },
+      "HeldItem": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "count"
         ],
         "type": "object"
       },
@@ -4250,6 +4438,58 @@
         ],
         "type": "object"
       },
+      "NominateBody": {
+        "properties": {
+          "contact": {
+            "maxLength": 254,
+            "minLength": 0,
+            "type": "string"
+          },
+          "fullName": {
+            "maxLength": 120,
+            "minLength": 0,
+            "type": "string"
+          },
+          "relationship": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "contact",
+          "fullName"
+        ],
+        "type": "object"
+      },
+      "Nominee": {
+        "properties": {
+          "contact": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "relationship": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contact",
+          "createdAt",
+          "fullName",
+          "id"
+        ],
+        "type": "object"
+      },
       "NomineeInput": {
         "properties": {
           "memberId": {
@@ -4505,6 +4745,51 @@
         ],
         "type": "object"
       },
+      "ParentalConsentLine": {
+        "properties": {
+          "capacity": {
+            "type": "string"
+          },
+          "givenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "givenByMe": {
+            "type": "boolean"
+          },
+          "givenByName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "noticeVersion": {
+            "type": "string"
+          },
+          "verification": {
+            "type": "string"
+          },
+          "withdrawnAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capacity",
+          "givenAt",
+          "givenByMe",
+          "id",
+          "memberId",
+          "noticeVersion",
+          "verification"
+        ],
+        "type": "object"
+      },
       "ParseTextBody": {
         "properties": {
           "text": {
@@ -4731,6 +5016,77 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "PrivacyOverview": {
+        "properties": {
+          "acceptedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "acceptedNoticeVersion": {
+            "type": "string"
+          },
+          "consents": {
+            "items": {
+              "$ref": "#/components/schemas/ConsentState"
+            },
+            "type": "array"
+          },
+          "grievance": {
+            "$ref": "#/components/schemas/GrievanceContact"
+          },
+          "nominees": {
+            "items": {
+              "$ref": "#/components/schemas/Nominee"
+            },
+            "type": "array"
+          },
+          "noticeLegallyReviewed": {
+            "type": "boolean"
+          },
+          "noticeVersion": {
+            "type": "string"
+          },
+          "obligationsCommenceOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/RightsRequest"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "consents",
+          "grievance",
+          "nominees",
+          "noticeLegallyReviewed",
+          "noticeVersion",
+          "obligationsCommenceOn",
+          "requests"
+        ],
+        "type": "object"
+      },
+      "ProcessingPurpose": {
+        "properties": {
+          "basis": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "basis",
+          "description",
+          "purpose"
+        ],
         "type": "object"
       },
       "ProviderStatus": {
@@ -5218,6 +5574,51 @@
         },
         "required": [
           "number"
+        ],
+        "type": "object"
+      },
+      "RightsRequest": {
+        "properties": {
+          "answeredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "details": {
+            "type": "string"
+          },
+          "grievance": {
+            "$ref": "#/components/schemas/GrievanceContact"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "respondBy": {
+            "format": "date",
+            "type": "string"
+          },
+          "response": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "details",
+          "grievance",
+          "id",
+          "kind",
+          "respondBy",
+          "status"
         ],
         "type": "object"
       },
@@ -5733,6 +6134,63 @@
         },
         "required": [
           "viewedAt"
+        ],
+        "type": "object"
+      },
+      "SharedPerson": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "householdName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName",
+          "householdName",
+          "role"
+        ],
+        "type": "object"
+      },
+      "SharedWith": {
+        "properties": {
+          "emergencyContacts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "householdMembers": {
+            "items": {
+              "$ref": "#/components/schemas/SharedPerson"
+            },
+            "type": "array"
+          },
+          "liveGuestLinks": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "messageChannels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "nominees": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "emergencyContacts",
+          "householdMembers",
+          "liveGuestLinks",
+          "messageChannels",
+          "nominees"
         ],
         "type": "object"
       },
@@ -13212,6 +13670,130 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/members/{memberId}/parental-consent": {
+      "post": {
+        "operationId": "giveParentalConsent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "memberId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GiveParentalConsentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParentalConsentLine"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "parental-consent-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/parental-consents": {
+      "get": {
+        "operationId": "listParentalConsents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ParentalConsentLine"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "parental-consent-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/parental-consents/{consentId}/withdraw": {
+      "post": {
+        "operationId": "withdrawParentalConsent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "consentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParentalConsentLine"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "parental-consent-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/rates": {
       "get": {
         "operationId": "list_3",
@@ -15140,6 +15722,286 @@
         },
         "tags": [
           "messages-controller"
+        ]
+      }
+    },
+    "/api/v1/me/privacy": {
+      "get": {
+        "operationId": "privacyOverview",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivacyOverview"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      }
+    },
+    "/api/v1/me/privacy/consents": {
+      "post": {
+        "operationId": "changePrivacyConsent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeConsentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivacyOverview"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      }
+    },
+    "/api/v1/me/privacy/history": {
+      "get": {
+        "operationId": "privacyConsentHistory",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConsentHistoryEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      }
+    },
+    "/api/v1/me/privacy/nominees": {
+      "get": {
+        "operationId": "listRightsNominees",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Nominee"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      },
+      "post": {
+        "operationId": "nominateRightsNominee",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NominateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/Nominee"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      }
+    },
+    "/api/v1/me/privacy/nominees/{id}": {
+      "delete": {
+        "operationId": "revokeRightsNominee",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      }
+    },
+    "/api/v1/me/privacy/notice/accept": {
+      "post": {
+        "operationId": "acceptPrivacyNotice",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptNoticeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivacyOverview"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      }
+    },
+    "/api/v1/me/privacy/requests": {
+      "get": {
+        "operationId": "listRightsRequests",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RightsRequest"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createRightsRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRightsRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RightsRequest"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      }
+    },
+    "/api/v1/me/privacy/requests/{id}/withdraw": {
+      "post": {
+        "operationId": "withdrawRightsRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RightsRequest"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      }
+    },
+    "/api/v1/me/privacy/summary": {
+      "get": {
+        "operationId": "privacyAccessSummary",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessSummary"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
         ]
       }
     },

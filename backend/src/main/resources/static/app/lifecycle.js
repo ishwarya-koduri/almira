@@ -162,7 +162,7 @@ export async function accountCard(host, redrawScreen) {
   return el("div.card.stack-3", {}, el("h4", {}, t("lifecycle.yourAccount")), body);
 }
 
-function openClosure(redrawScreen) {
+export function openClosure(redrawScreen) {
   const content = el("div.stack-3", {});
   const footer = el("div.row.wrap", {});
   const modal = sheet({ title: t("lifecycle.closeAccount"), body: content, footer: [footer] });

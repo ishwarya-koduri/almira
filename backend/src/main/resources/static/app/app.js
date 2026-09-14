@@ -21,6 +21,7 @@ import { continuityScreen } from "./screens/continuity.js";
 import { t, language } from "./i18n.js";
 import { openCapture } from "./screens/capture.js";
 import { whereScreen } from "./where.js";
+import { rightsScreen } from "./screens/rights.js";
 
 // Labels are resolved at render time rather than here, so switching language
 // redraws the navigation without a reload. Every route that ever existed is
@@ -40,6 +41,8 @@ const routes = {
   where: { label: "nav.where", render: whereScreen },
   family: { label: "nav.people", render: familyScreen },
   settings: { label: "nav.settings", render: settingsScreen },
+  // Reached from Settings rather than the rail: somewhere you go on purpose.
+  rights: { label: "rights.title", render: rightsScreen, hidden: true },
 };
 
 /**
@@ -55,8 +58,13 @@ export const DESTINATIONS = [
   // icon, and never a "More" away (X-34).
   { name: "plan", label: "nav.plan", icon: "almirah", routes: ["continuity", "where", "goals"] },
   { name: "reports", label: "nav.reports", icon: "reports", routes: ["reports", "tax"] },
-  { name: "you", label: "nav.you", icon: "you", routes: ["settings", "family"] },
+  // "rights" is hidden: it belongs under You (so that tab is lit) but is
+  // reached from Settings, not the row of sections.
+  { name: "you", label: "nav.you", icon: "you", routes: ["settings", "family", "rights"] },
 ];
+
+/** Whether a screen exists here. Lets a link to a flow built elsewhere degrade to words. */
+export function hasRoute(name) { return Boolean(routes[name]); }
 
 const root = document.getElementById("root");
 
@@ -124,9 +132,10 @@ function navigation(active) {
 /** The sections inside a destination that has more than one. */
 function sections(active) {
   const destination = destinationOf(active);
-  if (destination.routes.length < 2) return null;
+  const visible = destination.routes.filter((name) => !routes[name].hidden);
+  if (visible.length < 2) return null;
   return el("nav.subnav", { "aria-label": t("nav.inSection", { section: t(destination.label) }) },
-    ...destination.routes.map((name) => el("a", {
+    ...visible.map((name) => el("a", {
       href: `#/${name}`,
       "aria-current": name === active ? "page" : null,
     }, t(routes[name].label))),

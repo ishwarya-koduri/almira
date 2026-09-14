@@ -1044,5 +1044,176 @@ select pg_temp.assert((select count(*) from user_totp_factors) + (select count(*
                       + (select count(*) from user_passkeys) = 0,
   'with no identity, no second factor is visible');
 
+-- ------------------------------------------------------------ data rights --
+-- V45. Consent, notice acceptances, rights requests and nominations belong to
+-- one person each; a child's consent line is seen by whoever sees the child.
+do $$ begin raise notice '--- data rights and parental consent (V45) ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into consent_events (user_id, purpose, action, notice_version)
+  values ((select v from t where k='ish'), 'messages', 'given', app.current_privacy_notice_version());
+insert into consent_events (user_id, purpose, action, notice_version)
+  values ((select v from t where k='ish'), 'messages', 'withdrawn', app.current_privacy_notice_version());
+insert into privacy_notice_acceptances (user_id, notice_version)
+  values ((select v from t where k='ish'), app.current_privacy_notice_version());
+
+select pg_temp.assert((select count(*) from consent_events) = 2,
+  'a person sees their own consent history');
+select pg_temp.assert(app.messages_consent_withdrawn((select v from t where k='ish')),
+  'the latest event decides: given then withdrawn is withdrawn');
+
+do $$
+declare n int;
+begin
+  update consent_events set action = 'given';
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'a consent record cannot be rewritten by the application');
+  delete from consent_events;
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor deleted');
+end $$;
+
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into privacy_notice_versions (version, published_on, summary)
+      values ('2099-01-01', date '2099-01-01', 'published by a request');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a request cannot publish a privacy notice');
+end $$;
+
+insert into data_rights_requests (user_id, kind, details, respond_by)
+  values ((select v from t where k='ish'), 'correction', 'My name is spelt wrong in the audit log',
+          current_date + 30)
+  returning id \gset drr_
+insert into t values ('drr', :'drr_id');
+
+insert into data_rights_nominees (user_id, full_name, relationship, contact)
+  values ((select v from t where k='ish'), 'Lakshmi Koduri', 'sister', '+919000000077')
+  returning id \gset nominee_
+insert into t values ('nominee', :'nominee_id');
+
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into data_rights_requests (user_id, kind, details, respond_by)
+      values ((select v from t where k='ish'), 'grievance', 'No reply', current_date + 120);
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'no request can promise a reply more than 90 days out');
+
+  blocked := false;
+  begin
+    insert into data_rights_requests (user_id, kind, details, respond_by, status, response)
+      values ((select v from t where k='ish'), 'grievance', 'Answer myself', current_date + 5,
+              'answered', 'Resolved, says I');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a request cannot arrive already answered');
+
+  blocked := false;
+  begin
+    update data_rights_nominees set full_name = 'Someone else'
+     where id = (select v from t where k='nominee');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a nominee is revoked, never edited into somebody else');
+end $$;
+
+-- Ravi is an admin of the same household. None of it is his.
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from consent_events) = 0,
+  'an admin sees nothing of another member''s consent history');
+select pg_temp.assert((select count(*) from privacy_notice_acceptances) = 0,
+  'nor their notice acceptances');
+select pg_temp.assert((select count(*) from data_rights_requests) = 0,
+  'nor their rights requests');
+select pg_temp.assert((select count(*) from data_rights_nominees) = 0,
+  'nor who they nominated');
+select pg_temp.assert(not app.withdraw_data_rights_request((select v from t where k='drr')),
+  'an admin cannot withdraw another member''s request');
+
+do $$
+declare n int; blocked boolean := false;
+begin
+  update data_rights_nominees set revoked_at = now()
+   where id = (select v from t where k='nominee');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'an admin cannot revoke another member''s nominee');
+  begin
+    insert into consent_events (user_id, purpose, action, notice_version)
+      values ((select v from t where k='ish'), 'messages', 'given', app.current_privacy_notice_version());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nobody gives consent in someone else''s name');
+end $$;
+
+select pg_temp.as_user('ish');
+select pg_temp.assert(app.withdraw_data_rights_request((select v from t where k='drr')),
+  'the person who asked can withdraw their request');
+select pg_temp.assert(not app.withdraw_data_rights_request((select v from t where k='drr')),
+  'and only once');
+update data_rights_nominees set revoked_at = now() where id = (select v from t where k='nominee');
+select pg_temp.assert(
+  (select revoked_at is not null from data_rights_nominees where id = (select v from t where k='nominee')),
+  'the person who nominated can revoke');
+
+-- A parent's consent for Aarav, a child with no login.
+insert into parental_consents (household_id, member_id, given_by, capacity, verification, notice_version)
+  values ((select v from t where k='hh'), (select v from t where k='m_aarav'),
+          (select v from t where k='ish'), 'parent', 'step_up_code', app.current_privacy_notice_version())
+  returning id \gset pc_
+insert into t values ('pc', :'pc_id');
+
+do $$
+declare blocked boolean := false;
+begin
+  -- Ravi has a login of his own and is an adult: nobody consents for him.
+  begin
+    insert into parental_consents (household_id, member_id, given_by, capacity, verification, notice_version)
+      values ((select v from t where k='hh'), (select v from t where k='m_ravi'),
+              (select v from t where k='ish'), 'parent', 'step_up_code', app.current_privacy_notice_version());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'parental consent is only for a minor with no login of their own');
+
+  blocked := false;
+  begin
+    insert into parental_consents (household_id, member_id, given_by, capacity, verification, notice_version)
+      values ((select v from t where k='hh'), (select v from t where k='m_aarav'),
+              (select v from t where k='ish'), 'lawful_guardian', 'step_up_code', app.current_privacy_notice_version());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a child has one live parental consent at a time');
+end $$;
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from parental_consents where member_id = (select v from t where k='m_aarav')) = 1,
+  'the household sees the consent line on the child''s profile');
+select pg_temp.assert(not app.withdraw_parental_consent((select v from t where k='pc')),
+  'only the adult who gave consent can withdraw it');
+
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from parental_consents) = 0,
+  'someone outside the household sees no child''s consent');
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into parental_consents (household_id, member_id, given_by, capacity, verification, notice_version)
+      values ((select v from t where k='hh'), (select v from t where k='m_aarav'),
+              (select v from t where k='out'), 'parent', 'step_up_code', app.current_privacy_notice_version());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'an outsider cannot consent for another household''s child');
+end $$;
+
+select pg_temp.as_user('ish');
+select pg_temp.assert(app.withdraw_parental_consent((select v from t where k='pc')),
+  'the parent who gave consent can withdraw it');
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

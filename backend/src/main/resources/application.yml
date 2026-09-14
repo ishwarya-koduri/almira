@@ -84,6 +84,16 @@ almira:
   outbox:
     poll-interval: ${ALMIRA_OUTBOX_POLL_INTERVAL:PT2S}
     batch-size: 50
+  # Who answers a complaint about personal data, and within how many days
+  # (DPDP Act s.13, Rules 9 and 14(3); docs/23 "Your data rights"). Shown in
+  # every rights reply. Unset name or email is reported as "not named yet",
+  # never filled in with something invented. The period must be 1 to 90 days or
+  # the server refuses to start.
+  privacy:
+    grievance:
+      name: ${ALMIRA_GRIEVANCE_NAME:}
+      email: ${ALMIRA_GRIEVANCE_EMAIL:}
+      response-days: ${ALMIRA_GRIEVANCE_RESPONSE_DAYS:30}
   db:
     url: ${ALMIRA_DB_URL:jdbc:postgresql://localhost:55432/almira}
     owner-user: ${ALMIRA_DB_OWNER_USER:almira}

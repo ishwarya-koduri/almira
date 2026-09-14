@@ -3,19 +3,34 @@
    You see who is here and what they have shared with you, nothing more. */
 
 import { api } from "../api.js";
-import { el, mount, sheet, field, textInput, select, withBusy, toast, empty } from "../ui.js";
+import { el, mount, sheet, field, textInput, select, withBusy, toast, empty, segmented } from "../ui.js";
 import { state } from "../state.js";
 import { reload } from "../app.js";
 import {
   loadFamilyLifecycle, memorialNotice, memberLifecycle, leaveCard, successorCard, welcomeCard,
 } from "../lifecycle.js";
+import { t, localDate } from "../i18n.js";
+import { confirmItsYou } from "../step-up.js";
+
+/** Under eighteen on the day, by the same rule as app.is_minor in the database. */
+function isMinorOn(dateOfBirth, today = new Date()) {
+  if (!dateOfBirth) return false;
+  const adult = new Date(dateOfBirth);
+  adult.setFullYear(adult.getFullYear() + 18);
+  return adult > today;
+}
 
 export async function familyScreen(host) {
   const members = state.members;
   const canManage = ["owner", "admin"].includes(state.household.myRole) && !state.household.readOnly;
-  // Leaving, a successor, a memorial, coming of age (docs/05 §12). Each part
-  // fails on its own and the roster draws regardless.
-  const lifecycle = await loadFamilyLifecycle();
+  // Leaving, a successor, a memorial, coming of age (docs/05 §12), and the
+  // parental consents a child's records rest on. Each part fails on its own
+  // and the roster draws regardless.
+  const [lifecycle, consents] = await Promise.all([
+    loadFamilyLifecycle(),
+    api.parentalConsents(state.household.id).catch(() => []),
+  ]);
+  const liveConsent = (memberId) => consents.find((c) => c.memberId === memberId && !c.withdrawnAt);
   const me = members.find((member) => member.isMe);
 
   mount(host, el("div.stack", {},
@@ -41,6 +56,7 @@ export async function familyScreen(host) {
               member.isManaged ? "no login yet" : member.role,
               ...meta,
             ].filter(Boolean).join(" · ")),
+            member.isMinor && member.isManaged && !member.passedAway && consentLine(member),
           ),
           el("div.lifecycle-actions", {},
             canManage && member.isManaged && !member.passedAway && el("button.btn.btn-sm", {
@@ -65,6 +81,89 @@ export async function familyScreen(host) {
     !state.household.readOnly && successorCard(lifecycle, members),
     !state.household.readOnly && leaveCard(lifecycle),
   ));
+
+  /**
+   * The dated line on a child's profile: whose consent their records rest on,
+   * or plainly that there is none yet (DPDP s.9; docs/05 §6).
+   */
+  function consentLine(member) {
+    const consent = liveConsent(member.id);
+    if (!consent) {
+      return el("div.caption.row.wrap", {},
+        el("span", {}, t("family.consent.none")),
+        el("button.btn.btn-ghost.btn-sm", { type: "button", onclick: () => recordConsent(member) },
+          t("family.consent.record")));
+    }
+    const withdraw = consent.givenByMe &&
+      el("button.btn.btn-ghost.btn-sm", { type: "button" }, t("family.consent.withdraw"));
+    if (withdraw) {
+      withdraw.onclick = () => withBusy(withdraw, async () => {
+        try {
+          await api.withdrawParentalConsent(state.household.id, consent.id);
+          toast(t("family.consent.withdrawn"));
+          await familyScreen(host);
+        } catch (error) { toast(error.message, { tone: "error" }); }
+      });
+    }
+    return el("div.caption.row.wrap", {},
+      el("span", {}, t(`family.consent.line.${consent.capacity}`, {
+        name: consent.givenByName || t("family.consent.someone"), date: localDate(consent.givenAt),
+      })),
+      withdraw);
+  }
+
+  /**
+   * "You're adding Aarav's records as their parent." One declaration and one
+   * code, once; then the member and the consent are saved together. Closing the
+   * code sheet saves nothing.
+   */
+  function parentalConsentSheet(childName, onConsent) {
+    let capacity = "parent";
+    const capacityHost = el("div", {});
+    const drawCapacity = () => mount(capacityHost, segmented(
+      [{ value: "parent", label: t("family.consent.parent") },
+       { value: "lawful_guardian", label: t("family.consent.guardian") }],
+      capacity, (value) => { capacity = value; drawCapacity(); }));
+    drawCapacity();
+
+    const declare = el("input", { type: "checkbox", id: "parental-declaration" });
+    const declareRow = el("label.consent-declaration", { for: "parental-declaration" },
+      declare, el("span", {}, t("family.consent.declaration", { name: childName })));
+    const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+    const go = el("button.btn.btn-primary", { type: "button" }, t("family.consent.continue"));
+
+    const modal = sheet({
+      title: t("family.consent.title", { name: childName }),
+      body: el("div.stack-3", {},
+        el("p", { style: { margin: 0 } }, t("family.consent.body", { name: childName })),
+        capacityHost,
+        declareRow,
+        el("p.notice-line", {},
+          el("span.notice-mark", { "aria-hidden": "true" }, "ⓘ"),
+          el("span", {}, t("family.consent.check"))),
+        error,
+      ),
+      footer: [go],
+    });
+
+    go.onclick = () => withBusy(go, async () => {
+      error.textContent = "";
+      if (!declare.checked) { error.textContent = t("family.consent.declareFirst"); return; }
+      try {
+        if (!(await confirmItsYou(t("family.consent.whyConfirm")))) return;
+        await onConsent(capacity);
+        modal.close();
+      } catch (apiError) { error.textContent = apiError.message; }
+    });
+  }
+
+  function recordConsent(member) {
+    parentalConsentSheet(member.displayName, async (capacity) => {
+      await api.giveParentalConsent(state.household.id, member.id, { capacity, confirmAdult: true });
+      toast(t("family.consent.recorded", { name: member.displayName }));
+      await familyScreen(host);
+    });
+  }
 
   function addMember() {
     const name = textInput({ placeholder: "Their name", "aria-label": "Name" });
@@ -91,14 +190,30 @@ export async function familyScreen(host) {
       footer: [save],
     });
 
+    const create = () => api.addMember(state.household.id, {
+      displayName: name.value.trim(),
+      relationship: relationship.value,
+      dateOfBirth: dob.value || null,
+    });
+
     save.onclick = () => withBusy(save, async () => {
       if (!name.value.trim()) { nameField.setError("Give this person a name"); return; }
-      try {
-        await api.addMember(state.household.id, {
-          displayName: name.value.trim(),
-          relationship: relationship.value,
-          dateOfBirth: dob.value || null,
+      // A child's records rest on a parent's consent, so that comes first and
+      // nothing is saved without it.
+      if (isMinorOn(dob.value)) {
+        const childName = name.value.trim();
+        let member = null;   // kept, so a retry after a failed consent adds no second child
+        parentalConsentSheet(childName, async (capacity) => {
+          member = member || await create();
+          await api.giveParentalConsent(state.household.id, member.id, { capacity, confirmAdult: true });
+          modal.close();
+          toast(t("family.consent.recorded", { name: childName }));
+          await reload();
         });
+        return;
+      }
+      try {
+        await create();
         modal.close();
         toast(`${name.value.trim()} added.`);
         await reload();

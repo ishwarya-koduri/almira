@@ -75,6 +75,32 @@ data class SealedAccessSummary(
     val explanation: String,
 )
 
+/** One "Do you know where…?" you asked, as it stands (docs/27 §4). */
+data class KeyHolderAnswer(
+    val recordType: String,
+    val recordId: UUID,
+    val thing: String,
+    val askedName: String?,
+    /** `yes` | `not_sure`, or absent while unanswered. */
+    val answer: String?,
+    val answeredAt: java.time.Instant?,
+)
+
+/**
+ * What the people you asked said. Beside the score, never in it: a "yes" is a
+ * person's word about what they remember, and §4.1's reasons for not scoring
+ * recovery apply to it unchanged.
+ */
+data class KeyHolderAnswers(
+    val asked: Int,
+    val knows: Int,
+    val notSure: Int,
+    val waiting: Int,
+    /** The latest question per record and person, newest first. */
+    val items: List<KeyHolderAnswer>,
+    val explanation: String,
+)
+
 data class HandoverReadiness(
     /**
      * 0–100, rounded down, or null when the data cannot earn a number (docs/22 §1).
@@ -99,6 +125,8 @@ data class HandoverReadiness(
      * four weeks back to compare with. Beside the score, never part of it.
      */
     val movement: ReadinessMovement? = null,
+    /** Absent when you have asked nobody. Not scored (docs/27 §4). */
+    val keyHolderAnswers: KeyHolderAnswers? = null,
 )
 
 /** Which of the three record checks apply to a kind of holding (docs/22 §3). */
@@ -354,7 +382,45 @@ class HandoverReadinessService(
             checks = checks,
             gaps = gaps,
             caveats = caveats,
+            keyHolderAnswers = keyHolderAnswers(householdId),
         )
+    }
+
+    /** The latest question per record and person that this viewer asked. Read under their own policy. */
+    private fun keyHolderAnswers(householdId: UUID): KeyHolderAnswers? {
+        val items = jdbc.query(
+            """
+            select distinct on (k.record_type, k.record_id, k.asked_member_id)
+                   k.record_type, k.record_id, k.thing, k.answer, k.answered_at, k.created_at,
+                   m.display_name as asked_name
+            from key_holder_asks k
+            left join members m on m.id = k.asked_member_id
+            where k.household_id = :hid and k.asked_by = app.current_user_id()
+            order by k.record_type, k.record_id, k.asked_member_id, k.created_at desc
+            """.trimIndent(),
+            mapOf("hid" to householdId),
+        ) { rs, _ ->
+            rs.getTimestamp("created_at").toInstant() to KeyHolderAnswer(
+                recordType = rs.getString("record_type"),
+                recordId = rs.getObject("record_id", UUID::class.java),
+                thing = rs.getString("thing"),
+                askedName = rs.getString("asked_name"),
+                answer = rs.getString("answer"),
+                answeredAt = rs.getTimestamp("answered_at")?.toInstant(),
+            )
+        }.sortedByDescending { it.first }.map { it.second }
+        if (items.isEmpty()) return null
+        val knows = items.count { it.answer == "yes" }
+        val notSure = items.count { it.answer == "not_sure" }
+        val waiting = items.count { it.answer == null }
+        val explanation = buildString {
+            append("$knows of ${items.size} ${if (items.size == 1) "person you asked says" else "people you asked say"} ")
+            append("they know where it is.")
+            if (notSure > 0) append(" $notSure not sure — worth showing them.")
+            if (waiting > 0) append(" $waiting yet to answer.")
+            append(" This does not change the score.")
+        }
+        return KeyHolderAnswers(items.size, knows, notSure, waiting, items, explanation)
     }
 
     /**

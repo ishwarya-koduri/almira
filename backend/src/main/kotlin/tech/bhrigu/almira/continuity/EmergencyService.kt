@@ -24,6 +24,10 @@ data class TrustedContact(
     val note: String?,
     /** True when this row is about you being trusted, rather than you trusting. */
     val theyTrustMe: Boolean,
+    /** The last dated "Yes, I can still be reached" (docs/27 §3). */
+    val reachableConfirmedAt: Instant? = null,
+    /** When they were last asked that. */
+    val reachabilityAskedAt: Instant? = null,
 )
 
 data class EmergencyRequestRow(
@@ -51,6 +55,11 @@ data class EmergencyRequestRow(
     val explanation: String,
     /** What happens, when, and to whom — the same five steps every time (docs/05 §6.1). */
     val timeline: List<EmergencyTimelineStep> = emptyList(),
+    /**
+     * `request` when someone asked; `inactivity` when the owner's own "if I go
+     * quiet" setting began it in that person's name (docs/27 §1).
+     */
+    val raisedBy: String = "request",
 )
 
 /**
@@ -193,7 +202,11 @@ class EmergencyService(
         val mine = households.members(householdId).filter { it.isMe }.map { it.id }.toSet()
         return jdbc.query(
             """
-            select c.*, m.display_name as member_name, t.display_name as trusted_name
+            select c.*, m.display_name as member_name, t.display_name as trusted_name,
+                   (select max(x.confirmed_at) from trusted_contact_confirmations x
+                    where x.emergency_contact_id = c.id) as reachable_confirmed_at,
+                   (select a.last_asked_at from trusted_contact_asks a
+                    where a.emergency_contact_id = c.id) as reachability_asked_at
             from emergency_contacts c
             left join members m on m.id = c.member_id
             left join members t on t.id = c.trusted_member_id
@@ -212,6 +225,8 @@ class EmergencyService(
                 waitDays = rs.getInt("wait_days"),
                 note = rs.getString("note"),
                 theyTrustMe = memberId !in mine,
+                reachableConfirmedAt = rs.getTimestamp("reachable_confirmed_at")?.toInstant(),
+                reachabilityAskedAt = rs.getTimestamp("reachability_asked_at")?.toInstant(),
             )
         }
     }
@@ -395,10 +410,10 @@ class EmergencyService(
             select r.*, m.display_name as subject_name,
                    -- The name the household knows them by, before the account's.
                    coalesce(rm.display_name, u.full_name) as requester_name,
-                   exists (
-                     select 1 from user_sessions s
-                     where s.user_id = m.user_id and s.last_used_at > r.requested_at
-                   ) as subject_active
+                   -- A sign-in or an "I'm here" since the request (V95), asked
+                   -- through the request itself so presence is never a
+                   -- question about just anyone.
+                   app.emergency_subject_present(r.id) as subject_active
             from emergency_requests r
             left join members m on m.id = r.subject_member_id
             left join users u on u.id = r.requested_by
@@ -455,6 +470,7 @@ class EmergencyService(
                     stoppedAt = vetoedAt ?: revokedAt,
                     subjectActive = subjectActive,
                 ),
+                raisedBy = rs.getString("raised_by"),
             )
         }
     }

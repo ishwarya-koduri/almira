@@ -1242,3 +1242,21 @@ details.more[open] > summary::before { transform: rotate(90deg); }
 
 /* The guest page (guest.html): a reading column, no navigation to leave room for. */
 main.guest { max-width: var(--reading-max); padding-block: var(--space-8) var(--space-16); }
+   Continuity signals (continuity-signals.js, docs/27). A timeline of three calm
+   steps; a tick is a date, not a colour; the protection headline is words first.
+   ----------------------------------------------------------------------------- */
+.quiet-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4); }
+.quiet-step { display: grid; grid-template-columns: 1.5rem 1fr; gap: var(--space-3); align-items: start; position: relative; }
+.quiet-step:not(:last-child)::after {
+  content: ""; position: absolute; left: calc(0.75rem - 1px); top: 1.75rem; bottom: calc(-1 * var(--space-4));
+  width: 2px; background: var(--hairline);
+}
+.quiet-mark {
+  width: 1.5rem; height: 1.5rem; border-radius: var(--radius-full); display: grid; place-items: center;
+  border: 2px solid var(--hairline); background: var(--surface); color: var(--accent);
+}
+.quiet-step[data-done="true"] .quiet-mark { border-color: var(--accent); }
+.signal-tick { display: inline-flex; flex: none; color: var(--accent); }
+.signal-tick svg { display: block; }
+.protection-headline { font-family: var(--font-display); font-size: var(--text-h3); line-height: var(--leading-tight); }
+.money-figure { font-family: var(--font-display); font-size: var(--text-h3); font-variant-numeric: tabular-nums; }

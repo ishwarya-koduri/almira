@@ -56,6 +56,10 @@ class SecurityConfig(
             // The page such a link opens holds no data of its own; it asks the
             // endpoint above, with the token from its own address (GuestPage.kt).
             auth.requestMatchers("/share/*", "/help/*", "/guest.html").permitAll()
+            // A one-tap "I'm here" or "still reachable" link, for the guest-link
+            // reason: the single-use, expiring token in the body is the
+            // credential, and spending it reveals nothing (docs/27 §2).
+            auth.requestMatchers("/api/v1/continuity-links/redeem").permitAll()
             // The web client is static and holds no secrets — everything it
             // shows is fetched from /api with a bearer token, which is where
             // the real gate is.

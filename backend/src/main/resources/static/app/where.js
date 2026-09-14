@@ -24,7 +24,7 @@
    ============================================================================= */
 
 import { api } from "./api.js";
-import { el, mount, field, textInput, withBusy, toast, skeletonRows } from "./ui.js";
+import { el, mount, field, textInput, withBusy, toast, skeletonRows, formatDate } from "./ui.js";
 import { state } from "./state.js";
 import { t, language } from "./i18n.js";
 import { e2e, unlock as unlockE2e, sealField, unsealField, openSealedValue, openSealedValueAs } from "./e2e.js";
@@ -35,12 +35,21 @@ import { guidedFlow } from "./guided.js";
 export const FIELD = {
   originalLocation: "original_location",
   keyHolder: "key_holder",
+  // The access chain (docs/27 §6): who next, and who after them. Sealed exactly
+  // like the key holder, because where the names are sealed the chain is too.
+  keyHolder2: "key_holder_2",
+  keyHolder3: "key_holder_3",
 };
 
 const SLOTS = [
   { slot: "originalLocation", fieldKey: FIELD.originalLocation, label: "where.location" },
-  { slot: "keyHolder", fieldKey: FIELD.keyHolder, label: "where.keyHolder" },
+  { slot: "keyHolder", fieldKey: FIELD.keyHolder, label: "where.keyHolder", position: 1 },
+  { slot: "keyHolder2", fieldKey: FIELD.keyHolder2, label: "chain.backup", position: 2 },
+  { slot: "keyHolder3", fieldKey: FIELD.keyHolder3, label: "chain.third", position: 3 },
 ];
+
+/** The "checked with them" tick at a place in the chain, or null. */
+const tickAt = (record, position) => (record.chain || []).find((tick) => tick.position === position) || null;
 
 /* -----------------------------------------------------------------------------
    Opening
@@ -77,9 +86,9 @@ async function openSlot(recordType, recordId, fieldKey, value) {
 }
 
 async function openRecord(record) {
-  const [originalLocation, keyHolder] = await Promise.all(SLOTS.map(({ slot, fieldKey }) =>
+  const values = await Promise.all(SLOTS.map(({ slot, fieldKey }) =>
     openSlot(record.recordType, record.recordId, fieldKey, record[slot])));
-  return { ...record, opened: { originalLocation, keyHolder } };
+  return { ...record, opened: Object.fromEntries(SLOTS.map(({ slot }, i) => [slot, values[i]])) };
 }
 
 function slotText(opened) {
@@ -152,10 +161,16 @@ export function whereWhoCard(recordType, recordId) {
     if (!record) { host.remove(); return; }
     const opened = await openRecord(record);
 
-    const rows = SLOTS.map(({ slot, label }) => el("div.row-between", { style: { fontSize: "var(--text-sm)" } },
-      el("span.muted", {}, t(label)),
-      el("span", { style: { textAlign: "right" } }, slotText(opened.opened[slot]) || t("where.notRecorded")),
-    ));
+    // The backups show only once there is one: an empty chain is not a gap.
+    const rows = SLOTS
+      .filter(({ slot, position }) => !position || position === 1 || opened.opened[slot].state !== "empty")
+      .map(({ slot, label, position }) => el("div.row-between", { style: { fontSize: "var(--text-sm)" } },
+        el("span.muted", {}, t(label)),
+        el("span", { style: { textAlign: "right" } },
+          slotText(opened.opened[slot]) || t("where.notRecorded"),
+          position && tickAt(opened, position) && el("span.caption", {},
+            ` · ${t("chain.checkedOn", { date: formatDate(tickAt(opened, position).confirmedAt) })}`)),
+      ));
 
     mount(host,
       el("div.overline", {}, t("where.cardTitle")),
@@ -189,9 +204,10 @@ function suggestions() {
 }
 
 /**
- * Two questions, one per screen (X-58): where the original is, then who holds
- * the key. Each answer is sealed on this device and saved the moment its step
- * is left, so stopping half-way keeps the first; the step itself is kept by the
+ * One question per screen (X-58): where the original is, who holds the key,
+ * and who next if they can't be reached, and after them (docs/27 §6). Each
+ * answer is sealed on this device and saved the moment its step is left, so
+ * stopping half-way keeps what was answered; the step itself is kept by the
  * server, the words never are (V91).
  */
 export async function openEditor(record, onSaved) {
@@ -199,33 +215,71 @@ export async function openEditor(record, onSaved) {
   // Not theirs to change even when opened with a recovery copy: the value stays
   // the sealer's (docs/20 §5), and an heir reads it, never rewrites it.
   const theirs = (slot) => ["theirs", "openedWithRecovery"].includes(record.opened[slot].state);
-  const saved = { originalLocation: current("originalLocation"), keyHolder: current("keyHolder") };
+  const saved = Object.fromEntries(SLOTS.map(({ slot }) => [slot, current(slot)]));
+  // "Checked with them", per place in the chain: what the box says, and what
+  // the server holds. Only the person who sealed a name can tick it, because
+  // nobody else can read who it names.
+  const ticked = Object.fromEntries([1, 2, 3].map((position) => [position, Boolean(tickAt(record, position))]));
+  const onServer = { ...ticked };
 
   /** Kept exactly as typed — no trim — because a sealed value is never normalised (docs/12 §3). */
   const sealStep = (slot) => async (text) => {
-    const { fieldKey } = SLOTS.find((s) => s.slot === slot);
-    if (text === saved[slot]) return;
-    // Blank means "remove", which is a choice about the field, not a rewrite.
-    if (text.trim() === "") {
-      if (saved[slot] !== "" || record.opened[slot].state !== "empty") {
-        await unsealField(state.household.id, record.recordType, record.recordId, fieldKey);
+    const { fieldKey, position } = SLOTS.find((s) => s.slot === slot);
+    if (text !== saved[slot]) {
+      // Blank means "remove", which is a choice about the field, not a rewrite.
+      if (text.trim() === "") {
+        if (saved[slot] !== "" || record.opened[slot].state !== "empty") {
+          await unsealField(state.household.id, record.recordType, record.recordId, fieldKey);
+        }
+      } else {
+        await sealField(state.household.id, record.recordType, record.recordId, fieldKey, text);
       }
-    } else {
-      await sealField(state.household.id, record.recordType, record.recordId, fieldKey, text);
+      saved[slot] = text;
+      // Writing or removing a name clears its tick on the server.
+      if (position) onServer[position] = false;
     }
-    saved[slot] = text;
+    // After the name is sealed, so the tick is given to the name as it now stands.
+    if (position && text.trim() !== "") {
+      if (ticked[position] && !onServer[position]) {
+        await api.confirmChain(state.household.id, record.recordType, record.recordId, position);
+        onServer[position] = true;
+      } else if (!ticked[position] && onServer[position]) {
+        await api.unconfirmChain(state.household.id, record.recordType, record.recordId, position).catch(() => {});
+        onServer[position] = false;
+      }
+    }
   };
 
-  const question = (slot, labelKey, build) => ({
+  const question = (slot, labelKey, build, skip) => ({
     key: slot,
     question: t(labelKey),
     help: theirs(slot) ? slotText({ state: "theirs", access: record.opened[slot].access }) : null,
-    skip: () => theirs(slot),
+    skip: (answers) => theirs(slot) || Boolean(skip?.(answers)),
     build,
     save: sealStep(slot),
   });
 
   const listId = `where-people-${record.recordId}`;
+  /** A name in the chain, with its "Checked with them" box. */
+  const holderStep = (slot, labelKey, helpKey, skip) => question(slot, labelKey, () => {
+    const { position } = SLOTS.find((s) => s.slot === slot);
+    const people = el("datalist#" + listId, {});
+    suggestions().forEach((role) => people.append(el("option", { value: role })));
+    const holder = el("input.input", {
+      type: "text", value: saved[slot], list: listId,
+      placeholder: t("where.keyHolderPlaceholder"), "aria-label": t(labelKey), autocomplete: "off",
+    });
+    const box = el("input", { type: "checkbox", checked: ticked[position] });
+    box.onchange = () => { ticked[position] = box.checked; };
+    return {
+      node: el("div.stack-2", {},
+        sealReassurance([holder]), holder, people,
+        helpKey && el("p.caption", {}, t(helpKey)),
+        el("label.check-row", {}, box, el("span.grow", {}, el("span.check-label", {}, t("chain.checked"))))),
+      value: () => holder.value,
+    };
+  }, skip);
+
   await guidedFlow({
     flow: "where_and_who",
     subject: `${record.recordType}:${record.recordId}`,
@@ -242,21 +296,14 @@ export async function openEditor(record, onSaved) {
           value: () => location.value,
         };
       }),
-      question("keyHolder", "where.keyHolder", () => {
-        const people = el("datalist#" + listId, {});
-        suggestions().forEach((role) => people.append(el("option", { value: role })));
-        const holder = el("input.input", {
-          type: "text", value: saved.keyHolder, list: listId,
-          placeholder: t("where.keyHolderPlaceholder"), "aria-label": t("where.keyHolder"), autocomplete: "off",
-        });
-        return {
-          node: el("div.stack-2", {}, sealReassurance([holder]), holder, people, el("p.caption", {}, t("where.keyHolderHelp"))),
-          value: () => holder.value,
-        };
-      }),
+      holderStep("keyHolder", "where.keyHolder", "where.keyHolderHelp"),
+      holderStep("keyHolder2", "chain.backup", "chain.help"),
+      // A third only once there is a second: an empty chain is not a gap.
+      holderStep("keyHolder3", "chain.third", null,
+        (answers) => (answers.keyHolder2 ?? saved.keyHolder2).trim() === "" && saved.keyHolder3 === ""),
     ].filter((step) => !theirs(step.key)).concat(
-      // Both are someone else's: nothing to ask, only to say so.
-      theirs("originalLocation") && theirs("keyHolder")
+      // All of them are someone else's: nothing to ask, only to say so.
+      SLOTS.every(({ slot }) => theirs(slot))
         ? [{ key: "nothing", question: t("where.editorIntro"), build: () => ({ node: el("p.muted", {}, slotText({ state: "theirs", access: record.opened.originalLocation.access })), value: () => null }) }]
         : [],
     ),
@@ -342,9 +389,11 @@ export async function whereScreen(host) {
     const matches = opened.filter((record) => {
       const location = record.opened.originalLocation;
       const holder = record.opened.keyHolder;
+      // An empty backup is not a gap; a backup's words are searchable like the first.
       if (missing) return location.state === "empty" || holder.state === "empty";
-      if (!query) return location.state !== "empty" || holder.state !== "empty";
-      return [record.title, location.text, holder.text].some((text) => fold(text).includes(query));
+      if (!query) return SLOTS.some(({ slot }) => record.opened[slot].state !== "empty");
+      return [record.title, ...SLOTS.map(({ slot }) => record.opened[slot].text)]
+        .some((text) => fold(text).includes(query));
     });
 
     mount(results,
@@ -409,6 +458,8 @@ function resultRow(record, query, onEdit) {
     ),
     line("where.location", record.opened.originalLocation),
     line("where.keyHolder", record.opened.keyHolder),
+    record.opened.keyHolder2.state !== "empty" && line("chain.backup", record.opened.keyHolder2),
+    record.opened.keyHolder3.state !== "empty" && line("chain.third", record.opened.keyHolder3),
   );
 }
 

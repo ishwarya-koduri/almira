@@ -38,6 +38,20 @@ begin
   -- Reference data is read-only for the application; it is seeded by migrations.
   execute 'revoke insert, update, delete on asset_categories from almira_app';
 
+  -- Continuity signals (V95). A one-tap link is spent only through
+  -- app.redeem_continuity_link, so the runtime role holds nothing on the table;
+  -- a trusted contact's confirmation is a dated fact and is never rewritten; an
+  -- answer to "do you know where" may change the answer and nothing else; and
+  -- "has this person been here since" is asked only through a request the
+  -- caller can already see (app.emergency_subject_present).
+  if to_regclass('public.continuity_links') is not null then
+    execute 'revoke all on continuity_links from almira_app';
+    execute 'revoke update, delete on trusted_contact_confirmations from almira_app';
+    execute 'revoke update on key_holder_asks from almira_app';
+    execute 'grant update (answer, answered_at) on key_holder_asks to almira_app';
+    execute 'revoke execute on function app.member_present_since(uuid, timestamptz) from almira_app, public';
+  end if;
+
   -- Anything a later migration creates inherits these defaults automatically.
   execute 'alter default privileges in schema public '
           'grant select, insert, update, delete on tables to almira_app';

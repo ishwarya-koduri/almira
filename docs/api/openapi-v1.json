@@ -244,6 +244,17 @@
         ],
         "type": "object"
       },
+      "AnswerKeyHolderBody": {
+        "properties": {
+          "answer": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "type": "object"
+      },
       "ApplyTemplate": {
         "properties": {
           "attributes": {
@@ -297,6 +308,27 @@
         "required": [
           "owners",
           "visibleToMemberIds"
+        ],
+        "type": "object"
+      },
+      "AskKeyHolderBody": {
+        "properties": {
+          "askedMemberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "askedMemberId",
+          "recordId",
+          "recordType"
         ],
         "type": "object"
       },
@@ -736,6 +768,27 @@
           "netFormatted",
           "out",
           "outFormatted"
+        ],
+        "type": "object"
+      },
+      "ChainTick": {
+        "properties": {
+          "confirmedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "confirmedByMe": {
+            "type": "boolean"
+          },
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "confirmedAt",
+          "confirmedByMe",
+          "position"
         ],
         "type": "object"
       },
@@ -2790,6 +2843,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "raisedBy": {
+            "type": "string"
+          },
           "reason": {
             "type": "string"
           },
@@ -2843,6 +2899,7 @@
           "accessExpiresAt",
           "explanation",
           "id",
+          "raisedBy",
           "requestedAt",
           "requestedByMe",
           "status",
@@ -4057,6 +4114,9 @@
             },
             "type": "array"
           },
+          "keyHolderAnswers": {
+            "$ref": "#/components/schemas/KeyHolderAnswers"
+          },
           "leftOut": {
             "items": {
               "$ref": "#/components/schemas/LeftOutRecord"
@@ -4512,6 +4572,108 @@
         ],
         "type": "object"
       },
+      "InactivityCheckView": {
+        "properties": {
+          "contactsWhoCanAsk": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "lastCheckInAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "lastPresenceAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "periodChoices": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "periodDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "shortestWaitDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/InactivityStep"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "contactsWhoCanAsk",
+          "enabled",
+          "explanation",
+          "periodChoices",
+          "periodDays",
+          "stage",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "InactivitySettingsBody": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "periodDays": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "periodDays"
+        ],
+        "type": "object"
+      },
+      "InactivityStep": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "day": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "sentence": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "day",
+          "done",
+          "sentence"
+        ],
+        "type": "object"
+      },
       "Insights": {
         "properties": {
           "concentration": {
@@ -4878,6 +5040,151 @@
           "recordId",
           "recordType",
           "title"
+        ],
+        "type": "object"
+      },
+      "KeyHolderAnswer": {
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "answeredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "askedName": {
+            "type": "string"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "thing": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "recordId",
+          "recordType",
+          "thing"
+        ],
+        "type": "object"
+      },
+      "KeyHolderAnswers": {
+        "properties": {
+          "asked": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KeyHolderAnswer"
+            },
+            "type": "array"
+          },
+          "knows": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "notSure": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "waiting": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asked",
+          "explanation",
+          "items",
+          "knows",
+          "notSure",
+          "waiting"
+        ],
+        "type": "object"
+      },
+      "KeyHolderAsk": {
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "answeredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "askedByMe": {
+            "type": "boolean"
+          },
+          "askedByName": {
+            "type": "string"
+          },
+          "askedMemberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "askedName": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "thing": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "askedByMe",
+          "askedMemberId",
+          "createdAt",
+          "id",
+          "question",
+          "recordId",
+          "recordType",
+          "thing"
+        ],
+        "type": "object"
+      },
+      "KeyHolderAsks": {
+        "properties": {
+          "asked": {
+            "items": {
+              "$ref": "#/components/schemas/KeyHolderAsk"
+            },
+            "type": "array"
+          },
+          "forMe": {
+            "items": {
+              "$ref": "#/components/schemas/KeyHolderAsk"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "asked",
+          "forMe"
         ],
         "type": "object"
       },
@@ -6324,6 +6631,156 @@
         ],
         "type": "object"
       },
+      "ProtectionAdequacy": {
+        "properties": {
+          "annualExpenses": {
+            "type": "number"
+          },
+          "annualExpensesFormatted": {
+            "type": "string"
+          },
+          "annualExpensesInWords": {
+            "type": "string"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "dependants": {
+            "items": {
+              "$ref": "#/components/schemas/ProtectionDependant"
+            },
+            "type": "array"
+          },
+          "details": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "gaugePercent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "gaugeScale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "headline": {
+            "type": "string"
+          },
+          "multiple": {
+            "type": "number"
+          },
+          "notCounted": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "policies": {
+            "items": {
+              "$ref": "#/components/schemas/ProtectionPolicy"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "termCover": {
+            "type": "number"
+          },
+          "termCoverFormatted": {
+            "type": "string"
+          },
+          "termCoverInWords": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "caveats",
+          "dependants",
+          "details",
+          "gaugeScale",
+          "headline",
+          "notCounted",
+          "policies",
+          "status",
+          "termCover",
+          "termCoverFormatted",
+          "termCoverInWords"
+        ],
+        "type": "object"
+      },
+      "ProtectionDependant": {
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "memberId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ProtectionInputsBody": {
+        "properties": {
+          "annualExpenses": {
+            "type": "number"
+          },
+          "dependantMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "dependantMemberIds"
+        ],
+        "type": "object"
+      },
+      "ProtectionPolicy": {
+        "properties": {
+          "coverUntil": {
+            "format": "date",
+            "type": "string"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "policyholders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sumAssured": {
+            "type": "number"
+          },
+          "sumAssuredFormatted": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investmentId",
+          "policyholders",
+          "sumAssured",
+          "sumAssuredFormatted",
+          "title"
+        ],
+        "type": "object"
+      },
       "ProviderStatus": {
         "properties": {
           "connected": {
@@ -6392,6 +6849,30 @@
           "quote",
           "rate",
           "source"
+        ],
+        "type": "object"
+      },
+      "Reachability": {
+        "properties": {
+          "askedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "confirmedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "contactId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "contactId",
+          "current"
         ],
         "type": "object"
       },
@@ -6818,6 +7299,34 @@
         "required": [
           "caveats",
           "slots"
+        ],
+        "type": "object"
+      },
+      "RedeemLinkBody": {
+        "properties": {
+          "token": {
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
+      "RedeemedLink": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "purpose"
         ],
         "type": "object"
       },
@@ -8402,6 +8911,14 @@
           "note": {
             "type": "string"
           },
+          "reachabilityAskedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reachableConfirmedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
           "theyTrustMe": {
             "type": "boolean"
           },
@@ -9311,7 +9828,19 @@
       },
       "WhereAndWhoRecord": {
         "properties": {
+          "chain": {
+            "items": {
+              "$ref": "#/components/schemas/ChainTick"
+            },
+            "type": "array"
+          },
           "keyHolder": {
+            "$ref": "#/components/schemas/WhereAndWhoValue"
+          },
+          "keyHolder2": {
+            "$ref": "#/components/schemas/WhereAndWhoValue"
+          },
+          "keyHolder3": {
             "$ref": "#/components/schemas/WhereAndWhoValue"
           },
           "originalLocation": {
@@ -9329,6 +9858,7 @@
           }
         },
         "required": [
+          "chain",
           "recordId",
           "recordType",
           "title"
@@ -10197,6 +10727,36 @@
         },
         "tags": [
           "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/continuity-links/redeem": {
+      "post": {
+        "operationId": "redeemContinuityLink",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemLinkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedeemedLink"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "continuity-link-controller"
         ]
       }
     },
@@ -11625,6 +12185,78 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/continuity/protection": {
+      "get": {
+        "operationId": "protectionAdequacy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectionAdequacy"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "protection-adequacy-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/continuity/protection/inputs": {
+      "put": {
+        "operationId": "saveProtectionInputs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtectionInputsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectionAdequacy"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "protection-adequacy-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/continuity/readiness": {
       "get": {
         "operationId": "readiness",
@@ -12842,6 +13474,86 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/emergency/contacts/{contactId}/reachable": {
+      "post": {
+        "operationId": "confirmReachable",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "contactId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reachability"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "reachability-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/contacts/{contactId}/reachable/ask": {
+      "post": {
+        "operationId": "askReachable",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "contactId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reachability"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "reachability-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/emergency/contacts/{trustedMemberId}": {
       "delete": {
         "operationId": "removeContact",
@@ -12872,6 +13584,107 @@
         },
         "tags": [
           "emergency-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/inactivity": {
+      "get": {
+        "operationId": "inactivityCheck",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InactivityCheckView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "inactivity-check-controller"
+        ]
+      },
+      "put": {
+        "operationId": "updateInactivityCheck",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InactivitySettingsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InactivityCheckView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "inactivity-check-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/inactivity/check-in": {
+      "post": {
+        "operationId": "checkInImHere",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InactivityCheckView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "inactivity-check-controller"
         ]
       }
     },
@@ -15436,6 +16249,159 @@
         },
         "tags": [
           "invitation-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/key-holder-asks": {
+      "get": {
+        "operationId": "keyHolderAsks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyHolderAsks"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "key-holder-ask-controller"
+        ]
+      },
+      "post": {
+        "operationId": "askKeyHolder",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskKeyHolderBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyHolderAsk"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "key-holder-ask-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/key-holder-asks/{id}": {
+      "delete": {
+        "operationId": "withdrawKeyHolderAsk",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "key-holder-ask-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/key-holder-asks/{id}/answer": {
+      "post": {
+        "operationId": "answerKeyHolderAsk",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerKeyHolderBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyHolderAsk"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "key-holder-ask-controller"
         ]
       }
     },
@@ -18459,6 +19425,111 @@
         },
         "tags": [
           "where-and-who-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/where-and-who/{recordType}/{recordId}/chain/{position}/confirmation": {
+      "delete": {
+        "operationId": "unconfirmChainPosition",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "position",
+            "required": true,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "access-chain-controller"
+        ]
+      },
+      "put": {
+        "operationId": "confirmChainPosition",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recordId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "position",
+            "required": true,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainTick"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "access-chain-controller"
         ]
       }
     },

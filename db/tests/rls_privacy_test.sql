@@ -1726,5 +1726,221 @@ select pg_temp.as_user('ravi');
 select pg_temp.assert((select count(*) from handbook_editions) = 0, 'ADMIN does not learn that she printed one');
 select pg_temp.as_user('ish');
 
+-- ------------------------------------------------- continuity signals ----
+-- V95. Going quiet is the owner's own setting; a one-tap link is spent only by
+-- its definer function; a trusted contact's tick is theirs and never rewritten;
+-- a "do you know where" question is seen by the two people in it; a chain tick
+-- is given only by the person who sealed that name; protection inputs are a
+-- person's own.
+do $$ begin raise notice '--- continuity signals follow the people in them (V95) ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into inactivity_checks (household_id, member_id, user_id, enabled, period_days, enabled_at)
+  values ((select v from t where k='hh'), (select v from t where k='m_ish'), (select v from t where k='ish'),
+          true, 90, now());
+select pg_temp.assert((select count(*) from inactivity_checks) = 1,
+  'the owner sees her own going-quiet setting');
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from inactivity_checks) = 0,
+  'another member, even her trusted contact, does not see it');
+
+do $$
+declare blocked boolean := false; n int;
+begin
+  begin
+    insert into inactivity_checks (household_id, member_id, user_id, enabled, period_days, enabled_at)
+      values ((select v from t where k='hh'), (select v from t where k='m_ish'), (select v from t where k='ish'),
+              true, 60, now());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nobody can turn going-quiet on in someone else''s name');
+  update inactivity_checks set enabled = false;
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor turn hers off');
+end $$;
+
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    perform 1 from continuity_links;
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot read a one-tap link');
+  blocked := false;
+  begin
+    insert into continuity_links (purpose, token_hash, household_id, user_id, emergency_contact_id, expires_at)
+      values ('reachable', 'x', (select v from t where k='hh'), (select v from t where k='ravi'),
+              (select id from emergency_contacts limit 1), now() + interval '1 day');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor make one');
+  blocked := false;
+  begin
+    perform app.member_present_since((select v from t where k='m_ish'), now() - interval '1 year');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'whether someone has been here is not a question the runtime role can ask about anyone');
+end $$;
+select pg_temp.assert(app.redeem_continuity_link('no such link') is null,
+  'an unknown link spends nothing and says nothing');
+
+-- Ravi is Ishwarya's named contact (above).
+select pg_temp.as_user('ish');
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into trusted_contact_confirmations (household_id, emergency_contact_id, confirmed_by, via)
+      values ((select v from t where k='hh'),
+              (select id from emergency_contacts where member_id = (select v from t where k='m_ish')
+                 and trusted_member_id = (select v from t where k='m_ravi')),
+              app.current_user_id(), 'app');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the owner cannot say her contact is reachable for them');
+end $$;
+
+select pg_temp.as_user('ravi');
+insert into trusted_contact_confirmations (household_id, emergency_contact_id, confirmed_by, via)
+  values ((select v from t where k='hh'),
+          (select id from emergency_contacts where member_id = (select v from t where k='m_ish')
+             and trusted_member_id = (select v from t where k='m_ravi')),
+          app.current_user_id(), 'app');
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    update trusted_contact_confirmations set confirmed_at = now() + interval '1 year';
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a reachability tick is a dated fact and is never rewritten');
+  blocked := false;
+  begin
+    insert into trusted_contact_confirmations (household_id, emergency_contact_id, confirmed_by, via)
+      values ((select v from t where k='hh'),
+              (select id from emergency_contacts where member_id = (select v from t where k='m_ish')
+                 and trusted_member_id = (select v from t where k='m_ravi')),
+              app.current_user_id(), 'link');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a "by link" tick is only ever written by the link itself');
+end $$;
+
+select pg_temp.as_user('ish');
+select pg_temp.assert((select count(*) from trusted_contact_confirmations) = 1,
+  'the owner sees the dated tick her contact left');
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from trusted_contact_confirmations) = 0
+                      and (select count(*) from trusted_contact_asks) = 0,
+  'outside the household there is no tick and no ask');
+
+-- "Do you know where…?"
+select pg_temp.as_user('ish');
+insert into key_holder_asks (household_id, record_type, record_id, thing, asked_by, asked_member_id)
+  values ((select v from t where k='hh'), 'investment', (select v from t where k='i_private'),
+          'SBI FD (secret)', app.current_user_id(), (select v from t where k='m_ravi'));
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from key_holder_asks) = 1, 'the person asked sees the question');
+update key_holder_asks set answer = 'yes', answered_at = now();
+select pg_temp.assert((select answer from key_holder_asks limit 1) = 'yes', 'and answers it');
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    update key_holder_asks set thing = 'something else';
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'an answer cannot rewrite the question');
+  blocked := false;
+  begin
+    insert into key_holder_asks (household_id, record_type, record_id, thing, asked_by, asked_member_id)
+      values ((select v from t where k='hh'), 'investment', (select v from t where k='i_private'),
+              'guess', app.current_user_id(), (select v from t where k='m_ish'));
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nobody can ask about a record they cannot see');
+end $$;
+
+select pg_temp.as_user('ish');
+do $$
+declare n int;
+begin
+  update key_holder_asks set answer = 'not_sure', answered_at = now();
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'the asker cannot answer for the person asked');
+end $$;
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from key_holder_asks) = 0, 'outside the household nobody learns who was asked');
+
+-- The chain. Ishwarya seals a second key holder on the shared gold and ticks it.
+select pg_temp.as_user('ish');
+insert into sealed_values (household_id, record_type, record_id, field_key, ciphertext, sealed_by)
+  values ((select v from t where k='hh'), 'investment', (select v from t where k='i_shared'),
+          'key_holder_2', repeat('A', 60), app.current_user_id());
+insert into access_chain_confirmations (household_id, record_type, record_id, position, confirmed_by)
+  values ((select v from t where k='hh'), 'investment', (select v from t where k='i_shared'), 2, app.current_user_id());
+insert into sealed_values (household_id, record_type, record_id, field_key, ciphertext, sealed_by)
+  values ((select v from t where k='hh'), 'investment', (select v from t where k='i_private'),
+          'key_holder_2', repeat('A', 60), app.current_user_id());
+insert into access_chain_confirmations (household_id, record_type, record_id, position, confirmed_by)
+  values ((select v from t where k='hh'), 'investment', (select v from t where k='i_private'), 2, app.current_user_id());
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert(
+  (select count(*) from access_chain_confirmations where record_id = (select v from t where k='i_shared')) = 1,
+  'a chain tick is as visible as the record');
+select pg_temp.assert(
+  (select count(*) from access_chain_confirmations where record_id = (select v from t where k='i_private')) = 0,
+  'and not on a private record he cannot see');
+do $$
+declare blocked boolean := false; n int;
+begin
+  begin
+    insert into access_chain_confirmations (household_id, record_type, record_id, position, confirmed_by)
+      values ((select v from t where k='hh'), 'investment', (select v from t where k='i_shared'), 3, app.current_user_id());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nobody ticks a position with no name they sealed');
+  delete from access_chain_confirmations where record_id = (select v from t where k='i_shared');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor removes a tick on a name someone else sealed');
+end $$;
+
+select pg_temp.as_user('ish');
+update sealed_values set ciphertext = repeat('B', 60)
+ where record_id = (select v from t where k='i_shared') and field_key = 'key_holder_2';
+select pg_temp.assert(
+  (select count(*) from access_chain_confirmations where record_id = (select v from t where k='i_shared')) = 0,
+  'writing the name again takes its tick away');
+
+-- Protection inputs.
+insert into protection_inputs (household_id, user_id, annual_expenses)
+  values ((select v from t where k='hh'), app.current_user_id(), 2400000);
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from protection_inputs) = 0,
+  'what someone said the household spends is theirs alone');
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into protection_inputs (household_id, user_id, annual_expenses)
+      values ((select v from t where k='hh'), (select v from t where k='ish'), 1);
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'and nobody writes it for them');
+end $$;
+
+select pg_temp.as_user('ish');
+select set_config('app.guest_share_id', (select v::text from t where k='share'), false);
+select pg_temp.assert((select count(*) from inactivity_checks) = 0
+                      and (select count(*) from protection_inputs) = 0
+                      and (select count(*) from key_holder_asks) = 0
+                      and (select count(*) from trusted_contact_confirmations) = 0,
+  'a guest link reaches none of the continuity signals');
+select set_config('app.guest_share_id', '', false);
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

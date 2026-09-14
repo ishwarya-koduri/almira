@@ -389,6 +389,12 @@ the banker) linked to each holding? That was rejected:
   every record is. That one fact is why this check counts as a quarter of the
   score and not one item in ninety.
 
+### What the people you asked said — also not scored
+
+`keyHolderAnswers` (Doc 27 §4) lists your own "Do you know where…?" questions
+and their answers beside the checks. It is absent when you have asked nobody,
+and it never moves the score, for the reasons above.
+
 ## 5. Per viewer
 
 **Two members of the same household can see different scores, and both are

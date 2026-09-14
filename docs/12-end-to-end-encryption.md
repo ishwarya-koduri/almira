@@ -33,7 +33,7 @@ components and nothing else:
 | `householdId` | uuid | the household the record belongs to |
 | `recordType` | one of `investment`, `liability`, `account`, `member`, `estate_document`, `document` | a closed vocabulary the server enforces |
 | `recordId` | uuid | the record |
-| `fieldKey` | 1–64 characters, non-blank | chosen by the client, not by the server |
+| `fieldKey` | 1–64 characters, non-blank, no `\|` | chosen by the client, not by the server |
 
 There is no registry of sealable field names. `fieldKey` is whatever the client
 calls it — `locker_address`, `who_holds_it` — and the server stores it without
@@ -178,10 +178,9 @@ Turkish device the locale-sensitive one is a different answer.
 
 **No component may contain `|` (U+007C).** The separator is not escaped, so a
 component holding one would make the AAD ambiguous. Both clients refuse at AAD
-construction. The server does **not** enforce this on `fieldKey` — see
-`docs/known-issues.md` — which is unexploitable today only because the three
-components before it cannot contain a pipe, and stops being unexploitable the
-day a fifth component is added.
+construction, and the server refuses a `fieldKey` holding one with
+`400 field_invalid` (known-issues 7, closed), so the rule holds where the data
+lands and not only in the clients that happen to exist today.
 
 Without this, anyone able to write the database could move a ciphertext to
 another record and have the client decrypt it there — the same reasoning as the

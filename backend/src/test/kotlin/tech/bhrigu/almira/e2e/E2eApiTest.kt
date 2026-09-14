@@ -646,6 +646,31 @@ class E2eApiTest : ApiTestBase() {
             .isEmpty()
     }
 
+    /**
+     * `|` separates the AAD's components and is not escaped (docs/12 §4). Both
+     * clients refuse one; the server now does too, so a third client cannot
+     * store a key that stays unambiguous only while no fifth component exists.
+     */
+    @Test
+    fun `a field key containing the AAD separator is refused`() {
+        val (_, contentKey) = enable()
+        val id = capture(
+            owner, householdId, "gold_physical", "Gold", BigDecimal("1"), visibility = "household",
+        ).path("id").asText()
+
+        val refused = call(
+            HttpMethod.PUT, "/api/v1/households/$householdId/e2e/values/investment/$id/notes|extra", owner,
+            mapOf("ciphertext" to gcmSeal(contentKey, secret.toByteArray(), aadFor(id, "notes|extra"))),
+        )
+        assertThat(refused.status()).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(refused.errorCode()).isEqualTo("field_invalid")
+        assertThat(
+            db.queryForObject(
+                "select count(*) from sealed_values where record_id = ?::uuid", Int::class.java, id,
+            ),
+        ).isZero()
+    }
+
     @Test
     fun `sealing needs a key to have been set up first`() {
         val id = capture(

@@ -142,9 +142,7 @@ class SealedFieldService(
         val userId = userContext.require()
         households.get(householdId)
         requireRecordType(recordType)
-        if (fieldKey.isBlank() || fieldKey.length > 64) {
-            throw ApiException.badRequest("field_invalid", "That field name won't do.")
-        }
+        requireFieldKey(fieldKey)
         requireEnvelope(ciphertext)
         if (ciphertext.length > MAX_CIPHERTEXT) {
             throw ApiException.badRequest(
@@ -313,6 +311,21 @@ class SealedFieldService(
         runCatching { Base64.getUrlDecoder().decode(value) }
             .recoverCatching { Base64.getDecoder().decode(value) }
             .getOrNull()
+
+    /**
+     * Non-blank, at most 64 characters, and no `|`.
+     *
+     * The pipe separates the four components of the AAD (docs/12 §4) and is not
+     * escaped. Both clients refuse one when they build the AAD; this is the same
+     * rule where the data actually lands, so a third client or a hand-written
+     * request cannot store a key that only stays unambiguous while no fifth
+     * component exists (known-issues 7, now closed).
+     */
+    private fun requireFieldKey(fieldKey: String) {
+        if (fieldKey.isBlank() || fieldKey.length > 64 || fieldKey.contains('|')) {
+            throw ApiException.badRequest("field_invalid", "That field name won't do.")
+        }
+    }
 
     private fun requireRecordType(value: String) {
         if (value !in RECORD_TYPES) {

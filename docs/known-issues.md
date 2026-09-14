@@ -204,26 +204,15 @@ if Apple ships GCM in the public CommonCrypto headers. Neither is expected.
 
 ## 7. The server allows `|` in a sealed field's key
 
-**Where** `backend/.../e2e/SealedFieldService.kt` — `fieldKey` is checked for
-non-blank and a 64-character ceiling, and nothing else.
+**Resolved** (2026-09-14, "Recovery for sealed fields"). Kept as a stub so the
+number still means something where it is cited.
 
-**What** `|` U+007C separates the four components of the zero-knowledge AAD and
-is not escaped, so no component may contain one (docs/zk-interop-acceptance.md
-A0, B3). Both clients now enforce that at AAD construction. The server does not,
-so a third client — or a direct database write — could still store a key holding
-one.
-
-**Is it exploitable today?** No. Of the four components, two are Postgres `uuid`
-columns and one is a five-word vocabulary, so none of the three that precede the
-free one can hold a pipe; the first three separators always delimit exactly and a
-key full of pipes still parses unambiguously. It becomes exploitable the day a
-fifth component joins the AAD.
-
-**When to fix** The next backend pass: reject `|` in `fieldKey` alongside the
-existing blank and length checks. Additive, and no client sends one.
-
-**Risk if left** None reachable now. The cost is that a rule the clients enforce
-is not enforced where the data actually lands.
+`SealedFieldService.seal` now refuses a `fieldKey` containing `|` with
+`400 field_invalid`, beside the existing blank and 64-character checks, so the
+rule both clients enforce at AAD construction is also enforced where the data
+lands (docs/12 §1, §4). No client sends one, so nothing that worked stops
+working. Proven by `E2eApiTest` ("a field key containing the AAD separator is
+refused"), which also checks that nothing was stored.
 
 ---
 

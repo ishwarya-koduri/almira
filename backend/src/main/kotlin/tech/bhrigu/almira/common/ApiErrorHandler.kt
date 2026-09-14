@@ -15,7 +15,16 @@ data class ApiErrorBody(
     val message: String,
     val details: Map<String, Any?>? = null,
     val at: Instant = Instant.now(),
-)
+) {
+    /**
+     * Spring MVC prints a response body at DEBUG and TRACE. An error can carry
+     * a credential for its next step (`secondFactorToken`), which must not be
+     * written down with it.
+     */
+    override fun toString() = "ApiErrorBody(code=$code, message=$message, details=" +
+        details?.mapValues { (key, value) -> if (key.endsWith("token", ignoreCase = true)) "[redacted]" else value } +
+        ", at=$at)"
+}
 
 data class ApiErrorEnvelope(val error: ApiErrorBody)
 

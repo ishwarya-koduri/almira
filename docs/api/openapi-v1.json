@@ -221,6 +221,38 @@
         ],
         "type": "object"
       },
+      "AuthenticatorCodeBody": {
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "AuthenticatorSetupResponse": {
+        "properties": {
+          "expiresInSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "otpauthUri": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresInSeconds",
+          "otpauthUri",
+          "secret"
+        ],
+        "type": "object"
+      },
       "BalanceInput": {
         "properties": {
           "asOfDate": {
@@ -4104,6 +4136,106 @@
         ],
         "type": "object"
       },
+      "PasskeyAddedResponse": {
+        "properties": {
+          "passkey": {
+            "$ref": "#/components/schemas/PasskeyResponse"
+          },
+          "recoveryCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "passkey",
+          "recoveryCodes"
+        ],
+        "type": "object"
+      },
+      "PasskeyAssertionBody": {
+        "properties": {
+          "credential": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential",
+          "requestId"
+        ],
+        "type": "object"
+      },
+      "PasskeyCeremonyResponse": {
+        "properties": {
+          "options": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "options",
+          "requestId"
+        ],
+        "type": "object"
+      },
+      "PasskeyRegistrationBody": {
+        "properties": {
+          "credential": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "requestId": {
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential",
+          "requestId"
+        ],
+        "type": "object"
+      },
+      "PasskeyResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
       "Performance": {
         "properties": {
           "absoluteReturn": {
@@ -4149,6 +4281,38 @@
         },
         "required": [
           "label"
+        ],
+        "type": "object"
+      },
+      "PhoneChangeRequestBody": {
+        "properties": {
+          "phone": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone"
+        ],
+        "type": "object"
+      },
+      "PhoneChangeVerifyBody": {
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{4,8}$",
+            "type": "string"
+          },
+          "phone": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "phone"
         ],
         "type": "object"
       },
@@ -4348,6 +4512,33 @@
         "required": [
           "txnDate",
           "txnType"
+        ],
+        "type": "object"
+      },
+      "RecoveryCodeBody": {
+        "properties": {
+          "code": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "RecoveryCodesResponse": {
+        "properties": {
+          "recoveryCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "recoveryCodes"
         ],
         "type": "object"
       },
@@ -4702,6 +4893,62 @@
         ],
         "type": "object"
       },
+      "SecondFactorCodeBody": {
+        "properties": {
+          "code": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "secondFactorToken": {
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "secondFactorToken"
+        ],
+        "type": "object"
+      },
+      "SecondFactorPasskeyBody": {
+        "properties": {
+          "credential": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          },
+          "secondFactorToken": {
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential",
+          "requestId",
+          "secondFactorToken"
+        ],
+        "type": "object"
+      },
+      "SecondFactorTokenBody": {
+        "properties": {
+          "secondFactorToken": {
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "secondFactorToken"
+        ],
+        "type": "object"
+      },
       "SecuredAssetResponse": {
         "properties": {
           "investmentId": {
@@ -4858,6 +5105,61 @@
         },
         "required": [
           "channels"
+        ],
+        "type": "object"
+      },
+      "SignInMethodsResponse": {
+        "properties": {
+          "authenticator": {
+            "type": "boolean"
+          },
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "email": {
+            "type": "string"
+          },
+          "emailSignIn": {
+            "type": "boolean"
+          },
+          "meetsMinimum": {
+            "type": "boolean"
+          },
+          "minimum": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "passkeys": {
+            "items": {
+              "$ref": "#/components/schemas/PasskeyResponse"
+            },
+            "type": "array"
+          },
+          "passkeysAvailable": {
+            "type": "boolean"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "phoneSignIn": {
+            "type": "boolean"
+          },
+          "recoveryCodesLeft": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "authenticator",
+          "count",
+          "emailSignIn",
+          "meetsMinimum",
+          "minimum",
+          "passkeys",
+          "passkeysAvailable",
+          "phoneSignIn",
+          "recoveryCodesLeft"
         ],
         "type": "object"
       },
@@ -6210,6 +6512,67 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/authenticator": {
+      "delete": {
+        "operationId": "removeAuthenticator",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      },
+      "post": {
+        "operationId": "beginAuthenticator",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticatorSetupResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/authenticator/confirm": {
+      "post": {
+        "operationId": "confirmAuthenticator",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthenticatorCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryCodesResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
     "/api/v1/auth/logout": {
       "post": {
         "operationId": "logout",
@@ -6393,6 +6756,160 @@
         ]
       }
     },
+    "/api/v1/auth/passkeys": {
+      "post": {
+        "operationId": "addPasskey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRegistrationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyAddedResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/passkeys/options": {
+      "post": {
+        "operationId": "passkeyRegistrationOptions",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyCeremonyResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/passkeys/{id}": {
+      "delete": {
+        "operationId": "removePasskey",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/phone/request": {
+      "post": {
+        "operationId": "requestPhoneChange",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneChangeRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/OtpChallengeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/phone/verify": {
+      "post": {
+        "operationId": "verifyPhoneChange",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneChangeVerifyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/recovery-codes": {
+      "post": {
+        "operationId": "replaceRecoveryCodes",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryCodesResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
     "/api/v1/auth/refresh": {
       "post": {
         "operationId": "refresh",
@@ -6412,6 +6929,126 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/second-factor/authenticator": {
+      "post": {
+        "operationId": "secondFactorAuthenticator",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecondFactorCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/second-factor/passkey": {
+      "post": {
+        "operationId": "secondFactorPasskey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecondFactorPasskeyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/second-factor/passkey/options": {
+      "post": {
+        "operationId": "secondFactorPasskeyOptions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecondFactorTokenBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyCeremonyResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/second-factor/recovery-code": {
+      "post": {
+        "operationId": "secondFactorRecoveryCode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecondFactorCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
                 }
               }
             },
@@ -6470,6 +7107,26 @@
         ]
       }
     },
+    "/api/v1/auth/sign-in-methods": {
+      "get": {
+        "operationId": "signInMethods",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInMethodsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
     "/api/v1/auth/step-up": {
       "get": {
         "operationId": "stepUpStatus",
@@ -6487,6 +7144,116 @@
         },
         "tags": [
           "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/step-up/authenticator": {
+      "post": {
+        "operationId": "stepUpWithAuthenticator",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthenticatorCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpStatusResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/step-up/passkey": {
+      "post": {
+        "operationId": "stepUpWithPasskey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyAssertionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpStatusResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/step-up/passkey/options": {
+      "post": {
+        "operationId": "stepUpPasskeyOptions",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyCeremonyResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
+        ]
+      }
+    },
+    "/api/v1/auth/step-up/recovery-code": {
+      "post": {
+        "operationId": "stepUpWithRecoveryCode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryCodeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpStatusResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sign-in-methods-controller"
         ]
       }
     },

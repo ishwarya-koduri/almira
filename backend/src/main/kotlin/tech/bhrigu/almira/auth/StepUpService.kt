@@ -30,6 +30,8 @@ class StepUpService(
     private val repo: AuthRepository,
     private val audit: AuditService,
     private val channels: SignInChannels,
+    private val factors: SecondFactorService,
+    private val passkeys: PasskeyService,
 ) {
 
     fun request(userId: UUID, ip: String?): OtpChallenge {
@@ -51,11 +53,48 @@ class StepUpService(
             is Destination.Phone -> otp.verify(to.phone, code, requestId, OtpService.STEP_UP)
             is Destination.Email -> otp.verifyByEmail(to.email, code, requestId, OtpService.STEP_UP)
         }
-        redis.opsForValue().set(key(sessionId), userId.toString(), ELEVATION)
+        elevate(userId, sessionId, BY_CODE)
+    }
+
+    /** Confirming it's you with the authenticator app's current code. */
+    fun verifyAuthenticator(userId: UUID, sessionId: UUID, code: String) {
+        if (!factors.guarded(userId) { factors.verifyAuthenticator(userId, code) }) throw factorRefused()
+        elevate(userId, sessionId, BY_SECOND_FACTOR)
+    }
+
+    /** Confirming it's you with a recovery code, which is then used up. */
+    fun verifyRecoveryCode(userId: UUID, sessionId: UUID, code: String, ip: String?) {
+        if (!factors.guarded(userId) { factors.useRecoveryCode(userId, code, ip) }) throw factorRefused()
+        elevate(userId, sessionId, BY_SECOND_FACTOR)
+    }
+
+    fun startPasskey(userId: UUID): PasskeyCeremony = passkeys.startAssertion(userId, PasskeyService.Purpose.STEP_UP)
+
+    fun verifyPasskey(userId: UUID, sessionId: UUID, requestId: String, credential: Map<String, Any?>) {
+        val ok = factors.guarded(userId) {
+            passkeys.verifyAssertion(userId, PasskeyService.Purpose.STEP_UP, requestId, credential)
+        }
+        if (!ok) {
+            throw ApiException.badRequest("passkey_not_accepted", "That passkey wasn't accepted. Please try again.")
+        }
+        elevate(userId, sessionId, BY_SECOND_FACTOR)
+    }
+
+    /**
+     * The value names how the session was elevated, so an action that must not
+     * rest on the texts alone can tell ([requireElevatedBySecondFactor]).
+     */
+    private fun elevate(userId: UUID, sessionId: UUID, how: String) {
+        redis.opsForValue().set(key(sessionId), "$userId|$how", ELEVATION)
         audit.record(
             householdId = null, actorUserId = userId, action = "auth.step_up",
-            entityType = "session", entityId = sessionId,
+            entityType = "session", entityId = sessionId, diff = mapOf("by" to how),
         )
+    }
+
+    /** Ends the elevation, after an action that should not be repeated on the same proof. */
+    fun spend(sessionId: UUID) {
+        redis.delete(key(sessionId))
     }
 
     /**
@@ -64,20 +103,48 @@ class StepUpService(
      * record shows what was actually looked at, not just that a step-up
      * happened.
      */
-    fun requireElevated(userId: UUID, sessionId: UUID?) {
-        if (sessionId == null) throw stepUpRequired(0)
-        val holder = redis.opsForValue().get(key(sessionId))
-        if (holder != userId.toString()) throw stepUpRequired(0)
+    fun requireElevated(userId: UUID, sessionId: UUID?, message: String = NUMBER_MESSAGE) {
+        if (elevation(userId, sessionId) == null) throw stepUpRequired(0, message)
+    }
+
+    /**
+     * For taking a second factor away or replacing recovery codes: when the
+     * account has a second factor, the session must have been elevated with
+     * one. Someone holding a stolen session and the phone number must not be
+     * able to strip the factor that stands between them and the account.
+     * Without a second factor on the account, any elevation will do.
+     */
+    fun requireElevatedBySecondFactor(userId: UUID, sessionId: UUID?, message: String) {
+        val how = elevation(userId, sessionId) ?: throw stepUpRequired(0, message)
+        if (how != BY_SECOND_FACTOR && factors.factors(userId).any) {
+            throw stepUpRequired(0, message, BY_SECOND_FACTOR)
+        }
+    }
+
+    /** How this session was elevated for [userId], or null. A value from before V50 had no method: a code. */
+    private fun elevation(userId: UUID, sessionId: UUID?): String? {
+        if (sessionId == null) return null
+        val holder = redis.opsForValue().get(key(sessionId)) ?: return null
+        if (holder.substringBefore('|') != userId.toString()) return null
+        return holder.substringAfter('|', BY_CODE)
     }
 
     fun remainingSeconds(sessionId: UUID?): Long =
         sessionId?.let { redis.getExpire(key(it), TimeUnit.SECONDS).coerceAtLeast(0) } ?: 0
 
-    private fun stepUpRequired(retryAfter: Long) = ApiException(
+    private fun stepUpRequired(retryAfter: Long, message: String, needs: String? = null) = ApiException(
         org.springframework.http.HttpStatus.FORBIDDEN,
         "step_up_required",
-        "For your security, confirm it's you before we show the full number.",
-        mapOf("retryAfterSeconds" to retryAfter),
+        message,
+        buildMap {
+            put("retryAfterSeconds", retryAfter)
+            // Added with V50: present only when a code is not enough.
+            needs?.let { put("requires", it) }
+        },
+    )
+
+    private fun factorRefused() = ApiException.badRequest(
+        "second_factor_invalid", "That code doesn't match. Please try the newest one.",
     )
 
     private fun key(sessionId: UUID) = "session:elevated:$sessionId"
@@ -110,7 +177,10 @@ class StepUpService(
         }
     }
 
-    private companion object {
+    companion object {
         val ELEVATION: Duration = Duration.ofMinutes(5)
+        const val BY_CODE = "code"
+        const val BY_SECOND_FACTOR = "second_factor"
+        const val NUMBER_MESSAGE = "For your security, confirm it's you before we show the full number."
     }
 }

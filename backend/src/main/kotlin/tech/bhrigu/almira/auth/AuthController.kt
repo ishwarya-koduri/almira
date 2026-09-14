@@ -76,6 +76,35 @@ data class StepUpVerifyBody(
     override fun toString() = "StepUpVerifyBody(code=[redacted], requestId=$requestId)"
 }
 
+/** The second step of a sign-in: the token from `second_factor_required` and the factor. */
+data class SecondFactorCodeBody(
+    @field:NotBlank @field:jakarta.validation.constraints.Size(max = 100)
+    val secondFactorToken: String,
+    @field:NotBlank(message = "Enter the code")
+    @field:jakarta.validation.constraints.Size(max = 40)
+    val code: String,
+) {
+    override fun toString() = "SecondFactorCodeBody(secondFactorToken=[redacted], code=[redacted])"
+}
+
+data class SecondFactorTokenBody(
+    @field:NotBlank @field:jakarta.validation.constraints.Size(max = 100)
+    val secondFactorToken: String,
+) {
+    override fun toString() = "SecondFactorTokenBody(secondFactorToken=[redacted])"
+}
+
+data class SecondFactorPasskeyBody(
+    @field:NotBlank @field:jakarta.validation.constraints.Size(max = 100)
+    val secondFactorToken: String,
+    @field:NotBlank @field:jakarta.validation.constraints.Size(max = 100)
+    val requestId: String,
+    @field:jakarta.validation.constraints.NotNull
+    val credential: Map<String, Any?>,
+) {
+    override fun toString() = "SecondFactorPasskeyBody(secondFactorToken=[redacted], requestId=$requestId)"
+}
+
 data class StepUpStatusResponse(val elevated: Boolean, val expiresInSeconds: Long)
 
 data class PreferencesBody(val fullName: String? = null, val defaultVisibility: String? = null)
@@ -209,6 +238,29 @@ class AuthController(
         userAgent = request.getHeader("User-Agent"),
         ip = clientIp(request),
     ).toResponse()
+
+    /**
+     * The second step of a sign-in, for an account with a second factor. A
+     * one-time code to such an account answers `401 second_factor_required`
+     * with a `secondFactorToken` and the `methods` that will do; one of these
+     * finishes the sign-in. Public, like the first step: the token is the
+     * authority, and it is good for five minutes and five tries.
+     */
+    @PostMapping("/auth/second-factor/authenticator")
+    fun secondFactorAuthenticator(@RequestBody @jakarta.validation.Valid body: SecondFactorCodeBody): LoginResponse =
+        auth.completeWithAuthenticator(body.secondFactorToken, body.code).toResponse()
+
+    @PostMapping("/auth/second-factor/recovery-code")
+    fun secondFactorRecoveryCode(@RequestBody @jakarta.validation.Valid body: SecondFactorCodeBody): LoginResponse =
+        auth.completeWithRecoveryCode(body.secondFactorToken, body.code).toResponse()
+
+    @PostMapping("/auth/second-factor/passkey/options")
+    fun secondFactorPasskeyOptions(@RequestBody @jakarta.validation.Valid body: SecondFactorTokenBody): PasskeyCeremonyResponse =
+        auth.startSecondFactorPasskey(body.secondFactorToken).let { PasskeyCeremonyResponse(it.requestId, it.options) }
+
+    @PostMapping("/auth/second-factor/passkey")
+    fun secondFactorPasskey(@RequestBody @jakarta.validation.Valid body: SecondFactorPasskeyBody): LoginResponse =
+        auth.completeWithPasskey(body.secondFactorToken, body.requestId, body.credential).toResponse()
 
     @PostMapping("/auth/refresh")
     fun refresh(

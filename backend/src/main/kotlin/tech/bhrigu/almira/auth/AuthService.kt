@@ -1,6 +1,7 @@
 package tech.bhrigu.almira.auth
 
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
@@ -31,6 +32,10 @@ class AuthService(
     private val sessionRevoker: SessionRevoker,
     private val channels: SignInChannels,
     private val alpha: AlphaAllowlistAccess,
+    private val secondFactors: SecondFactorService,
+    private val passkeys: PasskeyService,
+    private val stepUp: StepUpService,
+    private val notices: AccountNotices,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -56,6 +61,7 @@ class AuthService(
         otp.verify(phone, code, requestId, ip = ip)
 
         val existing = repo.findByPhone(phone)
+        existing?.let { requireNoSecondFactor(it, deviceName, userAgent, ip) }
         val user = existing ?: repo.createWithPhone(phone)
         return completeLogin(user, existing == null, deviceName, userAgent, ip)
             .also { log.info("login ok for {} (new={})", PhoneNumber.mask(phone), it.isNewUser) }
@@ -119,9 +125,55 @@ class AuthService(
         }
 
         val existing = repo.findByEmail(email)
+        existing?.let { requireNoSecondFactor(it, deviceName, userAgent, ip) }
         val user = existing ?: repo.createWithEmail(email)
         return completeLogin(user, existing == null, deviceName, userAgent, ip)
             .also { log.info("login ok for {} by email (new={})", EmailAddress.mask(email), it.isNewUser) }
+    }
+
+    /**
+     * The recycled-number defence. A correct one-time code proves who receives
+     * the texts (or the mail) today, which is not who owns the account: a
+     * disconnected number is given to somebody else. When the account has a
+     * second factor, the code earns only a short-lived token for the second
+     * step, and no session (SecondFactorService). Accounts without one sign in
+     * exactly as before.
+     */
+    private fun requireNoSecondFactor(user: UserRow, deviceName: String?, userAgent: String?, ip: String?) {
+        val factors = secondFactors.factors(user.id)
+        if (factors.any) {
+            audit.record(null, user.id, "auth.second_factor_requested", "user", user.id, ip = ip, userAgent = userAgent)
+            throw secondFactors.challenge(user.id, factors, deviceName, userAgent, ip)
+        }
+    }
+
+    /** The second step of a sign-in, with the authenticator app's code. */
+    @Transactional
+    fun completeWithAuthenticator(token: String, code: String): LoginResult =
+        finishPending(secondFactors.complete(token) { secondFactors.verifyAuthenticator(it.userId, code) }, "authenticator")
+
+    /** The second step of a sign-in, with a recovery code, which is used up. */
+    @Transactional
+    fun completeWithRecoveryCode(token: String, code: String): LoginResult =
+        finishPending(secondFactors.complete(token) { secondFactors.useRecoveryCode(it.userId, code, it.ip) }, "recovery_code")
+
+    /** The challenge for a passkey, for the person a pending sign-in is for. Uses nothing up. */
+    fun startSecondFactorPasskey(token: String): PasskeyCeremony =
+        passkeys.startAssertion(secondFactors.pending(token).userId, PasskeyService.Purpose.SIGN_IN)
+
+    @Transactional
+    fun completeWithPasskey(token: String, requestId: String, credential: Map<String, Any?>): LoginResult =
+        finishPending(
+            secondFactors.complete(token) {
+                passkeys.verifyAssertion(it.userId, PasskeyService.Purpose.SIGN_IN, requestId, credential)
+            },
+            "passkey",
+        )
+
+    private fun finishPending(pending: PendingSignIn, factor: String): LoginResult {
+        val user = repo.findById(pending.userId) ?: throw ApiException.unauthorized()
+        return completeLogin(user, false, pending.deviceName, pending.userAgent, pending.ip, factor)
+            .also { log.info("login ok with a second factor ({})", factor) }
     }
 
     private fun completeLogin(
@@ -130,9 +182,10 @@ class AuthService(
         deviceName: String?,
         userAgent: String?,
         ip: String?,
+        secondFactor: String? = null,
     ): LoginResult {
         repo.markLogin(user.id)
-        val tokens = startSession(user.id, deviceName, userAgent, ip)
+        val (tokens, sessionId) = startSession(user.id, deviceName, userAgent, ip)
 
         audit.record(
             householdId = null,
@@ -140,9 +193,13 @@ class AuthService(
             action = if (isNewUser) "auth.signup" else "auth.login",
             entityType = "user",
             entityId = user.id,
+            diff = secondFactor?.let { mapOf("secondFactor" to it) },
             ip = ip,
             userAgent = userAgent,
         )
+        // Every sign-in to an existing account is news to its other devices.
+        // Queued in this transaction, so a sign-in that fails tells nobody.
+        if (!isNewUser) notices.newSignIn(user.id, sessionId, AccountNotices.describe(deviceName, userAgent))
         return LoginResult(tokens, isNewUser, user)
     }
 
@@ -151,7 +208,7 @@ class AuthService(
         deviceName: String?,
         userAgent: String?,
         ip: String?,
-    ): TokenPair {
+    ): Pair<TokenPair, UUID> {
         val expiry = Instant.now().plus(jwt.refreshTtl)
         val sessionId = repo.createSession(userId, deviceName, userAgent, ip, expiry)
         val refresh = jwt.newRefreshToken()
@@ -160,7 +217,75 @@ class AuthService(
             accessToken = jwt.issueAccessToken(userId, sessionId),
             refreshToken = refresh,
             expiresInSeconds = jwt.accessTtlSeconds,
+        ) to sessionId
+    }
+
+    // --- changing the phone number ----------------------------------------------------
+
+    /**
+     * Step one of changing (or adding) the number on an account: a code to the
+     * NEW number, which proves the person receives its texts.
+     *
+     * Only from a signed-in session that has just confirmed it's you — by a
+     * code to the channel the account already has, or by a second factor
+     * (StepUpService). Losing the old number is not a way to lose the account,
+     * and knowing a new one is not a way to take it.
+     */
+    fun requestPhoneChange(userId: UUID, sessionId: UUID?, rawPhone: String, ip: String?): OtpChallenge {
+        channels.requireEnabled(OtpChannel.PHONE)
+        stepUp.requireElevated(userId, sessionId, PHONE_CHANGE_STEP_UP)
+        val phone = PhoneNumber.normalize(rawPhone)
+        val user = repo.findById(userId) ?: throw ApiException.unauthorized()
+        if (user.phone == phone) {
+            throw ApiException.badRequest("phone_unchanged", "That's already the number on your account.")
+        }
+        return otp.request(phone, ip, OtpService.PHONE_CHANGE)
+    }
+
+    /**
+     * Step two: the code from the new number. The number is changed, the
+     * elevation it rested on is spent, and every device is told.
+     *
+     * A number that belongs to another account is refused only after its code
+     * is proven, so the refusal says nothing to anyone but the person holding
+     * that phone.
+     */
+    @Transactional
+    fun verifyPhoneChange(
+        userId: UUID,
+        sessionId: UUID?,
+        rawPhone: String,
+        code: String,
+        requestId: String?,
+        ip: String?,
+        userAgent: String?,
+    ): UserRow {
+        channels.requireEnabled(OtpChannel.PHONE)
+        stepUp.requireElevated(userId, sessionId, PHONE_CHANGE_STEP_UP)
+        val phone = PhoneNumber.normalize(rawPhone)
+        otp.verify(phone, code, requestId, OtpService.PHONE_CHANGE, ip)
+        val before = repo.findById(userId) ?: throw ApiException.unauthorized()
+        if (before.phone == phone) {
+            throw ApiException.badRequest("phone_unchanged", "That's already the number on your account.")
+        }
+        val updated = try {
+            repo.updatePhone(userId, phone)
+        } catch (e: DuplicateKeyException) {
+            throw ApiException.conflict(
+                "phone_in_use",
+                "That number is already used by another Almira account. Sign in with it there, or use a different number.",
+            )
+        }
+        audit.record(
+            householdId = null, actorUserId = userId, action = "auth.phone_changed",
+            entityType = "user", entityId = userId,
+            diff = mapOf("from" to before.phone?.let(PhoneNumber::mask), "to" to PhoneNumber.mask(phone)),
+            ip = ip, userAgent = userAgent,
         )
+        sessionId?.let(stepUp::spend)
+        notices.changed(userId, AccountNotices.Change.PHONE_CHANGED)
+        log.info("phone number changed for user {}", userId)
+        return updated
     }
 
     /**
@@ -258,5 +383,9 @@ class AuthService(
             )
         }
         return repo.updatePreferences(userId, fullName, defaultVisibility)
+    }
+
+    private companion object {
+        const val PHONE_CHANGE_STEP_UP = "For your security, confirm it's you before changing your phone number."
     }
 }

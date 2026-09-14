@@ -86,6 +86,12 @@ class AuthRepository(private val jdbc: NamedParameterJdbcTemplate) {
         mapOf("email" to email), userMapper,
     )!!
 
+    /** Throws DuplicateKeyException when another account, live or deleted, holds [phone]. */
+    fun updatePhone(userId: UUID, phone: String): UserRow = jdbc.queryForObject(
+        "update users set phone = :phone where id = :id and deleted_at is null returning *",
+        mapOf("id" to userId, "phone" to phone), userMapper,
+    )!!
+
     fun markLogin(userId: UUID) = jdbc.update(
         "update users set last_login_at = now() where id = :id", mapOf("id" to userId),
     )

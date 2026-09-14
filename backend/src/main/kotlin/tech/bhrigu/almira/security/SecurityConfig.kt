@@ -36,6 +36,9 @@ class SecurityConfig(
         .authorizeHttpRequests { auth ->
             auth.requestMatchers(
                 "/api/v1/auth/otp/**", "/api/v1/auth/refresh",
+                // The second step of a sign-in: nobody is signed in yet, and the
+                // token from the first step is the authority (AuthController).
+                "/api/v1/auth/second-factor/**",
                 "/actuator/health", "/health", "/health/live", "/health/ready",
                 "/docs/**", "/swagger-ui/**", "/v3/api-docs/**",
             ).permitAll()

@@ -171,6 +171,16 @@ almira:
     sign-in-channels: ${ALMIRA_SIGN_IN_CHANNELS:phone}
     email-allowlist: ${ALMIRA_ALPHA_EMAIL_ALLOWLIST:}
 
+  # Passkeys. Off until both are set, because a passkey is bound to its domain
+  # for good: set the domain people will use (ALMIRA_WEBAUTHN_RP_ID=almira.example.in)
+  # and the exact origin (ALMIRA_WEBAUTHN_ORIGINS=https://almira.example.in).
+  # Development: localhost and http://localhost:8080. The authenticator app and
+  # recovery codes do not depend on this.
+  webauthn:
+    rp-id: ${ALMIRA_WEBAUTHN_RP_ID:}
+    rp-name: ${ALMIRA_WEBAUTHN_RP_NAME:Almira}
+    origins: ${ALMIRA_WEBAUTHN_ORIGINS:}
+
   otp:
     provider: ${ALMIRA_OTP_PROVIDER:log}
     ttl: 5m

@@ -10,7 +10,7 @@ import {
   el, mount, categoryIcon, chipRow, skeletonRows, empty, money, formatDate, textInput, icon, avatarStack,
 } from "../ui.js";
 import { state } from "../state.js";
-import { t } from "../i18n.js";
+import { t, categoryName } from "../i18n.js";
 import { openCapture } from "./capture.js";
 import { openDetail } from "./detail.js";
 import { loadReview, firstNeedByRecord, needLabel } from "../review.js";
@@ -19,8 +19,8 @@ let filters = { q: "", category: null };
 
 export async function investmentsScreen(host) {
   const search = textInput({
-    type: "search", placeholder: "Search your holdings…", value: filters.q,
-    "aria-label": "Search holdings",
+    type: "search", placeholder: t("investments.search.placeholder"), value: filters.q,
+    "aria-label": t("investments.search.label"),
   });
 
   const results = el("div", {}, skeletonRows(4));
@@ -57,18 +57,18 @@ export async function investmentsScreen(host) {
   });
 
   // One row that scrolls sideways, not fourteen chips wrapping into two (D-09).
-  const categoryChips = chipRow("Filter by kind",
+  const categoryChips = chipRow(t("investments.filter"),
     el("button.chip", {
       type: "button", "aria-pressed": filters.category === null,
       onclick: () => { filters.category = null; drawChips(); load(); },
-    }, "Everything"),
+    }, t("investments.everything")),
     ...state.taxonomy.map((category) => el("button.chip", {
       type: "button", "aria-pressed": filters.category === category.categoryCode,
       onclick: () => {
         filters.category = filters.category === category.categoryCode ? null : category.categoryCode;
         drawChips(); load();
       },
-    }, categoryIcon(category.categoryCode, category.color), category.categoryLabel)),
+    }, categoryIcon(category.categoryCode, category.color), categoryName(category.categoryCode, category.categoryLabel))),
   );
 
   function drawChips() {
@@ -80,7 +80,7 @@ export async function investmentsScreen(host) {
 
   mount(host, el("div.stack", {},
     el("div.row-between.wrap", {},
-      el("h1", {}, "Investments"),
+      el("h1", {}, t("nav.investments")),
       // The + in the navigation is this screen's one teal action (docs/25 §2).
       el("button.btn", { type: "button", onclick: () => openCapture(load) }, icon("plus"), t("app.add").replace(/^＋\s*/, "")),
     ),
@@ -95,11 +95,11 @@ export async function investmentsScreen(host) {
 function renderRows(rows, needs, onChanged) {
   if (rows.length === 0) {
     return el("div.card", {}, empty({
-      title: "Nothing here yet",
+      title: t("investments.empty.title"),
       body: filters.q || filters.category
-        ? "No holdings match that. Try clearing the filters."
-        : "Add your first holding — it takes about twenty seconds.",
-      action: el("button.btn.btn-primary", { onclick: () => openCapture() }, icon("plus"), "Add something"),
+        ? t("investments.empty.filtered")
+        : t("investments.empty.body"),
+      action: el("button.btn.btn-primary", { type: "button", onclick: () => openCapture() }, icon("plus"), t("app.addSomething")),
     }));
   }
 

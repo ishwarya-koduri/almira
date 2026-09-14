@@ -63,22 +63,22 @@ async function safely(render) {
     return await render();
   } catch (error) {
     return el("div.card", {},
-      el("p.caption.muted", {}, `This part couldn't load: ${error.message}`));
+      el("p.caption.muted", {}, t("settings.cardFailed", { reason: error.message })));
   }
 }
 
 function preferencesCard() {
   const visibility = select({
     options: [
-      { value: "private", label: "Private — only I can see new entries" },
-      { value: "household", label: "Shared with my household" },
+      { value: "private", label: t("settings.visibility.private") },
+      { value: "household", label: t("settings.visibility.household") },
     ],
     value: state.user.defaultVisibility,
   });
   visibility.addEventListener("change", async () => {
     const updated = await api.patch("/api/v1/me", { defaultVisibility: visibility.value });
     update({ user: updated });
-    toast("Default updated.");
+    toast(t("settings.visibility.updated"));
   });
 
   // Theme, text size and data saver belong to this device, not the account
@@ -94,9 +94,9 @@ function preferencesCard() {
   return el("div.card.stack-3", {},
     el("h4", {}, t("prefs.title")),
     field({
-      label: "What should new entries default to?",
+      label: t("settings.visibility.label"),
       control: visibility,
-      help: "Your choice wins over the household default for anything you add.",
+      help: t("settings.visibility.help"),
     }),
     choice(t("prefs.appearance"), "prefs.theme", THEMES, prefs.theme, prefs.setTheme, t("prefs.themeHelp")),
     // D-04: for a parent whose phone is set smaller than they would like.
@@ -134,30 +134,30 @@ async function securityCard(host) {
   if (!status) return null;
 
   const body = el("div.stack-3", {});
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+  const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
 
   if (!status.enabled) {
     const passphrase = textInput({
       type: "password", autocomplete: "new-password", "aria-label": t("security.passphrase"),
     });
     const confirm = textInput({
-      type: "password", autocomplete: "new-password", "aria-label": "Again",
+      type: "password", autocomplete: "new-password", "aria-label": t("security.again"),
     });
     const button = el("button.btn.btn-primary", { type: "button" }, t("security.enable"));
 
     button.onclick = () => withBusy(button, async () => {
       error.textContent = "";
       if (passphrase.value.length < 12) {
-        error.textContent = "Use at least twelve characters — a sentence you'll remember.";
+        error.textContent = t("security.tooShort");
         return;
       }
       if (passphrase.value !== confirm.value) {
-        error.textContent = "Those don't match.";
+        error.textContent = t("security.mismatch");
         return;
       }
       try {
         await enableE2e(state.household.id, passphrase.value);
-        toast("Set up. Nothing is sealed yet.");
+        toast(t("security.setUp"));
         await settingsScreen(host);
       } catch (apiError) {
         error.textContent = apiError.message;
@@ -174,7 +174,7 @@ async function securityCard(host) {
         // Unicode form. Warning is honest; "helping" is not.
         help: t("security.passphraseHelp"),
       }),
-      field({ label: "Type it again", control: confirm }),
+      field({ label: t("security.again"), control: confirm }),
       el("p.notice", {}, el("span.info-mark", { "aria-hidden": "true" }, "i"), t("security.recoveryNote")),
       error,
       el("div.row", {}, button),
@@ -188,7 +188,7 @@ async function securityCard(host) {
         lock,
       ),
       el("p.caption.muted", {},
-        `${status.sealedFieldCount} sealed ${status.sealedFieldCount === 1 ? "field" : "fields"}.`),
+        t(status.sealedFieldCount === 1 ? "security.sealedOne" : "security.sealedMany", { count: status.sealedFieldCount })),
     );
   } else {
     const passphrase = textInput({
@@ -207,7 +207,7 @@ async function securityCard(host) {
     });
     body.append(
       el("div.row-between", {}, el("span", {}, t("security.locked")), el("span.caption.muted", {},
-        `${status.sealedFieldCount} sealed`)),
+        t("security.sealedCount", { count: status.sealedFieldCount }))),
       field({ label: t("security.passphrase"), control: passphrase }),
       error,
       el("div.row.wrap", {}, button,
@@ -222,7 +222,7 @@ async function securityCard(host) {
     el("p.caption.muted", {}, t("security.explain")),
     body,
     el("details", {},
-      el("summary.caption", {}, "What this costs"),
+      el("summary.caption", {}, t("security.costs")),
       el("div.stack-2", { style: { paddingTop: "8px" } },
         ...(status.caveats || []).map((caveat) => el("p.caption.muted", {}, caveat)),
       ),
@@ -248,16 +248,20 @@ async function sharingCard(host) {
           const revoke = el("button.btn.btn-sm.btn-danger", { type: "button" }, t("sharing.revoke"));
           revoke.onclick = () => withBusy(revoke, async () => {
             await api.revokeShare(state.household.id, share.id);
-            toast("Withdrawn. The link stops working immediately.");
+            toast(t("sharing.withdrawn"));
             await settingsScreen(host);
           });
           return el("div.row-between.wrap", {},
             el("div", {},
               el("div", {}, share.label),
               el("span.caption.muted", {},
-                `${share.scope} · ${share.itemCount} records · ` +
-                `${t("sharing.expires")} ${formatDate(share.expiresAt)} · ` +
-                `${t("sharing.views")} ${share.viewCount}${share.revokedAt ? " · withdrawn" : ""}`),
+                [
+                  t(`sharing.scope.${share.scope}`),
+                  t("sharing.records", { count: share.itemCount }),
+                  `${t("sharing.expires")} ${formatDate(share.expiresAt)}`,
+                  `${t("sharing.views")} ${share.viewCount}`,
+                  share.revokedAt && t("sharing.isWithdrawn"),
+                ].filter(Boolean).join(" · ")),
             ),
             !share.revokedAt && revoke,
           );
@@ -266,23 +270,21 @@ async function sharingCard(host) {
 }
 
 function newShare(host) {
-  const label = textInput({ placeholder: "Tax pack for Ramesh", "aria-label": "Label" });
+  const label = textInput({ placeholder: t("sharing.labelExample") });
   const scope = select({
     options: [
-      { value: "tax_pack", label: "This year's tax pack" },
-      { value: "handbook", label: "The family handbook" },
+      { value: "tax_pack", label: t("sharing.scope.tax_pack") },
+      { value: "handbook", label: t("sharing.scope.handbook") },
     ],
-    "aria-label": "What to share",
   });
   const days = select({
     options: [
-      { value: "1", label: "1 day" }, { value: "7", label: "7 days" },
-      { value: "30", label: "30 days" }, { value: "90", label: "90 days" },
+      { value: "1", label: t("sharing.oneDay") }, { value: "7", label: t("sharing.days", { count: 7 }) },
+      { value: "30", label: t("sharing.days", { count: 30 }) }, { value: "90", label: t("sharing.days", { count: 90 }) },
     ],
     value: "7",
-    "aria-label": "For how long",
   });
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+  const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
   const create = el("button.btn.btn-primary.grow", { type: "button" }, t("sharing.create"));
   const result = el("div.stack-2", {});
 
@@ -290,7 +292,7 @@ function newShare(host) {
     error.textContent = "";
     try {
       const share = await api.createShare(state.household.id, {
-        label: label.value.trim() || "Shared",
+        label: label.value.trim() || t("sharing.defaultLabel"),
         scope: scope.value,
         expiresInDays: Number(days.value),
       });
@@ -300,7 +302,7 @@ function newShare(host) {
         // What is actually inside, before it is sent: the family handbook
         // deliberately includes what is private to its owner.
         share.scopeNote && el("div.banner", {}, share.scopeNote),
-        el("div.banner", {}, "Copy this now — it isn't shown again."),
+        el("div.banner", {}, t("sharing.copyNow")),
         el("code", { style: { wordBreak: "break-all", fontSize: "var(--text-caption)" } }, share.url),
         el("button.btn.btn-sm", {
           type: "button",
@@ -308,9 +310,9 @@ function newShare(host) {
             try {
               await navigator.clipboard.writeText(share.url);
               toast(t("sharing.copied"));
-            } catch { toast("Select the link and copy it."); }
+            } catch { toast(t("sharing.copyByHand")); }
           },
-        }, "Copy"),
+        }, t("sharing.copy")),
       );
       create.disabled = true;
     } catch (apiError) {
@@ -321,12 +323,10 @@ function newShare(host) {
   const modal = sheet({
     title: t("sharing.create"),
     body: el("div.stack-3", {},
-      el("p.caption.muted", {},
-        "A link shows one slice, read-only, until it expires — and you can withdraw it at " +
-        "any time. It can never show more than you can see yourself."),
-      field({ label: "What is it for?", control: label }),
-      field({ label: "What to share", control: scope }),
-      field({ label: "For how long", control: days }),
+      el("p.caption.muted", {}, t("sharing.explain")),
+      field({ label: t("sharing.whatFor"), control: label }),
+      field({ label: t("sharing.whatToShare"), control: scope }),
+      field({ label: t("sharing.howLong"), control: days }),
       error,
       result,
     ),
@@ -345,8 +345,7 @@ async function ratesCard(host) {
 
   return el("div.card.stack-3", {},
     el("h4", {}, t("money.rates")),
-    el("p.caption.muted", {},
-      "Holdings are kept in the currency they're in. These are only used to show a total."),
+    el("p.caption.muted", {}, t("money.ratesExplain")),
     el("div.stack-2", {}, ...rates.slice(0, 8).map((rate) => el("div.row-between", {},
       el("span", {}, `1 ${rate.base} = ${rate.rate} ${rate.quote}`),
       el("span.caption.muted", {}, `${rate.source} · ${t("money.asOf")} ${formatDate(rate.asOf)}`),
@@ -382,10 +381,10 @@ async function connectCard(host) {
 async function trashCard() {
   const rows = await api.trash(state.household.id);
   return el("div.card.stack-3", {},
-    el("div.section-title", {}, el("h4", {}, "Trash"),
-      el("span.caption.muted", {}, "Deleted entries are kept until you remove them")),
+    el("div.section-title", {}, el("h4", {}, t("trash.title")),
+      el("span.caption.muted", {}, t("trash.explain"))),
     rows.length === 0
-      ? el("p.caption.muted", { style: { margin: 0 } }, "Nothing in the trash.")
+      ? el("p.caption.muted", { style: { margin: 0 } }, t("trash.empty"))
       : el("div.list", {}, ...rows.map((row) => el("div.list-row", { style: { cursor: "default" } },
           el("div.grow", {},
             el("div.title", {}, row.title),
@@ -396,11 +395,11 @@ async function trashCard() {
             onclick: async (event) => {
               await withBusy(event.currentTarget, async () => {
                 await api.restore(state.household.id, row.id);
-                toast("Restored.");
+                toast(t("trash.restored"));
                 await reload();
               });
             },
-          }, "Restore"),
+          }, t("trash.restore")),
         ))),
   );
 }
@@ -408,22 +407,22 @@ async function trashCard() {
 async function sessionsCard() {
   const sessions = await api.get("/api/v1/auth/sessions");
   return el("div.card.stack-3", {},
-    el("div.section-title", {}, el("h4", {}, "Where you're signed in")),
+    el("div.section-title", {}, el("h4", {}, t("sessions.title"))),
     el("div.list", {}, ...sessions.map((session) => el("div.list-row", { style: { cursor: "default" } },
       el("div.grow", {},
-        el("div.title", {}, session.deviceName || "Unknown device"),
-        el("div.meta", {}, `Last used ${formatDate(session.lastUsedAt)}`),
+        el("div.title", {}, session.deviceName || t("sessions.unknownDevice")),
+        el("div.meta", {}, t("sessions.lastUsed", { date: formatDate(session.lastUsedAt) })),
       ),
       el("button.btn.btn-sm.btn-danger", {
         type: "button",
         onclick: async (event) => {
           await withBusy(event.currentTarget, async () => {
             await api.del(`/api/v1/auth/sessions/${session.id}`);
-            toast("Signed out on that device.");
+            toast(t("sessions.signedOutThere"));
             settingsScreen(document.getElementById("view"));
           });
         },
-      }, "Sign out"),
+      }, t("sessions.signOut")),
     ))),
     el("div.row", {},
       el("button.btn.btn-danger", {
@@ -431,7 +430,7 @@ async function sessionsCard() {
         // signOut resolves once the offline copy is deleted too, so the reload
         // cannot interrupt that.
         onclick: async () => { await api.signOut(); location.reload(); },
-      }, "Sign out here"),
+      }, t("sessions.signOutHere")),
     ),
   );
 }
@@ -466,7 +465,7 @@ function privacyCard() {
   return el("div.card.stack-3", {},
     el("h4", {}, t("privacy.title")),
     el("p.caption.muted", { style: { margin: 0 } }, t("privacy.summary")),
-    el("div.row", {}, privacyLink(),
+    el("div.row.wrap", {}, privacyLink(),
       el("button.btn.btn-ghost.btn-sm", { type: "button", onclick: () => navigate("rights") },
         t("rights.open"))),
   );
@@ -474,11 +473,9 @@ function privacyCard() {
 
 function aboutCard() {
   return el("div.card.stack-3", {},
-    el("h4", {}, "About"),
-    el("p.caption.muted", { style: { margin: 0 } },
-      "Almira never moves money, never holds funds, and never stores a bank password. " +
-      "It is a record — which is exactly why it can track the things transactional apps can't."),
-    notice("Figures are informational and are not financial advice."),
+    el("h4", {}, t("about.title")),
+    el("p.caption.muted", { style: { margin: 0 } }, t("about.body")),
+    notice(t("about.notAdvice")),
   );
 }
 

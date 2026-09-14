@@ -43,7 +43,8 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
       family: () => [ownershipCard(), nomineeCard()],
       reminders: () => [remindersCard()],
     };
-    const host = el("div.stack-3", { role: "tabpanel", "aria-label": t(`detail.section.${current}`) },
+    // A named group, not a tab panel: the section buttons are pressed toggles, not tabs.
+    const host = el("div.stack-3", { role: "group", "aria-label": t(`detail.section.${current}`) },
       ...sections[current]());
     mount(body, el("div.stack-3", {},
       el("div.row", {},
@@ -104,25 +105,24 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
   function detailsCard() {
     return el("div.card.card-tight.stack-2", {},
       el("div.overline", {}, t("detail.section.details")),
-      record.investedAmount && row("Amount invested", inOwnCurrency(record.investedAmount, record.currency)),
-      record.quantity && row("Quantity", `${record.quantity} ${record.unit || ""}`.trim()),
-      record.startDate && row(schema.common?.start_date?.label || "Started", formatDate(record.startDate)),
-      record.maturityDate && row(schema.common?.maturity_date?.label || "Matures", formatDate(record.maturityDate)),
+      record.investedAmount && row(t("detail.invested"), inOwnCurrency(record.investedAmount, record.currency)),
+      record.quantity && row(t("detail.quantity"), `${record.quantity} ${record.unit || ""}`.trim()),
+      record.startDate && row(schema.common?.start_date?.label || t("detail.started"), formatDate(record.startDate)),
+      record.maturityDate && row(schema.common?.maturity_date?.label || t("detail.matures"), formatDate(record.maturityDate)),
       ...attributeRows(record, schema),
-      row("Added", formatDate(record.createdAt)),
+      row(t("detail.added"), formatDate(record.createdAt)),
     );
   }
 
   function actionsRow() {
     return el("div.stack-2", {},
       el("div.row.wrap", { style: { gap: "8px" } },
-        el("button.btn", { type: "button", onclick: () => duplicate() }, "Duplicate"),
+        el("button.btn", { type: "button", onclick: () => duplicate() }, t("detail.duplicate")),
         record.maturityDate && el("button.btn", { type: "button", onclick: () => renew() },
-          "Renew this"),
-        el("button.btn.btn-danger", { type: "button", onclick: () => archive() }, "Move to trash"),
+          t("detail.renew")),
+        el("button.btn.btn-danger", { type: "button", onclick: () => archive() }, t("detail.trash")),
       ),
-      record.rolledFromId && el("p.caption.muted", {},
-        "This renewed an earlier record, which is kept as history."),
+      record.rolledFromId && el("p.caption.muted", {}, t("detail.renewedFrom")),
     );
   }
 
@@ -132,14 +132,14 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
     // Ownership and visibility sit together: they are the two questions this
     // product exists to answer clearly.
     return el("div.card.card-tight.stack-2", {},
-      el("div.overline", {}, "Ownership & privacy"),
+      el("div.overline", {}, t("detail.ownershipPrivacy")),
       el("div.stack-2", {}, ...record.owners.map((owner) => el("div.row", {},
         avatar(owner.memberId, owner.name),
         el("span.grow", {}, owner.name || t("detail.someone")),
         Number(owner.sharePct) !== 100 && el("span.caption.muted", {}, `${owner.sharePct}%`)))),
-      row("Who can see it", visibilityText(record)),
+      row(t("common.whoCanSeeIt"), visibilityText(record)),
       el("div.row", {},
-        el("button.btn.btn-sm", { type: "button", onclick: () => changeVisibility() }, "Change who can see this"),
+        el("button.btn.btn-sm", { type: "button", onclick: () => changeVisibility() }, t("detail.changeVisibility")),
       ),
     );
   }
@@ -226,7 +226,7 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
     })();
     return el("div.card.card-tight.stack-2", {},
       el("div.overline", {}, t("detail.section.reminders")),
-      record.maturityDate && row(schema.common?.maturity_date?.label || "Matures", when(record.maturityDate)),
+      record.maturityDate && row(schema.common?.maturity_date?.label || t("detail.matures"), when(record.maturityDate)),
       row(t("detail.lastConfirmed"), record.lastVerifiedAt ? formatDate(record.lastVerifiedAt) : t("detail.never")),
       list,
     );
@@ -236,7 +236,7 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
 
   function returnsCard() {
     const host = el("div.card.card-tight.stack-2", {},
-      el("div.overline", {}, "Return"),
+      el("div.overline", {}, t("detail.return")),
       el("div.skeleton", { style: { height: "40px" } }),
     );
 
@@ -247,9 +247,9 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
         // explained rather than shown as a zero — a fabricated return is worse
         // than no return (docs/01 §8).
         const figures = [
-          ["Gain, realised", performance.realizedGainFormatted],
-          ["Gain, on paper", performance.unrealizedGainFormatted],
-          ["Absolute", performance.absoluteReturn !== null && performance.absoluteReturn !== undefined
+          [t("detail.gain.realised"), performance.realizedGainFormatted],
+          [t("detail.gain.onPaper"), performance.unrealizedGainFormatted],
+          [t("detail.absolute"), performance.absoluteReturn !== null && performance.absoluteReturn !== undefined
             ? `${performance.absoluteReturn}%` : null],
           ["CAGR", performance.cagr !== null && performance.cagr !== undefined
             ? `${performance.cagr}%` : null],
@@ -258,15 +258,15 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
         ].filter(([, value]) => value !== null && value !== undefined);
 
         mount(host,
-          el("div.overline", {}, "Return"),
+          el("div.overline", {}, t("detail.return")),
           ...(figures.length
             ? figures.map(([label, value]) => row(label, value))
             : []),
           performance.note && el("p.caption.muted", {}, performance.note),
         );
       } catch {
-        mount(host, el("div.overline", {}, "Return"),
-          el("p.caption.muted", {}, "We couldn't work this out just now."));
+        mount(host, el("div.overline", {}, t("detail.return")),
+          el("p.caption.muted", {}, t("detail.returnFailed")));
       }
     })();
 
@@ -277,15 +277,14 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
 
   function nomineeCard() {
     return el("div.card.card-tight.stack-2", {},
-      el("div.overline", {}, "Nominees"),
+      el("div.overline", {}, t("detail.nominees")),
       record.nominees.length
         ? el("div.stack-2", {}, ...record.nominees.map((nominee) => row(
-            nominee.name, `${nominee.relationship || "nominee"} · ${nominee.sharePct}%`)))
-        : el("p.caption.muted", {},
-            "Nobody recorded. A nominee is who the institution pays — not who inherits it."),
+            nominee.name, `${nominee.relationship || t("detail.nominee")} · ${nominee.sharePct}%`)))
+        : el("p.caption.muted", {}, t("detail.nominees.none")),
       el("div.row", {},
         el("button.btn.btn-sm", { type: "button", onclick: () => editNominees() },
-          record.nominees.length ? "Change nominees" : "Add a nominee"),
+          record.nominees.length ? t("detail.nominees.change") : t("detail.nominees.add")),
       ),
     );
   }
@@ -293,24 +292,24 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
   function editNominees() {
     const rows = [];
     const host = el("div.stack-2", {});
-    const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+    const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
 
     const addRow = (existing) => {
       const who = select({
         options: [
-          { value: "", label: "Someone outside the household" },
+          { value: "", label: t("detail.nominees.outside") },
           ...state.members.map((m) => ({ value: m.id, label: m.displayName })),
         ],
         value: existing?.memberId || "",
-        "aria-label": "Nominee",
+        "aria-label": t("detail.nominee.who"),
       });
       const name = el("input.input", {
-        type: "text", placeholder: "Their name", value: existing?.name || "",
-        "aria-label": "Nominee name",
+        type: "text", placeholder: t("common.theirName"), value: existing?.name || "",
+        "aria-label": t("detail.nominee.name"),
       });
       const share = el("input.input", {
         type: "number", min: "1", max: "100", value: String(existing?.sharePct ?? 100),
-        "aria-label": "Share", style: { width: "88px" },
+        "aria-label": t("detail.nominee.share"), style: { width: "88px" },
       });
       const entry = { who, name, share };
       rows.push(entry);
@@ -320,7 +319,7 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
         el("button.btn.btn-sm.btn-danger", {
           type: "button",
           onclick: () => { node.remove(); rows.splice(rows.indexOf(entry), 1); },
-        }, "Remove"),
+        }, t("app.remove")),
       );
       // A member and a written name are alternatives, not both.
       who.addEventListener("change", () => { name.hidden = Boolean(who.value); });
@@ -330,7 +329,7 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
 
     (record.nominees.length ? record.nominees : [null]).forEach(addRow);
 
-    const save = el("button.btn.btn-primary.grow", { type: "button" }, "Save nominees");
+    const save = el("button.btn.btn-primary.grow", { type: "button" }, t("detail.nominees.save"));
     save.onclick = () => withBusy(save, async () => {
       error.textContent = "";
       try {
@@ -342,7 +341,7 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
           })).filter((nominee) => nominee.memberId || nominee.name),
         });
         nomineeModal.close();
-        toast("Nominees saved.");
+        toast(t("detail.nominees.saved"));
         record = await api.investment(state.household.id, id);
         draw();
         await (onChanged ? onChanged() : reload());
@@ -352,13 +351,11 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
     });
 
     const nomineeModal = sheet({
-      title: "Who should receive this?",
+      title: t("detail.nominees.title"),
       body: el("div.stack-3", {},
-        el("p.caption.muted", {},
-          "A nominee receives the money from the institution. Who inherits it is " +
-          "decided by a will — Almira records both so a mismatch can be spotted."),
+        el("p.caption.muted", {}, t("detail.nominees.explain")),
         host,
-        el("button.btn.btn-sm", { type: "button", onclick: () => addRow(null) }, "＋ Add another"),
+        el("button.btn.btn-sm", { type: "button", onclick: () => addRow(null) }, t("detail.nominees.another")),
         error,
       ),
       footer: [save],
@@ -368,24 +365,22 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
   /* --- duplicate and renew -------------------------------------------------- */
 
   function duplicate() {
-    const button = el("button.btn.btn-primary.grow", { type: "button" }, "Make a copy");
-    const title = el("input.input", { type: "text", value: `${record.title} (copy)`, "aria-label": "Name" });
+    const button = el("button.btn.btn-primary.grow", { type: "button" }, t("detail.copy.make"));
+    const title = el("input.input", { type: "text", value: t("detail.copy.name", { title: record.title }) });
     button.onclick = () => withBusy(button, async () => {
       const created = await api.duplicate(state.household.id, id, { title: title.value.trim() || null });
       duplicateModal.close();
       modal.close();
-      toast("Copied. The history stays with the original.");
+      toast(t("detail.copy.done"));
       await (onChanged ? onChanged() : reload());
       if (created.investment) openDetail(created.id, onChanged);
     });
 
     const duplicateModal = sheet({
-      title: "Duplicate",
+      title: t("detail.duplicate"),
       body: el("div.stack-3", {},
-        el("p.caption.muted", {},
-          "Same shape — type, institution, owners, nominees. The valuations and " +
-          "transactions stay with the original, because they happened to it."),
-        field({ label: "Name", control: title }),
+        el("p.caption.muted", {}, t("detail.copy.explain")),
+        field({ label: t("capture.field.title"), control: title }),
       ),
       footer: [button],
     });
@@ -397,8 +392,8 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
       amount.input.value = String(record.value);
       amount.input.dispatchEvent(new Event("input"));
     }
-    const maturity = el("input.input", { type: "date", "aria-label": "New maturity date" });
-    const button = el("button.btn.btn-primary.grow", { type: "button" }, "Renew it");
+    const maturity = el("input.input", { type: "date" });
+    const button = el("button.btn.btn-primary.grow", { type: "button" }, t("detail.renew.button"));
 
     button.onclick = () => withBusy(button, async () => {
       await api.rollover(state.household.id, id, {
@@ -407,20 +402,18 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
       });
       renewModal.close();
       modal.close();
-      toast("Renewed. The old record is kept, marked matured.");
+      toast(t("detail.renew.done"));
       await (onChanged ? onChanged() : reload());
     });
 
     const renewModal = sheet({
-      title: `Renew ${record.title}`,
+      title: t("detail.renew.title", { title: record.title }),
       body: el("div.stack-3", {},
-        el("p.caption.muted", {},
-          `The old record is kept and marked matured, and the new one starts where ` +
-          `it ended${record.maturityDate ? ` — ${formatDate(record.maturityDate)}` : ""}. ` +
-          `Anything it funds carries across.`),
-        field({ label: "Amount", control: amount, help: "Principal plus whatever it earned." }),
-        field({ label: "New maturity date", control: maturity,
-          help: "We don't guess this one — the old date has already passed." }),
+        el("p.caption.muted", {}, record.maturityDate
+          ? t("detail.renew.explainOn", { date: formatDate(record.maturityDate) })
+          : t("detail.renew.explain")),
+        field({ label: t("capture.field.investedAmount"), control: amount, help: t("detail.renew.amountHelp") }),
+        field({ label: t("detail.renew.maturity"), control: maturity, help: t("detail.renew.maturityHelp") }),
       ),
       footer: [button],
     });
@@ -438,7 +431,7 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
       const label = def?.label || key.replace(/_/g, " ");
       let shown = value;
       if (def?.dataType === "money") shown = rupees(value);
-      else if (def?.dataType === "bool") shown = value ? "Yes" : "No";
+      else if (def?.dataType === "bool") shown = value ? t("common.yes") : t("common.no");
       else if (def?.dataType === "select") {
         shown = def.options?.find((o) => o.value === value)?.label || value;
       } else if (def?.unit) shown = `${value} ${def.unit}`;
@@ -448,22 +441,22 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
 
   function updateValue() {
     const amount = moneyInput({ placeholder: "0" });
-    const save = el("button.btn.btn-primary", { type: "button" }, "Save value");
+    const save = el("button.btn.btn-primary", { type: "button" }, t("detail.value.save"));
     const valueField = field({
-      label: "What is it worth today?", control: amount, required: true,
-      help: "A snapshot. We keep the history so you can see the trend later.",
+      label: t("detail.value.question"), control: amount, required: true,
+      help: t("detail.value.help"),
     });
     const inner = sheet({
-      title: "Update value",
+      title: t("detail.updateValue"),
       body: el("div.stack-3", {}, valueField),
       footer: [save],
     });
     save.onclick = () => withBusy(save, async () => {
       const value = amount.value();
-      if (value === null) { valueField.setError("Enter an amount"); return; }
+      if (value === null) { valueField.setError(t("common.enterAmount")); return; }
       try {
         record = await api.addValuation(state.household.id, id, { value });
-        inner.close(); draw(); toast("Value updated.");
+        inner.close(); draw(); toast(t("detail.value.updated"));
       } catch (error) { valueField.setError(error.message); }
     });
   }
@@ -471,13 +464,15 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
   function changeVisibility() {
     const choice = select({
       options: [
-        { value: "private", label: "Private — only the owner" },
-        { value: "household", label: `Shared with ${state.household.name}` },
-        { value: "scoped", label: "Shared with specific people" },
+        { value: "private", label: t("detail.visibility.private") },
+        { value: "household", label: t("common.sharedWith", { name: state.household.name }) },
+        { value: "scoped", label: t("common.sharedWithSome") },
       ],
       value: record.visibility,
     });
-    const picker = el("div.row.wrap", { style: { gap: "8px" }, hidden: record.visibility !== "scoped" },
+    const picker = el("div.row.wrap", {
+      role: "group", "aria-label": t("capture.chooseWho"), style: { gap: "8px" }, hidden: record.visibility !== "scoped",
+    },
       ...state.members.filter((m) => !m.isMe).map((m) => el("button.chip", {
         type: "button", "data-member": m.id,
         "aria-pressed": String(record.visibleToMemberIds.includes(m.id)),
@@ -489,12 +484,11 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
     );
     choice.addEventListener("change", () => { picker.hidden = choice.value !== "scoped"; });
 
-    const save = el("button.btn.btn-primary", { type: "button" }, "Save");
+    const save = el("button.btn.btn-primary", { type: "button" }, t("app.save"));
     const inner = sheet({
-      title: "Who can see this?",
+      title: t("common.whoCanSee"),
       body: el("div.stack-3", {},
-        field({ label: "Visibility", control: choice,
-          help: "Private is genuinely private — no role in the household can override it." }),
+        field({ label: t("detail.visibility.label"), control: choice, help: t("detail.visibility.help") }),
         picker,
       ),
       footer: [save],
@@ -507,7 +501,7 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
         record = await api.setVisibility(state.household.id, id, {
           visibility: choice.value, visibleToMemberIds,
         });
-        inner.close(); draw(); toast("Updated.");
+        inner.close(); draw(); toast(t("common.updated"));
         await reload();
       } catch (error) { toast(error.message, { tone: "error" }); }
     });
@@ -517,11 +511,11 @@ export async function openDetail(id, onChanged, { section = "details" } = {}) {
     try {
       await api.archive(state.household.id, id);
       modal.close();
-      toast("Moved to trash.", {
-        action: "Undo",
+      toast(t("detail.trashed"), {
+        action: t("common.undo"),
         onAction: async () => {
           await api.restore(state.household.id, id);
-          toast("Restored.");
+          toast(t("trash.restored"));
           await reload();
         },
       });
@@ -618,20 +612,20 @@ function valueExplanation(record) {
     if (key) return t(key, { date: formatDate(record.valuedOn) });
   }
   switch (record.valueBasis) {
-    case "valued": return `Your snapshot from ${formatDate(record.valuedOn)}`;
-    case "at_cost": return "What you paid — add a value to see what it's worth today";
-    case "custom_field": return "From a field you added";
-    default: return "Add a value to include this in your totals";
+    case "valued": return t("detail.basis.valued", { date: formatDate(record.valuedOn) });
+    case "at_cost": return t("detail.basis.atCost");
+    case "custom_field": return t("detail.basis.customField");
+    default: return t("detail.basis.none");
   }
 }
 
 function visibilityText(record) {
-  if (record.visibility === "household") return `Everyone in ${state.household.name}`;
+  if (record.visibility === "household") return t("common.everyoneIn", { name: state.household.name });
   if (record.visibility === "scoped") {
     const names = state.members
       .filter((m) => record.visibleToMemberIds.includes(m.id))
       .map((m) => m.displayName);
-    return names.length ? `The owner and ${names.join(", ")}` : "The owner only";
+    return names.length ? t("detail.visibility.ownerAnd", { names: names.join(", ") }) : t("detail.visibility.ownerOnly");
   }
-  return "Only the owner — not even a household admin";
+  return t("detail.visibility.privateText");
 }

@@ -13,6 +13,7 @@ import { el, mount, skeletonRows, withBusy, toast, notice } from "../ui.js";
 import { state } from "../state.js";
 import { openDetail } from "./detail.js";
 import { completenessPercent } from "../completeness.js";
+import { t } from "../i18n.js";
 
 export async function reportsScreen(host) {
   mount(host, skeletonRows(4));
@@ -22,7 +23,7 @@ export async function reportsScreen(host) {
   ]);
 
   mount(host, el("div.stack", {},
-    el("h2", {}, "Reports"),
+    el("h2", {}, t("nav.reports")),
     completenessCard(completeness, host),
     insightsCard(insights),
     exportCard(),
@@ -33,7 +34,7 @@ function completenessCard(report, host) {
   const percent = completenessPercent(report);
   return el("div.card.stack-2", {},
     el("div.row-between.wrap", { style: { alignItems: "baseline" } },
-      el("h3", {}, "How complete this is"),
+      el("h3", {}, t("reports.complete")),
       // A score is progress, not the household's worth: ink, never brass (D-01).
       percent && el("div.score", {}, percent),
     ),
@@ -44,12 +45,13 @@ function completenessCard(report, host) {
     ...report.checks.map((check) => el("div.row-between.wrap", {},
       el("div", {},
         el("span", {}, check.label),
-        el("span.caption.muted", {}, ` — ${check.done} done, ${check.outstanding} to go`),
+        el("span.caption.muted", {}, ` — ${t("reports.doneToGo", { done: check.done, outstanding: check.outstanding })}`),
       ),
       check.outstanding > 0 && el("button.btn.btn-sm", {
         type: "button",
         onclick: () => openDetail(check.investmentIds[0], () => reportsScreen(host)),
-      }, "Fix the first"),
+        "aria-label": `${t("reports.fixFirst")}: ${check.label}`,
+      }, t("reports.fixFirst")),
     )),
 
     notice(report.note),
@@ -59,19 +61,19 @@ function completenessCard(report, host) {
 function insightsCard(insights) {
   if (insights.concentration.length === 0) {
     return el("div.card.stack-2", {},
-      el("h3", {}, "Where the money is"),
+      el("h3", {}, t("reports.whereMoney")),
       ...insights.observations.map((line) => el("p.muted", {}, line)),
     );
   }
 
   return el("div.card.stack-2", {},
     el("div.row-between.wrap", {},
-      el("h3", {}, "Where the money is"),
+      el("h3", {}, t("reports.whereMoney")),
       el("b", {}, insights.totalAssetsFormatted),
     ),
 
     el("div.stack-2", {},
-      el("span.overline", {}, "Bunched"),
+      el("span.overline", {}, t("reports.bunched")),
       ...insights.concentration.map((item) => el("div.row-between", {},
         el("span", {}, `${labelFor(item.kind)}: ${item.label}`),
         el("span.muted", {}, `${item.percentage}% · ${item.valueFormatted}`),
@@ -79,20 +81,20 @@ function insightsCard(insights) {
     ),
 
     el("div.stack-2", {},
-      el("span.overline", {}, "How quickly you could reach it"),
+      el("span.overline", {}, t("reports.liquidity")),
       ...insights.liquidity.map((bucket) => el("div.stack-2", {},
         el("div.row-between", {},
           el("span", {}, bucket.label),
           el("span.muted", {}, `${bucket.percentage}% · ${bucket.valueFormatted}`),
         ),
-        el("div.meter", { role: "img", "aria-label": `${bucket.percentage}%` },
+        el("div.meter", { role: "img", "aria-label": `${bucket.label}: ${bucket.percentage}%` },
           el("div.meter-fill", { style: { width: `${Math.min(100, Number(bucket.percentage))}%` } })),
         el("span.caption.muted", {}, bucket.description),
       )),
     ),
 
     insights.observations.length > 0 && el("div.stack-2", {},
-      el("span.overline", {}, "Worth noticing"),
+      el("span.overline", {}, t("reports.noticing")),
       ...insights.observations.map((line) => el("p.caption.muted", {}, line)),
     ),
 
@@ -100,13 +102,13 @@ function insightsCard(insights) {
   );
 }
 
-const labelFor = (kind) => ({
-  holding: "Largest holding", institution: "Largest institution", category: "Largest kind",
-}[kind] || kind);
+const labelFor = (kind) => (["holding", "institution", "category"].includes(kind) ? t(`reports.largest.${kind}`) : kind);
 
 function exportCard() {
   const buttons = ["csv", "xlsx", "pdf"].map((format) => {
-    const button = el("button.btn", { type: "button" }, format.toUpperCase());
+    const button = el("button.btn", {
+      type: "button", "aria-label": t("reports.downloadAs", { format: format.toUpperCase() }),
+    }, format.toUpperCase());
     button.onclick = () => withBusy(button, async () => {
       try {
         await downloadAuthenticated(
@@ -119,10 +121,8 @@ function exportCard() {
   });
 
   return el("div.card.stack-2", {},
-    el("h3", {}, "Take your data with you"),
-    el("p.caption.muted", {},
-      "Everything you can see, in a file you own. The spreadsheet formats carry " +
-      "raw numbers so you can add them up yourself."),
+    el("h3", {}, t("reports.export.title")),
+    el("p.caption.muted", {}, t("reports.export.body")),
     el("div.row.wrap", { style: { gap: "8px" } }, ...buttons),
   );
 }

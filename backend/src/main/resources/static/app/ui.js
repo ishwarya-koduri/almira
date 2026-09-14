@@ -5,8 +5,8 @@
    accumulating a second architecture to maintain.
    ============================================================================= */
 
-import { groupIndian, relativeKey, rupees, compactRupees } from "./format.js";
-import { t } from "./i18n.js";
+import { groupIndian, relativeKey, rupees, compactRupees, amountInWords } from "./format.js";
+import { t, language, localDate } from "./i18n.js";
 import { savingData } from "./prefs.js";
 import { memberToneIndex, initials } from "./glance.js";
 
@@ -70,9 +70,22 @@ export function mount(node, ...children) { clear(node); append(node, children); 
 export { groupIndian, rupees, compactRupees, withoutZeroRows } from "./format.js";
 export { memberToneIndex, initials } from "./glance.js";
 
+/** A date in the reader's language (docs/14): "5 Mar 2028", "5 మార్చి 2028". */
 export function formatDate(iso) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  return localDate(iso);
+}
+
+/**
+ * The amount-in-words line (X-06). In English, the server's own sentence, so a
+ * PDF and this page say the same thing; in Telugu and Hindi, the same number
+ * written here in the reader's words.
+ *
+ * @param serverWords the server's English line, when it sent one
+ * @param value       the number it describes
+ */
+export function amountWords(serverWords, value, options = {}) {
+  if (language.code === "en" && serverWords) return serverWords;
+  return amountInWords(value, language.code, options) || serverWords || "";
 }
 
 /** "in 4 days", in the reader's language. */

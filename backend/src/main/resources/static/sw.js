@@ -58,6 +58,9 @@ const SHELL_FILES = [
   "/app/prefs.js",
   "/app/state.js",
   "/app/i18n.js",
+  // i18n.js imports them: Telugu and Hindi drafts awaiting review (X-06, docs/14).
+  "/app/i18n-te.js",
+  "/app/i18n-hi.js",
   "/app/screens/auth.js",
   "/app/auth-outcome.js",
   "/app/sign-in-security.js",

@@ -80,3 +80,124 @@ export function relativeKey(iso, now = new Date()) {
 export function withoutZeroRows(rows) {
   return (rows || []).filter((row) => Number(row.value) !== 0);
 }
+
+/* -----------------------------------------------------------------------------
+   An amount in words, in the reader's language (X-06).
+
+   The server writes the English line ("Thirty Three Lakh Fifty Thousand") and
+   the English client shows that one, so a PDF and a phone agree. Telugu and
+   Hindi are written here, from the same number, on the same Indian scale:
+   crore, lakh, thousand, hundred. The figures beside them stay ₹33,50,000 in
+   every language (docs/14 rule 1). The Telugu and Hindi forms are drafts that
+   a native speaker has not yet reviewed (docs/14).
+   ----------------------------------------------------------------------------- */
+
+const EN_ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+  "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+const EN_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+// Hindi has a word of its own for every number below a hundred.
+const HI_UNDER_100 = [
+  "", "एक", "दो", "तीन", "चार", "पाँच", "छह", "सात", "आठ", "नौ",
+  "दस", "ग्यारह", "बारह", "तेरह", "चौदह", "पंद्रह", "सोलह", "सत्रह", "अठारह", "उन्नीस",
+  "बीस", "इक्कीस", "बाईस", "तेईस", "चौबीस", "पच्चीस", "छब्बीस", "सत्ताईस", "अट्ठाईस", "उनतीस",
+  "तीस", "इकतीस", "बत्तीस", "तैंतीस", "चौंतीस", "पैंतीस", "छत्तीस", "सैंतीस", "अड़तीस", "उनतालीस",
+  "चालीस", "इकतालीस", "बयालीस", "तैंतालीस", "चवालीस", "पैंतालीस", "छियालीस", "सैंतालीस", "अड़तालीस", "उनचास",
+  "पचास", "इक्यावन", "बावन", "तिरेपन", "चौवन", "पचपन", "छप्पन", "सत्तावन", "अट्ठावन", "उनसठ",
+  "साठ", "इकसठ", "बासठ", "तिरेसठ", "चौंसठ", "पैंसठ", "छियासठ", "सड़सठ", "अड़सठ", "उनहत्तर",
+  "सत्तर", "इकहत्तर", "बहत्तर", "तिहत्तर", "चौहत्तर", "पचहत्तर", "छिहत्तर", "सतहत्तर", "अठहत्तर", "उन्यासी",
+  "अस्सी", "इक्यासी", "बयासी", "तिरासी", "चौरासी", "पचासी", "छियासी", "सत्तासी", "अट्ठासी", "नवासी",
+  "नब्बे", "इक्यानवे", "बानवे", "तिरानवे", "चौरानवे", "पंचानवे", "छियानवे", "सत्तानवे", "अट्ठानवे", "निन्यानवे",
+];
+
+const TE_ONES = ["", "ఒకటి", "రెండు", "మూడు", "నాలుగు", "ఐదు", "ఆరు", "ఏడు", "ఎనిమిది", "తొమ్మిది",
+  "పది", "పదకొండు", "పన్నెండు", "పదమూడు", "పద్నాలుగు", "పదిహేను", "పదహారు", "పదిహేడు", "పద్దెనిమిది", "పందొమ్మిది"];
+const TE_TENS = ["", "", "ఇరవై", "ముప్పై", "నలభై", "యాభై", "అరవై", "డెబ్బై", "ఎనభై", "తొంభై"];
+
+const SCALES = [[CRORE, "crore"], [LAKH, "lakh"], [1000, "thousand"], [100, "hundred"]];
+
+/** Splits a whole number into [count, scale] parts, largest first, and the rest below a hundred. */
+function indianParts(whole) {
+  let remaining = whole;
+  const parts = [];
+  for (const [divisor, scale] of SCALES) {
+    const count = Math.floor(remaining / divisor);
+    if (count > 0) { parts.push([count, scale]); remaining %= divisor; }
+  }
+  return { parts, rest: remaining };
+}
+
+function englishWords(whole) {
+  const under100 = (n) => (n < 20 ? EN_ONES[n] : EN_TENS[Math.floor(n / 10)] + (n % 10 ? ` ${EN_ONES[n % 10]}` : ""));
+  const name = { crore: "Crore", lakh: "Lakh", thousand: "Thousand", hundred: "Hundred" };
+  const { parts, rest } = indianParts(whole);
+  // As IndianNumbers.words does: a count of a hundred crore or more is written in figures.
+  const words = parts.map(([count, scale]) => `${count < 100 ? under100(count) : count} ${name[scale]}`);
+  if (rest > 0) words.push(under100(rest));
+  return words.join(" ");
+}
+
+function hindiWords(whole) {
+  const name = { crore: "करोड़", lakh: "लाख", thousand: "हज़ार", hundred: "सौ" };
+  const { parts, rest } = indianParts(whole);
+  const words = parts.map(([count, scale]) => `${count < 100 ? HI_UNDER_100[count] : hindiWords(count)} ${name[scale]}`);
+  if (rest > 0) words.push(HI_UNDER_100[rest]);
+  return words.join(" ");
+}
+
+function teluguUnder100(n) {
+  return n < 20 ? TE_ONES[n] : TE_TENS[Math.floor(n / 10)] + (n % 10 ? ` ${TE_ONES[n % 10]}` : "");
+}
+
+/**
+ * Telugu scale words change shape: వంద on its own but నూట before more, రెండు
+ * వందలు at the end but రెండు వందల before more, and a count of one before a
+ * scale is ఒక, not ఒకటి.
+ */
+function teluguWords(whole) {
+  const { parts, rest } = indianParts(whole);
+  const words = [];
+  parts.forEach(([count, scale], index) => {
+    const last = index === parts.length - 1 && rest === 0;
+    const counted = (count < 100 ? teluguUnder100(count) : teluguWords(count)).replace(/ఒకటి$/, "ఒక");
+    if (scale === "hundred") {
+      if (count === 1) words.push(last ? "వంద" : "నూట");
+      else words.push(`${counted} ${last ? "వందలు" : "వందల"}`);
+    } else if (scale === "thousand") {
+      if (count === 1) words.push("వెయ్యి");
+      else words.push(`${counted} ${last ? "వేలు" : "వేల"}`);
+    } else if (scale === "lakh") {
+      words.push(count === 1 ? "ఒక లక్ష" : `${counted} ${last ? "లక్షలు" : "లక్షల"}`);
+    } else {
+      words.push(count === 1 ? "ఒక కోటి" : `${counted} ${last ? "కోట్లు" : "కోట్ల"}`);
+    }
+  });
+  if (rest > 0) words.push(teluguUnder100(rest));
+  return words.join(" ");
+}
+
+/**
+ * 3350000 → "Thirty Three Lakh Fifty Thousand", "ముప్పై మూడు లక్షల యాభై వేలు",
+ * "तैंतीस लाख पचास हज़ार".
+ *
+ * Paise are dropped, as the server drops them: the words are there to catch a
+ * missing zero, not to be a cheque. `round` rounds to the nearest rupee first,
+ * for the figures the server rounds (the capital-gains total); `rupees` adds
+ * the currency the way each language says it.
+ */
+export function amountInWords(value, language = "en", { rupees: withRupees = false, round = false } = {}) {
+  if (value === null || value === undefined || value === "") return "";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "";
+  const whole = round ? Math.round(Math.abs(number)) : Math.trunc(Math.abs(number));
+  const negative = number < 0 && whole > 0;
+  const zero = { en: "Zero", te: "సున్నా", hi: "शून्य" };
+  const minus = { en: "Minus ", te: "మైనస్ ", hi: "माइनस " };
+  const lang = zero[language] ? language : "en";
+  const body = whole === 0 ? zero[lang]
+    : lang === "te" ? teluguWords(whole)
+      : lang === "hi" ? hindiWords(whole) : englishWords(whole);
+  const signed = `${negative ? minus[lang] : ""}${body}`;
+  if (!withRupees) return signed;
+  return lang === "te" ? `${signed} రూపాయలు` : lang === "hi" ? `${signed} रुपये` : `Rupees ${signed}`;
+}

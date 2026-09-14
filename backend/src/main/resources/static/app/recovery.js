@@ -120,7 +120,7 @@ function confirmIdentity() {
         body: el("div.stack-3", {},
           codeField,
           challenge.developmentCode && el("div.banner.banner-accent", {},
-            el("div", {}, el("b", {}, "Development mode — "), "the code is ", el("b", {}, challenge.developmentCode), "."),
+            el("div", {}, t("stepUp.developmentCode", { code: challenge.developmentCode })),
           ),
         ),
         footer: [confirm],

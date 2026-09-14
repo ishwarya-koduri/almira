@@ -48,9 +48,9 @@ export async function familyScreen(host) {
       el("div", {},
         el("h1", {}, state.household.name),
         el("p.muted", { style: { margin: 0 } },
-          `${members.length} ${members.length === 1 ? "person" : "people"}`),
+          t(members.length === 1 ? "family.count.one" : "family.count.many", { count: members.length })),
       ),
-      canManage && el("button.btn.btn-primary", { type: "button", onclick: () => addMember() }, "＋ Add someone"),
+      canManage && el("button.btn.btn-primary", { type: "button", onclick: () => addMember() }, t("family.add")),
     ),
 
     el("div.card.card-tight", {},
@@ -74,7 +74,8 @@ export async function familyScreen(host) {
             }, t("family.preview.open", { name: member.displayName })),
             canManage && member.isManaged && !member.passedAway && el("button.btn.btn-sm", {
               type: "button", onclick: () => invite(member),
-            }, "Invite to sign in"),
+              "aria-label": t("family.inviteRow", { name: member.displayName }),
+            }, t("family.invite")),
             ...actions,
           ),
         );
@@ -83,10 +84,7 @@ export async function familyScreen(host) {
 
     // A notice, not a coloured box (X-52).
     notice(el("span", {},
-      el("b", {}, "Everyone keeps their own privacy. "),
-      "A role decides what someone can ", el("i", {}, "do"), " — invite people, edit shared entries. ",
-      "It never decides what they can ", el("i", {}, "see"), ". ",
-      "Private entries stay private, including from the household owner.",
+      el("b", {}, t("family.privacy.lead")), " ", t("family.privacy.body"),
     ), { role: "note" }),
 
     welcomeCard(lifecycle),
@@ -126,7 +124,7 @@ export async function familyScreen(host) {
           el("div.title", {}, record.title),
           el("div.meta", {}, absent
             ? t(`family.preview.why.${record.visibility}`, { name })
-            : record.categoryLabel)),
+            : categoryName(record.categoryCode, record.categoryLabel))),
         !absent && record.valueFormatted && el("div.amount", {},
           record.recordType === "liability" ? el("span.owed", {}, `− ${record.valueFormatted}`) : el("b", {}, record.valueFormatted)));
 
@@ -202,7 +200,7 @@ export async function familyScreen(host) {
     const declare = el("input", { type: "checkbox", id: "parental-declaration" });
     const declareRow = el("label.consent-declaration", { for: "parental-declaration" },
       declare, el("span", {}, t("family.consent.declaration", { name: childName })));
-    const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+    const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
     const go = el("button.btn.btn-primary", { type: "button" }, t("family.consent.continue"));
 
     const modal = sheet({
@@ -239,27 +237,25 @@ export async function familyScreen(host) {
   }
 
   function addMember() {
-    const name = textInput({ placeholder: "Their name", "aria-label": "Name" });
+    const name = textInput({ placeholder: t("common.theirName") });
     const relationship = select({
       options: [
-        { value: "spouse", label: "Spouse" }, { value: "child", label: "Child" },
-        { value: "parent", label: "Parent" }, { value: "sibling", label: "Sibling" },
-        { value: "other", label: "Someone else" },
+        { value: "spouse", label: t("family.relationship.spouse") }, { value: "child", label: t("family.relationship.child") },
+        { value: "parent", label: t("family.relationship.parent") }, { value: "sibling", label: t("family.relationship.sibling") },
+        { value: "other", label: t("family.relationship.someoneElse") },
       ],
-      "aria-label": "Relationship",
     });
-    const dob = textInput({ type: "date", "aria-label": "Date of birth" });
-    const diedOn = textInput({ type: "date", "aria-label": t("family.diedOn") });
-    const nameField = field({ label: "Name", control: name, required: true });
+    const dob = textInput({ type: "date" });
+    const diedOn = textInput({ type: "date" });
+    const nameField = field({ label: t("capture.field.title"), control: name, required: true });
 
-    const save = el("button.btn.btn-primary", { type: "button" }, "Add");
+    const save = el("button.btn.btn-primary", { type: "button" }, t("family.addButton"));
     const modal = sheet({
-      title: "Add someone",
+      title: t("family.addTitle"),
       body: el("div.stack-3", {},
         nameField,
-        field({ label: "Relationship to you", control: relationship }),
-        field({ label: "Date of birth", control: dob,
-          help: "Optional. Helps us flag accounts held for a minor." }),
+        field({ label: t("family.relationshipToYou"), control: relationship }),
+        field({ label: t("family.dob"), control: dob, help: t("family.dobHelp") }),
         field({ label: t("family.diedOn"), control: diedOn, help: t("family.diedOnHelp") }),
       ),
       footer: [save],
@@ -273,7 +269,7 @@ export async function familyScreen(host) {
     });
 
     save.onclick = () => withBusy(save, async () => {
-      if (!name.value.trim()) { nameField.setError("Give this person a name"); return; }
+      if (!name.value.trim()) { nameField.setError(t("family.nameMissing")); return; }
       // A child's records rest on a parent's consent, so that comes first and
       // nothing is saved without it.
       if (isMinorOn(dob.value)) {
@@ -291,42 +287,38 @@ export async function familyScreen(host) {
       try {
         await create();
         modal.close();
-        toast(`${name.value.trim()} added.`);
+        toast(t("family.added", { name: name.value.trim() }));
         await reload();
       } catch (error) { nameField.setError(error.message); }
     });
   }
 
   function invite(member) {
-    const phone = textInput({ type: "tel", placeholder: "98765 43210", "aria-label": "Phone number" });
+    const phone = textInput({ type: "tel", placeholder: "98765 43210" });
     const role = select({
       options: [
-        { value: "editor", label: "Editor — can add and edit shared entries" },
-        { value: "admin", label: "Admin — can also manage people" },
-        { value: "viewer", label: "Viewer — can only look" },
+        { value: "editor", label: t("family.invite.role.editor") },
+        { value: "admin", label: t("family.invite.role.admin") },
+        { value: "viewer", label: t("family.invite.role.viewer") },
       ],
       value: "editor",
-      "aria-label": "Role",
     });
-    const phoneField = field({ label: "Their phone number", control: phone, required: true,
-      help: "They'll sign in with this number." });
+    const phoneField = field({ label: t("family.invite.phone"), control: phone, required: true,
+      help: t("family.invite.phoneHelp") });
 
-    const send = el("button.btn.btn-primary", { type: "button" }, "Create invitation");
+    const send = el("button.btn.btn-primary", { type: "button" }, t("family.invite.create"));
     const modal = sheet({
-      title: `Invite ${member.displayName}`,
+      title: t("family.inviteWho", { name: member.displayName }),
       body: el("div.stack-3", {},
-        el("p.caption.muted", {},
-          `When ${member.displayName} accepts, they take over this entry rather than ` +
-          "becoming a second person — so nothing they own gets split in two."),
+        el("p.caption.muted", {}, t("family.invite.explain", { name: member.displayName })),
         phoneField,
-        field({ label: "What should they be able to do?", control: role,
-          help: "This does not give them sight of anyone's private entries." }),
+        field({ label: t("family.invite.roleLabel"), control: role, help: t("family.invite.roleHelp") }),
       ),
       footer: [send],
     });
 
     send.onclick = () => withBusy(send, async () => {
-      if (!phone.value.trim()) { phoneField.setError("Enter their phone number"); return; }
+      if (!phone.value.trim()) { phoneField.setError(t("family.invite.phoneMissing")); return; }
       try {
         const invitation = await api.invite(state.household.id, {
           memberId: member.id, phone: phone.value.trim(), role: role.value,
@@ -344,18 +336,16 @@ export async function familyScreen(host) {
    */
   function showLink(member, invitation) {
     const link = `${location.origin}/#/invite/${invitation.token}`;
-    const input = textInput({ value: link, readOnly: true, "aria-label": "Invitation link" });
-    const copy = el("button.btn", { type: "button" }, "Copy link");
+    const input = textInput({ value: link, readOnly: true, "aria-label": t("family.invite.link") });
+    const copy = el("button.btn", { type: "button" }, t("family.invite.copy"));
     copy.onclick = async () => {
-      try { await navigator.clipboard.writeText(link); toast("Link copied."); }
+      try { await navigator.clipboard.writeText(link); toast(t("sharing.copied")); }
       catch { input.select(); }
     };
     sheet({
-      title: `Invitation for ${member.displayName}`,
+      title: t("family.invite.for", { name: member.displayName }),
       body: el("div.stack-3", {},
-        el("p.caption.muted", {},
-          "Send them this link. It works once and expires in 14 days. " +
-          "We only store a hash of it, so this is the only time you'll see it."),
+        el("p.caption.muted", {}, t("family.invite.sendLink")),
         input,
       ),
       footer: [copy],

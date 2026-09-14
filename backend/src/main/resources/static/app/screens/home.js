@@ -12,12 +12,12 @@
 import { api } from "../api.js";
 import {
   el, mount, segmented, skeletonRows, empty, money, when, notice, withoutZeroRows,
-  areaTrend, donut, onDemand, updatedNote,
+  areaTrend, donut, onDemand, updatedNote, amountWords,
 } from "../ui.js";
 import { state, update } from "../state.js";
 import { openCapture } from "./capture.js";
 import { openDetail } from "./detail.js";
-import { t, language } from "../i18n.js";
+import { t, language, categoryName } from "../i18n.js";
 import { loadReview, reviewCard } from "../review.js";
 import { trendPoints } from "../glance.js";
 import { captureForm } from "./capture.js";
@@ -168,7 +168,7 @@ function hero(data, trend) {
       el("div", { style: { minWidth: 0 } },
         el("div.overline", {}, t("home.netWorth")),
         el("div.hero-amount", {}, data.netWorthFormatted),
-        el("div.hero-words", {}, data.netWorthInWords),
+        el("div.hero-words", {}, amountWords(data.netWorthInWords, data.netWorth)),
       ),
       el("div.hero-side", { id: "hero-breakdown" },
         el("div.hero-side-row", {},
@@ -224,13 +224,15 @@ function trendBlock(trend) {
 /** Where it sits: one labelled donut in the category colours, labels beside it (P-15). */
 function allocationCard(rows) {
   const shown = withoutZeroRows(rows).slice(0, 8);
-  const parts = shown.map((row) => `${row.label} ${row.percentage}%`).join(", ");
+  // Category names in the reader's language (X-06); the server's label for anything else.
+  const name = (row) => categoryName(row.key, row.label);
+  const parts = shown.map((row) => `${name(row)} ${row.percentage}%`).join(", ");
   return el("div.card", {},
     el("div.section-title", {}, el("h4", {}, t("home.whereItSits"))),
     shown.length === 0
       ? el("p.caption", {}, t("home.nothingToShow"))
       : onDemand(t("block.showChart"), () => donut(shown.map((row) => ({
-          label: row.label,
+          label: name(row),
           value: Number(row.value),
           color: row.color || `var(--cat-${row.key}, var(--ink-muted))`,
           display: `${row.valueFormatted} · ${row.percentage}%`,

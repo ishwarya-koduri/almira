@@ -197,8 +197,7 @@ function handbookCard(handbook, host) {
   if (handbook.entries.length === 0) {
     return el("div.card", {}, empty({
       title: t("continuity.title"),
-      body: "Nothing is marked for the family summary yet. Anything you record is included " +
-        "by default — you can leave individual things out.",
+      body: t("continuity.handbook.empty"),
     }));
   }
 
@@ -281,14 +280,14 @@ async function openTransmission(entry, host) {
     guide.contacts.length > 0 && el("div.stack-2", {},
       el("span.overline", {}, t("continuity.call")),
       ...guide.contacts.map((contact) => el("div.row-between", {},
-        el("span", {}, `${contact.name} (${contact.kind})`),
+        el("span", {}, `${contact.name} (${contactKind(contact.kind)})`),
         el("span.muted", {}, contact.phone || ""),
       )),
     ),
 
     el("p.caption.muted", {}, guide.contactHint),
     guide.typicalDays && el("p.caption.muted", {},
-      `Usually takes about ${guide.typicalDays} days once everything is in.`),
+      t("continuity.typicalDays", { days: guide.typicalDays })),
     el("p.caption.muted", {}, guide.disclaimer),
   ));
 }
@@ -568,37 +567,35 @@ function contactsCard(contacts, host) {
           el("div", {},
             el("div.title", {}, contact.name),
             el("div.meta", {},
-              [contact.kind, contact.organisation, contact.phone].filter(Boolean).join(" · ")),
+              [contactKind(contact.kind), contact.organisation, contact.phone].filter(Boolean).join(" · ")),
           ),
           contact.links.length > 0 && el("div.amount", {},
             el("span.caption.muted", {},
-              `${contact.links.length} ${contact.links.length === 1 ? "record" : "records"}`)),
+              t(contact.links.length === 1 ? "contacts.recordOne" : "contacts.recordMany", { count: contact.links.length }))),
         ))),
   );
 }
 
+const CONTACT_KINDS = ["ca", "agent", "lawyer", "banker", "broker", "advisor", "other"];
+
+/** "Chartered accountant", not "ca"; a kind this build does not know is shown as it came. */
+function contactKind(code) {
+  return CONTACT_KINDS.includes(code) ? t(`contacts.kind.${code}`) : code;
+}
+
 function newContact(host) {
-  const name = textInput({ placeholder: "Ramesh Rao", "aria-label": "Name" });
+  const name = textInput({ placeholder: t("contacts.nameExample") });
   const kind = select({
-    options: [
-      { value: "ca", label: "Chartered accountant" },
-      { value: "agent", label: "Insurance agent" },
-      { value: "lawyer", label: "Lawyer" },
-      { value: "banker", label: "Banker" },
-      { value: "broker", label: "Broker" },
-      { value: "advisor", label: "Advisor" },
-      { value: "other", label: "Someone else" },
-    ],
-    "aria-label": "Kind",
+    options: CONTACT_KINDS.map((value) => ({ value, label: t(`contacts.kind.${value}`) })),
   });
-  const organisation = textInput({ placeholder: "Rao & Associates", "aria-label": "Organisation" });
-  const phone = textInput({ placeholder: "98765 43210", "aria-label": "Phone" });
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+  const organisation = textInput({ placeholder: t("contacts.organisationExample") });
+  const phone = textInput({ type: "tel", placeholder: "98765 43210" });
+  const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
   const save = el("button.btn.btn-primary.grow", { type: "button" }, t("app.save"));
 
   save.onclick = () => withBusy(save, async () => {
     error.textContent = "";
-    if (!name.value.trim()) { error.textContent = "Who is it?"; return; }
+    if (!name.value.trim()) { error.textContent = t("contacts.whoIsIt"); return; }
     try {
       await api.createContact(state.household.id, {
         name: name.value.trim(),
@@ -608,7 +605,7 @@ function newContact(host) {
         visibility: "household",
       });
       modal.close();
-      toast("Added.");
+      toast(t("contacts.added"));
       await continuityScreen(host);
     } catch (apiError) {
       error.textContent = apiError.message;
@@ -618,10 +615,10 @@ function newContact(host) {
   const modal = sheet({
     title: t("contacts.add"),
     body: el("div.stack-3", {},
-      field({ label: "Name", control: name, required: true }),
-      field({ label: "What do they do?", control: kind }),
-      field({ label: "Organisation", control: organisation }),
-      field({ label: "Phone", control: phone, help: "The number your family would ring." }),
+      field({ label: t("capture.field.title"), control: name, required: true }),
+      field({ label: t("contacts.whatTheyDo"), control: kind }),
+      field({ label: t("contacts.organisation"), control: organisation }),
+      field({ label: t("contacts.phone"), control: phone, help: t("contacts.phoneHelp") }),
       error,
     ),
     footer: [save],

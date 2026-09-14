@@ -20,7 +20,7 @@
 
 import { api, downloadAuthenticated } from "../api.js";
 import {
-  el, mount, select, skeletonRows, segmented, notice, sheet, field, textInput, toast, withBusy, groupIndian,
+  el, mount, select, skeletonRows, segmented, notice, sheet, field, textInput, toast, withBusy, groupIndian, amountWords,
 } from "../ui.js";
 import { state } from "../state.js";
 import { t } from "../i18n.js";
@@ -122,7 +122,7 @@ function shareWithCa(year, member) {
     value: "7",
     "aria-label": t("tax.share.howLong"),
   });
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+  const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
   const result = el("div.stack-2", {});
   const create = el("button.btn.btn-primary.grow", { type: "button" }, t("tax.share.create"));
 
@@ -186,14 +186,14 @@ function meter(deduction) {
         el("b", {}, deduction.label),
         el("div.caption.muted", {}, deduction.description),
       ),
-      el("div.num", {}, `${deduction.usedFormatted} of ${deduction.limitFormatted}`),
+      el("div.num", {}, t("goals.fundedOf", { funded: deduction.usedFormatted, target: deduction.limitFormatted })),
     ),
-    el("div.meter", { role: "img", "aria-label": `${percent}% of the limit used` },
+    el("div.meter", { role: "img", "aria-label": t("tax.limitUsed", { percent }) },
       el("div.meter-fill", { style: { width: `${percent}%` } })),
-    el("span.caption.muted", {}, `${deduction.remainingFormatted} of the limit unused.`),
+    el("span.caption.muted", {}, t("tax.limitUnused", { amount: deduction.remainingFormatted })),
     deduction.note && el("span.caption.muted", {}, deduction.note),
     deduction.sources.length > 0 && el("details", {},
-      el("summary.caption", {}, `From ${deduction.sources.length} ${deduction.sources.length === 1 ? "record" : "records"}`),
+      el("summary.caption", {}, t(deduction.sources.length === 1 ? "tax.fromOne" : "tax.fromMany", { count: deduction.sources.length })),
       el("div.stack-2", { style: { paddingTop: "8px" } },
         ...deduction.sources.map((source) => el("div.row-between", {},
           el("span", {}, source.title),
@@ -219,7 +219,7 @@ function gainsCard(gains, schedule) {
       el("b.num", { style: { fontFamily: "var(--font-display)", fontSize: "var(--text-h4)" } },
         gains.netRealizedFormatted),
     ),
-    lines.length > 0 && el("span.caption.muted", {}, schedule.netGainInWords),
+    lines.length > 0 && el("span.caption.muted", {}, amountWords(schedule.netGainInWords, schedule.netGain, { rupees: true, round: true })),
 
     lines.length === 0
       ? el("p.caption.muted", {}, t("tax.nothingSold"))
@@ -256,10 +256,9 @@ function gainsCard(gains, schedule) {
     ),
 
     gains.unrealized.length > 0 && el("details", {},
-      el("summary.caption", {}, "If you sold today"),
+      el("summary.caption", {}, t("tax.ifSold")),
       el("div.stack-2", { style: { paddingTop: "8px" } },
-        el("p.caption.muted", {},
-          "For planning only. Nothing here has been sold, and this is not a projection of value."),
+        el("p.caption.muted", {}, t("tax.ifSoldNote")),
         ...gains.unrealized.slice(0, 20).map((position) => el("div.row-between", {},
           el("span", {}, position.title),
           el("span.muted", {}, `${position.unrealizedGainFormatted} · ${position.termIfSoldToday}`),
@@ -286,7 +285,7 @@ function grandfatheringCard(schedule, refresh) {
       const note = textInput({
         value: entry.sourceNote || "", maxLength: 200, placeholder: t("tax.fmv.notePlaceholder"),
       });
-      const error = el("div.help.error", {});
+      const error = el("div.help.error", { role: "alert" });
       const save = el("button.btn", { type: "button" }, t("app.save"));
       save.onclick = () => withBusy(save, async () => {
         error.textContent = "";
@@ -321,11 +320,11 @@ function grandfatheringCard(schedule, refresh) {
 function interestCard(interest) {
   return el("div.card.stack-2", {},
     el("div.row-between.wrap", {},
-      el("h3", {}, "Interest income"),
+      el("h3", {}, t("tax.interest")),
       el("b.num", {}, interest.totalFormatted),
     ),
     interest.bySource.length === 0
-      ? el("p.caption.muted", {}, "No interest recorded for this year.")
+      ? el("p.caption.muted", {}, t("tax.noInterest"))
       : el("div.stack-2", {}, ...interest.bySource.map((source) => el("div.row-between", {},
           el("span", {}, source.title),
           el("span.muted", {}, source.amountFormatted),

@@ -21,7 +21,11 @@
    broken.
    ============================================================================= */
 
+import { draft as te } from "./i18n-te.js";
+import { draft as hi } from "./i18n-hi.js";
+
 const STORAGE_KEY = "almira.language";
+const DRAFTS = { te, hi };
 
 export const LANGUAGES = [
   { code: "en", label: "English", native: "English" },
@@ -1633,6 +1637,490 @@ const messages = {
     "ocr.error.nothing": "We couldn't find any words in this photo.",
     "ocr.error.nothingUseful": "We read the photo but couldn't pick out anything useful.",
     "ocr.fillIn": "Fill it in myself",
+
+    // Categories, in the reader's language (X-06). The taxonomy's own labels are English, from the database.
+    "category.gold": "Gold & Metals",
+    "category.deposits": "Bank Deposits",
+    "category.mutual_funds": "Mutual Funds",
+    "category.equity": "Equity",
+    "category.ipo": "IPO",
+    "category.bonds": "Bonds",
+    "category.retirement": "Retirement & Small Savings",
+    "category.insurance": "Insurance",
+    "category.real_estate": "Real Estate",
+    "category.alternatives": "Alternatives",
+    "category.cash": "Cash & Misc",
+    "category.universal": "Anything Else",
+
+    // Settings: preferences, sharing, trash, sessions, about (X-06)
+    "settings.cardFailed": "This part couldn't load: {reason}",
+    "settings.visibility.private": "Private — only I can see new entries",
+    "settings.visibility.household": "Shared with my household",
+    "settings.visibility.updated": "Default updated.",
+    "settings.visibility.label": "What should new entries default to?",
+    "settings.visibility.help": "Your choice wins over the household default for anything you add.",
+    "security.again": "Type it again",
+    "security.tooShort": "Use at least twelve characters — a sentence you'll remember.",
+    "security.mismatch": "Those don't match.",
+    "security.setUp": "Set up. Nothing is sealed yet.",
+    "security.sealedOne": "{count} sealed field.",
+    "security.sealedMany": "{count} sealed fields.",
+    "security.sealedCount": "{count} sealed",
+    "security.costs": "What this costs",
+    "sharing.withdrawn": "Withdrawn. The link stops working immediately.",
+    "sharing.scope.tax_pack": "This year's tax pack",
+    "sharing.scope.handbook": "The family handbook",
+    "sharing.records": "{count} records",
+    "sharing.isWithdrawn": "withdrawn",
+    "sharing.labelExample": "Tax pack for Ramesh",
+    "sharing.oneDay": "1 day",
+    "sharing.days": "{count} days",
+    "sharing.defaultLabel": "Shared",
+    "sharing.copyNow": "Copy this now — it isn't shown again.",
+    "sharing.copyByHand": "Select the link and copy it.",
+    "sharing.copy": "Copy",
+    "sharing.explain": "A link shows one slice, read-only, until it expires — and you can withdraw it at any time. It can never show more than you can see yourself.",
+    "sharing.whatFor": "What is it for?",
+    "sharing.whatToShare": "What to share",
+    "sharing.howLong": "For how long",
+    "money.ratesExplain": "Holdings are kept in the currency they're in. These are only used to show a total.",
+    "trash.title": "Trash",
+    "trash.explain": "Deleted entries are kept until you remove them",
+    "trash.empty": "Nothing in the trash.",
+    "trash.restored": "Restored.",
+    "trash.restore": "Restore",
+    "sessions.title": "Where you're signed in",
+    "sessions.unknownDevice": "Unknown device",
+    "sessions.lastUsed": "Last used {date}",
+    "sessions.signedOutThere": "Signed out on that device.",
+    "sessions.signOut": "Sign out",
+    "sessions.signOutHere": "Sign out here",
+    "about.title": "About",
+    "about.body": "Almira never moves money, never holds funds, and never stores a bank password. It is a record — which is exactly why it can track the things transactional apps can't.",
+    "about.notAdvice": "Figures are informational and are not financial advice.",
+
+    // Accounts, and words several forms share (X-06)
+    "accounts.kind.savings": "Savings account",
+    "accounts.kind.current": "Current account",
+    "accounts.kind.demat": "Demat account",
+    "accounts.kind.folio": "Mutual fund folio",
+    "accounts.kind.wallet": "Wallet",
+    "accounts.kind.locker": "Bank locker",
+    "accounts.kind.other": "Something else",
+    "accounts.add": "＋ Add an account",
+    "accounts.lead": "Where things are held, so you know what funds what.",
+    "accounts.empty.title": "No accounts yet",
+    "accounts.empty.body": "Add the bank accounts, demat accounts and folios your holdings sit in.",
+    "accounts.nothingLinked": "nothing linked",
+    "accounts.linked": "{count} linked",
+    "accounts.fullStored": "Full number stored, encrypted",
+    "accounts.full": "Full",
+    "accounts.nameExample": "SBI savings — salary",
+    "accounts.number": "Account number",
+    "accounts.keepWhole": "Keep the whole number",
+    "accounts.keepWholeHelp": "Off by default. We keep only the last four digits — enough to recognise the account. Turn this on and the rest is stored encrypted, and seeing it later needs a fresh confirmation.",
+    "accounts.visibility.private": "Private — only its holders",
+    "accounts.visibility.help": "Private means only its holders — not even a household admin.",
+    "accounts.visibility.holdersOnly": "Only its holders",
+    "accounts.addTitle": "Add an account",
+    "accounts.whichBank": "Which bank or fund house?",
+    "accounts.numberHelp": "We'll keep only the last four digits unless you say otherwise.",
+    "accounts.detailTitle": "Account",
+    "accounts.noNumber": "No number recorded",
+    "accounts.numberShort": "Number",
+    "accounts.showFull": "Show full number",
+    "accounts.lastFourOnly": "Only the last four digits are saved for this account.",
+    "accounts.holdersPrivacy": "Holders & privacy",
+    "accounts.holder.joint": "joint",
+    "accounts.holder.primary": "primary",
+    "accounts.holdingsLinked": "Holdings linked",
+    "accounts.shown": "Shown. This isn't saved anywhere on this device.",
+    "accounts.revealHelp": "Just to be sure it's you before we show the full number.",
+    "common.sharedWith": "Shared with {name}",
+    "common.noInstitution": "Not linked to an institution",
+    "common.institution": "Institution",
+    "common.whatToCallIt": "What should we call it?",
+    "common.whatKind": "What kind?",
+    "common.moreDetails": "More details",
+    "common.whoCanSee": "Who can see this?",
+    "common.whoCanSeeIt": "Who can see it",
+    "common.giveItAName": "Give it a name",
+    "common.saved": "Saved.",
+    "common.everyoneIn": "Everyone in {name}",
+    "common.specificPeople": "Specific people",
+    "common.sixDigitCode": "6-digit code",
+    "common.codeEmailed": "Enter the code we emailed you",
+    "common.codeTexted": "Enter the code we texted you",
+
+    // Adding something (X-06)
+    "capture.quick.example": "1L gold 6.3g at ICICI 3 Aug",
+    "capture.quick.label": "Describe what you're adding",
+    "capture.quick.read": "Read it",
+    "capture.quick.field": "Say it in your own words",
+    "capture.quick.help": "Lakhs and crores are fine — “2.5Cr flat”, “50k SIP”.",
+    "capture.parse.check": "Check the details",
+    "capture.parse.pickType": "Pick a type below and we'll carry the rest across.",
+    "capture.document.saved": "Saved the document.",
+    "capture.or": "Or",
+    "capture.pickType": "Pick a type",
+    "capture.readDocument": "Read a document",
+    "import.title": "Import a spreadsheet",
+    "capture.templates": "Saved shapes",
+    "common.me": "{name} (me)",
+    "capture.savedPrivate": "Saved. It's private to its owner.",
+    "capture.template.missing": "{fields}. Open the full form to fill it in.",
+    "capture.template.typeAt": "{type} at {institution}.",
+    "capture.template.type": "{type}.",
+    "common.date": "Date",
+    "capture.whose": "Whose is it?",
+    "capture.searchTypes.placeholder": "Search types…",
+    "capture.searchTypes.label": "Search types",
+    "capture.searchTypes.none": "Nothing matches. Try a different word — or pick “Anything Else”.",
+    "capture.whatAreYouAdding": "What are you adding?",
+    "capture.titleHelp": "Something you'll recognise in a list a year from now.",
+    "capture.visibility.private": "Private — only the owner can see it",
+    "common.sharedWithSome": "Shared with specific people",
+    "capture.chooseWho": "Choose who can see it",
+    "capture.custom.add": "＋ Add your own field",
+    "capture.custom.namePlaceholder": "What is it called?",
+    "capture.custom.name": "Field name",
+    "capture.custom.type.text": "Text",
+    "capture.custom.type.number": "Number",
+    "capture.custom.type.percent": "Percent",
+    "capture.custom.type.bool": "Yes / no",
+    "capture.custom.type": "Field type",
+    "capture.custom.valuePlaceholder": "Value",
+    "capture.custom.value": "Field value",
+    "capture.custom.counts": "Count this amount in totals",
+    "capture.custom.title": "Your own fields",
+    "capture.saveAnother": "Save & add another",
+    "capture.whereHeld": "Where is it held?",
+    "capture.whereHeldHelp": "Which bank, fund house or broker — so you know what funds what.",
+    "capture.visibility.help": "Private means only the owner. Not even a household admin.",
+    "capture.nothingElse": "Nothing else for this type.",
+    "capture.addType": "Add {type}",
+    "capture.chooseAtLeastOne": "Choose at least one person to share it with.",
+    "capture.savedWhat": "Saved — {what}",
+    "capture.savedPrivateList": "Saved. It's private to its owner, so it won't appear in your list.",
+    "capture.isNeeded": "{label} is needed",
+    "common.yes": "Yes",
+    "capture.example.fd": "SBI FD — 5 years",
+    "capture.example.gold_physical": "Wedding coins",
+    "capture.example.mf_sip": "Parag Parikh Flexi Cap",
+    "capture.example.stock_listed": "Infosys",
+    "capture.example.insurance_term": "LIC term cover",
+    "capture.example.property": "Flat, Kakinada",
+    "capture.example.universal": "A stake in Meera's bakery",
+
+    // A holding's panel (X-06)
+    "detail.invested": "Amount invested",
+    "detail.quantity": "Quantity",
+    "detail.started": "Started",
+    "detail.matures": "Matures",
+    "detail.added": "Added",
+    "detail.duplicate": "Duplicate",
+    "detail.renew": "Renew this",
+    "detail.trash": "Move to trash",
+    "detail.renewedFrom": "This renewed an earlier record, which is kept as history.",
+    "detail.ownershipPrivacy": "Ownership & privacy",
+    "detail.changeVisibility": "Change who can see this",
+    "detail.return": "Return",
+    "detail.gain.realised": "Gain, realised",
+    "detail.gain.onPaper": "Gain, on paper",
+    "detail.absolute": "Absolute",
+    "detail.returnFailed": "We couldn't work this out just now.",
+    "detail.nominees": "Nominees",
+    "detail.nominee": "nominee",
+    "detail.nominees.none": "Nobody recorded. A nominee is who the institution pays — not who inherits it.",
+    "detail.nominees.change": "Change nominees",
+    "detail.nominees.add": "Add a nominee",
+    "detail.nominees.outside": "Someone outside the household",
+    "detail.nominee.who": "Nominee",
+    "common.theirName": "Their name",
+    "detail.nominee.name": "Nominee name",
+    "detail.nominee.share": "Share",
+    "detail.nominees.save": "Save nominees",
+    "detail.nominees.saved": "Nominees saved.",
+    "detail.nominees.title": "Who should receive this?",
+    "detail.nominees.explain": "A nominee receives the money from the institution. Who inherits it is decided by a will — Almira records both so a mismatch can be spotted.",
+    "detail.nominees.another": "＋ Add another",
+    "detail.copy.make": "Make a copy",
+    "detail.copy.name": "{title} (copy)",
+    "detail.copy.done": "Copied. The history stays with the original.",
+    "detail.copy.explain": "Same shape — type, institution, owners, nominees. The valuations and transactions stay with the original, because they happened to it.",
+    "detail.renew.button": "Renew it",
+    "detail.renew.done": "Renewed. The old record is kept, marked matured.",
+    "detail.renew.title": "Renew {title}",
+    "detail.renew.explainOn": "The old record is kept and marked matured, and the new one starts where it ended — {date}. Anything it funds carries across.",
+    "detail.renew.explain": "The old record is kept and marked matured, and the new one starts where it ended. Anything it funds carries across.",
+    "detail.renew.amountHelp": "Principal plus whatever it earned.",
+    "detail.renew.maturity": "New maturity date",
+    "detail.renew.maturityHelp": "We don't guess this one — the old date has already passed.",
+    "common.no": "No",
+    "detail.value.save": "Save value",
+    "detail.value.question": "What is it worth today?",
+    "detail.value.help": "A snapshot. We keep the history so you can see the trend later.",
+    "common.enterAmount": "Enter an amount",
+    "detail.value.updated": "Value updated.",
+    "detail.visibility.private": "Private — only the owner",
+    "detail.visibility.label": "Visibility",
+    "detail.visibility.help": "Private is genuinely private — no role in the household can override it.",
+    "common.updated": "Updated.",
+    "detail.trashed": "Moved to trash.",
+    "common.undo": "Undo",
+    "detail.basis.valued": "Your snapshot from {date}",
+    "detail.basis.atCost": "What you paid — add a value to see what it's worth today",
+    "detail.basis.customField": "From a field you added",
+    "detail.basis.none": "Add a value to include this in your totals",
+    "detail.visibility.ownerAnd": "The owner and {names}",
+    "detail.visibility.ownerOnly": "The owner only",
+    "detail.visibility.privateText": "Only the owner — not even a household admin",
+
+    // Household (X-06)
+    "family.count.one": "{count} person",
+    "family.count.many": "{count} people",
+    "family.add": "＋ Add someone",
+    "family.invite": "Invite to sign in",
+    "family.inviteWho": "Invite {name}",
+    "family.privacy.lead": "Everyone keeps their own privacy.",
+    "family.privacy.body": "A role decides what someone can do — invite people, edit shared entries. It never decides what they can see. Private entries stay private, including from the household owner.",
+    "family.relationship.someoneElse": "Someone else",
+    "family.addButton": "Add",
+    "family.addTitle": "Add someone",
+    "family.relationshipToYou": "Relationship to you",
+    "family.dob": "Date of birth",
+    "family.dobHelp": "Optional. Helps us flag accounts held for a minor.",
+    "family.nameMissing": "Give this person a name",
+    "family.added": "{name} added.",
+    "family.invite.role.editor": "Editor — can add and edit shared entries",
+    "family.invite.role.admin": "Admin — can also manage people",
+    "family.invite.role.viewer": "Viewer — can only look",
+    "family.invite.phone": "Their phone number",
+    "family.invite.phoneHelp": "They'll sign in with this number.",
+    "family.invite.create": "Create invitation",
+    "family.invite.explain": "When {name} accepts, they take over this entry rather than becoming a second person — so nothing they own gets split in two.",
+    "family.invite.roleLabel": "What should they be able to do?",
+    "family.invite.roleHelp": "This does not give them sight of anyone's private entries.",
+    "family.invite.phoneMissing": "Enter their phone number",
+    "family.invite.link": "Invitation link",
+    "family.invite.copy": "Copy link",
+    "family.invite.for": "Invitation for {name}",
+    "family.invite.sendLink": "Send them this link. It works once and expires in 14 days. We only store a hash of it, so this is the only time you'll see it.",
+    "family.inviteRow": "Invite to sign in — {name}",
+
+    // Goals (X-06)
+    "goals.empty.title": "No goals yet",
+    "goals.empty.body": "A goal is a name, an amount and a date — “Aarav's degree, 2039”. Holdings you already have can fund it.",
+    "goals.set": "Set a goal",
+    "goals.new": "New goal",
+    "goals.for": "for {name}",
+    "goals.fundedOf": "{funded} of {target}",
+    "goals.by": "by {date}",
+    "goals.percentFunded": "{percent}% funded",
+    "goals.onTrack": "On track",
+    "goals.behind": "Behind where it would need to be",
+    "goals.fundedBy": "Funded by",
+    "goals.nothingPointed": "Nothing is pointed at this goal yet.",
+    "goals.pointHolding": "Point a holding at this",
+    "goals.nameExample": "Aarav's degree",
+    "goals.household": "The household's",
+    "goals.visibility.private": "Private — only me",
+    "goals.setTheGoal": "Set the goal",
+    "goals.nameMissing": "Give it a name.",
+    "goals.amountMissing": "How much are you aiming for?",
+    "goals.saved": "Goal set.",
+    "goals.whatFor": "What is it for?",
+    "goals.howMuch": "How much?",
+    "goals.byWhen": "By when?",
+    "goals.byWhenHelp": "Optional — a goal without a date still counts.",
+    "goals.whose": "Whose goal is it?",
+    "goals.whoCanSee": "Who can see it?",
+    "goals.whoCanSeeHelp": "A goal says what someone is saving for and how far short they are.",
+    "goals.allAllocated": "Everything you can see is already fully allocated to goals.",
+    "goals.shareOf": "Percent of {title}",
+    "goals.addHolding": "Add {title}",
+    "goals.nowFunds": "{holding} now funds {goal}.",
+    "goals.noValue": "no value yet",
+    "goals.unallocated": "{percent}% unallocated",
+    "goals.whatFunds": "What funds {name}?",
+    "goals.shareExplain": "One holding can fund two goals — say what share of it belongs to this one.",
+
+    // Importing a spreadsheet (X-06)
+    "import.explain": "A CSV or Excel file with one holding per row. Nothing is saved until you've seen what it would do.",
+    "import.chooseFile": "Choose a file",
+    "import.read": "Read the file",
+    "import.notImported": "— not imported —",
+    "import.column.title": "Name",
+    "import.column.investedAmount": "Amount",
+    "import.column.quantity": "Quantity",
+    "import.column.unit": "Unit",
+    "import.column.startDate": "Start date",
+    "import.column.maturityDate": "Maturity date",
+    "import.column.institution": "Institution",
+    "import.column.reference": "Folio / policy / receipt number",
+    "import.column.type": "Type (if the sheet says)",
+    "import.column.notes": "Notes",
+    "import.typeFromSheet": "Take it from the sheet, or Anything Else",
+    "import.dryRun": "Show me what would happen",
+    "import.commit": "Import",
+    "import.done": "{added} added.",
+    "import.doneSkipped": "{added} added, {skipped} skipped.",
+    "import.rows": "{count} rows",
+    "import.toAdd": "{count} to add",
+    "import.added": "{count} added",
+    "import.alreadyHere": "{count} already here",
+    "import.withProblem": "{count} with a problem",
+    "import.row": "Row {row}",
+    "import.fileTitle": "Import {name}",
+    "import.firstRows": "First rows",
+    "import.whichColumn": "Which column is which",
+    "import.typeForEvery": "Type for every row",
+    "import.typeHelp": "One sheet is usually one kind of thing — all your FDs, or all your funds. Leave it unset only if a column above says the type.",
+    "import.whoCanSee": "Who can see these?",
+
+    // Holdings list (X-06)
+    "investments.search.placeholder": "Search your holdings…",
+    "investments.search.label": "Search holdings",
+    "investments.filter": "Filter by kind",
+    "investments.everything": "Everything",
+    "investments.empty.title": "Nothing here yet",
+    "investments.empty.filtered": "No holdings match that. Try clearing the filters.",
+    "investments.empty.body": "Add your first holding — it takes about twenty seconds.",
+
+    // What's owed (X-06)
+    "liabilities.kind.home": "Home loan",
+    "liabilities.kind.car": "Car loan",
+    "liabilities.kind.personal": "Personal loan",
+    "liabilities.kind.education": "Education loan",
+    "liabilities.kind.gold": "Gold loan",
+    "liabilities.kind.credit_card": "Credit card",
+    "liabilities.kind.lap": "Loan against property",
+    "liabilities.kind.las": "Loan against securities",
+    "liabilities.kind.loan_against_insurance": "Loan against insurance",
+    "liabilities.kind.family": "Money borrowed from family",
+    "liabilities.kind.other": "Something else",
+    "liabilities.add": "＋ Add a loan",
+    "liabilities.total": "Total owed",
+    "liabilities.against": "Against {assets} of assets. That leaves {net}.",
+    "liabilities.empty.title": "Nothing owed",
+    "liabilities.empty.body": "If you have a home loan, a car loan or a card balance, adding it here makes your net worth the real one.",
+    "liabilities.securedBy": "secured by {title}",
+    "liabilities.emiOn": "EMI {amount} on {day}",
+    "liabilities.emi": "EMI {amount}",
+    "liabilities.nameExample": "HDFC home loan",
+    "liabilities.whatCalled": "What's it called?",
+    "liabilities.howMuchOwed": "How much is still owed?",
+    "liabilities.howMuchOwedHelp": "Today's balance, not the original amount.",
+    "liabilities.notSecured": "Not secured against anything",
+    "liabilities.visibility.private": "Private — only whoever owes it",
+    "liabilities.addTitle": "Add a loan",
+    "liabilities.emiAmount": "EMI amount",
+    "liabilities.emiAmountHelp": "Optional — we'll show it in what's coming up.",
+    "liabilities.emiDay": "EMI day of the month",
+    "liabilities.emiDayHelp": "A loan due on the 31st still falls due in February — we handle that.",
+    "liabilities.principal": "Original amount borrowed",
+    "liabilities.rate": "Interest rate",
+    "liabilities.rateHelp": "% per year",
+    "liabilities.securedAgainst": "Secured against",
+    "liabilities.securedHelp": "The asset the lender can claim. Shows as “encumbered” on that holding.",
+    "liabilities.visibility.help": "Private means only whoever owes it — not even a household admin.",
+    "liabilities.detailTitle": "Loan",
+    "liabilities.stillOwed": "Still owed",
+    "liabilities.asOf": "As of {date}",
+    "liabilities.updateBalance": "Update balance",
+    "liabilities.whoOwes": "Who owes it",
+    "liabilities.allOfIt": "All of it",
+    "liabilities.encumbered": "encumbered",
+    "liabilities.originally": "Originally borrowed",
+    "liabilities.ratePerYear": "{rate}% p.a.",
+    "liabilities.emiShort": "EMI",
+    "liabilities.dueOn": "Due on",
+    "liabilities.eachMonth": "{day} of each month",
+    "liabilities.ends": "Ends",
+    "liabilities.removed": "Removed.",
+    "liabilities.owedNow": "What's owed now?",
+    "liabilities.owedNowHelp": "We keep each figure you record, so the trend is real.",
+    "liabilities.visibility.owerOnly": "Only whoever owes it",
+    "liabilities.day": "the {ordinal}",
+
+    // Reports (X-06)
+    "reports.complete": "How complete this is",
+    "reports.doneToGo": "{done} done, {outstanding} to go",
+    "reports.fixFirst": "Fix the first",
+    "reports.whereMoney": "Where the money is",
+    "reports.bunched": "Bunched",
+    "reports.liquidity": "How quickly you could reach it",
+    "reports.noticing": "Worth noticing",
+    "reports.largest.holding": "Largest holding",
+    "reports.largest.institution": "Largest institution",
+    "reports.largest.category": "Largest kind",
+    "reports.downloadAs": "Download as {format}",
+    "reports.export.title": "Take your data with you",
+    "reports.export.body": "Everything you can see, in a file you own. The spreadsheet formats carry raw numbers so you can add them up yourself.",
+
+    // Tax (X-06)
+    "tax.limitUsed": "{percent}% of the limit used",
+    "tax.limitUnused": "{amount} of the limit unused.",
+    "tax.fromOne": "From {count} record",
+    "tax.fromMany": "From {count} records",
+    "tax.ifSold": "If you sold today",
+    "tax.ifSoldNote": "For planning only. Nothing here has been sold, and this is not a projection of value.",
+    "tax.interest": "Interest income",
+    "tax.noInterest": "No interest recorded for this year.",
+
+    // Contacts and the family summary (X-06)
+    "continuity.handbook.empty": "Nothing is marked for the family summary yet. Anything you record is included by default — you can leave individual things out.",
+    "continuity.typicalDays": "Usually takes about {days} days once everything is in.",
+    "contacts.recordOne": "{count} record",
+    "contacts.recordMany": "{count} records",
+    "contacts.kind.ca": "Chartered accountant",
+    "contacts.kind.agent": "Insurance agent",
+    "contacts.kind.lawyer": "Lawyer",
+    "contacts.kind.banker": "Banker",
+    "contacts.kind.broker": "Broker",
+    "contacts.kind.advisor": "Advisor",
+    "contacts.kind.other": "Someone else",
+    "contacts.nameExample": "Ramesh Rao",
+    "contacts.organisationExample": "Rao & Associates",
+    "contacts.whoIsIt": "Who is it?",
+    "contacts.added": "Added.",
+    "contacts.whatTheyDo": "What do they do?",
+    "contacts.organisation": "Organisation",
+    "contacts.phone": "Phone",
+    "contacts.phoneHelp": "The number your family would ring.",
+
+    // Sealed fields: what can go wrong (X-06)
+    "seal.error.notSealed": "This doesn't look like sealed data.",
+    "seal.error.newer": "This was sealed by a newer version of Almira.",
+    "seal.error.separator": "A record id or field name may not contain the | character.",
+    "seal.error.noPassphrase": "No passphrase has been set up for this household yet.",
+    "seal.error.wrongPassphrase": "That passphrase doesn't open this. Nothing has been changed.",
+    "seal.error.notAKind": "That isn't a kind of recovery copy.",
+    "seal.error.unlockFirst": "Unlock with your passphrase first.",
+    "seal.error.typeSheetCode": "Type the code from the recovery sheet.",
+    "seal.error.shareNotSheet": "That is a recovery share, not the recovery sheet.",
+    "seal.error.sheetNotShare": "That is the recovery sheet, not a share. Choose “Recovery sheet” instead.",
+    "seal.error.twoShares": "Type two of the three shares.",
+    "seal.error.sheetWrong": "That code doesn't open this recovery sheet. It may be an older sheet. Nothing has been changed.",
+    "seal.error.sharesWrong": "Those shares don't open this. They may be from an older set, or not from the same set. Nothing has been changed.",
+    "seal.error.copyMismatch": "This copy doesn't match the key it says it holds. Nothing has been changed.",
+    "seal.error.noSheet": "No recovery sheet has been made.",
+    "seal.error.noShares": "No recovery shares have been made.",
+    "seal.error.openFirst": "Open it with the recovery sheet or shares first.",
+    "seal.error.couldNotOpen": "This one couldn't be opened.",
+
+    // Recovery codes: what can go wrong (X-06)
+    "recovery.code.sameShare": "These shares can't be combined — two of them are the same share.",
+    "recovery.code.lengths": "These shares are different lengths.",
+    "recovery.code.length": "A code is 40 letters and numbers. This one has {count}.",
+    "recovery.code.character": "\"{character}\" never appears in a code. Check that character.",
+    "recovery.code.checksum": "One of the characters is wrong. Check the code against the sheet, group by group.",
+    "recovery.code.newer": "This code was made by a newer version of Almira.",
+
+    // Talking to the server (X-06)
+    "api.unreachable": "Almira can't be reached just now.",
+    "api.downloadFailed": "That download didn't work.",
+    "api.offline": "You're offline. Almira needs a connection to read your records.",
   },
 
   te: {
@@ -2124,16 +2612,20 @@ const messages = {
 
 let current = readStored();
 
+// Each is read in a try: outside a browser (scripts/check-*.js under jsc) there
+// is no localStorage, navigator or document, and English is the answer.
 function readStored() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored && messages[stored]) return stored;
-  } catch { /* private mode */ }
+  } catch { /* private mode, or no browser */ }
   // The browser's preference, when we speak it.
-  const preferred = (navigator.languages || [navigator.language || "en"])
-    .map((tag) => String(tag).slice(0, 2).toLowerCase())
-    .find((code) => messages[code]);
-  return preferred || "en";
+  try {
+    const preferred = (navigator.languages || [navigator.language || "en"])
+      .map((tag) => String(tag).slice(0, 2).toLowerCase())
+      .find((code) => messages[code]);
+    return preferred || "en";
+  } catch { return "en"; }
 }
 
 export const language = {
@@ -2142,18 +2634,48 @@ export const language = {
     if (!messages[code]) return;
     current = code;
     try { localStorage.setItem(STORAGE_KEY, code); } catch { /* ignore */ }
-    document.documentElement.lang = code;
+    try { document.documentElement.lang = code; } catch { /* no document */ }
   },
 };
 
+/**
+ * Where a key's words come from, in order: the translation written in this
+ * file, then the machine-drafted one waiting for a native speaker's review
+ * (i18n-te.js, i18n-hi.js; docs/14), then English.
+ */
+function lookup(key) {
+  return messages[current]?.[key] ?? DRAFTS[current]?.[key] ?? messages.en[key];
+}
+
+/** Every language's words, for scripts/check-i18n.js. */
+export function catalogue() {
+  return { en: messages.en, te: messages.te, hi: messages.hi, drafts: DRAFTS };
+}
+
+/** Whether a key has words at all, in any language. */
+export function has(key) {
+  return messages.en[key] !== undefined;
+}
+
 /** Falls back to English rather than showing a key: a broken screen is worse than an English one. */
 export function t(key, params) {
-  const text = messages[current]?.[key] ?? messages.en[key] ?? key;
+  const text = lookup(key) ?? key;
   if (!params) return text;
   return Object.entries(params).reduce(
     (out, [name, value]) => out.replaceAll(`{${name}}`, String(value)),
     text,
   );
+}
+
+/**
+ * A category's name in the reader's language (X-06). The taxonomy's labels come
+ * from the database in English; the twelve categories are few and fixed, so
+ * their names live here. A category this build does not know keeps the
+ * server's label.
+ */
+export function categoryName(code, fallback) {
+  const key = `category.${code}`;
+  return has(key) ? t(key) : (fallback ?? code);
 }
 
 /**

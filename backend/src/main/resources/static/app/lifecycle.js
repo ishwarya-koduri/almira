@@ -49,7 +49,7 @@ function confirmIdentity() {
         body: el("div.stack-3", {},
           el("p.lifecycle-text", {}, t("lifecycle.confirmWhy")),
           codeField,
-          challenge.developmentCode && notice(`Development mode: the code is ${challenge.developmentCode}.`),
+          challenge.developmentCode && notice(t("stepUp.developmentCode", { code: challenge.developmentCode })),
         ),
         footer: [confirm],
         onClose: () => { if (!settled) reject(new Error(t("lifecycle.notConfirmed"))); },

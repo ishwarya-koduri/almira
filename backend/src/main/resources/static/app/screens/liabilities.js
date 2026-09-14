@@ -11,21 +11,13 @@ import { state, myMember, takePendingForm, startingVisibility } from "../state.j
 import { reload } from "../app.js";
 import { whereWhoCard } from "../where.js";
 import { sealedNoteCard } from "../sealed-notes.js";
+import { t } from "../i18n.js";
 
-const KINDS = [
-  { value: "home", label: "Home loan" },
-  { value: "car", label: "Car loan" },
-  { value: "personal", label: "Personal loan" },
-  { value: "education", label: "Education loan" },
-  { value: "gold", label: "Gold loan" },
-  { value: "credit_card", label: "Credit card" },
-  { value: "lap", label: "Loan against property" },
-  { value: "las", label: "Loan against securities" },
-  { value: "loan_against_insurance", label: "Loan against insurance" },
-  { value: "family", label: "Money borrowed from family" },
-  { value: "other", label: "Something else" },
-];
-const KIND_LABEL = Object.fromEntries(KINDS.map((k) => [k.value, k.label]));
+// Labels are looked up when drawn, so a change of language reaches them.
+const KIND_CODES = ["home", "car", "personal", "education", "gold", "credit_card", "lap", "las",
+  "loan_against_insurance", "family", "other"];
+const kinds = () => KIND_CODES.map((value) => ({ value, label: t(`liabilities.kind.${value}`) }));
+const kindLabel = (code) => (KIND_CODES.includes(code) ? t(`liabilities.kind.${code}`) : code);
 
 export async function liabilitiesScreen(host) {
   mount(host, el("div.stack", {}, skeletonRows(3)));
@@ -37,14 +29,14 @@ export async function liabilitiesScreen(host) {
 
   mount(host, el("div.stack", {},
     el("div.row-between.wrap", {},
-      el("h1", {}, "What's owed"),
-      el("button.btn.btn-primary", { type: "button", onclick: () => openForm() }, "＋ Add a loan"),
+      el("h1", {}, t("home.owedBreakdown")),
+      el("button.btn.btn-primary", { type: "button", onclick: () => openForm() }, t("liabilities.add")),
     ),
 
     rows.length > 0 && el("div.card", {},
       el("div.row-between.wrap", { style: { alignItems: "baseline" } },
         el("div", {},
-          el("div.overline", {}, "Total owed"),
+          el("div.overline", {}, t("liabilities.total")),
           el("div", {
             style: {
               fontFamily: "var(--font-display)", fontSize: "var(--text-h1)",
@@ -53,17 +45,15 @@ export async function liabilitiesScreen(host) {
           }, dashboard.totalLiabilitiesFormatted),
         ),
         el("div.caption.muted", { style: { textAlign: "right", maxWidth: "34ch" } },
-          `Against ${dashboard.totalAssetsFormatted} of assets. ` +
-          `That leaves ${dashboard.netWorthFormatted}.`),
+          t("liabilities.against", { assets: dashboard.totalAssetsFormatted, net: dashboard.netWorthFormatted })),
       ),
     ),
 
     rows.length === 0
       ? el("div.card", {}, empty({
-          title: "Nothing owed",
-          body: "If you have a home loan, a car loan or a card balance, adding it here " +
-                "makes your net worth the real one.",
-          action: el("button.btn.btn-primary", { onclick: () => openForm() }, "＋ Add a loan"),
+          title: t("liabilities.empty.title"),
+          body: t("liabilities.empty.body"),
+          action: el("button.btn.btn-primary", { type: "button", onclick: () => openForm() }, t("liabilities.add")),
         }))
       : el("div.card.card-tight", {},
           el("div.list", {}, ...rows.map((row) => el("button.list-row", {
@@ -73,16 +63,18 @@ export async function liabilitiesScreen(host) {
             el("div.grow", { style: { minWidth: 0 } },
               el("div.title", {}, row.title),
               el("div.meta", {}, [
-                KIND_LABEL[row.kind] || row.kind,
+                kindLabel(row.kind),
                 row.lenderName,
                 row.holders.map((h) => h.name).filter(Boolean).join(" & "),
-                row.securedBy.length ? `secured by ${row.securedBy[0].title}` : null,
+                row.securedBy.length ? t("liabilities.securedBy", { title: row.securedBy[0].title }) : null,
               ].filter(Boolean).join(" · ")),
             ),
             el("div.amount", {},
               el("b", { style: { color: "var(--caution)" } }, row.outstandingFormatted),
               row.emiAmount && el("div.meta", {},
-                `EMI ${rupees(row.emiAmount)}${row.emiDay ? ` on the ${ordinal(row.emiDay)}` : ""}`),
+                row.emiDay
+                  ? t("liabilities.emiOn", { amount: rupees(row.emiAmount), day: dayOfMonth(row.emiDay) })
+                  : t("liabilities.emi", { amount: rupees(row.emiAmount) })),
             ),
             el("span.pill", {}, visibilityWord(row.visibility)),
           ))),
@@ -97,23 +89,22 @@ export async function liabilitiesScreen(host) {
 
   function openForm(prefill = null) {
     const holderId = prefill?.memberId || myMember()?.id;
-    const title = textInput({ placeholder: "HDFC home loan", "aria-label": "Name", value: prefill?.title || "" });
-    const kind = select({ options: KINDS, value: prefill?.liabilityKind || "home", "aria-label": "Kind" });
+    const title = textInput({ placeholder: t("liabilities.nameExample"), value: prefill?.title || "" });
+    const kind = select({ options: kinds(), value: prefill?.liabilityKind || "home" });
     const outstanding = moneyInput({ placeholder: "0" });
     const emiAmount = moneyInput({ placeholder: "0" });
     const emiDay = textInput({ type: "number", min: 1, max: 31, placeholder: "5" });
     const rate = textInput({ inputMode: "decimal", placeholder: "8.5" });
     const principal = moneyInput({ placeholder: "0" });
 
-    const titleField = field({ label: "What's it called?", control: title, required: true });
+    const titleField = field({ label: t("liabilities.whatCalled"), control: title, required: true });
     const outstandingField = field({
-      label: "How much is still owed?", control: outstanding, required: true,
-      help: "Today's balance, not the original amount.",
+      label: t("liabilities.howMuchOwed"), control: outstanding, required: true,
+      help: t("liabilities.howMuchOwedHelp"),
     });
 
     const securedBy = select({
-      options: [{ value: "", label: "Not secured against anything" }],
-      "aria-label": "Secured against",
+      options: [{ value: "", label: t("liabilities.notSecured") }],
     });
     api.investments(state.household.id).then((holdings) => {
       holdings.forEach((h) => securedBy.append(el("option", { value: h.id }, h.title)));
@@ -121,42 +112,38 @@ export async function liabilitiesScreen(host) {
 
     const visibility = select({
       options: [
-        { value: "private", label: "Private — only whoever owes it" },
-        { value: "household", label: `Shared with ${state.household.name}` },
+        { value: "private", label: t("liabilities.visibility.private") },
+        { value: "household", label: t("common.sharedWith", { name: state.household.name }) },
       ],
       value: startingVisibility(holderId),
-      "aria-label": "Who can see this",
     });
 
-    const save = el("button.btn.btn-primary.grow", { type: "button" }, "Save");
+    const save = el("button.btn.btn-primary.grow", { type: "button" }, t("app.save"));
     const modal = sheet({
-      title: "Add a loan",
+      title: t("liabilities.addTitle"),
       body: el("div.stack-3", {},
         titleField,
-        field({ label: "What kind?", control: kind }),
+        field({ label: t("common.whatKind"), control: kind }),
         outstandingField,
-        field({ label: "EMI amount", control: emiAmount, help: "Optional — we'll show it in what's coming up." }),
-        field({ label: "EMI day of the month", control: emiDay,
-          help: "A loan due on the 31st still falls due in February — we handle that." }),
+        field({ label: t("liabilities.emiAmount"), control: emiAmount, help: t("liabilities.emiAmountHelp") }),
+        field({ label: t("liabilities.emiDay"), control: emiDay, help: t("liabilities.emiDayHelp") }),
         el("details.more", {},
-          el("summary", {}, "More details"),
+          el("summary", {}, t("common.moreDetails")),
           el("div.stack-3", { style: { paddingTop: "16px" } },
-            field({ label: "Original amount borrowed", control: principal }),
-            field({ label: "Interest rate", control: rate, help: "% per year" }),
-            field({ label: "Secured against", control: securedBy,
-              help: "The asset the lender can claim. Shows as “encumbered” on that holding." }),
+            field({ label: t("liabilities.principal"), control: principal }),
+            field({ label: t("liabilities.rate"), control: rate, help: t("liabilities.rateHelp") }),
+            field({ label: t("liabilities.securedAgainst"), control: securedBy, help: t("liabilities.securedHelp") }),
           ),
         ),
-        field({ label: "Who can see this?", control: visibility,
-          help: "Private means only whoever owes it — not even a household admin." }),
+        field({ label: t("common.whoCanSee"), control: visibility, help: t("liabilities.visibility.help") }),
       ),
       footer: [save],
     });
 
     save.onclick = () => withBusy(save, async () => {
       titleField.setError(""); outstandingField.setError("");
-      if (!title.value.trim()) { titleField.setError("Give it a name"); return; }
-      if (outstanding.value() === null) { outstandingField.setError("How much is still owed?"); return; }
+      if (!title.value.trim()) { titleField.setError(t("common.giveItAName")); return; }
+      if (outstanding.value() === null) { outstandingField.setError(t("liabilities.howMuchOwed")); return; }
 
       const body = {
         title: title.value.trim(),
@@ -174,7 +161,7 @@ export async function liabilitiesScreen(host) {
       try {
         await api.createLiability(state.household.id, body);
         modal.close();
-        toast("Saved.");
+        toast(t("common.saved"));
         await reload();
       } catch (error) {
         titleField.setError(error.message);
@@ -187,55 +174,55 @@ export async function liabilitiesScreen(host) {
 
   async function openDetail(id) {
     const body = el("div.stack-3", {}, skeletonRows(2));
-    const modal = sheet({ title: "Loan", body });
+    const modal = sheet({ title: t("liabilities.detailTitle"), body });
     const row = await api.liability(state.household.id, id);
 
     const draw = () => mount(body, el("div.stack-3", {},
       el("div", {},
         el("h3", {}, row.title),
         el("div.caption.muted", {},
-          [KIND_LABEL[row.kind] || row.kind, row.lenderName].filter(Boolean).join(" · ")),
+          [kindLabel(row.kind), row.lenderName].filter(Boolean).join(" · ")),
       ),
 
       el("div.card.card-tight", {},
         el("div.row-between", {},
           el("div", {},
-            el("div.overline", {}, "Still owed"),
+            el("div.overline", {}, t("liabilities.stillOwed")),
             el("div", {
               style: {
                 fontFamily: "var(--font-display)", fontSize: "var(--text-h2)",
                 color: "var(--caution)",
               },
             }, row.outstandingFormatted),
-            row.balanceAsOf && el("div.caption.muted", {}, `As of ${formatDate(row.balanceAsOf)}`),
+            row.balanceAsOf && el("div.caption.muted", {}, t("liabilities.asOf", { date: formatDate(row.balanceAsOf) })),
           ),
           el("button.btn.btn-sm", { type: "button", onclick: () => recordPayment() },
-            "Update balance"),
+            t("liabilities.updateBalance")),
         ),
       ),
 
       el("div.card.card-tight.stack-2", {},
-        el("div.overline", {}, "Who owes it"),
+        el("div.overline", {}, t("liabilities.whoOwes")),
         ...row.holders.map((h) => detailRow(
           h.name,
-          Number(h.responsibilityPct) === 100 ? "All of it" : `${h.responsibilityPct}%`,
+          Number(h.responsibilityPct) === 100 ? t("liabilities.allOfIt") : `${h.responsibilityPct}%`,
         )),
-        detailRow("Who can see it", visibilityText(row)),
+        detailRow(t("common.whoCanSeeIt"), visibilityText(row)),
       ),
 
       row.securedBy.length > 0 && el("div.card.card-tight.stack-2", {},
-        el("div.overline", {}, "Secured against"),
-        ...row.securedBy.map((a) => detailRow(a.title, "encumbered")),
+        el("div.overline", {}, t("liabilities.securedAgainst")),
+        ...row.securedBy.map((a) => detailRow(a.title, t("liabilities.encumbered"))),
       ),
 
       el("div.card.card-tight.stack-2", {},
-        el("div.overline", {}, "Details"),
-        row.principal && detailRow("Originally borrowed", rupees(row.principal)),
-        row.interestRate && detailRow("Interest rate", `${row.interestRate}% p.a.`),
-        row.emiAmount && detailRow("EMI", rupees(row.emiAmount)),
-        row.emiDay && detailRow("Due on", `the ${ordinal(row.emiDay)} of each month`),
-        row.startDate && detailRow("Started", formatDate(row.startDate)),
-        row.endDate && detailRow("Ends", formatDate(row.endDate)),
+        el("div.overline", {}, t("detail.section.details")),
+        row.principal && detailRow(t("liabilities.originally"), rupees(row.principal)),
+        row.interestRate && detailRow(t("liabilities.rate"), t("liabilities.ratePerYear", { rate: row.interestRate })),
+        row.emiAmount && detailRow(t("liabilities.emiShort"), rupees(row.emiAmount)),
+        row.emiDay && detailRow(t("liabilities.dueOn"), t("liabilities.eachMonth", { day: dayOfMonth(row.emiDay) })),
+        row.startDate && detailRow(t("detail.started"), formatDate(row.startDate)),
+        row.endDate && detailRow(t("liabilities.ends"), formatDate(row.endDate)),
       ),
 
       whereWhoCard("liability", id),
@@ -247,30 +234,30 @@ export async function liabilitiesScreen(host) {
           onclick: async () => {
             await api.deleteLiability(state.household.id, id);
             modal.close();
-            toast("Removed.");
+            toast(t("liabilities.removed"));
             await reload();
           },
-        }, "Remove"),
+        }, t("app.remove")),
       ),
     ));
 
     function recordPayment() {
       const amount = moneyInput({ placeholder: "0" });
       const amountField = field({
-        label: "What's owed now?", control: amount, required: true,
-        help: "We keep each figure you record, so the trend is real.",
+        label: t("liabilities.owedNow"), control: amount, required: true,
+        help: t("liabilities.owedNowHelp"),
       });
-      const save = el("button.btn.btn-primary", { type: "button" }, "Save");
+      const save = el("button.btn.btn-primary", { type: "button" }, t("app.save"));
       const inner = sheet({
-        title: "Update balance", body: el("div.stack-3", {}, amountField), footer: [save],
+        title: t("liabilities.updateBalance"), body: el("div.stack-3", {}, amountField), footer: [save],
       });
       save.onclick = () => withBusy(save, async () => {
-        if (amount.value() === null) { amountField.setError("Enter an amount"); return; }
+        if (amount.value() === null) { amountField.setError(t("common.enterAmount")); return; }
         try {
           Object.assign(row, await api.recordBalance(state.household.id, id, {
             outstanding: amount.value(),
           }));
-          inner.close(); draw(); toast("Updated.");
+          inner.close(); draw(); toast(t("common.updated"));
           await reload();
         } catch (error) { amountField.setError(error.message); }
       });
@@ -286,14 +273,21 @@ function detailRow(label, value) {
     el("span.muted", {}, label), el("span", { style: { textAlign: "right" } }, value));
 }
 
+/** Who can see it, in the same words as a holding's row (X-54): never "Scoped". */
 function visibilityWord(visibility) {
-  return visibility === "household" ? "Shared" : visibility === "scoped" ? "Scoped" : "Private";
+  return t(visibility === "household" ? "privacy.pill.household"
+    : visibility === "scoped" ? "privacy.pill.scoped" : "privacy.pill.private");
 }
 
 function visibilityText(row) {
-  if (row.visibility === "household") return `Everyone in ${state.household.name}`;
-  if (row.visibility === "scoped") return "Specific people";
-  return "Only whoever owes it";
+  if (row.visibility === "household") return t("common.everyoneIn", { name: state.household.name });
+  if (row.visibility === "scoped") return t("common.specificPeople");
+  return t("liabilities.visibility.owerOnly");
+}
+
+/** "the 5th" in English; each language says a day of the month its own way. */
+function dayOfMonth(n) {
+  return t("liabilities.day", { n, ordinal: ordinal(n) });
 }
 
 function ordinal(n) {

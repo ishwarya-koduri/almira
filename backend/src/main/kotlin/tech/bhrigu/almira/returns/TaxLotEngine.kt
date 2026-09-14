@@ -72,6 +72,18 @@ object TaxLotEngine {
         transactions: List<Txn>,
         costBasisMethod: String,
         holdingPeriodMonths: Int,
+    ): Replay = replay(transactions, costBasisMethod) { holdingPeriodMonths }
+
+    /**
+     * As above, with the holding period asked for on the date of each sale.
+     * The period is set by the law on the day of the transfer — gold sold in
+     * June 2024 needed 36 months, gold sold that August needed 24 — so a single
+     * number for the whole history of a holding is wrong for somebody.
+     */
+    fun replay(
+        transactions: List<Txn>,
+        costBasisMethod: String,
+        holdingPeriodMonthsOn: (LocalDate) -> Int,
     ): Replay {
         // Date first, then insertion order, so two transactions on one day
         // replay in the order they were recorded rather than at random.
@@ -101,7 +113,7 @@ object TaxLotEngine {
                         ?: BigDecimal.ZERO
                     consume(
                         lots, txn, quantity, unitProceeds, costBasisMethod,
-                        holdingPeriodMonths, disposals, warnings,
+                        holdingPeriodMonthsOn(txn.date), disposals, warnings,
                     )
                 }
 
@@ -249,7 +261,7 @@ object TaxLotEngine {
         if (disposedOn.isAfter(acquiredOn.plusMonths(months.toLong()))) "long" else "short"
 
     /** "2:1" -> 2, "1:1" -> 1. Also accepts a bare number. */
-    private fun ratioFactor(ratio: String?): BigDecimal? {
+    fun ratioFactor(ratio: String?): BigDecimal? {
         val text = ratio?.trim()?.takeIf { it.isNotEmpty() } ?: return null
         return runCatching {
             if (":" in text) {

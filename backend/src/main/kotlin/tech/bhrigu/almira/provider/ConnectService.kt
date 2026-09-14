@@ -178,6 +178,10 @@ class ConnectService(
         val userId = userContext.require()
         transactions.execute { households.get(householdId) }
         requireEnabled(DIGILOCKER, vault.mode)
+        // Before the code is redeemed, not at the connection's insert: the code
+        // is spent at DigiLocker the moment exchange succeeds, and a member who
+        // may not connect a provider used to spend it and only then be refused.
+        households.requireAdministrator(householdId)
         // Not idempotent: an authorisation code redeems once, so a retry after a
         // timeout would come back "rejected" and blame the person for our wait.
         val session = provider(DIGILOCKER, "exchange", idempotent = false) { vault.exchange(householdId, code) }
@@ -216,6 +220,9 @@ class ConnectService(
         households.get(householdId)
         requireEnabled(DIGILOCKER, vault.mode)
         val session = activeSession(householdId, "digilocker")
+        // Before anything is fetched from DigiLocker, stored or encrypted — the
+        // document insert refuses a viewer too, but only after all of that.
+        households.requireWriter(householdId)
         val available = provider(DIGILOCKER, "list") { vault.list(session) }.associateBy { it.uri }
 
         val titles = mutableListOf<String>()
@@ -263,6 +270,9 @@ class ConnectService(
         val userId = userContext.require()
         households.get(householdId)
         requireEnabled(AA, aggregator.mode)
+        // Before a consent is created at the aggregator, which the rollback of a
+        // refused connection insert cannot take back.
+        households.requireAdministrator(householdId)
         val request = ConsentRequest(
             purpose = "Personal finance management",
             fiTypes = listOf("DEPOSIT", "TERM_DEPOSIT", "MUTUAL_FUNDS", "EQUITIES"),
@@ -308,6 +318,9 @@ class ConnectService(
         households.get(householdId)
         requireEnabled(AA, aggregator.mode)
         val handle = externalRef(householdId, "account_aggregator")
+        // Before the aggregator is asked for anyone's data: the investment
+        // insert refuses a viewer too, but only after the fetch.
+        households.requireWriter(householdId)
         // A provider failure is its own answer. Only the adapter's own refusal
         // (the consent is not active) means "approve it first" — reading a
         // timeout as that would send someone to re-approve a consent that is

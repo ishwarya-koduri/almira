@@ -22,8 +22,18 @@ import tech.bhrigu.almira.crypto.KeyManagementService
 import tech.bhrigu.almira.crypto.LocalKeyManagement
 import tech.bhrigu.almira.document.DocumentStorage
 import tech.bhrigu.almira.document.FilesystemDocumentStorage
+import tech.bhrigu.almira.provider.AccountAggregatorClient
+import tech.bhrigu.almira.provider.ConsentHandle
+import tech.bhrigu.almira.provider.ConsentRequest
+import tech.bhrigu.almira.provider.DiscoveredHolding
+import tech.bhrigu.almira.provider.DocumentVaultProvider
+import tech.bhrigu.almira.provider.ProviderSession
+import tech.bhrigu.almira.provider.SandboxAccountAggregator
+import tech.bhrigu.almira.provider.SandboxDocumentVault
+import tech.bhrigu.almira.provider.VaultDocument
 import tech.bhrigu.almira.support.ApiTestBase
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -58,8 +68,42 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
         }
     }
 
+    class CountingVault(private val real: DocumentVaultProvider) : DocumentVaultProvider by real {
+        val calls = CopyOnWriteArrayList<String>()
+        override fun exchange(householdId: UUID, code: String): ProviderSession {
+            calls += "exchange"
+            return real.exchange(householdId, code)
+        }
+        override fun list(session: ProviderSession): List<VaultDocument> {
+            calls += "list"
+            return real.list(session)
+        }
+        override fun fetch(session: ProviderSession, uri: String): ByteArray {
+            calls += "fetch"
+            return real.fetch(session, uri)
+        }
+    }
+
+    class CountingAggregator(private val real: AccountAggregatorClient) : AccountAggregatorClient by real {
+        val calls = CopyOnWriteArrayList<String>()
+        override fun requestConsent(householdId: UUID, request: ConsentRequest): ConsentHandle {
+            calls += "consent"
+            return real.requestConsent(householdId, request)
+        }
+        override fun fetch(handle: String): List<DiscoveredHolding> {
+            calls += "fetch"
+            return real.fetch(handle)
+        }
+    }
+
     @TestConfiguration
     class Counting {
+        @Bean @Primary
+        fun countingVault(real: SandboxDocumentVault) = CountingVault(real)
+
+        @Bean @Primary
+        fun countingAggregator(real: SandboxAccountAggregator) = CountingAggregator(real)
+
         @Bean @Primary
         fun countingStorage(real: FilesystemDocumentStorage) = CountingStorage(real)
 
@@ -69,9 +113,12 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
 
     @Autowired private lateinit var storage: CountingStorage
     @Autowired private lateinit var keys: CountingKeys
+    @Autowired private lateinit var vault: CountingVault
+    @Autowired private lateinit var aggregator: CountingAggregator
 
     private lateinit var owner: String
     private lateinit var viewer: String
+    private lateinit var editor: String
     private lateinit var householdId: String
 
     @BeforeEach
@@ -81,6 +128,9 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
         householdId = createHousehold(owner, "Koduri", "household", "Ishwarya").path("id").asText()
         val viewerMemberId = addMember(owner, householdId, "Ravi").path("id").asText()
         joinHousehold(owner, householdId, viewerMemberId, viewer, role = "viewer")
+        editor = signIn()
+        val editorMemberId = addMember(owner, householdId, "Meera").path("id").asText()
+        joinHousehold(owner, householdId, editorMemberId, editor, role = "editor")
     }
 
     private val multipart = RestTemplate().apply {
@@ -144,6 +194,56 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
         )
         assertThat(refused.status()).isEqualTo(HttpStatus.FORBIDDEN)
         assertThat(keys.wraps.get() - wrapsBefore).describedAs("data keys wrapped for a refused edit").isZero()
+    }
+
+    // --- providers --------------------------------------------------------------
+
+    private fun connect(path: String) = "/api/v1/households/$householdId/connect/$path"
+
+    @Test
+    fun `an editor cannot spend a DigiLocker authorisation code`() {
+        post(connect("digilocker/start"), owner)
+        vault.calls.clear()
+
+        val refused = post(connect("digilocker/complete"), editor, mapOf("code" to "sandbox-code"))
+
+        assertThat(refused.status()).isEqualTo(HttpStatus.FORBIDDEN)
+        assertThat(vault.calls).describedAs("DigiLocker calls made for a refused complete").isEmpty()
+    }
+
+    @Test
+    fun `an editor cannot create a consent at the Account Aggregator`() {
+        aggregator.calls.clear()
+
+        val refused = post(connect("aa/consent"), editor)
+
+        assertThat(refused.status()).isEqualTo(HttpStatus.FORBIDDEN)
+        assertThat(aggregator.calls).describedAs("aggregator calls made for a refused consent").isEmpty()
+    }
+
+    @Test
+    fun `a viewer's DigiLocker import fetches nothing and stores nothing`() {
+        post(connect("digilocker/start"), owner)
+        val offered = post(connect("digilocker/complete"), owner, mapOf("code" to "sandbox-code")).json()
+        vault.calls.clear()
+
+        val refused = post(connect("digilocker/import"), viewer, mapOf("uris" to listOf(offered[0].path("uri").asText())))
+
+        assertThat(refused.status()).isEqualTo(HttpStatus.FORBIDDEN)
+        assertThat(vault.calls).describedAs("DigiLocker calls made for a refused import").isEmpty()
+        assertThat(storage.puts.filter { it.startsWith("$householdId/") }).isEmpty()
+    }
+
+    @Test
+    fun `a viewer's Account Aggregator import fetches nothing`() {
+        post(connect("aa/consent"), owner)
+        get(connect("aa/consent"), owner) // the sandbox approves on the first status check
+        aggregator.calls.clear()
+
+        val refused = post(connect("aa/import"), viewer)
+
+        assertThat(refused.status()).isEqualTo(HttpStatus.FORBIDDEN)
+        assertThat(aggregator.calls).describedAs("aggregator calls made for a refused import").isEmpty()
     }
 
     // --- documents ------------------------------------------------------------

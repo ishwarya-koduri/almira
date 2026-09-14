@@ -52,6 +52,21 @@ begin
     execute 'revoke execute on function app.member_present_since(uuid, timestamptz) from almira_app, public';
   end if;
 
+  -- Plans and support codes (V101, V102). A household's plan is set only by an
+  -- operator as the schema owner, so the runtime role may read it and nothing
+  -- else; a support code is made and taken back by its owner, and every other
+  -- column (its contents, lifetime and the lookup count) is not the app's to
+  -- write. Without this, the blanket grant above would hand those back each
+  -- time this file re-runs, leaving only RLS and the trigger in the way.
+  if to_regclass('public.household_plans') is not null then
+    execute 'revoke insert, update, delete, truncate on household_plans from almira_app';
+  end if;
+  if to_regclass('public.support_codes') is not null then
+    execute 'revoke all on support_codes from almira_app';
+    execute 'grant select, insert on support_codes to almira_app';
+    execute 'grant update (revoked_at) on support_codes to almira_app';
+  end if;
+
   -- Anything a later migration creates inherits these defaults automatically.
   execute 'alter default privileges in schema public '
           'grant select, insert, update, delete on tables to almira_app';

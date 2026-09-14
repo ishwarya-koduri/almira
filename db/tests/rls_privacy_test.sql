@@ -2033,7 +2033,7 @@ begin
 
   blocked := false;
   begin
-    update support_codes set lookups = 0, last_looked_up_at = null
+    update support_codes set lookups = 7, last_looked_up_at = now()
       where id = '00000000-0000-0000-0000-00000000c0de';
   exception when others then blocked := true;
   end;

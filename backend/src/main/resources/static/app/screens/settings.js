@@ -2,13 +2,14 @@
 
 import { api, auth } from "../api.js";
 import {
-  el, mount, sheet, select, field, textInput, toast, empty, rupees, formatDate, withBusy, segmented,
+  el, mount, sheet, select, field, textInput, toast, empty, rupees, formatDate, withBusy, segmented, notice,
 } from "../ui.js";
 import { state, update } from "../state.js";
 import { reload, redraw } from "../app.js";
 import { t, language, LANGUAGES } from "../i18n.js";
 import { e2e, enable as enableE2e, unlock as unlockE2e } from "../e2e.js";
 import { privacyLink } from "../privacy.js";
+import { prefs, THEMES, TEXT_SIZES, DATA_MODES } from "../prefs.js";
 
 export async function settingsScreen(host) {
   // Settings is a stack of independent things, and it used to be an
@@ -41,8 +42,6 @@ async function safely(render) {
 }
 
 function preferencesCard() {
-  const theme = localStorage.getItem("almira.theme") || "system";
-
   const visibility = select({
     options: [
       { value: "private", label: "Private — only I can see new entries" },
@@ -56,26 +55,28 @@ function preferencesCard() {
     toast("Default updated.");
   });
 
+  // Theme, text size and data saver belong to this device, not the account
+  // (prefs.js says why), so they change on the spot with nothing to save.
+  const again = () => settingsScreen(document.getElementById("view"));
+  const choice = (label, prefix, options, value, onChange, help) => el("div.field", {},
+    el("span", {}, label),
+    segmented(options.map((option) => ({ value: option, label: t(`${prefix}.${option}`) })),
+      value, (next) => { onChange(next); again(); }),
+    el("span.help", {}, help),
+  );
+
   return el("div.card.stack-3", {},
-    el("h4", {}, "Preferences"),
+    el("h4", {}, t("prefs.title")),
     field({
       label: "What should new entries default to?",
       control: visibility,
       help: "Your choice wins over the household default for anything you add.",
     }),
-    el("div.field", {},
-      el("span", { style: { fontSize: "var(--text-sm)", fontWeight: "500" } }, "Appearance"),
-      segmented(
-        [{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }],
-        theme,
-        (value) => {
-          localStorage.setItem("almira.theme", value);
-          applyTheme(value);
-          settingsScreen(document.querySelector("main"));
-        },
-      ),
-      el("span.help", {}, "Dark mode has full parity — nothing is hidden in either."),
-    ),
+    choice(t("prefs.appearance"), "prefs.theme", THEMES, prefs.theme, prefs.setTheme, t("prefs.themeHelp")),
+    // D-04: for a parent whose phone is set smaller than they would like.
+    choice(t("prefs.textSize"), "prefs.text", TEXT_SIZES, prefs.text, prefs.setText, t("prefs.textHelp")),
+    // X-72: Automatic follows the phone's Data Saver.
+    choice(t("prefs.data"), "prefs.data", DATA_MODES, prefs.data, prefs.setData, t("prefs.dataHelp")),
   );
 }
 
@@ -390,7 +391,7 @@ async function sessionsCard() {
           await withBusy(event.currentTarget, async () => {
             await api.del(`/api/v1/auth/sessions/${session.id}`);
             toast("Signed out on that device.");
-            settingsScreen(document.querySelector("main"));
+            settingsScreen(document.getElementById("view"));
           });
         },
       }, "Sign out"),
@@ -418,13 +419,9 @@ function aboutCard() {
     el("p.caption.muted", { style: { margin: 0 } },
       "Almira never moves money, never holds funds, and never stores a bank password. " +
       "It is a record — which is exactly why it can track the things transactional apps can't."),
-    el("p.caption.faint", { style: { margin: 0 } },
-      "Figures are informational and are not financial advice."),
+    notice("Figures are informational and are not financial advice."),
   );
 }
 
-export function applyTheme(value) {
-  const root = document.documentElement;
-  if (value === "system") root.removeAttribute("data-theme");
-  else root.setAttribute("data-theme", value);
-}
+/** Kept for callers from before prefs.js; the preference lives there now. */
+export function applyTheme(value) { prefs.setTheme(value); }

@@ -1,5 +1,9 @@
 /* =============================================================================
-   Base and component styles — docs/02 §4-§6.
+   Base and component styles — docs/25 (tokens and blocks), docs/02 (why).
+
+   Every colour, size and duration here is a token from tokens.css.
+   scripts/check-design-tokens.js fails on a literal colour, on a font size
+   under the 13px floor, and on faint ink used as a text colour.
    ============================================================================= */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -17,44 +21,53 @@ body {
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: var(--text-base);
-  line-height: 1.55;
-  /* Optical sizing and tabular figures are on globally: a column of amounts
-     that shifts as digits change is the fastest way to make money look
-     untrustworthy. */
+  line-height: var(--leading-body);
+  /* Tabular figures are on globally: a column of amounts that shifts as digits
+     change is the fastest way to make money look untrustworthy. */
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-h1, h2, h3, h4 { margin: 0; font-weight: 500; }
+/* Telugu and Devanagari are taller than Latin at the same size, and their
+   vowel signs collide at a Latin line height (D-03). */
+:lang(te), :lang(hi) { line-height: var(--leading-indic); }
+:lang(te) h1, :lang(te) h2, :lang(hi) h1, :lang(hi) h2 { line-height: 1.4; }
+
+h1, h2, h3, h4 { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
 h1 { font-family: var(--font-display); font-size: var(--text-h1); line-height: 1.15; letter-spacing: -0.005em; }
 h2 { font-family: var(--font-display); font-size: var(--text-h2); line-height: 1.2; }
 h3 { font-size: var(--text-h3); line-height: 1.25; font-weight: 600; }
 h4 { font-size: var(--text-h4); line-height: 1.3; font-weight: 600; }
 p  { margin: 0 0 var(--space-3); max-width: 68ch; }
 
-a { color: var(--accent); text-underline-offset: 2px; }
+a { color: var(--accent-text); text-underline-offset: 2px; }
 
+/* Hierarchy comes from size and weight, not from fading (X-04). */
 .overline {
   font-size: var(--text-overline);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
-  color: var(--ink-faint);
+  color: var(--ink-muted);
 }
 .caption { font-size: var(--text-caption); color: var(--ink-muted); }
 .muted   { color: var(--ink-muted); }
-.faint   { color: var(--ink-faint); }
+/* Kept for markup that still says .faint; faint ink is never text any more. */
+.faint   { color: var(--ink-muted); }
 .num     { font-variant-numeric: tabular-nums; }
 
 /* Visible focus, always. A focus ring you have to hunt for is not a focus ring. */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
 
-/* --- Motion is a whisper, and it stops entirely when asked ---------------- */
+/* --- Motion (X-73) ----------------------------------------------------------
+   Motion only confirms that something happened, and every duration is a token
+   under 200ms. When the device asks for less, tokens.css zeroes the durations
+   and this stops the rest — keyframes included. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -64,8 +77,20 @@ a { color: var(--accent); text-underline-offset: 2px; }
   }
 }
 
+/* Icons: one line set, drawn in ui.js, coloured by currentColor. */
+.icon { display: inline-grid; place-items: center; width: 1.25em; height: 1.25em; flex: none; }
+.icon svg, .tab-icon svg, .cat-icon svg, .notice-mark svg { width: 100%; height: 100%; display: block; }
+
 /* =============================================================================
-   Layout
+   Layout (D-02)
+
+   Three shapes from one set of markup, chosen by width alone:
+     · under 600px   phone   — bottom tabs, the + raised above them
+     · 600–1099px    tablet  — an 88px rail of icons with labels, + at its top
+     · 1100px and up desktop — the same rail widened into a labelled sidebar
+   A 4 / 8 / 12-column grid with 16px gutters inside a 1200px column. The
+   navigation is rendered once; nothing listens for resizes, so a rotate never
+   redraws.
    ============================================================================= */
 
 .app { min-height: 100dvh; display: flex; flex-direction: column; }
@@ -73,138 +98,168 @@ a { color: var(--accent); text-underline-offset: 2px; }
 .topbar {
   position: sticky; top: 0; z-index: 40;
   display: flex; align-items: center; gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
+  min-height: 56px;
+  padding: var(--space-2) var(--gutter);
   background: color-mix(in srgb, var(--canvas) 88%, transparent);
   backdrop-filter: saturate(1.4) blur(12px);
   border-bottom: 1px solid var(--hairline);
 }
-.topbar .brand {
+.brand {
   font-family: var(--font-display);
   font-size: var(--text-h4);
   font-weight: 500;
   letter-spacing: -0.01em;
-  margin-right: auto;
   display: flex; align-items: center; gap: var(--space-2);
+  min-height: var(--target);
+  color: var(--ink); text-decoration: none;
 }
 .brand-mark {
   /* The mark carries its own ground, so this only has to shape and size it.
      display:block removes the inline-image baseline gap that would otherwise
      push the wordmark a pixel off centre. */
-  width: 22px; height: 22px; border-radius: 6px;
+  width: 24px; height: 24px; border-radius: 6px;
   display: block; flex: none;
 }
 
-main { flex: 1; width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--space-6) var(--space-5) var(--space-24); }
-
-/* =============================================================================
-   Navigation — a rail on a desktop, a tab bar on a phone
-
-   Ten destinations in one horizontal strip is a desktop idea. At 375px it ran
-   off the right edge and there was no way to reach what was past it, which is
-   how a section quietly stops existing. Both navigations are always rendered
-   and this is the only thing that decides between them, so a rotate or a
-   resize never needs a redraw.
-   ============================================================================= */
-
-
-/* Absent by default. The phone block at the end of this section is the only
-   place that turns it on, and it comes last so it actually wins — a media
-   query adds no specificity, so an unconditional rule written below it would
-   quietly hide the bar at every width. */
-.tabbar {
-  display: none;
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
-  grid-template-columns: repeat(5, 1fr);
-  align-items: end;
-  gap: var(--space-1);
-  padding: 6px var(--space-2) calc(6px + env(safe-area-inset-bottom, 0px));
-  background: color-mix(in srgb, var(--canvas) 88%, transparent);
-  backdrop-filter: saturate(1.4) blur(12px);
-  border-top: 1px solid var(--hairline);
+main {
+  flex: 1; width: 100%; min-width: 0;
+  max-width: var(--content-max); margin: 0 auto;
+  padding-block: var(--space-5) calc(var(--space-24) + var(--space-8) + env(safe-area-inset-bottom, 0px));
+  padding-inline: var(--gutter);
+  /* Cards inside decide their own columns by the room they are given, not by
+     the window, so the rail's width never makes a two-up grid too tight. */
+  container-type: inline-size;
 }
 
-.tabbar .tab {
-  appearance: none; border: 0; background: transparent; font: inherit;
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 6px 2px 4px; border-radius: var(--radius-md);
-  color: var(--ink-faint); cursor: pointer;
-  /* A touch target that is honest about its size even though the label is small. */
-  min-height: 52px;
+/* The grid itself, for screens that lay blocks out by column. */
+.layout-grid { display: grid; gap: var(--gutter); grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.layout-grid > * { grid-column: 1 / -1; min-width: 0; }
+
+/* --- Navigation ------------------------------------------------------------ */
+
+.nav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: stretch; gap: var(--space-1);
+  padding: var(--space-1) var(--space-1) calc(var(--space-1) + env(safe-area-inset-bottom, 0px));
+  /* Solid, not a blur: backdrop-filter would make this the containing block
+     for the fixed + inside it, and pin that to the bar instead of the screen. */
+  background: var(--canvas);
+  border-top: 1px solid var(--block-border);
+}
+.nav .brand { display: none; }
+
+.nav .tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-height: var(--row-height); min-width: 0;
+  padding: var(--space-1) 2px;
+  border-radius: var(--radius-md);
+  color: var(--ink-muted); text-decoration: none;
   transition: color var(--fast) var(--ease);
 }
-.tabbar .tab-label {
-  font-size: 11px; font-weight: 500; letter-spacing: 0.01em;
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.nav .tab-label {
+  /* Five labels share a phone's width. With larger text they grow until a
+     word would break inside itself ("Holding-s"), and stop there — never
+     under the 13px floor. */
+  font-size: max(13px, min(var(--text-caption), 3.6vw)); font-weight: 500; line-height: 1.15;
+  text-align: center; max-width: 100%; overflow-wrap: normal; word-break: keep-all;
 }
-.tabbar .tab-icon {
+.nav .tab-icon {
   display: grid; place-items: center;
-  width: 44px; height: 28px; border-radius: var(--radius-full);
-  transition: background var(--base) var(--spring);
+  width: 56px; height: 32px; padding: 5px 17px; border-radius: var(--radius-full);
+  transition: background var(--fast) var(--ease);
 }
-.tabbar .tab-icon svg { width: 20px; height: 20px; display: block; }
 
-/* The selected destination, said twice — colour for everyone, and a soft pill
-   behind the icon so it reads at a glance without needing to compare labels. */
-.tabbar .tab[aria-pressed="true"] { color: var(--accent); }
-.tabbar .tab[aria-pressed="true"] .tab-icon { background: var(--accent-soft); }
-.tabbar .tab[aria-pressed="true"] .tab-label { font-weight: 600; }
+/* The selected destination, said twice — colour, and a soft pill behind the
+   icon — so it reads without comparing labels. */
+.nav .tab[aria-current="page"] { color: var(--accent-text); }
+.nav .tab[aria-current="page"] .tab-icon { background: var(--accent-soft); }
+.nav .tab[aria-current="page"] .tab-label { font-weight: 600; }
 
-/* Capture is the hero (docs/03 §3): on a phone it is not one more label in a
-   row, it is the single raised control, sitting where a thumb already is. */
-.tabbar .tab-add {
+/* The + — capture is the hero (docs/03 §3). Teal, and the one teal fill the
+   shell owns. On a phone it floats above the bottom-right of the tabs, where
+   a thumb already is; on the rail it sits at the top. Same control, same
+   place on every screen. */
+.nav-add {
   appearance: none; border: 0; font: inherit; cursor: pointer;
-  justify-self: center; align-self: center;
-  width: 52px; height: 52px; margin-bottom: 4px;
-  border-radius: var(--radius-full);
+  position: fixed; right: var(--gutter);
+  bottom: calc(var(--row-height) + var(--space-4) + env(safe-area-inset-bottom, 0px));
+  width: 56px; height: 56px; border-radius: var(--radius-full);
   background: var(--accent); color: var(--accent-ink);
-  font-size: 24px; line-height: 1;
-  display: grid; place-items: center;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
   box-shadow: var(--e2);
-  transition: transform var(--fast) var(--spring), filter var(--fast) var(--ease);
+  transition: transform var(--fast) var(--spring);
 }
-.tabbar .tab-add:active { transform: scale(0.94); }
-.tabbar .tab:active { opacity: 0.7; }
+.nav-add .icon { width: 26px; height: 26px; }
+.nav-add .nav-add-label { display: none; font-weight: 600; font-size: var(--text-sm); white-space: nowrap; }
+.nav-add:active { transform: scale(0.96); }
 
-/* Everything that did not fit, one tap away and still reachable. */
-.more-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
-.more-item {
-  appearance: none; font: inherit; text-align: left; cursor: pointer;
-  min-height: 56px; padding: 0 var(--space-4);
-  border: 1px solid var(--hairline); border-radius: var(--radius-md);
-  background: var(--surface); color: var(--ink);
-  font-size: var(--text-sm); font-weight: 500;
-  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+/* Sections inside a destination: Holdings holds investments, loans and
+   accounts. One scrolling row, never two. */
+.subnav {
+  display: flex; gap: var(--space-2); margin-bottom: var(--space-5);
+  overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  max-width: 100%;
 }
-.more-item[aria-current="page"] {
-  background: var(--accent-soft); border-color: var(--accent); font-weight: 600;
+.subnav::-webkit-scrollbar { display: none; }
+.subnav a {
+  flex: none; display: inline-flex; align-items: center;
+  min-height: var(--target); padding: 0 var(--space-4);
+  border: 1px solid var(--block-border); border-radius: var(--radius-full);
+  color: var(--ink); text-decoration: none; font-size: var(--text-sm); font-weight: 500;
+  white-space: nowrap; background: var(--surface);
 }
-.more-item:active { background: var(--surface-sunken); }
+.subnav a[aria-current="page"] {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 600;
+}
 
-@media (max-width: 760px) {
-  .only-wide { display: none !important; }
-  .tabbar { display: grid; }
+main > .notice { margin-bottom: var(--space-4); }
 
-  /* The bar stops being a shelf for navigation and becomes just the name. */
-  .topbar { padding: var(--space-3) var(--space-4); }
+@media (min-width: 600px) {
+  .layout-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
 
-  /* Room for the tab bar plus whatever the device keeps below it. */
-  main {
-    padding: var(--space-5) var(--space-4)
-             calc(var(--space-24) + env(safe-area-inset-bottom, 0px));
+  .app { padding-left: var(--rail-width); }
+  .topbar { display: none; }
+  main { padding-block: var(--space-8) var(--space-16); padding-inline: var(--space-6); }
+
+  .nav {
+    top: 0; right: auto; width: var(--rail-width);
+    grid-template-columns: 1fr; grid-auto-rows: min-content; align-content: start;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-2);
+    border-top: 0; border-right: 1px solid var(--block-border);
+    overflow-y: auto;
   }
+  .nav .brand { display: flex; justify-content: center; margin-bottom: var(--space-2); }
+  .nav .brand-name { display: none; }
 
-  /* The scope switcher is the same shape of problem the navigation had: it
-     holds one button per household member, and a family of six overflows a
-     phone exactly the way ten sections did. Let it scroll rather than clip,
-     and keep the bar itself full-bleed so the last member is reachable. */
-  .segmented {
-    display: flex; max-width: 100%;
-    overflow-x: auto; scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
+  .nav-add {
+    position: static; order: -1; justify-self: center;
+    margin-bottom: var(--space-3); box-shadow: none;
   }
-  .segmented::-webkit-scrollbar { display: none; }
-  .segmented button { flex: none; }
+  .nav .brand { order: -2; }
+}
+
+@media (min-width: 1100px) {
+  .layout-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .app { padding-left: var(--sidebar-width); }
+
+  .nav { width: var(--sidebar-width); padding: var(--space-5) var(--space-3); }
+  .nav .brand { justify-content: flex-start; padding: 0 var(--space-3); }
+  .nav .brand-name { display: inline; }
+  .nav .tab {
+    flex-direction: row; justify-content: flex-start; gap: var(--space-3);
+    min-height: var(--target); padding: 0 var(--space-2);
+  }
+  .nav .tab-label { font-size: var(--text-sm); text-align: left; }
+  .nav .tab-icon { width: 44px; height: 32px; padding: 6px 12px; }
+
+  .nav-add {
+    justify-self: stretch; width: auto; height: var(--target);
+    border-radius: var(--radius-md); padding: 0 var(--space-4);
+  }
+  .nav-add .icon { width: 20px; height: 20px; }
+  .nav-add .nav-add-label { display: inline; }
 }
 
 .narrow { max-width: var(--reading-max); }
@@ -212,12 +267,14 @@ main { flex: 1; width: 100%; max-width: var(--content-max); margin: 0 auto; padd
 .stack   { display: flex; flex-direction: column; gap: var(--space-6); }
 .stack-3 { display: flex; flex-direction: column; gap: var(--space-3); }
 .stack-2 { display: flex; flex-direction: column; gap: var(--space-2); }
-.row     { display: flex; align-items: center; gap: var(--space-3); }
-.row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.row     { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-width: 0; }
 .wrap    { flex-wrap: wrap; }
-.grow    { flex: 1; }
+.grow    { flex: 1; min-width: 0; }
+.row > .input, .row > .select { flex: 1; min-width: 0; width: auto; }
 .grid    { display: grid; gap: var(--space-4); }
-@media (min-width: 860px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+.grid > * { min-width: 0; }
+@container (min-width: 640px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
 
 /* =============================================================================
    Surfaces
@@ -225,78 +282,127 @@ main { flex: 1; width: 100%; max-width: var(--content-max); margin: 0 auto; padd
 
 .card {
   background: var(--surface);
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--block-border);
   border-radius: var(--radius-lg);
-  padding: var(--space-5);
+  padding: var(--space-4);
+  min-width: 0;
 }
-@media (min-width: 700px) { .card { padding: var(--space-6); } }
-.card-tight { padding: var(--space-4); }
+@media (min-width: 600px) { .card { padding: var(--space-6); } }
+.card-tight { padding: var(--space-2) var(--space-4); }
+/* Something that needs attention but is not a debt: a heavier edge, not rust. */
+.card-emphasis { border-width: 2px; border-color: var(--ink-muted); }
 
 .section-title {
-  display: flex; align-items: baseline; justify-content: space-between;
+  display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap;
   gap: var(--space-3); margin-bottom: var(--space-3);
 }
 
 /* =============================================================================
-   The net-worth hero — docs/02 §8. Gold appears here and nowhere else.
+   The net-worth hero — docs/25 §5. Brass for the one figure, gold only as the
+   hairline beneath it. On a phone it is compact and its arithmetic waits
+   behind a tap, so what is due next is on the first screen (X-55).
    ============================================================================= */
 
 .hero {
   background: var(--surface);
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--block-border);
   border-radius: var(--radius-xl);
-  padding: var(--space-8) var(--space-6);
+  padding: var(--space-5) var(--space-4);
 }
+@media (min-width: 600px) { .hero { padding: var(--space-8) var(--space-6); } }
 .hero-amount {
   font-family: var(--font-display);
-  font-size: clamp(2.2rem, 7vw, var(--text-display));
+  /* Capped by the width as well as by the scale: a figure split across two
+     lines ("₹1,42,35,0 / 00") is misread, so at 200% text it stops growing
+     at what the screen can hold. */
+  font-size: min(var(--text-display), 10.5vw);
   line-height: 1.05;
   letter-spacing: -0.01em;
   font-weight: 500;
-  color: var(--gold);
+  color: var(--brass);
   font-variant-numeric: tabular-nums;
   margin: var(--space-2) 0 var(--space-1);
+  white-space: nowrap;
+}
+.hero-amount::after {
+  content: ""; display: block; width: 48px; height: 2px; margin-top: var(--space-2);
+  background: var(--gold); border-radius: var(--radius-full);
 }
 .hero-words {
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-sm);
   color: var(--ink-muted);
-  max-width: 30ch;
+  max-width: 34ch;
 }
-.hero-side { display: flex; flex-direction: column; gap: var(--space-2); min-width: 190px; }
+@media (min-width: 600px) { .hero-words { font-size: var(--text-lg); } }
+.hero-side { display: flex; flex-direction: column; gap: var(--space-2); min-width: min(190px, 100%); }
 .hero-side-row { display: flex; justify-content: space-between; gap: var(--space-4); font-size: var(--text-sm); }
 .hero-side-row b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.hero-rule { height: 1px; background: var(--hairline); margin: var(--space-1) 0; }
+.hero-toggle { margin-top: var(--space-2); }
+.owed { color: var(--caution); }
+
+@media (max-width: 599px) {
+  .hero:not([data-open="true"]) .hero-side { display: none; }
+}
+@media (min-width: 600px) {
+  .hero .hero-toggle { display: none; }
+}
+
+/* A score is progress, not treasure: ink, never the hero's brass. */
+.score {
+  font-family: var(--font-display); font-size: var(--text-h2); font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
 
 /* =============================================================================
-   Buttons — 44px targets, one accent action per screen
+   Buttons — 44px targets, one accent action per screen, labels never wrap
    ============================================================================= */
 
 .btn {
   appearance: none; border: 1px solid transparent;
-  font: inherit; font-weight: 600; font-size: var(--text-sm);
-  min-height: 44px; padding: 0 var(--space-5);
+  font: inherit; font-weight: 600; font-size: var(--text-sm); line-height: 1.2;
+  min-height: var(--target); padding: 0 var(--space-5);
   border-radius: var(--radius-md);
   display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
-  cursor: pointer;
+  flex: none; max-width: 100%;
+  /* X-70: a button is its natural width. A label that does not fit is a
+     layout problem to solve around the button, not inside it. */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer; text-decoration: none;
   transition: background var(--fast) var(--ease), transform var(--fast) var(--ease),
               border-color var(--fast) var(--ease);
-  background: var(--surface); color: var(--ink); border-color: var(--hairline);
+  background: var(--surface); color: var(--ink); border-color: var(--block-border);
 }
-.btn:hover:not(:disabled) { border-color: var(--ink-faint); }
+.btn:hover:not(:disabled) { border-color: var(--ink-muted); }
 .btn:active:not(:disabled) { transform: scale(.98); }
-.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-.btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 92%, black); border-color: transparent; }
+.btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 90%, var(--ink)); border-color: transparent; }
 
-.btn-ghost { background: transparent; border-color: transparent; color: var(--accent); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--accent-text); }
 .btn-ghost:hover:not(:disabled) { background: var(--accent-soft); border-color: transparent; }
 
-.btn-danger { color: var(--caution); border-color: var(--hairline); background: transparent; }
-.btn-danger:hover:not(:disabled) { border-color: var(--caution); }
+/* Destructive is a text-style action with an undo after it (D-09): it must
+   never look like the thing a screen wants you to press. */
+.btn-danger {
+  background: transparent; border-color: transparent; color: var(--ink);
+  text-decoration: underline; text-underline-offset: 3px; padding-inline: var(--space-3);
+}
+.btn-danger:hover:not(:disabled) { background: var(--surface-sunken); border-color: transparent; }
 
-.btn-sm { min-height: 34px; padding: 0 var(--space-3); font-size: var(--text-caption); }
+/* Smaller-looking, not smaller to hit. */
+.btn-sm { padding: 0 var(--space-3); font-size: var(--text-sm); }
 .btn-block { width: 100%; }
+
+/* On a phone a long label becomes its icon; the name stays as aria-label. */
+.btn .btn-icon { display: none; }
+@media (max-width: 599px) {
+  .btn-collapse .btn-label { display: none; }
+  .btn-collapse .btn-icon { display: inline-grid; }
+  .btn-collapse { padding: 0 var(--space-3); }
+}
 
 /* Loading swaps the label for a spinner with the width locked, so nothing jumps. */
 .btn[data-loading="true"] { color: transparent; position: relative; pointer-events: none; }
@@ -308,43 +414,55 @@ main { flex: 1; width: 100%; max-width: var(--content-max); margin: 0 auto; padd
 .btn:not(.btn-primary)[data-loading="true"]::after { color: var(--ink); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* A quiet link-looking hint inside a row, e.g. "Add amount" (X-71). */
+.link-quiet { color: var(--accent-text); font-size: var(--text-sm); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
+
 /* =============================================================================
    Fields — label above, helper space reserved so nothing jumps on error
    ============================================================================= */
 
-.field { display: flex; flex-direction: column; gap: var(--space-1); }
-.field > label {
+.field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.field > label, .field > span:first-child {
   font-size: var(--text-sm); font-weight: 500; letter-spacing: .005em;
   color: var(--ink);
 }
-.field .req { color: var(--caution); margin-left: 2px; }
+.field .req { color: var(--ink-muted); margin-left: 2px; }
 
 .input, .select, .textarea {
   font: inherit; font-size: var(--text-base);
-  min-height: 44px; padding: 0 var(--space-3);
+  min-height: var(--target); padding: 0 var(--space-3);
   background: var(--surface); color: var(--ink);
-  border: 1px solid var(--hairline); border-radius: var(--radius-sm);
-  width: 100%;
+  border: 1px solid var(--block-border); border-radius: var(--radius-sm);
+  width: 100%; min-width: 0;
   transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
 }
+:root:not([data-theme="clear"]) .input,
+:root:not([data-theme="clear"]) .select,
+:root:not([data-theme="clear"]) .textarea { border-color: color-mix(in srgb, var(--ink-muted) 40%, var(--hairline)); }
 .textarea { padding: var(--space-3); min-height: 88px; resize: vertical; line-height: 1.5; }
 .input:focus, .select:focus, .textarea:focus {
   outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.input::placeholder, .textarea::placeholder { color: var(--ink-faint); }
+.input::placeholder, .textarea::placeholder { color: var(--ink-muted); }
 .select { appearance: none; padding-right: var(--space-8); cursor: pointer;
   background-image: linear-gradient(45deg, transparent 50%, var(--ink-muted) 50%),
                     linear-gradient(135deg, var(--ink-muted) 50%, transparent 50%);
-  background-position: calc(100% - 18px) 20px, calc(100% - 13px) 20px;
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
   background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
 
 /* Helper text occupies its space whether or not there is a message, so an
-   error appearing never shoves the rest of the form down. */
-.field .help { min-height: 1.15rem; font-size: var(--text-caption); color: var(--ink-muted); }
-.field .help.error { color: var(--caution); }
+   error appearing never shoves the rest of the form down. An error is ink
+   with a mark and a heavier edge — rust stays for money owed (D-01). */
+.field .help { min-height: 1.3rem; font-size: var(--text-caption); color: var(--ink-muted); }
+.help.error { color: var(--ink); font-weight: 600; }
+.help.error:not(:empty)::before {
+  content: ""; display: inline-block; width: 1em; height: 1em; margin-right: 6px; vertical-align: -0.15em;
+  background: currentColor;
+  -webkit-mask: var(--mark-alert) center / contain no-repeat; mask: var(--mark-alert) center / contain no-repeat;
+}
 .field[data-invalid="true"] .input,
-.field[data-invalid="true"] .select { border-color: var(--caution); }
+.field[data-invalid="true"] .select { border: 2px solid var(--ink); }
 
 /* Money: leading ₹, right-aligned tabular figures. */
 .money-wrap { position: relative; }
@@ -358,110 +476,171 @@ main { flex: 1; width: 100%; max-width: var(--content-max); margin: 0 auto; padd
 .unit-wrap .input { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 .unit-wrap .unit {
   display: grid; place-items: center; white-space: nowrap; padding: 0 var(--space-3);
-  border: 1px solid var(--hairline); border-left: 0;
+  border: 1px solid var(--block-border); border-left: 0;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   background: var(--surface-sunken); color: var(--ink-muted); font-size: var(--text-sm);
 }
 
 /* =============================================================================
-   Segmented control — the scope and lens switchers (docs/02 §6.5)
+   Segmented control — two to four choices (D-09), and the scope switcher,
+   which scrolls rather than wraps when a family is large.
    ============================================================================= */
 
 .segmented {
-  display: inline-flex; padding: 3px; gap: 2px;
+  display: inline-flex; padding: 3px; gap: 2px; max-width: 100%;
+  overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
   background: var(--surface-sunken);
   border-radius: var(--radius-full);
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--block-border);
 }
+.segmented::-webkit-scrollbar { display: none; }
 .segmented button {
-  appearance: none; border: 0; background: transparent; font: inherit;
+  appearance: none; border: 0; background: transparent; font: inherit; flex: none;
   font-size: var(--text-sm); font-weight: 500; color: var(--ink-muted);
-  min-height: 34px; padding: 0 var(--space-4); border-radius: var(--radius-full);
+  min-height: var(--target); padding: 0 var(--space-4); border-radius: var(--radius-full);
   cursor: pointer; white-space: nowrap;
-  transition: background var(--base) var(--spring), color var(--base) var(--ease);
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
 }
 .segmented button[aria-pressed="true"] {
   background: var(--surface); color: var(--ink); box-shadow: var(--e1); font-weight: 600;
 }
+:root[data-theme="clear"] .segmented button[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: -2px; }
 
 /* =============================================================================
-   Chips, dots, pills
+   Chips, dots, pills, category icons
    ============================================================================= */
 
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 
+/* D-10: a line icon on a soft tint of the category colour. */
+.cat-icon {
+  display: grid; place-items: center; flex: none;
+  width: 36px; height: 36px; padding: 7px; border-radius: var(--radius-sm);
+  color: var(--cat, var(--ink-muted));
+  background: color-mix(in srgb, var(--cat, var(--ink-muted)) 14%, var(--surface));
+}
+.chip .cat-icon { width: 24px; height: 24px; padding: 3px; }
+
 .chip {
-  display: inline-flex; align-items: center; gap: var(--space-2);
-  min-height: 32px; padding: 0 var(--space-3);
-  border: 1px solid var(--hairline); border-radius: var(--radius-full);
-  background: var(--surface); font-size: var(--text-caption); color: var(--ink-muted);
+  appearance: none; font: inherit;
+  display: inline-flex; align-items: center; gap: var(--space-2); flex: none;
+  min-height: var(--target); padding: 0 var(--space-3);
+  border: 1px solid var(--block-border); border-radius: var(--radius-full);
+  background: var(--surface); font-size: var(--text-sm); color: var(--ink);
   cursor: pointer; white-space: nowrap;
   transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
 }
 .chip[aria-pressed="true"] {
-  background: var(--accent-soft); border-color: var(--accent); color: var(--ink); font-weight: 600;
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 600;
 }
-.chip-static { cursor: default; }
+.chip-static { cursor: default; min-height: 32px; }
+span.chip { cursor: default; min-height: 32px; }
+
+/* Filters: one row that scrolls sideways (D-09). On a wide screen it wraps,
+   because there the row has room and hiding options off-edge helps nobody. */
+.chip-row {
+  display: flex; gap: var(--space-2); max-width: 100%;
+  overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  padding-bottom: 2px;
+}
+.chip-row::-webkit-scrollbar { display: none; }
+@container (min-width: 900px) { .chip-row { flex-wrap: wrap; overflow: visible; } }
 
 .pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px var(--space-2); border-radius: var(--radius-full);
-  font-size: var(--text-overline); letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  padding: 2px var(--space-2); border-radius: var(--radius-full);
+  font-size: var(--text-overline); letter-spacing: .03em;
   font-weight: 600; background: var(--surface-sunken); color: var(--ink-muted);
+  white-space: nowrap;
 }
 .pill-caution { background: var(--caution-soft); color: var(--caution); }
-.pill-accent  { background: var(--accent-soft); color: var(--accent); }
+.pill-accent  { background: var(--accent-soft); color: var(--accent-text); }
+:root[data-theme="clear"] .pill { box-shadow: inset 0 0 0 1px currentColor; }
 
 /* =============================================================================
-   Lists
+   Money and dates (D-11)
+   ============================================================================= */
+
+.money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.money-short { display: none; }
+@media (max-width: 599px) {
+  .list-row .money-full { display: none; }
+  .list-row .money-short { display: inline; }
+  .when-date { display: none; }
+}
+
+/* =============================================================================
+   Lists — whole rows tappable, 64px tall (X-07)
    ============================================================================= */
 
 .list { display: flex; flex-direction: column; }
 .list-row {
   display: flex; align-items: center; gap: var(--space-3);
-  padding: var(--space-4) var(--space-2);
+  min-height: var(--row-height);
+  padding: var(--space-3) var(--space-2);
   border-bottom: 1px solid var(--hairline);
-  cursor: pointer; text-align: left; width: 100%;
+  cursor: pointer; text-align: left; width: 100%; min-width: 0;
   background: transparent; border-left: 0; border-right: 0; border-top: 0;
   font: inherit; color: inherit;
   transition: background var(--fast) var(--ease);
 }
 .list-row:last-child { border-bottom: 0; }
 .list-row:hover { background: var(--surface-sunken); }
-.list-row .title { font-weight: 500; }
+.list-row .title { font-weight: 500; overflow-wrap: anywhere; }
 .list-row .meta { font-size: var(--text-caption); color: var(--ink-muted); }
 .list-row .amount { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .list-row .amount b { font-weight: 600; }
+@media (max-width: 599px) {
+  /* The visibility pill says less than the amount; on a phone it steps aside. */
+  .list-row > .pill:last-child { display: none; }
+}
 
 /* =============================================================================
-   Allocation bars — a donut is prettier but a bar is easier to read and to
-   label, and every share here needs a name next to it anyway.
+   Allocation bars — a bar is easier to read and label than a donut, and every
+   share here has its name beside it anyway.
    ============================================================================= */
 
 .alloc { display: flex; flex-direction: column; gap: var(--space-3); }
-.alloc-row { display: grid; grid-template-columns: 8px 1fr auto; gap: var(--space-3); align-items: center; }
+.alloc-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; }
 .alloc-bar { height: 8px; border-radius: var(--radius-full); background: var(--surface-sunken); overflow: hidden; }
 .alloc-bar > i { display: block; height: 100%; border-radius: var(--radius-full); transition: width var(--slow) var(--ease); }
 .alloc-label { font-size: var(--text-sm); }
-.alloc-value { font-size: var(--text-sm); font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+.alloc-value { font-size: var(--text-sm); font-variant-numeric: tabular-nums; color: var(--ink-muted); text-align: right; }
 
 /* =============================================================================
-   Banners — "Attention needed". Soft ground, one line, one action.
+   Notices (X-52). A disclaimer, a tax note, "informational only", a status
+   line: muted text with an information mark — never a coloured box. An alert
+   is ink with its own mark. `.banner` is the older name and looks the same,
+   so every screen that still writes it is already quiet.
    ============================================================================= */
 
-.banner {
-  display: flex; gap: var(--space-3); align-items: flex-start;
-  padding: var(--space-4); border-radius: var(--radius-lg);
-  background: var(--caution-soft); border: 1px solid color-mix(in srgb, var(--caution) 25%, transparent);
-  font-size: var(--text-sm);
+:root {
+  --mark-info: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 11v5.5M12 7.6v.2'/%3E%3C/svg%3E");
+  --mark-alert: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v6M12 16.4v.2'/%3E%3C/svg%3E");
 }
-.banner-accent { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 25%, transparent); }
+
+.notice, .banner {
+  display: flex; gap: var(--space-2); align-items: flex-start;
+  color: var(--ink-muted); font-size: var(--text-sm); line-height: 1.5;
+  background: none; border: 0; padding: 0; border-radius: 0;
+}
+.notice-mark { width: 1.1em; height: 1.1em; margin-top: 0.2em; flex: none; }
+.notice-body { min-width: 0; }
+.banner::before {
+  content: ""; flex: none; width: 1.1em; height: 1.1em; margin-top: 0.2em;
+  background: currentColor;
+  -webkit-mask: var(--mark-info) center / contain no-repeat; mask: var(--mark-info) center / contain no-repeat;
+}
+.banner:empty { display: none; }
+.notice-alert, .banner[role="alert"] { color: var(--ink); font-weight: 500; }
+.banner[role="alert"]::before { -webkit-mask-image: var(--mark-alert); mask-image: var(--mark-alert); }
+.banner-accent { color: var(--ink); }
 
 /* =============================================================================
    Empty and loading states — warm and instructive, never a blank void
    ============================================================================= */
 
-.empty { text-align: center; padding: var(--space-12) var(--space-5); }
+.empty { text-align: center; padding: var(--space-10) var(--space-4); }
 .empty h3 { font-family: var(--font-display); font-weight: 500; margin-bottom: var(--space-2); }
 .empty p { color: var(--ink-muted); margin-inline: auto; }
 
@@ -476,46 +655,58 @@ main { flex: 1; width: 100%; max-width: var(--content-max); margin: 0 auto; padd
 @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
 /* =============================================================================
-   Sheets and dialogs
+   Sheets — a bottom sheet on a phone, a side panel from 600px (D-06), so a
+   record's detail has room without hiding the list it came from.
    ============================================================================= */
 
 .scrim {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(28,26,23,.35);
+  background: var(--scrim);
   display: flex; align-items: flex-end; justify-content: center;
   animation: fade var(--base) var(--ease);
 }
-@media (min-width: 700px) { .scrim { align-items: center; } }
 @keyframes fade { from { opacity: 0; } }
 
 .sheet {
   background: var(--surface);
-  width: 100%; max-width: 620px; max-height: 92dvh; overflow-y: auto;
+  width: 100%; max-height: 92dvh; overflow-y: auto; overflow-x: hidden;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   box-shadow: var(--e2);
-  animation: rise var(--slow) var(--spring);
+  animation: rise var(--base) var(--ease);
 }
-@media (min-width: 700px) { .sheet { border-radius: var(--radius-lg); max-height: 86dvh; } }
-@keyframes rise { from { transform: translateY(24px); opacity: 0; } }
+@keyframes rise { from { transform: translateY(16px); opacity: 0; } }
+
+@media (min-width: 600px) {
+  .scrim { justify-content: flex-end; align-items: stretch; }
+  .sheet {
+    width: min(var(--panel-width), 100%); max-height: none; height: 100dvh;
+    border-radius: 0; border-left: 1px solid var(--block-border);
+    animation-name: slide;
+  }
+  .grabber { display: none; }
+}
+@keyframes slide { from { transform: translateX(16px); opacity: 0; } }
 
 .sheet-head {
   position: sticky; top: 0; background: var(--surface);
   display: flex; align-items: center; gap: var(--space-3);
-  padding: var(--space-5); border-bottom: 1px solid var(--hairline); z-index: 1;
+  padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--hairline); z-index: 1;
 }
-.sheet-body { padding: var(--space-5); }
+.sheet-body { padding: var(--space-4); }
+@media (min-width: 600px) { .sheet-head { padding: var(--space-4) var(--space-5); } .sheet-body { padding: var(--space-5); } }
 .sheet-foot {
   position: sticky; bottom: 0; background: var(--surface);
-  display: flex; gap: var(--space-3); padding: var(--space-4) var(--space-5);
+  display: flex; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--hairline);
 }
 .grabber { width: 36px; height: 4px; border-radius: var(--radius-full); background: var(--hairline); margin: var(--space-2) auto 0; }
 
 /* Progressive disclosure: essentials visible, the rest behind "More details". */
 details.more { border-top: 1px solid var(--hairline); padding-top: var(--space-4); }
+details > summary { cursor: pointer; min-height: var(--target); display: flex; align-items: center; }
 details.more > summary {
-  cursor: pointer; font-size: var(--text-sm); font-weight: 600; color: var(--accent);
-  list-style: none; min-height: 32px; display: flex; align-items: center; gap: var(--space-2);
+  font-size: var(--text-sm); font-weight: 600; color: var(--accent-text);
+  list-style: none; gap: var(--space-2);
 }
 details.more > summary::-webkit-details-marker { display: none; }
 details.more > summary::before { content: "▸"; transition: transform var(--fast) var(--ease); }
@@ -525,24 +716,32 @@ details.more[open] > summary::before { transform: rotate(90deg); }
    Toast — bottom, brief, with an Undo where something was destroyed
    ============================================================================= */
 
-.toast-host { position: fixed; left: 0; right: 0; bottom: var(--space-5); z-index: 200;
-  display: flex; flex-direction: column; align-items: center; gap: var(--space-2); pointer-events: none; }
+.toast-host { position: fixed; left: 0; right: 0; bottom: calc(var(--row-height) + var(--space-5)); z-index: 200;
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-2); pointer-events: none;
+  padding-inline: var(--gutter); }
+@media (min-width: 600px) { .toast-host { bottom: var(--space-5); } }
 .toast {
   pointer-events: auto;
   display: flex; align-items: center; gap: var(--space-4);
-  background: var(--ink); color: var(--canvas);
+  background: var(--ink); color: var(--on-strong);
   padding: var(--space-3) var(--space-5); border-radius: var(--radius-md);
-  box-shadow: var(--e2); font-size: var(--text-sm); max-width: 92vw;
-  animation: rise var(--base) var(--spring);
+  box-shadow: var(--e2); font-size: var(--text-sm); max-width: 100%;
+  animation: rise var(--base) var(--ease);
 }
-.toast button { background: transparent; border: 0; color: var(--accent-soft); font: inherit; font-weight: 600; cursor: pointer; }
-.toast-error { background: var(--caution); color: #fff; }
+.toast button {
+  background: transparent; border: 0; color: inherit; font: inherit; font-weight: 600; cursor: pointer;
+  min-height: var(--target); text-decoration: underline; text-underline-offset: 3px;
+}
+.toast-error::before {
+  content: ""; flex: none; width: 1.1em; height: 1.1em; background: currentColor;
+  -webkit-mask: var(--mark-alert) center / contain no-repeat; mask: var(--mark-alert) center / contain no-repeat;
+}
 
 /* =============================================================================
    Auth screen
    ============================================================================= */
 
-.auth { min-height: 100dvh; display: grid; place-items: center; padding: var(--space-5); }
+.auth { min-height: 100dvh; display: grid; place-items: center; padding-block: var(--space-5); padding-inline: var(--gutter); }
 .auth-card { width: 100%; max-width: 420px; }
 .auth h1 { font-size: var(--text-h2); margin-bottom: var(--space-2); }
 .otp-input { font-size: var(--text-h3); letter-spacing: .4em; text-align: center; font-family: var(--font-mono); }
@@ -551,13 +750,13 @@ details.more[open] > summary::before { transform: rotate(90deg); }
 .choices { display: grid; gap: var(--space-3); }
 .choice {
   display: flex; gap: var(--space-3); align-items: flex-start; text-align: left;
-  padding: var(--space-4); border: 1px solid var(--hairline); border-radius: var(--radius-lg);
+  padding: var(--space-4); border: 1px solid var(--block-border); border-radius: var(--radius-lg);
   background: var(--surface); cursor: pointer; font: inherit; color: inherit; width: 100%;
   transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
 }
 .choice[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .choice .radio {
-  width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--hairline);
+  width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--ink-muted);
   margin-left: auto; flex: none; display: grid; place-items: center;
 }
 .choice[aria-pressed="true"] .radio { border-color: var(--accent); }
@@ -571,33 +770,56 @@ details.more[open] > summary::before { transform: rotate(90deg); }
 }
 
 /* -----------------------------------------------------------------------------
-   Progress: a ring for goals, a bar for meters.
-
-   Both are drawn with a conic or linear gradient rather than an SVG, because
-   they carry no detail worth an extra element — and both take an aria-label,
-   since a proportion drawn in colour is not a proportion for everyone.
+   Progress: a ring for goals and readiness, a bar for meters. Teal, like
+   every meter (D-01) — gold is the hero's hairline and nothing else.
    ----------------------------------------------------------------------------- */
 .ring {
+  --ring: 0deg;
   width: 72px; height: 72px; border-radius: 50%; flex: none;
   display: grid; place-items: center;
+  background: conic-gradient(var(--accent) var(--ring), var(--surface-sunken) 0deg);
 }
+:root[data-theme="clear"] .ring { box-shadow: inset 0 0 0 1px var(--ink); }
 .ring::before {
   content: ""; grid-area: 1 / 1; width: 56px; height: 56px;
   border-radius: 50%; background: var(--surface);
 }
+.ring-lg { width: 112px; height: 112px; }
+.ring-lg::before { width: 92px; height: 92px; }
 .ring-label {
   grid-area: 1 / 1; font-size: var(--text-caption); font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+.ring-lg .ring-label { font-family: var(--font-display); font-size: var(--text-h3); }
 
 .meter {
   height: 8px; border-radius: var(--radius-full);
   background: var(--surface-sunken); overflow: hidden;
 }
+:root[data-theme="clear"] .meter { box-shadow: inset 0 0 0 1px var(--ink); }
 .meter-fill {
   height: 100%; border-radius: var(--radius-full); background: var(--accent);
   transition: width var(--slow) var(--ease);
 }
+
+/* -----------------------------------------------------------------------------
+   Charts (D-08). An area trend with a faint grid and one emphasised end point;
+   a donut with its labels beside it. Theme colours, no red/green.
+   ----------------------------------------------------------------------------- */
+.chart { margin: 0; min-width: 0; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart-grid { stroke: var(--chart-grid); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-area { fill: var(--chart-area); stroke: none; }
+.chart-line { fill: none; stroke: var(--chart-line); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.chart-end { fill: var(--chart-line); stroke: var(--surface); stroke-width: 2; }
+.chart-axis { display: flex; justify-content: space-between; font-size: var(--text-caption); color: var(--chart-text); margin-top: var(--space-1); }
+.chart-donut { display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: center; }
+.chart-donut svg { width: 140px; height: 140px; flex: none; transform: rotate(-90deg); }
+.chart-track { fill: none; stroke: var(--surface-sunken); stroke-width: 14; }
+.chart-arc { fill: none; stroke-width: 14; }
+.chart-labels { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); flex: 1; min-width: 180px; }
+.chart-labels li { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+.on-demand { min-height: var(--target); }
 
 /* -----------------------------------------------------------------------------
    Tables — used only for genuinely tabular things (an import preview).
@@ -610,3 +832,14 @@ details.more[open] > summary::before { transform: rotate(90deg); }
 }
 .table th { color: var(--ink-muted); font-weight: 600; }
 .table tr:last-child td { border-bottom: 0; }
+
+/* =============================================================================
+   Clear (D-12): the same layout with a border on every block and underlined
+   links, so nothing depends on a subtle tint to be found.
+   ============================================================================= */
+:root[data-theme="clear"] a { text-decoration-thickness: 2px; }
+:root[data-theme="clear"] .list-row { border-bottom-color: var(--block-border); }
+:root[data-theme="clear"] .hero-amount::after { height: 3px; }
+@media (prefers-contrast: more) and (prefers-color-scheme: light) {
+  :root:not([data-theme]) .list-row { border-bottom-color: var(--block-border); }
+}

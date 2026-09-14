@@ -109,6 +109,17 @@
   --cat-cash:         #7C8A6A;
   --cat-universal:    #6B6558;
 
+  /* --- Member identifiers (X-54, X-56). The same person is the same colour on
+         every list and for every viewer: chosen from the member's id, not their
+         place on someone's roster. Only ever a ring and a 16% tint behind
+         initials written in ink, so no text sits on these colours. --- */
+  --member-1: #3E6B99;
+  --member-2: #A6555A;
+  --member-3: #4E7C59;
+  --member-4: #6A5A99;
+  --member-5: #3F8A8A;
+  --member-6: #8A7F6A;
+
   /* --- Type. Fraunces for numbers and titles, Inter for the interface, and
          Noto for Telugu and Devanagari, which neither of those has (D-03).
          Each stack ends in a system face, so text is legible before a font
@@ -173,6 +184,7 @@
   --rail-width: 88px;
   --sidebar-width: 224px;
   --panel-width: 480px;
+  --panel-wide:  640px;   /* a record's detail on a desktop (X-53) */
 
   color-scheme: light;
 }

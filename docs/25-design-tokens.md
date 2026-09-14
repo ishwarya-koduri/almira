@@ -113,6 +113,14 @@ Identical in every theme. They are recognition, never meaning: each appears as
 a line icon on a 14% tint of itself (§6) or an 8px dot, always beside the
 category's name.
 
+### Member colours
+
+`--member-1 #3E6B99 · 2 #A6555A · 3 #4E7C59 · 4 #6A5A99 · 5 #3F8A8A · 6 #8A7F6A`
+(X-54, X-56). Identical in every theme. A member's colour is chosen from their id
+(`memberToneIndex` in `glance.js`), not their place on a roster, so Ravi is the
+same colour on every list and for every viewer. The colour is only ever a 2px
+ring and a 16% tint behind initials written in `ink`; no text is set in it.
+
 ## 3. Type
 
 | Family token | Stack | For |
@@ -185,7 +193,8 @@ word fits in (never under 13px), and scope switchers scroll within themselves.
 | 1100px and up | desktop | a 224px sidebar: labels beside icons, "+ Add" at the top | 12 columns |
 
 `gutter` 16px, `content-max` 1200px, `reading-max` 720px, `rail-width` 88px,
-`sidebar-width` 224px, `panel-width` 480px. A media query cannot read a custom
+`sidebar-width` 224px, `panel-width` 480px, `panel-wide` 640px (a record's
+detail from 1100px, X-53). A media query cannot read a custom
 property, so 600 and 1100 are written as numbers in `base.css` and nowhere else.
 Inside `main`, blocks that go two-up (`.grid-2`) decide by the width `main`
 actually has (a container query), so the rail never squeezes two cards into a
@@ -217,9 +226,13 @@ drawing its own.
 |---|---|---|
 | Hero | `.hero`, `.hero-amount`, `.hero-words`, `.hero-side` | Brass figure, gold rule, amount in words. On a phone the arithmetic (assets, owed, counts) is behind "See the breakdown"; from 600px it is always shown. |
 | To review / Next due | a `.card` with a `.list` of `.list-row` | On Home these come straight after the hero, before any breakdown (X-55). |
-| Readiness ring | `ring(percent, { label, size })` | Teal; `size: "lg"` for a screen's main ring. Always has an accessible label. |
-| Holding row | `.list-row` with `categoryIcon()`, `.title`, `.meta`, `.amount` | 64px, the whole row is the button. No amount shows a muted "Add amount", not a dash. |
-| Side panel / bottom sheet | `sheet({ title, body, footer })` | A bottom sheet on a phone; from 600px a 480px panel from the right, full height, so a record's detail no longer sits in a narrow centred modal. |
+| Progress ring | `ring(percent, { label, size })` | Teal; `size: "lg"` for a screen's main ring. Always has an accessible label. |
+| Readiness ring | `partRing(parts, { center, label })` | One teal ring in four parts, a quarter per check, filled as far as that check is done; a check that does not apply is an empty dashed quarter. Words above the number, never a lone percentage (X-33). |
+| Holding row | `.list-row.holding-row` with `categoryIcon()`, `.title`, `.meta` + `.needs`, `avatarStack()`, `.amount`, a privacy `.pill` | 64px, the whole row is the button. One needs-doing line in ink; owners' initials (hidden on a phone); "Only owner", "Household" or "Some people". No amount shows a muted "Add amount", not a dash; no "at cost" on every row (X-54). |
+| Person | `avatar(memberId, name, { size, label })`, `avatarStack(owners, label)` | Initials on the member's colour (§2). Decorative beside a written name; given a label when it stands alone. |
+| To review | `reviewCard()`, `openReview()` in `review.js` | A count and the first three on Home, then one card at a time with its one or two answers and "Not now". Empty is a sentence: "Nothing waiting. Your family is in good shape." (X-51). |
+| Side panel / bottom sheet | `sheet({ title, body, footer, wide })` | A bottom sheet on a phone; from 600px a 480px panel from the right, full height. `wide` makes it 640px from 1100px, for a record's detail (X-53). |
+| Last known view | `api.peek(path)`, `updatedNote()` | A revisited screen draws what it showed last, at once, and says "Updated just now" when the quiet refresh lands. Memory only, per person, cleared by any write and on sign-out; never a sealed value (`cache.js`, X-38). |
 | Notice | `notice(text)`; `.banner` looks the same | Muted text after an ⓘ mark. `role="alert"` or `{ tone: "alert" }` makes it ink with an alert mark. Never a coloured box (X-52). |
 | Chart | `areaTrend(points, { summary })`, `donut(segments, { summary })` | §7 |
 | On demand | `onDemand(label, build)` | With Data Saver on, the block waits behind a button (§8). |
@@ -245,9 +258,15 @@ an `icon("arrow", "icon.btn-icon")`, and keeps its name as `aria-label`.
 - Chart text is `chart-text` (`ink-muted`). No red/green pair anywhere; owed
   is `caution` against owned `accent`.
 - Every chart takes a one-sentence `summary` as its accessible name, because a
-  shape is not a number.
+  shape is not a number. The same sentence is written under a trend as a caption.
+- `areaTrend(points, { fromZero: false })` fits the line to its own range, for
+  a figure whose movement is small beside its size. Its axis still names only
+  dates, never a truncated amount.
 
-No screen draws a chart yet (P-15); these are the standard they are built to.
+Where they are drawn (P-15): Home's net worth by month under the hero, from the
+month recording began; "Where it sits" as one donut in the category colours; a
+holding's recorded values in its detail panel. Each waits behind "Show the
+chart" with Data Saver on.
 
 ## 8. Money, dates, data
 

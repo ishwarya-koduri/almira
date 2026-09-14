@@ -1,11 +1,19 @@
-/* The list. Searchable, filterable, and honest about what it does not know. */
+/* The list. Searchable, filterable, and honest about what it does not know.
+
+   Each row reads at a glance (X-54): the category's icon, the title with one
+   line of what needs doing, the owners' initials in their own colours, the
+   value, and who can see it in plain words. The list draws from the last known
+   view first and refreshes quietly (X-38). */
 
 import { api } from "../api.js";
-import { el, mount, categoryIcon, chipRow, skeletonRows, empty, money, formatDate, textInput, icon } from "../ui.js";
+import {
+  el, mount, categoryIcon, chipRow, skeletonRows, empty, money, formatDate, textInput, icon, avatarStack,
+} from "../ui.js";
 import { state } from "../state.js";
 import { t } from "../i18n.js";
 import { openCapture } from "./capture.js";
 import { openDetail } from "./detail.js";
+import { loadReview, firstNeedByRecord, needLabel } from "../review.js";
 
 let filters = { q: "", category: null };
 
@@ -18,12 +26,26 @@ export async function investmentsScreen(host) {
   const results = el("div", {}, skeletonRows(4));
 
   const load = async () => {
-    mount(results, skeletonRows(4));
     const params = new URLSearchParams();
     if (filters.q) params.set("q", filters.q);
     if (filters.category) params.set("category", filters.category);
-    const rows = await api.investments(state.household.id, params.toString());
-    mount(results, renderRows(rows));
+    const query = params.toString();
+    const path = `/api/v1/households/${state.household.id}/investments${query ? `?${query}` : ""}`;
+    const kept = api.peek(path);
+    const keptInbox = api.peek(api.reviewPath(state.household.id));
+    if (kept) mount(results, renderRows(kept, firstNeedByRecord(keptInbox), load));
+    else mount(results, skeletonRows(4));
+
+    // The needs-doing lines come from To review; without it a row simply says
+    // what it is, and the list still draws.
+    const [rows, inbox] = await Promise.all([
+      api.investments(state.household.id, query),
+      loadReview(state.household.id),
+    ]);
+    if (!results.isConnected) return;
+    if (!kept || JSON.stringify(kept) !== JSON.stringify(rows) || JSON.stringify(keptInbox) !== JSON.stringify(inbox)) {
+      mount(results, renderRows(rows, firstNeedByRecord(inbox), load));
+    }
   };
 
   // Debounced so a search does not fire a request per keystroke.
@@ -59,7 +81,8 @@ export async function investmentsScreen(host) {
   mount(host, el("div.stack", {},
     el("div.row-between.wrap", {},
       el("h1", {}, "Investments"),
-      el("button.btn.btn-primary", { type: "button", onclick: () => openCapture(load) }, icon("plus"), "Add"),
+      // The + in the navigation is this screen's one teal action (docs/25 §2).
+      el("button.btn", { type: "button", onclick: () => openCapture(load) }, icon("plus"), t("app.add").replace(/^＋\s*/, "")),
     ),
     search,
     categoryChips,
@@ -69,7 +92,7 @@ export async function investmentsScreen(host) {
   await load();
 }
 
-function renderRows(rows) {
+function renderRows(rows, needs, onChanged) {
   if (rows.length === 0) {
     return el("div.card", {}, empty({
       title: "Nothing here yet",
@@ -81,28 +104,34 @@ function renderRows(rows) {
   }
 
   return el("div.card.card-tight", {},
-    el("div.list", {}, ...rows.map((row) => el("button.list-row", {
-      type: "button", onclick: () => openDetail(row.id),
-    },
-      categoryIcon(row.categoryCode, row.color),
-      el("div.grow", { style: { minWidth: 0 } },
-        el("div.title", {}, row.title),
-        el("div.meta", {}, [
-          row.typeLabel,
-          row.institutionName,
-          row.owners.map((o) => o.name).filter(Boolean).join(" & "),
-        ].filter(Boolean).join(" · ")),
-      ),
-      // D-11: ₹42 L in a phone's list, the full figure where there is room.
-      // X-71: no amount is an invitation, not a dash.
-      el("div.amount", {},
-        row.valueFormatted
-          ? el("b", {}, money(row.valueFormatted, row.value))
-          : el("span.link-quiet", {}, t("block.addAmount")),
-        row.valueFormatted && el("div.meta", {}, valueNote(row)),
-      ),
-      visibilityPill(row.visibility),
-    ))),
+    el("div.list", {}, ...rows.map((row) => {
+      const need = needs.get(row.id);
+      const owners = row.owners.map((o) => o.name).filter(Boolean).join(" & ");
+      const note = valueNote(row);
+      const what = [row.typeLabel, row.institutionName].filter(Boolean).join(" · ");
+      return el("button.list-row.holding-row", {
+        type: "button", onclick: () => openDetail(row.id, onChanged),
+      },
+        categoryIcon(row.categoryCode, row.color),
+        el("div.grow", { style: { minWidth: 0 } },
+          el("div.title", {}, row.title),
+          el("div.meta", {},
+            what,
+            // One thing to do, the most urgent, in ink: it is the reason to open the row.
+            need && [what && " · ", el("span.needs", {}, needLabel(need))]),
+        ),
+        row.owners.length > 0 && avatarStack(row.owners, t("holding.ownedBy", { names: owners })),
+        // D-11: ₹42 L in a phone's list, the full figure where there is room.
+        // X-71: no amount is an invitation, not a dash.
+        el("div.amount", {},
+          row.valueFormatted
+            ? el("b", {}, money(row.valueFormatted, row.value))
+            : el("span.link-quiet", {}, t("block.addAmount")),
+          row.valueFormatted && note && el("div.meta", {}, note),
+        ),
+        visibilityPill(row.visibility),
+      );
+    })),
   );
 }
 
@@ -114,15 +143,17 @@ function valueNote(row) {
   switch (row.valueBasis) {
     case "valued": return row.valuationSource === "price_feed"
       ? t(row.priceSource === "amfi" ? "value.navShort" : "value.closeShort", { date: formatDate(row.valuedOn) })
-      : `valued ${formatDate(row.valuedOn)}`;
-    case "at_cost": return "at cost";
-    case "custom_field": return "your figure";
-    default: return "no value yet";
+      : t("value.valuedOn", { date: formatDate(row.valuedOn) });
+    // "at cost" on every row said nothing (X-54); the detail panel explains it.
+    case "at_cost": return null;
+    case "custom_field": return t("value.yourFigure");
+    default: return null;
   }
 }
 
+/** Who can see it, in words a person uses (X-54): never "Scoped" or "FULL". */
 function visibilityPill(visibility) {
-  if (visibility === "household") return el("span.pill", {}, "Shared");
-  if (visibility === "scoped") return el("span.pill.pill-accent", {}, "Scoped");
-  return el("span.pill", { title: "Only you can see this" }, "Private");
+  if (visibility === "household") return el("span.pill", { title: t("privacy.pill.householdTitle") }, t("privacy.pill.household"));
+  if (visibility === "scoped") return el("span.pill", { title: t("privacy.pill.scopedTitle") }, t("privacy.pill.scoped"));
+  return el("span.pill", { title: t("privacy.pill.privateTitle") }, t("privacy.pill.private"));
 }

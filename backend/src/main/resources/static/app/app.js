@@ -22,6 +22,7 @@ import { t, language } from "./i18n.js";
 import { openCapture } from "./screens/capture.js";
 import { whereScreen } from "./where.js";
 import { rightsScreen } from "./screens/rights.js";
+import { setOwner } from "./cache.js";
 
 // Labels are resolved at render time rather than here, so switching language
 // redraws the navigation without a reload. Every route that ever existed is
@@ -186,6 +187,8 @@ async function afterSignIn() {
 
 async function loadSession() {
   const [user, households] = await Promise.all([api.me(), api.households()]);
+  // The last known views belong to this person; someone else's are dropped (X-38).
+  setOwner(user?.id);
   const household = households[0] || null;
   update({ user, households, household });
 

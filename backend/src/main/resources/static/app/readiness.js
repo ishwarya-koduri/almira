@@ -19,7 +19,8 @@
    screen must not fail with it. */
 
 import { api } from "./api.js";
-import { el } from "./ui.js";
+import { el, partRing } from "./ui.js";
+import { movementLine } from "./glance.js";
 import { t } from "./i18n.js";
 
 /** The readiness, or null. Never throws. */
@@ -103,11 +104,20 @@ function leftOutTodo(records, open) {
 export function readinessCard(readiness, open) {
   const hasScore = typeof readiness.score === "number";
 
+  // One teal ring in four parts, a quarter per check, with what changed written
+  // above the number (X-33). The score maths are docs/22's and unchanged.
+  const line = movementLine(readiness);
+  const partsLabel = readiness.checks.map((check) => `${t(`ready.check.${check.code}`)}: ${
+    check.applicable === 0 ? t("ready.notApplicable") : t("ready.of", { done: check.done, applicable: check.applicable })}`).join(". ");
   const headline = hasScore
-    ? el("div.row", { style: { alignItems: "baseline", gap: "8px" } },
-        el("span", { style: { fontSize: "2rem", fontWeight: 600, fontVariantNumeric: "tabular-nums" } },
-          `${readiness.score}%`),
-        el("span.caption.muted", {}, readiness.complete ? t("ready.complete") : t("ready.howCounted")))
+    ? el("div.readiness-head", {},
+        partRing(readiness.checks.map((check) => ({ percent: check.applicable === 0 ? null : check.percent })), {
+          label: `${t(line.key, line.params)} ${t("ready.scoreIs", { score: readiness.score })} ${partsLabel}`,
+          center: el("div", {}, el("div.figure", {}, `${readiness.score}`), el("div.caption.muted", {}, t("ready.outOf100"))),
+        }),
+        el("div.grow.stack-2", {},
+          el("p.movement", { "data-movement": readiness.movement ? "true" : "false" }, t(line.key, line.params)),
+          el("span.caption.muted", {}, readiness.complete ? t("ready.complete") : t("ready.howCounted"))))
     : el("p", { "data-no-score": "true" }, t(noScoreKey(readiness)));
 
   const checks = el("div.stack-2", {},

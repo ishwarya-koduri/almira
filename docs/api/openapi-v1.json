@@ -3722,6 +3722,9 @@
             "format": "int32",
             "type": "integer"
           },
+          "movement": {
+            "$ref": "#/components/schemas/ReadinessMovement"
+          },
           "recordCount": {
             "format": "int32",
             "type": "integer"
@@ -4705,6 +4708,61 @@
         ],
         "type": "object"
       },
+      "MemberPreview": {
+        "properties": {
+          "canSignIn": {
+            "type": "boolean"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "notInTheirView": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewRecord"
+            },
+            "type": "array"
+          },
+          "role": {
+            "type": "string"
+          },
+          "sees": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewRecord"
+            },
+            "type": "array"
+          },
+          "sharedAssetsFormatted": {
+            "type": "string"
+          },
+          "sharedOwedFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "canSignIn",
+          "caveats",
+          "displayName",
+          "explanation",
+          "memberId",
+          "notInTheirView",
+          "sees",
+          "sharedAssetsFormatted"
+        ],
+        "type": "object"
+      },
       "MemberResponse": {
         "properties": {
           "dateOfBirth": {
@@ -5482,6 +5540,44 @@
         },
         "type": "object"
       },
+      "PreviewRecord": {
+        "properties": {
+          "categoryCode": {
+            "type": "string"
+          },
+          "categoryLabel": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "valueFormatted": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "categoryCode",
+          "categoryLabel",
+          "recordId",
+          "recordType",
+          "title",
+          "visibility"
+        ],
+        "type": "object"
+      },
       "PrivacyOverview": {
         "properties": {
           "acceptedAt": {
@@ -5679,6 +5775,32 @@
           "check",
           "fix",
           "reason"
+        ],
+        "type": "object"
+      },
+      "ReadinessMovement": {
+        "properties": {
+          "comparedWith": {
+            "format": "date",
+            "type": "string"
+          },
+          "fewerDone": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "previousScore": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "saferCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "comparedWith",
+          "fewerDone",
+          "saferCount"
         ],
         "type": "object"
       },
@@ -6059,6 +6181,67 @@
         },
         "required": [
           "number"
+        ],
+        "type": "object"
+      },
+      "ReviewInbox": {
+        "properties": {
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewItem"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "items",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "ReviewItem": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "valueFormatted": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "kind",
+          "recordId",
+          "recordType",
+          "title"
         ],
         "type": "object"
       },
@@ -14282,6 +14465,46 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/members/{memberId}/preview": {
+      "get": {
+        "operationId": "preview_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "memberId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberPreview"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "member-preview-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/parental-consents": {
       "get": {
         "operationId": "listParentalConsents",
@@ -14960,6 +15183,37 @@
         },
         "tags": [
           "returns-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/review": {
+      "get": {
+        "operationId": "review",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewInbox"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "review-controller"
         ]
       }
     },

@@ -1,9 +1,18 @@
 /* Family — the roster, and what each person can see.
    Note what is deliberately absent: another member's private count or values.
-   You see who is here and what they have shared with you, nothing more. */
+   You see who is here and what they have shared with you, nothing more.
+
+   Each person is an avatar in their own colour, with their role in plain words
+   (X-56). "What Ravi sees" previews Home through his eyes, built by the server
+   from what you can already see: what he sees too, and what he does not. His own
+   private records are never in it, because they were never read. */
 
 import { api } from "../api.js";
-import { el, mount, sheet, field, textInput, select, withBusy, toast, empty, segmented } from "../ui.js";
+import {
+  el, mount, sheet, field, textInput, select, withBusy, toast, empty, segmented, avatar, categoryIcon,
+  skeletonRows, notice,
+} from "../ui.js";
+import { roleKey } from "../glance.js";
 import { state } from "../state.js";
 import { reload } from "../app.js";
 import {
@@ -48,17 +57,21 @@ export async function familyScreen(host) {
       el("div.list", {}, ...members.map((member) => {
         const { meta, actions } = memberLifecycle(member, lifecycle);
         return el("div.list-row.wrap", { style: { cursor: "default" } },
+          avatar(member.id, member.displayName, { size: "md" }),
           el("div.grow", {},
-            el("div.title", {}, member.displayName, member.isMe && el("span.pill", { style: { marginLeft: "8px" } }, "You")),
+            el("div.title", {}, member.displayName, member.isMe && el("span.pill", { style: { marginLeft: "8px" } }, t("family.you"))),
             el("div.meta", {}, [
-              member.relationship,
-              member.isMinor && "minor",
-              member.isManaged ? "no login yet" : member.role,
+              relationshipText(member),
+              member.isMinor && t("family.minor"),
+              t(roleKey(member)),
               ...meta,
             ].filter(Boolean).join(" · ")),
             member.isMinor && member.isManaged && !member.passedAway && consentLine(member),
           ),
           el("div.lifecycle-actions", {},
+            !member.isMe && el("button.btn.btn-sm", {
+              type: "button", onclick: () => openPreview(member),
+            }, t("family.preview.open", { name: member.displayName })),
             canManage && member.isManaged && !member.passedAway && el("button.btn.btn-sm", {
               type: "button", onclick: () => invite(member),
             }, "Invite to sign in"),
@@ -68,19 +81,79 @@ export async function familyScreen(host) {
       })),
     ),
 
-    el("div.banner.banner-accent", {},
-      el("div", {},
-        el("b", {}, "Everyone keeps their own privacy. "),
-        "A role decides what someone can ", el("i", {}, "do"), " — invite people, edit shared entries. ",
-        "It never decides what they can ", el("i", {}, "see"), ". ",
-        "Private entries stay private, including from the household owner.",
-      ),
-    ),
+    // A notice, not a coloured box (X-52).
+    notice(el("span", {},
+      el("b", {}, "Everyone keeps their own privacy. "),
+      "A role decides what someone can ", el("i", {}, "do"), " — invite people, edit shared entries. ",
+      "It never decides what they can ", el("i", {}, "see"), ". ",
+      "Private entries stay private, including from the household owner.",
+    ), { role: "note" }),
 
     welcomeCard(lifecycle),
     !state.household.readOnly && successorCard(lifecycle, members),
     !state.household.readOnly && leaveCard(lifecycle),
   ));
+
+  /** "Spouse", not "spouse"; "self" is already said by the You pill. */
+  function relationshipText(member) {
+    if (!member.relationship || member.relationship === "self") return null;
+    const key = `family.relationship.${member.relationship}`;
+    const text = t(key);
+    return text === key ? member.relationship : text;
+  }
+
+  /**
+   * "What Ravi sees" (X-56). Everything in it is something the viewer can
+   * already see; the server decides, for each, whether Ravi sees it too.
+   */
+  function openPreview(member) {
+    const body = el("div.stack-3", {}, skeletonRows(3));
+    sheet({ title: t("family.preview.title", { name: member.displayName }), body, wide: true });
+    (async () => {
+      let preview;
+      try {
+        preview = await api.memberPreview(state.household.id, member.id);
+      } catch (error) {
+        mount(body, notice(error.message, { tone: "alert" }));
+        return;
+      }
+      const name = preview.displayName;
+      const recordRow = (record, absent) => el(`div.list-row${absent ? ".preview-absent" : ""}`, { style: { cursor: "default" } },
+        record.recordType === "investment"
+          ? categoryIcon(record.categoryCode, record.color)
+          : el("span.pill.pill-caution", {}, t("family.preview.owed")),
+        el("div.grow", { style: { minWidth: 0 } },
+          el("div.title", {}, record.title),
+          el("div.meta", {}, absent
+            ? t(`family.preview.why.${record.visibility}`, { name })
+            : record.categoryLabel)),
+        !absent && record.valueFormatted && el("div.amount", {},
+          record.recordType === "liability" ? el("span.owed", {}, `− ${record.valueFormatted}`) : el("b", {}, record.valueFormatted)));
+
+      mount(body,
+        el("div.row", {},
+          avatar(member.id, name, { size: "md" }),
+          el("p", { style: { margin: 0 } }, preview.explanation)),
+        preview.canSignIn && el("div.preview-frame", { "aria-label": t("family.preview.frame", { name }) },
+          el("div.overline", {}, t("family.preview.homeFor", { name })),
+          el("div.detail-value", {}, preview.sharedAssetsFormatted),
+          el("div.caption.muted", {}, t("family.preview.figure", { name })),
+          preview.sharedOwedFormatted && el("div.caption.muted", {},
+            t("family.preview.owedFigure", { amount: preview.sharedOwedFormatted })),
+          preview.sees.length
+            ? el("div.list", {}, ...preview.sees.map((record) => recordRow(record, false)))
+            : el("p.caption.muted", { style: { margin: 0 } }, t("family.preview.nothingShared", { name })),
+        ),
+        preview.notInTheirView.length > 0 && el("div.stack-2", {},
+          el("div.overline", {}, t("family.preview.notInView", { name, count: preview.notInTheirView.length })),
+          el("div.list", {}, ...preview.notInTheirView.map((record) => recordRow(record, true)))),
+        el("details", {},
+          el("summary.caption", {}, t("family.preview.caveats")),
+          // Server sentences stay English (Doc 14).
+          ...preview.caveats.map((caveat) => el("p.caption.muted", {}, caveat))),
+      );
+    })();
+  }
 
   /**
    * The dated line on a child's profile: whose consent their records rest on,

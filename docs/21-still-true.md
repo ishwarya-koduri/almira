@@ -236,11 +236,14 @@ Every read goes through the view `still_true_items` under the caller's row-level
 security. It is the same view the sweep reads (§7). What the list shows and what a
 notification counted therefore cannot drift apart.
 
-The web client shows it as a **"Still true?"** card on Home, with "Yes, still
-true" and "Ask me in a month" on each row, in English, Telugu and Hindi. It is a
-card and not a screen, because the answer should be one tap from the place
-people already look. If the list fails to load (for example, an older server
-with no endpoint), there is simply no card. Home does not fail with it.
+The web client asks it inside **To review** on Home (X-51), one card at a time
+beside maturities and missing nominees or scans, with "Yes, still true" and "Ask
+me in a month" on each card, in English, Telugu and Hindi. `GET
+/api/v1/households/{id}/review` reads this same list, so the inbox and the
+endpoint cannot disagree. It is on Home and not a screen of its own, because the
+answer should be one tap from the place people already look. If the inbox fails
+to load (for example, an older server with no endpoint), there is simply no
+card. Home does not fail with it.
 
 ### On the dashboard
 
@@ -317,8 +320,9 @@ On top of that, per person (V60, `StillTrueSweep.mayAskNow`):
   to that person, in any household. The records due meanwhile are not marked as
   nudged, so they are in the next one.
 - **"Ask me later."** `POST /api/v1/me/notification-preferences/still-true/ask-later`
-  — the button on the Home card — sets `still_true_paused_until` a week ahead.
-  No message until then; the records stay on the card to answer or snooze.
+  — the button on Home's To review card, shown while a Still true? question is
+  waiting — sets `still_true_paused_until` a week ahead. No message until then;
+  the records stay in To review to answer or snooze.
 
 ### Not on a remembrance day
 

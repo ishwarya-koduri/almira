@@ -1416,5 +1416,75 @@ begin
 end $$;
 select set_config('app.guest_share_id', '', false);
 
+-- ------------------------------------------------ V80 readiness snapshots --
+do $$ begin raise notice '--- readiness history is one person''s own ---'; end $$;
+select pg_temp.as_user('ish');
+insert into readiness_snapshots (household_id, user_id, taken_on, score, checks)
+  values ((select v from t where k='hh'), (select v from t where k='ish'), date '2026-01-31', 40,
+          '{"nominee": [1, 2]}');
+select pg_temp.assert(
+  (select count(*) from readiness_snapshots) = 1, 'a person reads their own readiness history');
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert(
+  (select count(*) from readiness_snapshots) = 0, 'ADMIN cannot read another member''s readiness history');
+do $$
+declare blocked boolean := false; n int;
+begin
+  begin
+    insert into readiness_snapshots (household_id, user_id, taken_on, score, checks)
+      values ((select v from t where k='hh'), (select v from t where k='ish'), date '2026-02-28', 99, '{}');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor write a row in her name');
+  update readiness_snapshots set score = 100;
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor change hers');
+end $$;
+
+select pg_temp.as_user('out');
+select pg_temp.assert(
+  (select count(*) from readiness_snapshots) = 0, 'outside the household there is no readiness history');
+
+-- ------------------------------------------------ V81 what a member sees --
+do $$ begin raise notice '--- what a member sees: only ever about what you see ---'; end $$;
+select pg_temp.as_user('ish');
+select pg_temp.assert(
+  app.member_would_see((select v from t where k='m_ravi'), 'investment', (select v from t where k='i_shared')),
+  'Ravi would see the household gold');
+-- The grant on the scoped FD was revoked above; without it, no; with it, yes.
+select pg_temp.assert(
+  not app.member_would_see((select v from t where k='m_ravi'), 'investment', (select v from t where k='i_scoped')),
+  'Ravi would not see a scoped FD that names nobody');
+insert into record_visibility_grants (household_id, record_type, record_id, member_id, created_by)
+  values ((select v from t where k='hh'), 'investment', (select v from t where k='i_scoped'),
+          (select v from t where k='m_ravi'), (select v from t where k='ish'));
+select pg_temp.assert(
+  app.member_would_see((select v from t where k='m_ravi'), 'investment', (select v from t where k='i_scoped')),
+  'Ravi would see the FD scoped to him');
+delete from record_visibility_grants where record_id = (select v from t where k='i_scoped');
+select pg_temp.assert(
+  not app.member_would_see((select v from t where k='m_ravi'), 'investment', (select v from t where k='i_private')),
+  'Ravi would not see Ishwarya''s private FD, admin or not');
+select pg_temp.assert(
+  app.member_would_see((select v from t where k='m_ravi'), 'investment', (select v from t where k='i_joint')),
+  'Ravi would see the private flat he co-owns');
+select pg_temp.assert(
+  not app.member_would_see((select v from t where k='m_aarav'), 'investment', (select v from t where k='i_shared')),
+  'a member with no sign-in sees nothing');
+select pg_temp.assert(
+  not app.member_would_see((select v from t where k='m_ravi'), 'investment', (select v from t where k='i_ravi')),
+  'no answer about a record the caller cannot read, even the other member''s own');
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert(
+  not app.member_would_see((select v from t where k='m_ish'), 'investment', (select v from t where k='i_private')),
+  'Ravi cannot learn that Ishwarya holds a private FD by asking about her');
+
+select pg_temp.as_user('out');
+select pg_temp.assert(
+  not app.member_would_see((select v from t where k='m_ravi'), 'investment', (select v from t where k='i_shared')),
+  'outside the household the answer is always no');
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

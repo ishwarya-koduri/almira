@@ -32,6 +32,15 @@ Welcome → auth (email/Google/Apple, "🔒 encrypted")
 │            2 not verified in 8 months          │
 └─────────────────────────────────────────────┘
 ```
+**As built on the web** (catch-up plan P-15, X-38, X-51): under the figure, a slim
+line of net worth by month from when recording began (`/reports/net-worth-trend`),
+today's point emphasised; then **To review** — one count and the first three
+things waiting (a maturity of something you hold, a Still true? question, a
+missing nominee or scan), cleared card by card, and "Nothing waiting. Your family
+is in good shape." when empty; then Coming up; then "Where it sits" as one
+labelled donut. Revisiting Home draws the last known view at once and refreshes
+it quietly ("Updated just now"); placeholders only on the first load.
+
 Scope switcher and lens switcher are segmented controls ([Doc 02 §6.5](02-ux-and-design-system.md#65-radio-segmented-control--choice-cards)). Each viewer's totals reflect only what they're permitted to see ([Doc 05](05-security-and-privacy.md)).
 
 ## 3. Capture (hero)
@@ -63,6 +72,10 @@ Five input modes converge here (smart form, quick-add parse chips, scan/OCR, voi
 ## 4. Investment detail
 Value + return chip · linkage · nominee(s) · **encumbrance** (loan against it) · goal(s) · **visibility** · value-history chart · documents · reminders · notes · custom fields. Quiet underline tabs; quick actions in the header.
 
+**As built on the web** (X-53): a panel from the right on a tablet or desktop (640px wide from 1100px), a bottom sheet on a phone. The value and a small line of its recorded history come first, then four sections one at a time — **Details** (fields, return, duplicate, renew, trash) · **Papers** (scans attached, with "Attach a scan"; where the original is; the sealed note) · **Family** (owners as avatars, who can see it, nominees) · **Reminders** (maturity, last confirmed, reminders set). To review opens it at the section that fixes the card.
+
+**The holding row** (X-54): category icon · title with one needs-doing line in ink (the first thing To review holds for that record) · owners' initials in their member colours · value (no "at cost" on every row) · who can see it in words: "Only owner", "Household", "Some people".
+
 ## 5. Family & permissions
 ```
 ● Me (owner)        ₹10.8L   12 holdings
@@ -72,6 +85,8 @@ Value + return chip · linkage · nominee(s) · **encumbrance** (loan against it
 Roles = capabilities · Visibility = what each can see (Doc 05)
 ```
 Note: you never see another member's *private* count or values — only what they've shared with you.
+
+**As built on the web** (X-56): each person is an avatar in their member colour, with their role in plain words ("Runs the household", "Can add and edit", "No sign-in"). **"What Ravi sees"** opens Home as Ravi would see it, built by the server from what *you* can see (`GET /households/{id}/members/{memberId}/preview`): the records he sees too, what they add up to, and your records that are not in his view. His own private records are in neither list — they are never read — so the preview is a lower bound of his view and says so ([Doc 05 §3.8](05-security-and-privacy.md)).
 
 ## 6. Liabilities
 ```

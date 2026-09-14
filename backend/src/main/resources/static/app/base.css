@@ -403,6 +403,20 @@ main { flex: 1; width: 100%; max-width: var(--content-max); margin: 0 auto; padd
 }
 .chip-static { cursor: default; }
 
+/* Quick add (docs/03 §3): the sentence as typed, with each chip's words
+   underlined, and the words nothing was made of shown greyed rather than
+   folded into the name. Muted, never a warning colour — not understanding a
+   word is not an error the person made. */
+.parse-echo { margin: 0; line-height: 1.7; overflow-wrap: anywhere; }
+.parse-echo u {
+  text-decoration-color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 4px;
+}
+.parse-unclear {
+  color: var(--ink-muted);
+  text-decoration: underline dotted; text-decoration-color: var(--ink-muted); text-underline-offset: 4px;
+}
+.chip-unclear { border-style: dashed; background: transparent; color: var(--ink-muted); }
+
 .pill {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px var(--space-2); border-radius: var(--radius-full);

@@ -48,13 +48,23 @@ function chooseHowToAdd(onSaved) {
   const showParse = (result) => {
     parsed = result;
     const type = result.fields.find((f) => f.key === "typeId");
+    const amount = result.fields.find((f) => f.key === "investedAmount");
+    const unclear = result.notUnderstood || [];
     mount(chipHost,
+      // The sentence as typed, with the words each chip came from underlined —
+      // so "Matures · 5 Mar 2028" can be checked against what was actually said.
+      result.input && el("p.parse-echo", {}, ...echoSentence(result)),
       el("div.row.wrap", { style: { gap: "8px" } },
-        ...result.fields.map((f) => el("span.chip", {},
-          el("span.caption.muted", {}, `${f.label}: `), f.display)),
+        ...result.fields.map((f) => el("span.chip.chip-static", { title: f.sourceText },
+          el("span.caption.muted", {}, `${chipLabel(f)} · `), f.display)),
+        // Words nothing was made of are shown as what they are. They used to
+        // become part of the name, which is how "7.1% matures nominee Aarav"
+        // got saved as the name of a deposit.
+        ...unclear.map((span) => el("span.chip.chip-static.chip-unclear", {},
+          el("span.caption", {}, `${t("capture.parse.unclear")} · `), `“${span.text}”`)),
       ),
-      result.unparsed && el("p.caption.muted", {},
-        `We couldn't place “${result.unparsed}” — it'll become the name.`),
+      amount?.hint && el("p.caption.muted", {}, `${amount.display} — ${amount.hint}`),
+      unclear.length > 0 && el("p.caption.muted", {}, t("capture.parse.unclearHelp")),
       result.note && el("p.caption.muted", {}, result.note),
       type
         ? el("button.btn.btn-primary", {
@@ -128,17 +138,51 @@ function chooseHowToAdd(onSaved) {
   });
 }
 
-/** Chips in, form fields out. Only what the parser was confident enough to name. */
+/**
+ * Chips in, form fields out. Only what the parser was confident enough to name:
+ * words it did not understand are never carried into the name.
+ */
 function prefillFrom(parsed) {
   const prefill = { attributes: {} };
   for (const parsedField of parsed.fields || []) {
     const key = parsedField.key;
     if (key === "typeId") continue;
-    if (key.startsWith("attributes.")) prefill.attributes[key.slice(11)] = parsedField.value;
+    if (key === "nomineeName") prefill.nominee = { ...prefill.nominee, name: parsedField.value };
+    else if (key === "nomineeRelationship") prefill.nominee = { ...prefill.nominee, relationship: parsedField.value };
+    else if (key.startsWith("attributes.")) prefill.attributes[key.slice(11)] = parsedField.value;
     else prefill[key] = parsedField.value;
   }
-  if (!prefill.title && parsed.unparsed) prefill.title = parsed.unparsed;
+  if (prefill.nominee && !prefill.nominee.name) delete prefill.nominee;
   return prefill;
+}
+
+/** A server label in the reader's language where there is one; the server's English otherwise. */
+function chipLabel(parsedField) {
+  const key = `capture.field.${parsedField.key}`;
+  const translated = t(key);
+  return translated === key ? parsedField.label : translated;
+}
+
+/** The typed sentence as text nodes, with each chip's source words underlined. */
+function echoSentence(result) {
+  const marks = [
+    ...result.fields.filter((f) => Number.isInteger(f.start) && Number.isInteger(f.end))
+      .map((f) => ({ start: f.start, end: f.end, label: chipLabel(f), unclear: false })),
+    ...(result.notUnderstood || [])
+      .map((span) => ({ start: span.start, end: span.end, label: t("capture.parse.unclear"), unclear: true })),
+  ].sort((a, b) => a.start - b.start);
+
+  const text = result.input;
+  const parts = [];
+  let at = 0;
+  for (const mark of marks) {
+    if (mark.start < at || mark.end > text.length) continue;  // overlapping or stale: leave as plain text
+    if (mark.start > at) parts.push(text.slice(at, mark.start));
+    parts.push(el(mark.unclear ? "span.parse-unclear" : "u", { title: mark.label }, text.slice(mark.start, mark.end)));
+    at = mark.end;
+  }
+  if (at < text.length) parts.push(text.slice(at));
+  return parts;
 }
 
 async function loadTemplates(host, onSaved, closeParent) {
@@ -417,9 +461,27 @@ export function captureForm(type, onSaved, prefill = null) {
       if (prefill[key] !== undefined) controls.get(column)?.set?.(prefill[key]);
     }
     for (const [key, value] of Object.entries(prefill.attributes || {})) {
-      controls.get(`attr:${key}`)?.set?.(value);
+      // A bond calls its rate a coupon; the parser only knows "rate".
+      const target = key === "interest_rate" && !controls.has("attr:interest_rate") ? "attr:coupon_rate" : `attr:${key}`;
+      controls.get(target)?.set?.(value);
     }
   }
+
+  // A nominee has no field on this form — it is recorded on the saved holding.
+  // So a nominee read from the sentence is said out loud here, can be dropped,
+  // and is saved straight after the holding is.
+  let pendingNominee = prefill?.nominee || null;
+  const nomineeNote = pendingNominee && el("div.row-between.nominee-pending", {},
+    el("p.caption.muted", {}, t("capture.nominee.pending", {
+      name: pendingNominee.relationship
+        ? `${pendingNominee.name} (${pendingNominee.relationship})` : pendingNominee.name,
+    })),
+    el("button.btn.btn-sm", {
+      type: "button",
+      onclick: () => { pendingNominee = null; nomineeNote.remove(); },
+    }, t("capture.nominee.drop")),
+  );
+  if (nomineeNote) form.insertBefore(nomineeNote, formError);
 
   const modal = sheet({
     title: `Add ${type.label.toLowerCase()}`,
@@ -481,6 +543,7 @@ export function captureForm(type, onSaved, prefill = null) {
     await withBusy(button, async () => {
       try {
         const created = await api.capture(state.household.id, body);
+        if (pendingNominee && created.visibleToYou) await saveNominee(created.id, pendingNominee);
         modal.close();
         // A record saved as Private for someone else is a legitimate outcome,
         // and the API tells us when the creator cannot read it back. Saying so
@@ -508,6 +571,28 @@ export function captureForm(type, onSaved, prefill = null) {
   }
 
   titleInput.focus();
+}
+
+/**
+ * Saves a nominee the sentence named. Someone in the household is linked by
+ * name; anyone else is recorded as written. A failure here must not lose the
+ * holding that was just saved, so it says what to do instead of throwing.
+ */
+async function saveNominee(investmentId, nominee) {
+  const member = state.members.find((m) =>
+    m.displayName?.trim().toLowerCase() === nominee.name.trim().toLowerCase());
+  try {
+    await api.setNominees(state.household.id, investmentId, {
+      nominees: [{
+        memberId: member?.id || null,
+        name: member ? null : nominee.name,
+        relationship: nominee.relationship || null,
+        sharePct: 100,
+      }],
+    });
+  } catch {
+    toast(t("capture.nominee.failed"));
+  }
 }
 
 /* -----------------------------------------------------------------------------

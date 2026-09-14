@@ -177,6 +177,7 @@ The delivery backlog for **Almira**, organised by the phases in [Doc 07 §2](07-
 ### Epic 2.4 — Frictionless capture
 **2.4.1 Natural-language quick add** — *As an Organizer, I want to type shorthand and confirm.*
 - [ ] "1L gold 6.3g at ICICI Aug 3" parses into editable chips (type/amount/qty/institution/date); nothing saves until I confirm; unparsed parts are left blank.
+- [ ] "HDFC FD 3 lakh 7.1% matures 5 March 2028 nominee Aarav" also yields rate, maturity and nominee chips; amounts in words ("three lakh", "dedh lakh") are read; words that are not understood are shown as a "Didn't understand" chip, never put into the name.
 
 **2.4.2 Document OCR** — *As an Organizer, I want to snap a certificate and prefill fields.*
 - [ ] OCR extracts candidate fields; low-confidence ones are highlighted; the original is stored as an encrypted proof; I confirm before save.

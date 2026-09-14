@@ -203,6 +203,22 @@ const messages = {
     "money.asOf": "as of",
     "money.notConverted": "Not included in the total",
 
+    "capture.parse.unclear": "Didn't understand",
+    "capture.parse.unclearHelp": "Those words weren't used. Fill them in on the next step if they matter.",
+    "capture.field.typeId": "Type",
+    "capture.field.title": "Name",
+    "capture.field.investedAmount": "Amount",
+    "capture.field.quantity": "Quantity",
+    "capture.field.attributes.interest_rate": "Rate",
+    "capture.field.institutionId": "Where",
+    "capture.field.startDate": "Date",
+    "capture.field.maturityDate": "Matures",
+    "capture.field.nomineeName": "Nominee",
+    "capture.field.nomineeRelationship": "Relationship",
+    "capture.nominee.pending": "Nominee: {name}. Saved with this holding.",
+    "capture.nominee.drop": "Don't add",
+    "capture.nominee.failed": "Saved. The nominee wasn't — add them from the holding.",
+
     "settings.language": "Language",
     "settings.languageHelp": "The app's own words. Figures stay in Indian format in every language.",
     

@@ -60,7 +60,9 @@ data class AnswerKeyHolderBody(val answer: String)
  * the sealed location or the sealed key holder into it by mistake; the server
  * could not read either of those if it tried (docs/20). The title was already
  * plaintext, and asking shows it to the person asked — who may not otherwise
- * see the record — which the sheet that asks says before it is sent.
+ * see the record — which the sheet that asks says before it is sent. That is
+ * only for a record the asker holds: someone who merely sees a record (a grant,
+ * an emergency window) may ask only a member who already sees it too (V106).
  *
  * **Who learns what.** The asker and the person asked see the question and the
  * answer; nobody else in the household learns who was asked (V95's policy).
@@ -115,6 +117,15 @@ class KeyHolderAskService(
                 "cannot_sign_in", "${asked.displayName} can't sign in, so there is nowhere to ask them. Invite them first.",
             )
         }
+        // Seeing a record is not holding it. Someone who reads a record through
+        // a grant or an emergency window must not carry its title to a member
+        // the owner never shared it with (V106).
+        val mayCarryTitle = jdbc.queryForObject(
+            "select app.holds_askable_record(:type, :rid) or app.member_would_see(:member, :type, :rid)",
+            mapOf("type" to body.recordType, "rid" to body.recordId, "member" to asked.id),
+            Boolean::class.java,
+        ) ?: false
+        if (!mayCarryTitle) throw ApiException.notFound()
 
         val open = query(
             """

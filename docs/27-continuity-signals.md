@@ -140,7 +140,11 @@ types the question. So nobody can put the sealed location or the sealed key
 holder in it by mistake, and the server could not read either if it tried
 (Doc 20). The title was already plaintext. Asking shows it to the person asked
 even when the record is private to the asker, and the sheet says so before it
-is sent.
+is sent. That holds only for a record the asker owns, owes, holds, filed or
+uploaded. Someone who merely sees a record — through a grant or an emergency
+window — may ask only a member who already sees it by ordinary sight
+(`app.member_would_see`); otherwise the ask is a 404, in the service and in
+`key_holder_asks_insert` (V106).
 
 **Who can be asked: a member with a login**, not the asker. This is a question
 to someone who is already in the household, never a message to the third party

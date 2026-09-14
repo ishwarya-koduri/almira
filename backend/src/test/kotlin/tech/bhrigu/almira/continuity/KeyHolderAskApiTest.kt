@@ -78,6 +78,31 @@ class KeyHolderAskApiTest : ContinuitySignalsTestBase() {
     }
 
     @Test
+    fun `someone a record is shared with cannot carry its title to a member it was never shared with`() {
+        val sita = signIn()
+        val sitaMember = addMember(owner, householdId, "Sita").path("id").asText()
+        joinHousehold(owner, householdId, sitaMember, sita)
+        val shared = capture(
+            owner, householdId, "gold_physical", "the loan papers", BigDecimal("1"),
+            visibility = "scoped", visibleTo = listOf(trustedMemberId),
+        ).path("id").asText()
+
+        val toSita = ask(shared, memberId = sitaMember, token = trusted)
+        assertThat(toSita.status())
+            .describedAs("Ravi sees it, Sita does not, and Ravi does not hold it").isEqualTo(HttpStatus.NOT_FOUND)
+        assertThat(get(asks, sita).json().path("forMe")).isEmpty()
+        assertThat(inAppMessages(sitaMember, ContinuityNotices.KEY_HOLDER_ASK)).isEqualTo(0)
+        assertThat(
+            db.queryForObject("select count(*) from key_holder_asks where record_id = ?::uuid", Int::class.java, shared),
+        ).isEqualTo(0)
+
+        assertThat(ask(shared, memberId = ownerMemberId, token = trusted).status())
+            .describedAs("asking someone who already sees it is fine").isEqualTo(HttpStatus.CREATED)
+        assertThat(ask(shared, memberId = sitaMember, token = owner).status())
+            .describedAs("the owner chooses whom to ask").isEqualTo(HttpStatus.CREATED)
+    }
+
+    @Test
     fun `the asker can withdraw a question, and nobody else can`() {
         val askId = ask(locker()).json().path("id").asText()
         assertThat(delete("$asks/$askId", trusted).status()).isEqualTo(HttpStatus.NOT_FOUND)

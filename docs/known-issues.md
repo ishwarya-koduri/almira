@@ -1807,3 +1807,35 @@ gains a second hostname.
 
 **Risk if left** Low while the download is served as an attachment. A future
 change that serves the stored type inline again would reopen the hole.
+
+---
+
+## 63. A key-holder ask about someone else's record reaches only people who already see it
+
+**Where** `continuity/KeyHolderAsks.kt` (`KeyHolderAskService.ask`), the
+`key_holder_asks_insert` policy and `app.holds_askable_record` (V106).
+
+**What changed** The ask used to check only that the *asker* could see the
+record. So an advisor with a grant, a member a record was scoped to, or whoever
+held an open emergency window could ask about a record they did not hold, and
+the record's title went to a member the owner never shared it with: it was
+stored in `key_holder_asks.thing`, sent in the notification, and readable by
+that member. Now the asker must own, owe, hold, file or upload the record, or
+the person asked must already see it by ordinary sight (`app.member_would_see`).
+Otherwise the ask is `404`, in the service and in the policy
+(`KeyHolderAskApiTest`, "someone a record is shared with cannot carry its title…").
+Asking about your own record works as before.
+
+**What is still open** `app.member_would_see` (V81) answers only for
+investments and liabilities. For an account, a paper or an estate document that
+the asker does not hold, it always says no. So those can be asked about only by
+their holder, even when the person asked could already see them.
+
+**Which is right** Extend `app.member_would_see` to the other three record kinds,
+mirroring their read policies.
+
+**When to fix** The next change to V81's function or to the family preview.
+
+**Risk if left** None for privacy. A trusted contact working through a window
+cannot ask about the subject's accounts or papers, even when the person they
+would ask can already see them.

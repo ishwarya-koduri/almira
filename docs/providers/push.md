@@ -9,11 +9,11 @@ Push is the reminder or emergency-access notice arriving on a phone. Today it is
 recorded in `outbound_messages` and shown in the in-app list; the sandbox
 (`SandboxPushSender`) records that a push would have gone, and nothing else.
 
-The blocker common to both platforms is not a credential. **Almira does not
-collect device tokens** — no client asks for notification permission or
-registers for remote notifications, there is no table to keep a token in, and
-no endpoint to send one to. Until that exists, a live push sender would
-authenticate perfectly and have no address.
+The blocker common to both platforms is not a credential. **No app registers a
+device token yet.** The server has the table, the endpoint, the per-device send
+and the pruning (V60, below); neither native app asks for notification
+permission or calls the endpoint. Until one does, a live push sender would
+authenticate perfectly and find no device to send to.
 
 ---
 
@@ -60,25 +60,22 @@ and a send cut off by a crash is recorded unconfirmed, never re-sent
 A duplicate push is the nag the product promises not to be; a lost one is still
 in the in-app list.
 
-### The gap: there is no recipient
+### Recipients: built on the server, not yet in the apps
 
-`RecordingNotifier` calls every sender as `send(notification, null)`. The
-interface's only notion of a recipient is `recipientHint: String?`, and nothing
-fills it. For push, "the recipient" is *zero or more device tokens per user*,
-per platform, each of which can be revoked by the platform at any time.
+Since V60 the server side of device tokens exists (docs/13, "Who a message is
+for"; known-issues 13 resolved):
 
-**Not built in this stage, deliberately.** It is not small: it is a migration
-(a new table with row-level security so a user reads and writes only their
-own tokens), an additive v1 endpoint, and native code in both apps. What it
-would need, so the first person to build it starts from the constraints:
-
-| Piece | Shape | Why |
+| Piece | What exists | Where |
 |---|---|---|
-| Storage | per row: `user_id`, `platform` (`ios` / `android`), an installation id chosen by the app, the token, for iOS the APNs environment (`development` / `production`), `app_version`, `last_seen_at` | An install re-registers on launch; tokens rotate; a development build's APNs token is refused by the production gateway and vice versa |
-| Registration | `PUT /api/v1/me/devices/{installationId}` `{platform, token, environment}`; `DELETE` on sign-out | Idempotent by installation, so a re-launch does not multiply rows |
-| Resolution | the push sender (or the notifier) looks up the user's tokens and sends to each | `recipientHint` is a single string; a user can have two phones |
-| Pruning | a `REJECTED` answer that means "this token is dead" deletes that token | Otherwise every reminder is sent, and refused, forever |
-| Payload | the notification **title only**, never `body` | `body` carries amounts and institutions. A push payload transits Apple's or Google's servers and appears on a lock screen; `outbound_messages` already refuses to store the body for the same reason |
+| Storage | `user_devices`: `user_id`, `installation_id` (chosen by the app), `platform` (`ios` / `android`), `token`, `environment` (required for iOS), `app_version`, `last_seen_at`; one row per installation; own rows only under RLS, guests refused | `db/migrations/V60__notification_delivery.sql`, asserted in `db/tests/rls_privacy_test.sql` |
+| Registration | `PUT /api/v1/me/devices/{installationId}` `{platform, token, environment, appVersion}`, idempotent by installation; `GET /api/v1/me/devices` (never the token); `DELETE` on sign-out. At most 10 per person, the longest unseen let go. Audited | `provider/NotificationSettings.kt` |
+| Resolution | the outbox worker looks up every token for the person and calls the sender once per device, each with the row's key plus the installation id; the row is `sent` if any device took it | `NotificationOutbox.sendToEach`, `DeliveryDirectory` |
+| Pruning | a `REJECTED` answer for a device deletes that device | the same |
+| Payload | the title, and the short reason it came as its text — never `body` | `MessageTemplates.compose` |
+
+What is **not** built: the native apps asking for notification permission and
+calling the registration endpoint. Until they do, `user_devices` is empty in
+practice, and a live push sender would record `skipped`, `no_recipient`.
 
 ### How a live adapter classifies
 
@@ -133,12 +130,15 @@ removes a server-side APNs client; it does not remove the Apple membership.
 
 ## (c) Flipping it live, in order
 
-1. **Device tokens first**, for the platform being turned on: the storage, the
-   endpoint and the app code above, each with tests — a user cannot read or
-   overwrite another's token (watched failing by loosening the policy), a
-   re-registration does not add a row.
-2. Payload rule: a test that a push request never contains
-   `OutboundNotification.body` (watched failing by putting it in).
+1. **Device tokens first**, for the platform being turned on: the app code that
+   asks permission and calls `PUT /api/v1/me/devices/{installationId}` on launch
+   and `DELETE` on sign-out. The server side is built and tested
+   (`NotificationDeliveryApiTest`, the RLS suite); what is left there is to
+   watch the policy tests fail with the policy loosened.
+2. Payload rule: the live sender must send `notification.title` and
+   `notification.body` exactly as the worker composed them — for push the body
+   is already the short reason, not the caller's body. Add a contract test that a
+   push request never contains a caller's body (watched failing by putting it in).
 3. Obtain the credentials in (b); add the config keys to all three files.
 4. `ApnsPushSender` / `FcmPushSender` plus contract tests against a fake HTTP
    server replaying each row of the classification table, including the prune
@@ -165,8 +165,9 @@ removes a server-side APNs client; it does not remove the Apple membership.
 |---|---|
 | Any APNs call | No membership, no key, no adapter |
 | Any FCM call | No Firebase project, no adapter |
-| Device-token registration, storage and pruning | Does not exist anywhere |
-| Title-only payloads | No push payload is built anywhere to check |
+| Device-token registration from an app | Neither app calls the endpoint |
+| Storage, per-device send and pruning | Tested through the sandbox and the RLS suite, not watched failing |
+| The push text is never the caller's body | Unit-tested in `MessageTemplatesTest`; no real payload is built |
 | The classification table | Error names from public documentation; no response seen |
 
 What would make it watched: steps 1, 2 and 4, each test observed red with its

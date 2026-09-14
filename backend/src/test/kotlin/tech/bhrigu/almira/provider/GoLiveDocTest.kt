@@ -108,9 +108,20 @@ class GoLiveDocTest {
      * same change, then change this test's expectation for that provider.
      */
     @Test
-    fun `no provider has a live adapter, as GO-LIVE says`() {
-        assertThat(goLive.readText()).contains("**Every provider is a fake today.**")
-        ProviderModeCheck.providerNames().forEach { name ->
+    fun `no provider but email has a live adapter, as GO-LIVE says`() {
+        assertThat(goLive.readText()).contains("**Every provider but email is a fake today.**")
+        // Email's live adapter is SMTP: with a key and no relay it refuses for the relay, not for the adapter.
+        val email = catchThrowable {
+            ProviderModeCheck().postProcessEnvironment(
+                MockEnvironment()
+                    .withProperty("almira.providers.email.mode", "live")
+                    .withProperty("almira.providers.email.smtp.host", "smtp.example.test")
+                    .withProperty("almira.providers.email.smtp.from", "reminders@example.test"),
+                SpringApplication(),
+            )
+        }
+        assertThat(email).describedAs("email has a live adapter and starts with a relay").isNull()
+        ProviderModeCheck.providerNames().filter { it != "email" }.forEach { name ->
             val environment = MockEnvironment()
                 .withProperty("almira.providers.$name.mode", "live")
                 .withProperty("almira.providers.$name.api-key", "present")

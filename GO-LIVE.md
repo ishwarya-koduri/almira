@@ -3,15 +3,17 @@
 What each outside service needs before Almira can use it for real, what the
 code already promises it, and what has never been checked.
 
-**Every provider is a fake today.** `sandbox` means *our own in-process
+**Every provider but email is a fake today.** `sandbox` means *our own in-process
 imitation* — no request leaves the server. `disabled` means not offered on this
 server: it starts, reports `DISABLED`, and answers every call with 409
 `provider_disabled`. Account Aggregator is `disabled` by default — it is cut
-from v1, because a production FIU must be regulated by RBI, SEBI, IRDAI or PFRDA. Setting any provider to `live`
-refuses to start, on purpose, because no live adapter exists for any of them
+from v1, because a production FIU must be regulated by RBI, SEBI, IRDAI or PFRDA. Setting any other provider to `live`
+refuses to start, on purpose, because no live adapter exists for it
 (`ProviderModeCheck`; `GoLiveDocTest` fails the build if that stops being true
-while this file still says it). So nothing below has been exercised against a
-real provider, and nothing below should be read as finished.
+while this file still says it). Email has one: `SmtpEmailSender`, for any SMTP
+relay, tested against a fake SMTP server on loopback and never yet against a
+real relay. So nothing below has been exercised against a real provider, and
+nothing below should be read as finished.
 
 [Doc 13](docs/13-providers-and-going-live.md) is the design: the sandboxes, the
 switch, and the failure contract every adapter answers to. This file is the
@@ -26,11 +28,11 @@ checklist for the day the accounts exist. The research behind it is dated
 |---|---|---|---|---|
 | DigiLocker — documents | `digilocker` | **No** | GST registration → GSTN-verified entity on API Setu; a server in India; there is no separate sandbox | [providers/digilocker.md](docs/providers/digilocker.md) |
 | Account Aggregator — holdings | `aa` | **No** — **cut from v1** (owner's decision, 2026-09-13); `disabled` by default | Company PAN + GSTIN for even the Setu sandbox; production FIU status needs an RBI/SEBI/IRDAI/PFRDA-regulated entity, which is the reason for the cut | [providers/account-aggregator.md](docs/providers/account-aggregator.md) |
-| iOS push (APNs) | `push` | **No** | A paid Apple Developer membership; *and* device-token registration, which does not exist in any client or in the API | [providers/push.md](docs/providers/push.md) |
+| iOS push (APNs) | `push` | **No** | A paid Apple Developer membership; *and* device-token registration in the native app (the API and the table for it exist since V60) | [providers/push.md](docs/providers/push.md) |
 | Real SMS delivery (India) | `sms` | **No** (the API is reachable; delivery is not) | GST registration → DLT entity, header and verbatim template registration; the release keystore first | [providers/sms.md](docs/providers/sms.md) |
-| Android push (FCM) | `push` | Transport yes, usefully no | Self-serve Firebase project; the same missing device-token registration as iOS | [providers/push.md](docs/providers/push.md#android-fcm) |
+| Android push (FCM) | `push` | Transport yes, usefully no | Self-serve Firebase project; the same missing registration call in the app as iOS | [providers/push.md](docs/providers/push.md#android-fcm) |
 | WhatsApp — capture | `whatsapp` | Yes, against Meta's test number | A Meta developer account | [below](#whatsapp--reachable-now) |
-| Email | `email` | Yes, once a provider is chosen | A sending domain the owner controls | [below](#email--reachable-once-a-provider-is-chosen) |
+| Email | `email` | **Built** — a live SMTP adapter exists, off unless `live` | A sending domain the owner controls, and a relay account | [below](#email--built-waiting-for-a-relay) |
 
 **GST registration gates three of the four blocked rows** — DLT, DigiLocker via
 API Setu, and the AA sandbox. It is the first thing to do if any of them is
@@ -106,23 +108,45 @@ echoing a challenge) has no endpoint. Both are API additions.
 payload. A live `verify` must be watched rejecting a wrong signature before
 the webhook is exposed.
 
-### Email — reachable once a provider is chosen
+### Email — built, waiting for a relay
 
-**Interface** `ChannelSender` with `channel = "email"` · **Timeouts** 10 s × 3.
+**Interface** `ChannelSender` with `channel = "email"` · **Live adapter**
+`SmtpEmailSender` · **Timeouts** 10 s × 3 (but see idempotency below).
 
-**The owner supplies**: a choice of provider (SES, Postmark, Resend…) and its
-API key (`ALMIRA_PROVIDER_EMAIL_API_KEY`); a sending domain with SPF, DKIM and
-DMARC published; a verified from-address.
+**The owner supplies**: a relay that speaks SMTP with STARTTLS (SES, Postmark,
+Resend and a company server all do) and its credentials; a sending domain with
+SPF, DKIM and DMARC published; a verified from-address. Then:
 
-**Gap**: like SMS and push, `RecordingNotifier` calls every sender with
-`recipientHint = null` — there is no lookup from a user to an address yet.
-Email **is** a sign-in path now, for the closed alpha: one-time codes to
-allowlisted addresses, built on this channel ([Doc 13 §5](docs/13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha)).
-It cannot sign anybody in outside development until a live email adapter
-exists, so this provider is also the alpha's blocker. A one-time code passes
-the full address as `recipientHint`; notifications still pass null.
+```
+ALMIRA_PROVIDER_EMAIL_MODE=live
+ALMIRA_PROVIDER_EMAIL_SMTP_HOST=email-smtp.ap-south-1.amazonaws.com
+ALMIRA_PROVIDER_EMAIL_SMTP_PORT=587
+ALMIRA_PROVIDER_EMAIL_SMTP_USERNAME=…
+ALMIRA_PROVIDER_EMAIL_SMTP_PASSWORD=…
+ALMIRA_PROVIDER_EMAIL_SMTP_FROM=Almira <reminders@your-domain>
+```
 
-**Not watched failing**: everything; no adapter exists.
+`live` refuses to start without a host and a from-address. STARTTLS is required
+unless `ALMIRA_PROVIDER_EMAIL_SMTP_START_TLS=false`, which only a relay on the
+same host should need. The deployment must pass these variables through to the
+application (`deploy/docker-compose.prod.yml` does not list them yet).
+
+**Who it reaches**: the address on the person's account, looked up when the
+message is sent ([Doc 13, "Who a message is for"](docs/13-providers-and-going-live.md#who-a-message-is-for)).
+An account with no address records `skipped`, `no_recipient`. Email is also the
+closed alpha's sign-in path ([Doc 13 §5](docs/13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha)),
+and a live adapter is what that needed.
+
+**Idempotency**: SMTP has no send-side de-duplication, so the adapter declares
+`honoursIdempotencyKey = false` and email is at-most-once: a timeout is recorded,
+not retried. The key becomes the Message-ID.
+
+**Watched**: against `FakeSmtpServer` in `LiveEmailDeliveryApiTest` — delivery
+with the why-line and the promise, a refused recipient (`rejected`), a refused
+from-address (`insufficient_balance`), an unreachable relay (`unavailable`), no
+address (`no_recipient`), a quiet hour. **Not watched failing**: a real relay,
+TLS negotiation, authentication, a 4xx greylisting reply, bounce handling (a
+bounce arrives later, by email, and nothing reads it).
 
 ### Android push — reachable, not useful yet
 

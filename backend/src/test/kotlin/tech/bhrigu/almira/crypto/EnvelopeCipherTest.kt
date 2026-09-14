@@ -51,6 +51,27 @@ class EnvelopeCipherTest : ApiTestBase() {
             TransactionTemplate(transactionManager).execute { block() }!!
         }
 
+    /**
+     * A household's first key is provisioned inside the caller's transaction.
+     * When that transaction rolls back, the key must not live on in the cache:
+     * the next write provisions a different key under the same version, and
+     * encrypting under the stale one writes data no restart can read.
+     */
+    @Test
+    fun `a key provisioned in a transaction that rolled back is never used`() {
+        val rolledBack = runCatching {
+            asUser(userA) {
+                cipher.encrypt(householdA, field, "refused")
+                throw IllegalStateException("the write this encryption was for was refused")
+            }
+        }
+        assertThat(rolledBack.exceptionOrNull()).hasMessageContaining("was refused")
+
+        val blob = asUser(userA) { cipher.encrypt(householdA, field, "50100234567890") }
+        cipher.forget(householdA) // what a restart, or another instance, starts with
+        assertThat(asUser(userA) { cipher.decrypt(householdA, field, blob) }).isEqualTo("50100234567890")
+    }
+
     @Test
     fun `a value comes back exactly as it went in`() {
         val secret = "50100234567890"

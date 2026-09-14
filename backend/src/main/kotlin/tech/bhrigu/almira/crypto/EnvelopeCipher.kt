@@ -2,6 +2,7 @@ package tech.bhrigu.almira.crypto
 
 import org.springframework.stereotype.Service
 import java.nio.ByteBuffer
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -36,9 +37,12 @@ class EnvelopeCipher(
     private val keys: EncryptionKeyRepository,
 ) {
     private val random = SecureRandom()
-    private val cache = ConcurrentHashMap<CacheKey, SecretKeySpec>()
+    private val cache = ConcurrentHashMap<CacheKey, CachedKey>()
 
     private data class CacheKey(val householdId: UUID, val keyVersion: Int)
+
+    /** The plaintext key, and the stored wrapped key it was unwrapped from. */
+    private class CachedKey(val wrapped: ByteArray, val key: SecretKeySpec)
 
     /**
      * [field] is the position this value occupies, as "table.column". It is
@@ -109,10 +113,24 @@ class EnvelopeCipher(
         cache.keys.removeIf { it.householdId == householdId }
     }
 
-    private fun dataKey(householdId: UUID, version: Int, wrapped: ByteArray): SecretKeySpec =
-        cache.computeIfAbsent(CacheKey(householdId, version)) {
-            SecretKeySpec(kms.unwrap(wrapped), "AES")
-        }
+    /**
+     * A cached key is used only for the wrapped key it came from. The cache used
+     * to trust (household, version) alone, and a key is provisioned inside the
+     * caller's transaction: when that transaction rolled back — a refused write,
+     * a failed insert — the stored key went with it and the cached one stayed.
+     * The next write provisioned a different key under the same version, was
+     * handed the stale one, and encrypted under a key stored nowhere, which
+     * reads back in this process and fails authentication after a restart.
+     * Comparing the wrapped bytes the database holds now catches that before
+     * anything is encrypted.
+     */
+    private fun dataKey(householdId: UUID, version: Int, wrapped: ByteArray): SecretKeySpec {
+        val cacheKey = CacheKey(householdId, version)
+        cache[cacheKey]?.takeIf { MessageDigest.isEqual(it.wrapped, wrapped) }?.let { return it.key }
+        val fresh = CachedKey(wrapped.copyOf(), SecretKeySpec(kms.unwrap(wrapped), "AES"))
+        cache[cacheKey] = fresh
+        return fresh.key
+    }
 
     private fun newDataKey(): ByteArray = ByteArray(DEK_BYTES).also(random::nextBytes)
 

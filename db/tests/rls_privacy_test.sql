@@ -1547,6 +1547,183 @@ begin
   end;
   perform pg_temp.assert(blocked, 'nor set up for a member of another household');
 end $$;
+
+-- ------------------------------------------------------------- heir mode ----
+-- V90. A plan belongs to the person holding an open window, lives only as long
+-- as that window, and a helper's link reaches only the tasks handed to them.
+do $$ begin raise notice '--- heir mode lives inside an open window, and a helper sees only their tasks ---'; end $$;
+
+select pg_temp.as_user('ish');
+delete from user_sessions where user_id = (select v from t where k='ish');
+
+select pg_temp.as_user('ravi');
+select gen_random_uuid() as id \gset heirreq_
+insert into emergency_requests (id, household_id, subject_member_id, requested_by, requested_at,
+                                unlock_at, access_expires_at)
+  values (:'heirreq_id', (select v from t where k='hh'), (select v from t where k='m_ish'),
+          app.current_user_id(), now() - interval '20 days', now() - interval '6 days',
+          now() + interval '20 days');
+insert into t values ('heirreq', :'heirreq_id');
+
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into heir_plans (household_id, emergency_request_id, subject_member_id, situation, created_by)
+      values ((select v from t where k='hh'), (select v from t where k='request'),
+              (select v from t where k='m_ish'), 'passed_away', app.current_user_id());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a plan cannot hang off a request that was stopped, even while another is open');
+end $$;
+
+select gen_random_uuid() as id \gset heirplan_
+insert into heir_plans (id, household_id, emergency_request_id, subject_member_id, situation, created_by)
+  values (:'heirplan_id', (select v from t where k='hh'), :'heirreq_id', (select v from t where k='m_ish'),
+          'passed_away', app.current_user_id());
+insert into t values ('heirplan', :'heirplan_id');
+select pg_temp.assert((select count(*) from heir_plans) = 1,
+  'the person holding the open window sees the plan they made');
+
+insert into heir_tasks (plan_id, household_id, task_key, sort)
+  values (:'heirplan_id', (select v from t where k='hh'), 'certificates', 0);
+insert into heir_tasks (plan_id, household_id, task_key, record_type, record_id, sort)
+  values (:'heirplan_id', (select v from t where k='hh'), 'claim', 'investment', (select v from t where k='i_private'), 1);
+
+select gen_random_uuid() as id \gset helpshare_
+insert into guest_shares (id, household_id, label, scope, token_hash, expires_at, created_by)
+  values (:'helpshare_id', (select v from t where k='hh'), 'Helping: Meera', 'heir_help',
+          md5(random()::text), now() + interval '10 days', app.current_user_id());
+insert into guest_share_items (share_id, record_type, record_id)
+  values (:'helpshare_id', 'investment', (select v from t where k='i_private'));
+select gen_random_uuid() as id \gset helper_
+insert into heir_helpers (id, plan_id, household_id, name, share_id)
+  values (:'helper_id', :'heirplan_id', (select v from t where k='hh'), 'Meera', :'helpshare_id');
+update heir_tasks set helper_id = :'helper_id' where task_key = 'claim' and plan_id = :'heirplan_id';
+insert into t values ('helpshare', :'helpshare_id');
+
+select pg_temp.as_user('ish');
+select pg_temp.assert((select count(*) from heir_plans) = 0 and (select count(*) from heir_tasks) = 0
+                      and (select count(*) from heir_helpers) = 0,
+  'the person it is about does not see the plan made about them');
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from heir_plans) = 0 and (select count(*) from heir_tasks) = 0,
+  'nor does anyone outside the household');
+
+-- The helper's link, as ShareService opens it: the sharer's identity, clamped to the link.
+select pg_temp.as_user('ravi');
+select set_config('app.guest_share_id', :'helpshare_id', false);
+select pg_temp.assert((select count(*) from heir_tasks) = 1
+                      and (select task_key from heir_tasks) = 'claim',
+  'a helper sees the task handed to them and no other');
+select pg_temp.assert((select count(*) from heir_helpers) = 1 and (select count(*) from heir_plans) = 1,
+  'and only their own place on the plan');
+select pg_temp.assert(pg_temp.sees('i_private') and (select count(*) from investments) = 1,
+  'and only the record their task names');
+do $$
+declare n int;
+begin
+  update heir_tasks set status = 'done';
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'a helper reads; a helper does not tick things off');
+end $$;
+
+select set_config('app.guest_share_id', (select v::text from t where k='share'), false);
+select pg_temp.assert((select count(*) from heir_tasks) = 0,
+  'any other guest link reaches no task at all');
+select set_config('app.guest_share_id', '', false);
+
+do $$
+declare blocked boolean := false; s uuid;
+begin
+  for i in 1..5 loop
+    s := gen_random_uuid();
+    begin
+      insert into guest_shares (id, household_id, label, scope, token_hash, expires_at, created_by)
+        values (s, (select v from t where k='hh'), 'Helping ' || i, 'heir_help', md5(random()::text),
+                now() + interval '10 days', app.current_user_id());
+      insert into heir_helpers (plan_id, household_id, name, share_id)
+        values ((select v from t where k='heirplan'), (select v from t where k='hh'), 'Helper ' || i, s);
+    exception when others then blocked := true;
+    end;
+  end loop;
+  perform pg_temp.assert(blocked and (select count(*) from heir_helpers
+                                       where plan_id = (select v from t where k='heirplan')) = 5,
+    'a plan is shared with five people at most');
+end $$;
+
+select pg_temp.as_user('ish');
+update emergency_requests set vetoed_at = now() where id = :'heirreq_id';
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from heir_plans) = 0 and (select count(*) from heir_tasks) = 0
+                      and (select count(*) from heir_helpers) = 0,
+  'a veto closes the plan, its tasks and its helpers, mid-session');
+select set_config('app.guest_share_id', :'helpshare_id', false);
+select pg_temp.assert((select count(*) from heir_tasks) = 0,
+  'and the helper''s link reaches nothing');
+select set_config('app.guest_share_id', '', false);
+
+-- ------------------------------------------------------- guided flow drafts ----
+do $$ begin raise notice '--- a place in a guided flow is its person''s own (V91) ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into guided_flow_drafts (household_id, user_id, flow, step, answers)
+  values ((select v from t where k='hh'), app.current_user_id(), 'estate_document', 2, '{"kind":"will"}');
+select pg_temp.assert((select count(*) from guided_flow_drafts) = 1, 'the owner sees her own place in a flow');
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from guided_flow_drafts) = 0, 'ADMIN cannot see another member''s draft');
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into guided_flow_drafts (household_id, user_id, flow, step)
+      values ((select v from t where k='hh'), (select v from t where k='ish'), 'emergency_setup', 1);
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor write a draft in her name');
+end $$;
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into guided_flow_drafts (household_id, user_id, flow, subject_key, step, answers)
+      values ((select v from t where k='hh'), app.current_user_id(), 'where_and_who',
+              'investment:' || gen_random_uuid(), 1, '{"originalLocation":"second shelf"}');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a where-and-who draft cannot hold the words, only the step');
+end $$;
+
+-- -------------------------------------------------------- lost-money checks ----
+do $$ begin raise notice '--- a lost-money check is for who looked and who it is about (V92) ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into lost_money_checks (household_id, member_id, portal, status, checked_on, created_by)
+  values ((select v from t where k='hh'), (select v from t where k='m_ravi'), 'iepf', 'nothing', current_date,
+          app.current_user_id());
+insert into lost_money_checks (household_id, member_id, portal, status, checked_on, created_by)
+  values ((select v from t where k='hh'), (select v from t where k='m_aarav'), 'udgam', 'found', current_date,
+          app.current_user_id());
+select pg_temp.assert((select count(*) from lost_money_checks) = 2, 'the person who looked sees both checks');
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from lost_money_checks) = 1,
+  'ADMIN sees the check about himself and not the one about the child');
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from lost_money_checks) = 0, 'outside the household there are none');
+select pg_temp.as_user('ish');
+select set_config('app.guest_share_id', (select v::text from t where k='share'), false);
+select pg_temp.assert((select count(*) from lost_money_checks) = 0, 'and a guest link reaches none');
+select set_config('app.guest_share_id', '', false);
+
+-- --------------------------------------------------------- handbook editions ----
+do $$ begin raise notice '--- an envelope edition is its maker''s (V93) ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into handbook_editions (household_id, created_by, edition, link_expires_at)
+  values ((select v from t where k='hh'), app.current_user_id(), 1, now() + interval '365 days');
+select pg_temp.assert((select count(*) from handbook_editions) = 1, 'the owner sees the edition she printed');
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from handbook_editions) = 0, 'ADMIN does not learn that she printed one');
 select pg_temp.as_user('ish');
 
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;

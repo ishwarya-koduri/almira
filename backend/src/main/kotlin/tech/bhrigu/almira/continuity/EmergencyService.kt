@@ -49,6 +49,37 @@ data class EmergencyRequestRow(
      */
     val subjectHasBeenActive: Boolean,
     val explanation: String,
+    /** What happens, when, and to whom — the same five steps every time (docs/05 §6.1). */
+    val timeline: List<EmergencyTimelineStep> = emptyList(),
+)
+
+/**
+ * One step of an emergency request, dated.
+ *
+ * [state] is `done`, `now` (the step the request is on), `next`, or `skipped`
+ * (a step that will not happen because the request was stopped).
+ */
+data class EmergencyTimelineStep(
+    /** asked | told | say_no | opens | closes */
+    val key: String,
+    val title: String,
+    val detail: String,
+    val at: Instant?,
+    val state: String,
+)
+
+/**
+ * The picture of what naming someone means, before anyone asks: the same steps,
+ * dated as if they asked today, and what they would and would never see.
+ */
+data class EmergencyPreview(
+    val trustedMemberId: UUID,
+    val trustedMemberName: String,
+    val waitDays: Int,
+    val steps: List<EmergencyTimelineStep>,
+    /** Plain sentences, counts only — never a title or an amount. */
+    val willSee: List<String>,
+    val neverSee: List<String>,
 )
 
 /**
@@ -185,6 +216,56 @@ class EmergencyService(
         }
     }
 
+    /**
+     * What naming [trustedMemberId] would mean, drawn before it is done (X-41).
+     * Counted under the caller's own row-level security, so it describes only
+     * what the caller can see — and says so in counts, never in titles.
+     */
+    @Transactional(readOnly = true)
+    fun preview(householdId: UUID, trustedMemberId: UUID, waitDays: Int): EmergencyPreview {
+        households.get(householdId)
+        val members = households.members(householdId)
+        val me = members.firstOrNull { it.isMe }
+            ?: throw ApiException.badRequest("no_member", "You aren't a person in this household yet.")
+        val trusted = members.firstOrNull { it.id == trustedMemberId && it.id != me.id }
+            ?: throw ApiException.notFound("We couldn't find that person.")
+        if (waitDays !in 1..90) {
+            throw ApiException.badRequest(
+                "wait_invalid", "The waiting period is between one and ninety days.",
+            )
+        }
+
+        val counts = jdbc.queryForMap(
+            """
+            select
+              (select count(*) from investments
+                where household_id = :hid and deleted_at is null
+                  and status in ('active','matured') and is_in_continuity) as included,
+              (select count(*) from investments
+                where household_id = :hid and deleted_at is null
+                  and status in ('active','matured') and not is_in_continuity) as left_out,
+              (select count(*) from liabilities
+                where household_id = :hid and deleted_at is null and status = 'active'
+                  and is_in_continuity) as debts,
+              (select count(*) from estate_documents
+                where household_id = :hid and deleted_at is null) as paperwork
+            """.trimIndent(),
+            mapOf("hid" to householdId),
+        )
+        fun count(key: String) = (counts[key] as Number).toInt()
+
+        val now = Instant.now()
+        val unlockAt = now.plus(Duration.ofDays(waitDays.toLong()))
+        return EmergencyPreview(
+            trustedMemberId = trusted.id,
+            trustedMemberName = trusted.displayName,
+            waitDays = waitDays,
+            steps = EmergencyTimeline.preview(trusted.displayName, now, unlockAt, unlockAt.plus(WINDOW), waitDays),
+            willSee = EmergencyTimeline.willSee(count("included"), count("debts"), count("paperwork")),
+            neverSee = EmergencyTimeline.neverSee(count("left_out")),
+        )
+    }
+
     // --- requesting -----------------------------------------------------------
 
     @Transactional
@@ -222,7 +303,7 @@ class EmergencyService(
                 .addValue("reason", reason)
                 .addValue("now", java.sql.Timestamp.from(now))
                 .addValue("unlockAt", java.sql.Timestamp.from(unlockAt))
-                .addValue("expiresAt", java.sql.Timestamp.from(unlockAt.plus(Duration.ofDays(30)))),
+                .addValue("expiresAt", java.sql.Timestamp.from(unlockAt.plus(WINDOW))),
         )
 
         audit.record(
@@ -311,7 +392,9 @@ class EmergencyService(
         val userId = userContext.currentUserId()
         return jdbc.query(
             """
-            select r.*, m.display_name as subject_name, u.full_name as requester_name,
+            select r.*, m.display_name as subject_name,
+                   -- The name the household knows them by, before the account's.
+                   coalesce(rm.display_name, u.full_name) as requester_name,
                    exists (
                      select 1 from user_sessions s
                      where s.user_id = m.user_id and s.last_used_at > r.requested_at
@@ -319,6 +402,7 @@ class EmergencyService(
             from emergency_requests r
             left join members m on m.id = r.subject_member_id
             left join users u on u.id = r.requested_by
+            left join members rm on rm.household_id = r.household_id and rm.user_id = r.requested_by
             $where
             """.trimIndent(),
             params,
@@ -360,6 +444,17 @@ class EmergencyService(
                 },
                 subjectHasBeenActive = subjectActive,
                 explanation = explain(status, rs.getString("subject_name"), subjectActive),
+                timeline = EmergencyTimeline.forRequest(
+                    status = status,
+                    requestedByMe = rs.getObject("requested_by", UUID::class.java) == userId,
+                    requesterName = rs.getString("requester_name"),
+                    subjectName = rs.getString("subject_name"),
+                    requestedAt = rs.getTimestamp("requested_at").toInstant(),
+                    unlockAt = unlockAt,
+                    expiresAt = expiresAt,
+                    stoppedAt = vetoedAt ?: revokedAt,
+                    subjectActive = subjectActive,
+                ),
             )
         }
     }
@@ -403,5 +498,10 @@ class EmergencyService(
                 )
             }
         }
+    }
+
+    private companion object {
+        /** How long a window stays open once it opens. */
+        val WINDOW: Duration = Duration.ofDays(30)
     }
 }

@@ -53,6 +53,9 @@ class SecurityConfig(
             // to the records that one link names — so this endpoint cannot
             // return anything else even if it tries (docs/05 §7).
             auth.requestMatchers("/api/v1/share/**").permitAll()
+            // The page such a link opens holds no data of its own; it asks the
+            // endpoint above, with the token from its own address (GuestPage.kt).
+            auth.requestMatchers("/share/*", "/help/*", "/guest.html").permitAll()
             // The web client is static and holds no secrets — everything it
             // shows is fetched from /api with a bearer token, which is where
             // the real gate is.

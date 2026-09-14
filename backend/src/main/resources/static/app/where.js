@@ -24,11 +24,12 @@
    ============================================================================= */
 
 import { api } from "./api.js";
-import { el, mount, sheet, field, textInput, withBusy, toast, skeletonRows } from "./ui.js";
+import { el, mount, field, textInput, withBusy, toast, skeletonRows } from "./ui.js";
 import { state } from "./state.js";
 import { t, language } from "./i18n.js";
 import { e2e, unlock as unlockE2e, sealField, unsealField, openSealedValue, openSealedValueAs } from "./e2e.js";
 import { sealReassurance, sealedLineText } from "./recovery.js";
+import { guidedFlow } from "./guided.js";
 
 /** The contract with every other client, and with the server's index. */
 export const FIELD = {
@@ -187,68 +188,85 @@ function suggestions() {
   return t("where.keyHolderSuggestions").split("|").map((s) => s.trim()).filter(Boolean);
 }
 
+/**
+ * Two questions, one per screen (X-58): where the original is, then who holds
+ * the key. Each answer is sealed on this device and saved the moment its step
+ * is left, so stopping half-way keeps the first; the step itself is kept by the
+ * server, the words never are (V91).
+ */
 export async function openEditor(record, onSaved) {
-  const listId = `where-people-${record.recordId}`;
-  const people = el("datalist#" + listId, {});
-  suggestions().forEach((role) => people.append(el("option", { value: role })));
-
   const current = (slot) => (["open", "openedWithRecovery"].includes(record.opened[slot].state) ? record.opened[slot].text : "");
   // Not theirs to change even when opened with a recovery copy: the value stays
   // the sealer's (docs/20 §5), and an heir reads it, never rewrites it.
   const theirs = (slot) => ["theirs", "openedWithRecovery"].includes(record.opened[slot].state);
+  const saved = { originalLocation: current("originalLocation"), keyHolder: current("keyHolder") };
 
-  const location = el("textarea.textarea", {
-    rows: 3, value: current("originalLocation"), disabled: theirs("originalLocation"),
-    placeholder: t("where.locationPlaceholder"), "aria-label": t("where.location"),
-  });
-  const holder = el("input.input", {
-    type: "text", value: current("keyHolder"), disabled: theirs("keyHolder"), list: listId,
-    placeholder: t("where.keyHolderPlaceholder"), "aria-label": t("where.keyHolder"),
-    autocomplete: "off",
-  });
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
-  const save = el("button.btn.btn-primary.grow", { type: "button" }, t("app.save"));
-
-  save.onclick = () => withBusy(save, async () => {
-    error.textContent = "";
-    try {
-      for (const [slot, control] of [["originalLocation", location], ["keyHolder", holder]]) {
-        if (theirs(slot)) continue;
-        const { fieldKey } = SLOTS.find((s) => s.slot === slot);
-        const text = control.value;
-        const had = record.opened[slot].state !== "empty";
-        // Kept exactly as typed — no trim — because a sealed value is never
-        // normalised (docs/12 §3). Blank means "remove", which is a choice
-        // about the field, not a rewrite of what somebody wrote.
-        if (text.trim() === "") {
-          if (had) await unsealField(state.household.id, record.recordType, record.recordId, fieldKey);
-        } else if (text !== current(slot)) {
-          await sealField(state.household.id, record.recordType, record.recordId, fieldKey, text);
-        }
+  /** Kept exactly as typed — no trim — because a sealed value is never normalised (docs/12 §3). */
+  const sealStep = (slot) => async (text) => {
+    const { fieldKey } = SLOTS.find((s) => s.slot === slot);
+    if (text === saved[slot]) return;
+    // Blank means "remove", which is a choice about the field, not a rewrite.
+    if (text.trim() === "") {
+      if (saved[slot] !== "" || record.opened[slot].state !== "empty") {
+        await unsealField(state.household.id, record.recordType, record.recordId, fieldKey);
       }
-      modal.close();
-      toast(t("where.saved"));
-      await onSaved?.();
-    } catch (problem) {
-      error.textContent = problem.message;
+    } else {
+      await sealField(state.household.id, record.recordType, record.recordId, fieldKey, text);
     }
+    saved[slot] = text;
+  };
+
+  const question = (slot, labelKey, build) => ({
+    key: slot,
+    question: t(labelKey),
+    help: theirs(slot) ? slotText({ state: "theirs", access: record.opened[slot].access }) : null,
+    skip: () => theirs(slot),
+    build,
+    save: sealStep(slot),
   });
 
-  const modal = sheet({
+  const listId = `where-people-${record.recordId}`;
+  await guidedFlow({
+    flow: "where_and_who",
+    subject: `${record.recordType}:${record.recordId}`,
     title: record.title,
-    body: el("div.stack-3", {},
-      el("p.caption.muted", {}, t("where.editorIntro")),
-      sealReassurance([location, holder]),
-      field({ label: t("where.location"), control: location,
-        help: theirs("originalLocation") ? slotText({ state: "theirs", access: record.opened.originalLocation.access })
-          : t("where.locationHelp") }),
-      field({ label: t("where.keyHolder"), control: holder,
-        help: theirs("keyHolder") ? slotText({ state: "theirs", access: record.opened.keyHolder.access })
-          : t("where.keyHolderHelp") }),
-      people,
-      error,
+    keep: [],
+    steps: [
+      question("originalLocation", "where.location", () => {
+        const location = el("textarea.textarea", {
+          rows: 3, value: saved.originalLocation,
+          placeholder: t("where.locationPlaceholder"), "aria-label": t("where.location"),
+        });
+        return {
+          node: el("div.stack-2", {}, sealReassurance([location]), location, el("p.caption", {}, t("where.locationHelp"))),
+          value: () => location.value,
+        };
+      }),
+      question("keyHolder", "where.keyHolder", () => {
+        const people = el("datalist#" + listId, {});
+        suggestions().forEach((role) => people.append(el("option", { value: role })));
+        const holder = el("input.input", {
+          type: "text", value: saved.keyHolder, list: listId,
+          placeholder: t("where.keyHolderPlaceholder"), "aria-label": t("where.keyHolder"), autocomplete: "off",
+        });
+        return {
+          node: el("div.stack-2", {}, sealReassurance([holder]), holder, people, el("p.caption", {}, t("where.keyHolderHelp"))),
+          value: () => holder.value,
+        };
+      }),
+    ].filter((step) => !theirs(step.key)).concat(
+      // Both are someone else's: nothing to ask, only to say so.
+      theirs("originalLocation") && theirs("keyHolder")
+        ? [{ key: "nothing", question: t("where.editorIntro"), build: () => ({ node: el("p.muted", {}, slotText({ state: "theirs", access: record.opened.originalLocation.access })), value: () => null }) }]
+        : [],
     ),
-    footer: [save],
+    finish: {
+      label: t("app.save"),
+      run: async () => {
+        toast(t("where.saved"));
+        await onSaved?.();
+      },
+    },
   });
 }
 

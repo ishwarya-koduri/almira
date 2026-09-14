@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
@@ -46,6 +47,14 @@ class EmergencyController(private val service: EmergencyService) {
         service.removeTrustedContact(householdId, trustedMemberId)
         return ResponseEntity.noContent().build()
     }
+
+    /** What naming someone would mean, dated, before it is done (X-41). */
+    @GetMapping("/preview")
+    fun previewTrustedContact(
+        @PathVariable householdId: UUID,
+        @RequestParam trustedMemberId: UUID,
+        @RequestParam(defaultValue = "14") waitDays: Int,
+    ): EmergencyPreview = service.preview(householdId, trustedMemberId, waitDays)
 
     @GetMapping("/requests")
     fun requests(@PathVariable householdId: UUID): List<EmergencyRequestRow> = service.list(householdId)

@@ -1153,3 +1153,92 @@ details.more[open] > summary::before { transform: rotate(90deg); }
 .explainer-icon { display: inline-flex; color: var(--accent); }
 .explainer-icon svg { width: 28px; height: 28px; }
 .welcome-card h3 { font-family: var(--font-display); font-weight: 500; }
+
+/* -----------------------------------------------------------------------------
+   Dated steps (X-41): emergency access as a picture. A teal mark for what has
+   happened and where it is now, a hairline between steps, the date under each
+   title. A step that will not happen is struck through in muted ink.
+   ----------------------------------------------------------------------------- */
+.dated-steps { list-style: none; margin: 0; padding: 0; }
+.dated-steps li {
+  position: relative; display: grid; grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: var(--space-3); padding-bottom: var(--space-4);
+}
+.dated-steps li:last-child { padding-bottom: 0; }
+.dated-steps li::after {
+  content: ""; position: absolute; left: calc(0.625rem - 0.5px); top: 1.5rem; bottom: 0.25rem;
+  width: 1px; background: var(--hairline);
+}
+.dated-steps li:last-child::after { display: none; }
+.dated-mark {
+  width: 1.25rem; height: 1.25rem; margin-top: 0.15rem; border-radius: var(--radius-full);
+  border: 2px solid var(--ink-faint); background: var(--surface); box-sizing: border-box;
+}
+.dated-steps [data-state="done"] .dated-mark { background: var(--accent); border-color: var(--accent); }
+.dated-steps [data-state="now"] .dated-mark { border-color: var(--accent); box-shadow: inset 0 0 0 3px var(--surface), inset 0 0 0 10px var(--accent); }
+.dated-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dated-title { font-weight: 600; }
+.dated-steps [data-state="skipped"] .dated-title { font-weight: 500; color: var(--ink-muted); text-decoration: line-through; }
+.dated-when, .dated-detail { font-size: var(--text-caption); color: var(--ink-muted); }
+.dated-detail { font-size: var(--text-sm); }
+
+/* -----------------------------------------------------------------------------
+   Guided flows (X-58): one question per screen. The question is a title, the
+   progress line is a meter, and a choice is a whole-width button.
+   ----------------------------------------------------------------------------- */
+.guided { display: flex; flex-direction: column; gap: var(--space-3); }
+.guided-progress { display: flex; flex-direction: column; gap: var(--space-2); }
+.guided-question { font-family: var(--font-display); font-size: var(--text-h2); line-height: var(--leading-tight); margin: 0; }
+.guided-question:focus { outline: none; }
+.guided-foot .row { gap: var(--space-2); }
+.choice-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.choice {
+  appearance: none; font: inherit; text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px; min-height: var(--target); width: 100%;
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  border: 1px solid var(--block-border); background: var(--surface); color: var(--ink);
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.choice:hover { border-color: var(--ink-muted); }
+.choice[aria-checked="true"] { border: 2px solid var(--accent); background: var(--accent-soft); }
+.choice[aria-checked="true"] .choice-label { color: var(--accent-text); }
+.choice-label { font-weight: 600; }
+
+/* The printed things, side by side where there is room. */
+.print-choices { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr)); }
+.print-choices .btn { align-self: flex-start; max-width: 100%; white-space: normal; text-align: left; }
+
+/* The lost-money sweep (P-25): one quiet block per portal. */
+.portal-card { padding-top: var(--space-4); border-top: 1px solid var(--hairline); }
+.portal-card h4 { margin: 0; font-family: var(--font-display); font-size: var(--text-lg); }
+.portal-steps { margin: var(--space-2) 0; padding-left: 1.2em; display: grid; gap: var(--space-2); font-size: var(--text-sm); }
+.portal-link { align-self: flex-start; max-width: 100%; white-space: normal; text-align: left; }
+
+/* -----------------------------------------------------------------------------
+   Heir mode (X-40). A narrow column with nothing around it: no navigation, no
+   notices, one task. Built at 375px, and every button is the column's width.
+   ----------------------------------------------------------------------------- */
+.heir-shell { padding-left: 0; }
+.heir-shell main { max-width: var(--reading-max); padding-block: var(--space-6) var(--space-16); }
+.heir { display: flex; flex-direction: column; gap: var(--space-4); }
+.heir-title { font-family: var(--font-display); font-size: var(--text-h1); line-height: var(--leading-tight); margin: 0; overflow-wrap: anywhere; }
+.heir-title:focus { outline: none; }
+.heir-why { font-size: var(--text-lg); margin: 0; }
+.heir-steps { margin: 0; padding-left: 1.4em; display: grid; gap: var(--space-3); }
+.heir-steps li b { display: block; }
+.heir-steps li .muted { font-size: var(--text-sm); }
+.heir-actions, .heir-foot { display: flex; flex-direction: column; gap: var(--space-2); }
+.heir-foot { padding-top: var(--space-4); border-top: 1px solid var(--hairline); }
+.heir-choice { min-height: var(--row-height); white-space: normal; text-align: left; justify-content: flex-start; }
+.heir-list { list-style: none; margin: 0; padding: 0; }
+.heir-list-row {
+  appearance: none; font: inherit; color: var(--ink); background: transparent; cursor: pointer; text-align: left;
+  display: flex; flex-direction: column; gap: 2px; width: 100%; min-height: var(--row-height);
+  padding: var(--space-3) 0; border: 0; border-bottom: 1px solid var(--hairline);
+}
+.heir-helper { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2); align-items: center; }
+.heir-link { overflow-wrap: anywhere; font-family: var(--font-mono); }
+.heir .btn-block { white-space: normal; }
+
+/* The guest page (guest.html): a reading column, no navigation to leave room for. */
+main.guest { max-width: var(--reading-max); padding-block: var(--space-8) var(--space-16); }

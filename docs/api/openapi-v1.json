@@ -199,6 +199,24 @@
         ],
         "type": "object"
       },
+      "AddHeirHelperBody": {
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "relationship": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "AddMemberBody": {
         "properties": {
           "dateOfBirth": {
@@ -280,6 +298,15 @@
           "owners",
           "visibleToMemberIds"
         ],
+        "type": "object"
+      },
+      "AssignHeirTaskBody": {
+        "properties": {
+          "helperId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "AttentionItem": {
@@ -2648,6 +2675,108 @@
         ],
         "type": "object"
       },
+      "EmergencyKit": {
+        "properties": {
+          "appUrl": {
+            "type": "string"
+          },
+          "executors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "holdsNoSecrets": {
+            "type": "string"
+          },
+          "householdName": {
+            "type": "string"
+          },
+          "keepItNote": {
+            "type": "string"
+          },
+          "preparedFor": {
+            "type": "string"
+          },
+          "preparedOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "trusted": {
+            "items": {
+              "$ref": "#/components/schemas/KitPerson"
+            },
+            "type": "array"
+          },
+          "whoToCall": {
+            "items": {
+              "$ref": "#/components/schemas/KitPerson"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "appUrl",
+          "executors",
+          "holdsNoSecrets",
+          "householdName",
+          "keepItNote",
+          "preparedFor",
+          "preparedOn",
+          "steps",
+          "trusted",
+          "whoToCall"
+        ],
+        "type": "object"
+      },
+      "EmergencyPreview": {
+        "properties": {
+          "neverSee": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/EmergencyTimelineStep"
+            },
+            "type": "array"
+          },
+          "trustedMemberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "trustedMemberName": {
+            "type": "string"
+          },
+          "waitDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "willSee": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "neverSee",
+          "steps",
+          "trustedMemberId",
+          "trustedMemberName",
+          "waitDays",
+          "willSee"
+        ],
+        "type": "object"
+      },
       "EmergencyRequestRow": {
         "properties": {
           "accessExpiresAt": {
@@ -2695,6 +2824,12 @@
           "subjectName": {
             "type": "string"
           },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/EmergencyTimelineStep"
+            },
+            "type": "array"
+          },
           "unlockAt": {
             "format": "date-time",
             "type": "string"
@@ -2713,7 +2848,35 @@
           "status",
           "subjectHasBeenActive",
           "subjectMemberId",
+          "timeline",
           "unlockAt"
+        ],
+        "type": "object"
+      },
+      "EmergencyTimelineStep": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "key",
+          "state",
+          "title"
         ],
         "type": "object"
       },
@@ -3109,6 +3272,26 @@
           "code",
           "done",
           "skipped"
+        ],
+        "type": "object"
+      },
+      "FoundMoneyRecorded": {
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/LostMoneyCheck"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "visibleToYou": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "check",
+          "investmentId",
+          "visibleToYou"
         ],
         "type": "object"
       },
@@ -3668,6 +3851,36 @@
         ],
         "type": "object"
       },
+      "GuidedFlowDraft": {
+        "properties": {
+          "answers": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "flow": {
+            "type": "string"
+          },
+          "step": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answers",
+          "flow",
+          "step",
+          "subject",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "HandbookDebt": {
         "properties": {
           "lender": {
@@ -3881,6 +4094,209 @@
           "leftOutCount",
           "recordCount",
           "scoreExplanation"
+        ],
+        "type": "object"
+      },
+      "HeirHelper": {
+        "properties": {
+          "addedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "relationship": {
+            "type": "string"
+          },
+          "taskCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "addedAt",
+          "id",
+          "name",
+          "taskCount"
+        ],
+        "type": "object"
+      },
+      "HeirHelperView": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "helperName": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "sharedBy": {
+            "type": "string"
+          },
+          "subjectName": {
+            "type": "string"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/HeirTask"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "helperName",
+          "note",
+          "sharedBy",
+          "tasks"
+        ],
+        "type": "object"
+      },
+      "HeirPlan": {
+        "properties": {
+          "doneCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "emergencyRequestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "helpers": {
+            "items": {
+              "$ref": "#/components/schemas/HeirHelper"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxHelpers": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "nextTaskId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "pausedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "situation": {
+            "type": "string"
+          },
+          "subjectName": {
+            "type": "string"
+          },
+          "taskCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/HeirTask"
+            },
+            "type": "array"
+          },
+          "windowClosesAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doneCount",
+          "emergencyRequestId",
+          "helpers",
+          "id",
+          "maxHelpers",
+          "paused",
+          "situation",
+          "taskCount",
+          "tasks",
+          "windowClosesAt"
+        ],
+        "type": "object"
+      },
+      "HeirTask": {
+        "properties": {
+          "doneAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "helperId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "helperName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/TransmissionStep"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          },
+          "whereToStart": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "status",
+          "steps",
+          "title",
+          "why"
+        ],
+        "type": "object"
+      },
+      "HeirTaskStatusBody": {
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
         ],
         "type": "object"
       },
@@ -4465,6 +4881,24 @@
         ],
         "type": "object"
       },
+      "KitPerson": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "role"
+        ],
+        "type": "object"
+      },
       "LeftOutRecord": {
         "properties": {
           "recordId": {
@@ -4749,6 +5183,115 @@
           "refreshToken",
           "tokenType",
           "user"
+        ],
+        "type": "object"
+      },
+      "LostMoneyCheck": {
+        "properties": {
+          "checkedOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "investmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "portal": {
+            "type": "string"
+          },
+          "recordTitle": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkedOn",
+          "id",
+          "memberId",
+          "portal",
+          "status"
+        ],
+        "type": "object"
+      },
+      "LostMoneyPortal": {
+        "properties": {
+          "claim": {
+            "items": {
+              "$ref": "#/components/schemas/TransmissionStep"
+            },
+            "type": "array"
+          },
+          "code": {
+            "type": "string"
+          },
+          "finds": {
+            "type": "string"
+          },
+          "howToSearch": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "youNeed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "claim",
+          "code",
+          "finds",
+          "howToSearch",
+          "name",
+          "url",
+          "youNeed"
+        ],
+        "type": "object"
+      },
+      "LostMoneySweep": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/LostMoneyCheck"
+            },
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          },
+          "portals": {
+            "items": {
+              "$ref": "#/components/schemas/LostMoneyPortal"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "checks",
+          "note",
+          "portals"
         ],
         "type": "object"
       },
@@ -6016,6 +6559,52 @@
         ],
         "type": "object"
       },
+      "RecordFoundMoneyBody": {
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 160,
+            "minLength": 0,
+            "type": "string"
+          },
+          "whereFound": {
+            "maxLength": 120,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "memberId",
+          "title"
+        ],
+        "type": "object"
+      },
+      "RecordLostMoneyCheckBody": {
+        "properties": {
+          "checkedOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "memberId",
+          "status"
+        ],
+        "type": "object"
+      },
       "RecordRate": {
         "properties": {
           "asOf": {
@@ -6573,6 +7162,23 @@
         "required": [
           "outcome",
           "row"
+        ],
+        "type": "object"
+      },
+      "SaveGuidedFlowBody": {
+        "properties": {
+          "answers": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "step": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "answers",
+          "step"
         ],
         "type": "object"
       },
@@ -7183,6 +7789,17 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "StartHeirPlanBody": {
+        "properties": {
+          "situation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "situation"
+        ],
         "type": "object"
       },
       "StepUpStatusResponse": {
@@ -10850,6 +11467,69 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/continuity/emergency-kit": {
+      "get": {
+        "operationId": "emergencyKit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmergencyKit"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "continuity-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/continuity/emergency-kit.pdf": {
+      "get": {
+        "operationId": "printableEmergencyKit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "continuity-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/continuity/handbook": {
       "get": {
         "operationId": "familyHandbook",
@@ -10884,6 +11564,38 @@
     "/api/v1/households/{householdId}/continuity/handbook.pdf": {
       "get": {
         "operationId": "printableHandbook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "continuity-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/continuity/handbook/envelope.pdf": {
+      "post": {
+        "operationId": "envelopeHandbook",
         "parameters": [
           {
             "in": "path",
@@ -12163,6 +12875,56 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/emergency/preview": {
+      "get": {
+        "operationId": "previewTrustedContact",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trustedMemberId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "waitDays",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmergencyPreview"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "emergency-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/emergency/requests": {
       "get": {
         "operationId": "requests",
@@ -12313,6 +13075,391 @@
         },
         "tags": [
           "emergency-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/requests/{requestId}/heir": {
+      "get": {
+        "operationId": "heirPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeirPlan"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "heir-mode-controller"
+        ]
+      },
+      "post": {
+        "operationId": "startHeirPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartHeirPlanBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeirPlan"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "heir-mode-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/requests/{requestId}/heir/helpers": {
+      "post": {
+        "operationId": "addHeirHelper",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddHeirHelperBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeirHelper"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "heir-mode-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/requests/{requestId}/heir/helpers/{helperId}": {
+      "delete": {
+        "operationId": "removeHeirHelper",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "helperId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeirPlan"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "heir-mode-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/requests/{requestId}/heir/pause": {
+      "post": {
+        "operationId": "pauseHeirPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeirPlan"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "heir-mode-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/requests/{requestId}/heir/resume": {
+      "post": {
+        "operationId": "resumeHeirPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeirPlan"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "heir-mode-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/requests/{requestId}/heir/tasks/{taskId}": {
+      "patch": {
+        "operationId": "updateHeirTask",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "taskId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeirTaskStatusBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeirPlan"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "heir-mode-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/emergency/requests/{requestId}/heir/tasks/{taskId}/helper": {
+      "put": {
+        "operationId": "assignHeirTask",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "taskId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignHeirTaskBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeirPlan"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "heir-mode-controller"
         ]
       }
     },
@@ -13035,6 +14182,149 @@
         },
         "tags": [
           "checklist-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/guided-flows/{flow}": {
+      "delete": {
+        "operationId": "discardGuidedFlowDraft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "flow",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject",
+            "required": false,
+            "schema": {
+              "default": "",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "guided-flow-controller"
+        ]
+      },
+      "get": {
+        "operationId": "guidedFlowDraft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "flow",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject",
+            "required": false,
+            "schema": {
+              "default": "",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedFlowDraft"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "guided-flow-controller"
+        ]
+      },
+      "put": {
+        "operationId": "saveGuidedFlowDraft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "flow",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject",
+            "required": false,
+            "schema": {
+              "default": "",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveGuidedFlowBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedFlowDraft"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "guided-flow-controller"
         ]
       }
     },
@@ -14586,6 +15876,135 @@
         },
         "tags": [
           "liability-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/lost-money": {
+      "get": {
+        "operationId": "lostMoneySweep",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LostMoneySweep"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "lost-money-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/lost-money/{portal}": {
+      "put": {
+        "operationId": "recordLostMoneyCheck",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "portal",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordLostMoneyCheckBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LostMoneyCheck"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "lost-money-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/lost-money/{portal}/found": {
+      "post": {
+        "operationId": "recordFoundMoney",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "portal",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordFoundMoneyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoundMoneyRecorded"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "lost-money-controller"
         ]
       }
     },
@@ -17847,6 +19266,36 @@
         },
         "tags": [
           "guest-share-controller"
+        ]
+      }
+    },
+    "/api/v1/share/{token}/tasks": {
+      "get": {
+        "operationId": "helperTasks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeirHelperView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "heir-helper-controller"
         ]
       }
     },

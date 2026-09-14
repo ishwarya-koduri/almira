@@ -238,6 +238,8 @@ drawing its own.
 | On demand | `onDemand(label, build)` | With Data Saver on, the block waits behind a button (§8). |
 | Money | `money(formatted, value)` | §8 |
 | Date | `when(iso)` | §8 |
+| Dated steps | `datedSteps(steps, { label })` | A vertical line of steps, each `{ title, detail, at, state }`. Teal mark for `done` and `now`, an open mark for `next`, a struck-through muted title for `skipped`; the state is also in words for a screen reader. The emergency timeline (X-41). |
+| Guided flow | `guidedFlow({ flow, steps, finish })` in `guided.js`, `choiceList(options, value, label)` | One question per screen in a sheet: "Question n of N" over a `.meter`, the question in the display face, "Take your time", Back · Stop here · the one primary Next. A choice is a whole-width 44px button, never a select (X-58). |
 
 Controls (D-09): `segmented()` for two to four choices; `chipRow()` for filters
 — one row that scrolls sideways on a phone and wraps only where there is room;

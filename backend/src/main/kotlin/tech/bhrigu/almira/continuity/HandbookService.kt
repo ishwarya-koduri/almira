@@ -336,6 +336,19 @@ class HandbookService(
         val handbook = build(householdId)
         measurement.record(ProductEvent.HANDBOOK_PRINTED)
         val document = PDDocument()
+        appendPages(document, handbook)
+        val out = ByteArrayOutputStream()
+        document.save(out)
+        document.close()
+        return out.toByteArray()
+    }
+
+    /**
+     * The handbook's pages, added to [document]. The envelope edition puts its
+     * cover in front of exactly these (HandbookEnvelope.kt), so the two printed
+     * versions can never say different things.
+     */
+    internal fun appendPages(document: PDDocument, handbook: FamilyHandbook) {
         val body = PDType1Font(Standard14Fonts.FontName.HELVETICA)
         val bold = PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD)
 
@@ -424,11 +437,6 @@ class HandbookService(
                 }
             }
         }
-
-        val out = ByteArrayOutputStream()
-        document.save(out)
-        document.close()
-        return out.toByteArray()
     }
 
     /** The printed name of a sealed line. Its words are never here: the server cannot read them. */

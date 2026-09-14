@@ -145,6 +145,42 @@ Included assets (14):
 ```
 Private items marked include-in-continuity appear here **only under emergency access**, reconciling privacy with continuity ([Doc 05 §3](05-security-and-privacy.md#3-the-intra-household-privacy-model)).
 
+### 8.1 Emergency setup as a dated picture (X-41)
+```
+Ravi asks            14 Sept   Only if he ever needs to. Nothing changes today.
+You're told          14 Sept   Straight away.
+14 days to say no    28 Sept   One tap stops it. Using Almira at all keeps it shut too.
+Ravi sees the plan   28 Sept   Only what is marked for the family. Never your private entries left out of it.
+It closes by itself  28 Oct
+Ravi would see: 12 things marked for the family plan · 2 loans · your will · who to call
+Never: the 3 entries you left out · anything sealed without a recovery copy · anything while he waits
+```
+Naming someone ends on this picture, dated as if they asked today, before anything is saved. Every request afterwards shows the same five steps with real dates, marked done, now, next or skipped, on both sides (`EmergencyTimeline.kt`).
+
+### 8.2 Printed for the almirah (X-61, P-28)
+Three things, each for a different drawer. **The handbook** (unchanged). **The emergency kit**: one A4 page — who can ask for access and how long there is to say no, the executor, who to call, four steps, a QR code for the app's address (no token), and "Keep this in the almirah." **The envelope edition**: a numbered, dated Fraunces cover — "This works even if Almira is gone." — in front of the full handbook, with a QR code for a guest link to the online copy that lasts a year. Printing a new edition turns the previous edition's code off. It needs a step-up. QR codes are made on the server (ZXing core), and the tests read each one back from a render of the page.
+
+### 8.3 Heir mode (X-40)
+Opened from the family plan by the person holding an open emergency window (`#/heir/<requestId>`). A place of its own: no navigation, no notices, no totals or amounts anywhere.
+```
+What has happened to Ishwarya?     [ Ishwarya has died ]  [ Ishwarya can't manage things right now ]
+
+Task 2 of 6 · 1 done   ━━━━──────────
+Find the original: Ishwarya's will
+Banks and courts ask for the original, not a copy.
+ 1. Where it is kept was sealed …
+ 2. Keep it as it is …
+[ Done ]  [ Later ]  [ Ask someone to help ]
+See the whole list · You can stop here — your place is kept.
+```
+Tasks, for someone who has died: death certificates → the original of each executed instrument → a claim per holding they own that is marked for the family (with its playbook's steps) → telling each lender → heir certificates. For someone who cannot manage: authority to act → the paperwork → keeping each loan paid → keeping each policy paid up → regular payments. "Later" moves a task to the back. Stopping keeps the place; coming back says how many are done and what is next. A task can be handed to up to five relatives: each gets a link, shown once, to a page with only their tasks, read-only, ending when the window does. The plan, its tasks and every helper link close the moment the window does — a veto, a withdrawal, the person signing in, or the window expiring.
+
+### 8.4 One question per screen (X-58)
+Naming an emergency contact, recording a will or other paperwork, and writing where an original is kept are guided flows: one question per screen, "Question 2 of 4" over a meter, "Take your time. Each answer is saved as you go.", Back · Stop here · Next. The place is saved at every step on the server, with only the plain answers that flow keeps; opening the flow again returns to the same question with "Welcome back". Where and who seals and saves each answer as its step is left, and keeps no words with the step.
+
+### 8.5 The lost-money sweep (P-25)
+A card per portal — RBI UDGAM (deposits moved to the DEA Fund), IEPF (unclaimed dividends and shares), EPFO passbook (old provident fund) — for each person in the household: what it finds, how to search, what you need, **Open <portal>** in the person's own browser, and **Checked · Found · Nothing** with the date. Found asks what and roughly how much, and makes a record marked for the family plan with the claim steps in its notes. Almira never calls, scrapes or signs in to any portal.
+
 ## 9. Search
 One field → grouped results (Investments · Liabilities · Accounts · Contacts · Documents); keyboard-navigable; deep-links.
 

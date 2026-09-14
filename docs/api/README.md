@@ -1,7 +1,7 @@
 # Building a client against Almira v1
 
-The contract is [`openapi-v1.json`](openapi-v1.json) — 154 paths, 205 operations,
-218 schemas. Generate a typed client from it; do not hand-write one.
+The contract is [`openapi-v1.json`](openapi-v1.json) — 194 paths, 254 operations,
+269 schemas. Generate a typed client from it; do not hand-write one.
 
 **v1 is additive-only.** New endpoints and new optional fields may appear; nothing
 will be removed, renamed or retyped. A breaking change goes to `/api/v2` and v1
@@ -508,6 +508,77 @@ and `rateSource`; a figure without them is a number pretending to be a fact.
 make it live. Anything imported arrives at the household's default visibility,
 never wider, and an inbound WhatsApp message is a *proposal*, never a saved
 record.
+
+---
+
+## Continuity, made gentler: the timeline, heir mode, guided flows, printed pages, lost money
+
+All additive, 2026-09-14 (V90–V93). Product behaviour is in
+[Doc 03 §8](../03-screens-and-flows.md#8-continuity--heir-mode-the-for-my-family-flow)
+and the rules in [Doc 05 §6–7](../05-security-and-privacy.md#6-emergency-continuity-access--safe-by-design).
+
+```
+GET    /households/{id}/emergency/preview?trustedMemberId=&waitDays=   → steps, willSee, neverSee
+GET    /households/{id}/emergency/requests                              → each row gains timeline[]
+GET    /households/{id}/emergency/requests/{rid}/heir                   → HeirPlan | 404
+POST   /households/{id}/emergency/requests/{rid}/heir      { situation } → HeirPlan (start or return)
+POST   …/heir/pause, …/heir/resume                                      → HeirPlan
+PATCH  …/heir/tasks/{taskId}                                { status }  → HeirPlan
+PUT    …/heir/tasks/{taskId}/helper                         { helperId }→ HeirPlan
+POST   …/heir/helpers                          { name, relationship? }  → HeirHelper with url, once
+DELETE …/heir/helpers/{helperId}                                        → HeirPlan
+GET    /share/{token}/tasks                              (no sign-in)   → HeirHelperView
+GET|PUT|DELETE /households/{id}/guided-flows/{flow}?subject=           → GuidedFlowDraft
+GET    /households/{id}/continuity/emergency-kit(.pdf)
+POST   /households/{id}/continuity/handbook/envelope.pdf  (step-up)     → PDF, X-Almira-Edition
+GET    /households/{id}/lost-money                                      → portals, checks
+PUT    /households/{id}/lost-money/{portal}        { memberId, status, checkedOn? }
+POST   /households/{id}/lost-money/{portal}/found  { memberId, title, amount?, whereFound? }
+```
+
+**A timeline is five steps, always in the same order**: `asked`, `told`,
+`say_no`, `opens`, `closes`, each with `title`, `detail`, `at` and `state`
+(`done`, `now`, `next`, `skipped`). Draw them as they come; the words already say
+who and when from the reader's side. The preview is dated as if the person asked
+today, and `willSee`/`neverSee` are counts in sentences, never titles.
+
+**Heir mode exists only while a window is open, and only for whoever asked.**
+Every heir endpoint answers `404` otherwise — before the wait is over, after a
+veto or a withdrawal, once the subject has signed in, after it expires, and to
+anyone else, the subject included. `POST …/heir` is safe to call every time the
+screen opens: it starts the plan or returns to it, adds tasks for records that
+have appeared, and keeps what was done. `nextTaskId` is the task to show; tasks
+marked `later` come after the rest. **No task carries an amount**, and a client
+must not add one from elsewhere. A helper's `url` is returned once, like any
+guest link; it opens `/help/<token>` for a person and
+`GET /share/{token}/tasks` for a client, lists only the tasks handed to that
+helper, and the same token answers `404` at `GET /share/{token}`. A sixth helper
+answers `400 helpers_full`.
+
+**A guided flow keeps the step and a few named answers.** `emergency_setup`
+keeps `trustedMemberId` and `waitDays`; `estate_document` keeps `kind`, `title`,
+`memberId`, `executedOn` (`yyyy-mm-dd`) and `visibility`; `where_and_who` needs
+`subject=<recordType>:<recordId>` and keeps **no** answers — seal each value with
+`PUT /e2e/values/…` as its step is left. Anything else answers
+`400 answers_invalid` with `details.fields`. `DELETE` when the flow finishes.
+
+**The envelope edition makes a link as it prints.** It needs a step-up
+(`403 step_up_required` otherwise), answers `400 handbook_empty` when there is
+nothing to print, and withdraws the caller's previous edition's link. The link
+lasts 365 days and is listed under `GET /shares` like any other. The emergency
+kit's QR code carries only the app's address.
+
+**The lost-money sweep fetches nothing.** `portals` is reference data with a
+`url` to open in the person's own browser. `status` is `checked`, `found` or
+`nothing`; `checkedOn` defaults to today and cannot be in the future. A check is
+visible to the person who recorded it and the person it is about. `…/found`
+creates an ordinary holding marked for the family plan, with the claim steps in
+its `notes`, and answers `visibleToYou` like capture does.
+
+**Names.** `requestedByName` on an emergency request and `sharedBy` on a guest
+payload are now the name the household knows that person by, falling back to
+the account's name; they used to be the account's name alone, which is often
+unset. The fields and their types are unchanged.
 
 ---
 

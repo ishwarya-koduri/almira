@@ -446,6 +446,30 @@ export function partRing(parts, { center, label } = {}) {
 }
 
 /* -----------------------------------------------------------------------------
+   Dated steps (X-41) — what happens, when, and to whom, as a picture. Each step
+   is { title, detail, at, state }; state is done, now, next or skipped. Teal
+   marks what has happened and where it is now; nothing here is a warning, so
+   nothing is rust.
+   ----------------------------------------------------------------------------- */
+
+export function datedSteps(steps, { label } = {}) {
+  return el("ol.dated-steps", { "aria-label": label || null },
+    ...steps.map((step) => el("li", { "data-state": step.state },
+      el("span.dated-mark", { "aria-hidden": "true" }),
+      el("div.dated-body", {},
+        el("div.dated-title", {},
+          step.title,
+          step.state === "now" && el("span.sr-only", {}, ` (${t("steps.now")})`),
+          step.state === "skipped" && el("span.sr-only", {}, ` (${t("steps.skipped")})`),
+        ),
+        step.at && el("div.dated-when", {}, formatDate(step.at)),
+        step.detail && el("div.dated-detail", {}, step.detail),
+      ),
+    )),
+  );
+}
+
+/* -----------------------------------------------------------------------------
    On demand (X-72). With Data Saver on, something heavy — a chart, a
    thumbnail — waits behind a button instead of loading by itself.
    ----------------------------------------------------------------------------- */

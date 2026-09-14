@@ -421,6 +421,41 @@ export const api = {
   vetoEmergencyAccess: (hid, id)  => api.post(`/api/v1/households/${hid}/emergency/requests/${id}/veto`),
   withdrawEmergencyAccess: (hid, id) =>
     api.post(`/api/v1/households/${hid}/emergency/requests/${id}/withdraw`),
+  // What naming someone would mean, dated, before it is done (X-41).
+  emergencyPreview: (hid, trustedMemberId, waitDays) => api.get(
+    `/api/v1/households/${hid}/emergency/preview?trustedMemberId=${encodeURIComponent(trustedMemberId)}&waitDays=${Number(waitDays)}`),
+
+  // --- heir mode (X-40) -------------------------------------------------------
+  heirPlan:      (hid, rid)       => api.get(`/api/v1/households/${hid}/emergency/requests/${rid}/heir`),
+  startHeirPlan: (hid, rid, situation) =>
+    api.post(`/api/v1/households/${hid}/emergency/requests/${rid}/heir`, { situation }),
+  pauseHeirPlan: (hid, rid)       => api.post(`/api/v1/households/${hid}/emergency/requests/${rid}/heir/pause`),
+  resumeHeirPlan: (hid, rid)      => api.post(`/api/v1/households/${hid}/emergency/requests/${rid}/heir/resume`),
+  setHeirTask:   (hid, rid, taskId, status) =>
+    api.patch(`/api/v1/households/${hid}/emergency/requests/${rid}/heir/tasks/${taskId}`, { status }),
+  assignHeirTask: (hid, rid, taskId, helperId) =>
+    api.put(`/api/v1/households/${hid}/emergency/requests/${rid}/heir/tasks/${taskId}/helper`, { helperId }),
+  addHeirHelper: (hid, rid, body) => api.post(`/api/v1/households/${hid}/emergency/requests/${rid}/heir/helpers`, body),
+  removeHeirHelper: (hid, rid, helperId) =>
+    api.del(`/api/v1/households/${hid}/emergency/requests/${rid}/heir/helpers/${helperId}`),
+
+  // --- printed pages (X-61, P-28) ---------------------------------------------
+  emergencyKitPdfUrl: (hid)       => `/api/v1/households/${hid}/continuity/emergency-kit.pdf`,
+  // A POST: it makes the edition's link and withdraws the last one's.
+  envelopePdfUrl: (hid)           => `/api/v1/households/${hid}/continuity/handbook/envelope.pdf`,
+
+  // --- guided flows (X-58): the step, saved at every step ---------------------
+  guidedDraft:   (hid, flow, subject = "") =>
+    api.get(`/api/v1/households/${hid}/guided-flows/${flow}?subject=${encodeURIComponent(subject)}`),
+  saveGuidedDraft: (hid, flow, subject = "", body) =>
+    api.put(`/api/v1/households/${hid}/guided-flows/${flow}?subject=${encodeURIComponent(subject)}`, body),
+  discardGuidedDraft: (hid, flow, subject = "") =>
+    api.del(`/api/v1/households/${hid}/guided-flows/${flow}?subject=${encodeURIComponent(subject)}`),
+
+  // --- the lost-money sweep (P-25) --------------------------------------------
+  lostMoney:     (hid)            => api.get(`/api/v1/households/${hid}/lost-money`),
+  recordLostMoneyCheck: (hid, portal, body) => api.put(`/api/v1/households/${hid}/lost-money/${portal}`, body),
+  recordFoundMoney: (hid, portal, body) => api.post(`/api/v1/households/${hid}/lost-money/${portal}/found`, body),
 
   // --- documents ------------------------------------------------------------
   documents:     (hid)            => api.get(`/api/v1/households/${hid}/documents`),
@@ -489,10 +524,16 @@ async function upload(path, file, fields = {}) {
  * A download that carries the Authorization header — an ordinary link cannot,
  * and the export endpoint is authenticated like everything else.
  */
-export async function downloadAuthenticated(path, fallbackName) {
+export async function downloadAuthenticated(path, fallbackName, { method = "GET" } = {}) {
   if (!accessToken && auth.refreshToken) await refreshTokens();
-  const response = await fetch(path, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!response.ok) throw new ApiError(response.status, "download_failed", "That download didn't work.");
+  const response = await fetch(path, { method, headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) {
+    // The server's own reason when it gave one — "confirm it's you", "nothing
+    // to print yet" — rather than a generic failure.
+    const error = await response.json().then((body) => body?.error).catch(() => null);
+    throw new ApiError(response.status, error?.code || "download_failed",
+      error?.message || "That download didn't work.", error?.details);
+  }
   const disposition = response.headers.get("Content-Disposition") || "";
   const named = disposition.match(/filename="?([^"]+)"?/);
   const blob = await response.blob();

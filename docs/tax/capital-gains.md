@@ -64,8 +64,9 @@ business-trust unit acquired on or before 31 January 2018 and sold long-term, th
 cost is the higher of (a) what was paid and (b) the lower of the fair market
 value on 31 January 2018 and the sale value. No offline source has that price,
 so the owner enters it **once per holding**, per unit as the share stood that
-day. Later splits are applied from the recorded split transactions, the same
-way lot costs are adjusted. Until it is entered, the line uses what was paid —
+day. Splits between then and each sale are applied from the recorded split
+transactions, the same way lot costs are adjusted; a split recorded after a sale
+leaves that sale alone, since it is stated in the units of its own day. Until it is entered, the line uses what was paid —
 which can only overstate the gain — and says so.
 
 **Cost Inflation Index.** Base 2001-02 = 100, table to 2026-27 = 384, each year's

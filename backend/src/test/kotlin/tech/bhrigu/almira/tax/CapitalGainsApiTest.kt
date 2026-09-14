@@ -71,8 +71,33 @@ class CapitalGainsApiTest : ApiTestBase() {
         return id
     }
 
-    private fun schedule(token: String = owner) =
-        get("/api/v1/households/$householdId/tax/capital-gains/schedule?fy=$fy", token).json()
+    private fun schedule(token: String = owner, year: String = fy) =
+        get("/api/v1/households/$householdId/tax/capital-gains/schedule?fy=$year", token).json()
+
+    @Test
+    fun `a split recorded after a sale does not shrink that sale's 31 January 2018 value`() {
+        val id = capture(
+            owner, householdId, "stock_listed", "Infosys", BigDecimal(0), "household",
+            attributes = mapOf("symbol" to "INFY", "exchange" to "nse", "isin" to "INE009A01021"),
+        ).path("id").asText()
+        fun txn(type: String, date: String, fields: Map<String, Any>) {
+            val response = post(
+                "/api/v1/households/$householdId/investments/$id/transactions", owner,
+                mapOf("txnType" to type, "txnDate" to date) + fields,
+            )
+            assertThat(response.statusCode.is2xxSuccessful).describedAs(response.body).isTrue()
+        }
+        txn("buy", "2016-06-10", mapOf("quantity" to 100, "price" to 500, "amount" to 50_000))
+        txn("sell", "2023-08-10", mapOf("quantity" to 50, "price" to 3000, "amount" to 150_000))
+        txn("split", "2025-03-01", mapOf("ratio" to "5:1"))
+        put("/api/v1/households/$householdId/tax/grandfathering/$id", owner, mapOf("fmvPerUnit" to 1000))
+
+        val line = schedule(year = "2023-24").path("lines").single()
+        assertThat(line.path("quantity").decimalValue()).isEqualByComparingTo(BigDecimal(50))
+        // 50 units of the sale day at ₹1,000 each, not at ₹1,000 ÷ 5.
+        assertThat(line.path("costOfAcquisition").decimalValue()).isEqualByComparingTo(BigDecimal(50_000))
+        assertThat(line.path("gain").decimalValue()).isEqualByComparingTo(BigDecimal(100_000))
+    }
 
     @Test
     fun `an old lot asks for its 31 January 2018 value, and the gain corrects once it is given`() {

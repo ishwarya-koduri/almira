@@ -143,7 +143,7 @@ class CapitalGainsService(
         val rows = disposals(householdId, memberId, fy)
         val investmentIds = rows.map { it.investmentId }.distinct()
         val fmv = fmvFor(investmentIds)
-        val splits = splitFactorsSince2018(investmentIds)
+        val splits = splitsSince2018(investmentIds)
 
         val lines = rows.map { row ->
             val holding = CapitalGainsRules.Holding(row.typeCode, row.categoryCode, row.attributes)
@@ -155,7 +155,7 @@ class CapitalGainsService(
                     unmatched = row.cost.signum() == 0 && row.acquiredOn == row.disposedOn,
                 ),
                 fmvPerUnit2018 = fmv[row.investmentId]?.first,
-                splitFactorSince2018 = splits[row.investmentId] ?: BigDecimal.ONE,
+                splitFactorSince2018 = splitFactorBefore(splits[row.investmentId].orEmpty(), row),
             )
             GainLine(
                 investmentId = row.investmentId,
@@ -422,12 +422,13 @@ class CapitalGainsService(
         val cost: BigDecimal,
         val acquiredOn: LocalDate,
         val disposedOn: LocalDate,
+        val sellTxnId: UUID,
     )
 
     private fun disposals(householdId: UUID, memberId: UUID?, fy: FinancialYear): List<Row> = jdbc.query(
         """
         select d.investment_id, i.title, i.attributes, t.code as type_code, c.code as category_code,
-               d.quantity, d.proceeds, d.cost_basis, d.acquired_on, d.disposed_on
+               d.quantity, d.proceeds, d.cost_basis, d.acquired_on, d.disposed_on, d.sell_txn_id
         from tax_lot_disposals d
         join investments i on i.id = d.investment_id
         join investment_types t on t.id = i.type_id
@@ -454,6 +455,7 @@ class CapitalGainsService(
             cost = rs.getBigDecimal("cost_basis"),
             acquiredOn = rs.getDate("acquired_on").toLocalDate(),
             disposedOn = rs.getDate("disposed_on").toLocalDate(),
+            sellTxnId = rs.getObject("sell_txn_id", UUID::class.java),
         )
     }
 
@@ -473,22 +475,37 @@ class CapitalGainsService(
         }.toMap()
     }
 
-    /** Splits after 31 January 2018 turn one unit of that day into this many of today's. */
-    private fun splitFactorsSince2018(ids: List<UUID>): Map<UUID, BigDecimal> {
+    private data class Split(val id: UUID, val date: LocalDate, val factor: BigDecimal)
+
+    /** Splits after 31 January 2018, each of which turns one unit into this many. */
+    private fun splitsSince2018(ids: List<UUID>): Map<UUID, List<Split>> {
         if (ids.isEmpty()) return emptyMap()
         return jdbc.query(
             """
-            select investment_id, ratio from transactions
+            select id, investment_id, txn_date, ratio from transactions
             where investment_id in (:ids) and txn_type = 'split' and txn_date > :cutoff
             """.trimIndent(),
             mapOf("ids" to ids, "cutoff" to CapitalGainsRules.GRANDFATHERING_DATE),
-        ) { rs, _ -> rs.getObject("investment_id", UUID::class.java) to rs.getString("ratio") }
-            .groupBy({ it.first }, { it.second })
-            .mapValues { (_, ratios) ->
-                ratios.mapNotNull { TaxLotEngine.ratioFactor(it) }
-                    .fold(BigDecimal.ONE) { acc, f -> acc.multiply(f) }
+        ) { rs, _ ->
+            val factor = TaxLotEngine.ratioFactor(rs.getString("ratio"))
+            rs.getObject("investment_id", UUID::class.java) to factor?.let {
+                Split(rs.getObject("id", UUID::class.java), rs.getDate("txn_date").toLocalDate(), it)
             }
+        }.groupBy({ it.first }, { it.second }).mapValues { (_, splits) -> splits.filterNotNull() }
     }
+
+    /**
+     * How many units on the sale date one unit of 31 January 2018 had become.
+     * A disposal is stored in the units of its sale day, so only splits the
+     * lot engine replayed before that sale count — the same date-then-id
+     * order TaxLotEngine uses — and a split recorded after it does not.
+     */
+    private fun splitFactorBefore(splits: List<Split>, row: Row): BigDecimal = splits
+        .filter {
+            it.date < row.disposedOn ||
+                (it.date == row.disposedOn && it.id.toString() < row.sellTxnId.toString())
+        }
+        .fold(BigDecimal.ONE) { acc, split -> acc.multiply(split.factor) }
 
     private companion object {
         val GRANDFATHERABLE = setOf(

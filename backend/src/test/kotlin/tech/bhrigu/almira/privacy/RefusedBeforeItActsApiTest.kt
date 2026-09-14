@@ -111,6 +111,41 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
         "select count(*) from encryption_keys where household_id = ?::uuid", Int::class.java, householdId,
     )
 
+    // --- account numbers --------------------------------------------------------
+
+    @Test
+    fun `a viewer's new account with its full number provisions no key`() {
+        val wrapsBefore = keys.wraps.get()
+        val refused = post(
+            "/api/v1/households/$householdId/accounts", viewer,
+            mapOf(
+                "label" to "Savings", "accountKind" to "savings", "visibility" to "household",
+                "number" to "50100234567890", "storeFullNumber" to true,
+            ),
+        )
+        assertThat(refused.status()).isEqualTo(HttpStatus.FORBIDDEN)
+        assertThat(keys.wraps.get() - wrapsBefore).describedAs("data keys wrapped for a refused create").isZero()
+        assertThat(keyRows()).isZero()
+    }
+
+    @Test
+    fun `a viewer's edit storing a full number provisions no key`() {
+        val account = post(
+            "/api/v1/households/$householdId/accounts", owner,
+            mapOf("label" to "Savings", "accountKind" to "savings", "visibility" to "household"),
+        ).json()
+        val wrapsBefore = keys.wraps.get()
+        val refused = patch(
+            "/api/v1/households/$householdId/accounts/${account.path("id").asText()}", viewer,
+            mapOf(
+                "version" to account.path("version").asInt(),
+                "number" to "50100234567890", "storeFullNumber" to true,
+            ),
+        )
+        assertThat(refused.status()).isEqualTo(HttpStatus.FORBIDDEN)
+        assertThat(keys.wraps.get() - wrapsBefore).describedAs("data keys wrapped for a refused edit").isZero()
+    }
+
     // --- documents ------------------------------------------------------------
 
     @Test

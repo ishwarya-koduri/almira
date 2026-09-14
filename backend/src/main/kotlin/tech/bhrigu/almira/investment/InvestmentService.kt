@@ -7,6 +7,7 @@ import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.auth.AuthService
 import tech.bhrigu.almira.catalog.CatalogRepository
 import tech.bhrigu.almira.catalog.CatalogService
+import tech.bhrigu.almira.catalog.CustomFieldRow
 import tech.bhrigu.almira.catalog.FieldOption
 import tech.bhrigu.almira.common.ApiException
 import tech.bhrigu.almira.e2e.RetiredPlaintextLocation
@@ -162,21 +163,21 @@ class InvestmentService(
         val grants = resolveGrants(householdId, visibility, input.visibleToMemberIds, owners)
 
         input.customFields.forEach { catalog.validateFieldDefinition(it.toFieldDef()) }
-        // Definitions must exist before the values are validated against them.
-        val recordFields = input.customFields.map { field ->
-            catalogRepo.createCustomField(
-                householdId = householdId, ownerType = "record", ownerId = id,
+        // The values are validated against the definitions as they will be
+        // stored, before any of them is: the custom fields used to be written
+        // first, then the values checked, then the insert decide whether this
+        // caller may create this record at all — so nothing was written for a
+        // refusal only because the transaction rolled it back.
+        val pendingDefs = input.customFields.map { field ->
+            CustomFieldRow(
+                id = UUID.randomUUID(), ownerType = "record", ownerId = id,
                 key = field.key, label = field.label, dataType = field.dataType,
                 unit = field.unit, options = field.options, required = field.required,
-                countsTowardValue = field.countsTowardValue,
+                countsTowardValue = field.countsTowardValue, sort = 0,
             )
-            field
         }
-        val customDefs = if (recordFields.isEmpty()) emptyList()
-        else catalogRepo.customFields("record", listOf(id))
-
         val attributes = validator.validate(
-            type.schema, customDefs, submittedAttributes,
+            type.schema, pendingDefs, submittedAttributes,
             requireEssentials = !input.allowMissingRequired,
         )
 
@@ -194,6 +195,16 @@ class InvestmentService(
         } catch (_: DuplicateKeyException) {
             throw ApiException.conflict(
                 "already_exists", "This one is already saved.", mapOf("id" to id),
+            )
+        }
+
+        // Only now that the record exists and is this caller's to create.
+        input.customFields.forEach { field ->
+            catalogRepo.createCustomField(
+                householdId = householdId, ownerType = "record", ownerId = id,
+                key = field.key, label = field.label, dataType = field.dataType,
+                unit = field.unit, options = field.options, required = field.required,
+                countsTowardValue = field.countsTowardValue,
             )
         }
 
@@ -356,6 +367,9 @@ class InvestmentService(
             validator.validate(type.schema, customDefs, it)
         }
 
+        // Checked before the row is written, not after.
+        val owners = input.owners?.let { resolveOwners(householdId, household.myMemberId, it) }
+
         val updated = repo.update(
             id = id, version = input.version, title = input.title?.trim(),
             investedAmount = input.investedAmount, quantity = input.quantity, unit = input.unit,
@@ -380,9 +394,7 @@ class InvestmentService(
             )
         }
 
-        input.owners?.let {
-            repo.replaceOwners(id, resolveOwners(householdId, household.myMemberId, it), "primary")
-        }
+        owners?.let { repo.replaceOwners(id, it, "primary") }
 
         audit.record(
             householdId = householdId, actorUserId = userId, action = "investment.update",

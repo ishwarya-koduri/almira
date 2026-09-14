@@ -93,6 +93,11 @@ class LiabilityService(
         val holders = resolveHolders(householdId, household.myMemberId, input.holders)
         val visibility = resolveVisibility(input.visibility, household.defaultVisibility)
         val grants = resolveGrants(householdId, visibility, input.visibleToMemberIds, holders)
+        // Before anything is written. A loan its creator could not see used to
+        // be inserted with its holders, grants, opening balance and audit row,
+        // read back, and only then refused — every write rolled back behind a
+        // message that said "Saved".
+        requireVisibleToCreator(household.myMemberId, visibility, holders.map { it.first }, grants)
 
         try {
             repo.insert(
@@ -118,8 +123,11 @@ class LiabilityService(
             entityType = "liability", entityId = id,
             diff = mapOf("title" to input.title, "kind" to input.kind, "visibility" to visibility),
         )
+        // Unreachable while requireVisibleToCreator mirrors app.can_read_record;
+        // kept so that a drift between the two refuses rather than returns
+        // nothing. A throw here rolls the save back, so it does not say "Saved".
         return (repo.find(householdId, id)
-            ?: throw ApiException.forbidden("Saved, but it's private to whoever owes it."))
+            ?: throw ApiException.forbidden(NOT_VISIBLE_TO_CREATOR))
             .also(reminders::syncForLiability)
     }
 
@@ -145,6 +153,8 @@ class LiabilityService(
                 throw ApiException.badRequest("status_invalid", "A loan is either active or closed.")
             }
         }
+        // Checked before the row is written, not after.
+        val holders = input.holders?.let { resolveHolders(householdId, household.myMemberId, it) }
 
         val updated = repo.update(
             id = id, version = input.version, title = input.title?.trim(),
@@ -168,9 +178,7 @@ class LiabilityService(
                 mapOf("currentVersion" to current.version),
             )
         }
-        input.holders?.let {
-            repo.replaceHolders(id, resolveHolders(householdId, household.myMemberId, it))
-        }
+        holders?.let { repo.replaceHolders(id, it) }
         audit.record(
             householdId = householdId, actorUserId = userId, action = "liability.update",
             entityType = "liability", entityId = id,
@@ -336,6 +344,23 @@ class LiabilityService(
         return shares
     }
 
+    /**
+     * Refuses a loan its creator would not be able to see, before it is
+     * written. Mirrors app.can_read_record for a member who may write: visible
+     * when it is household-wide, when the creator owes it, or when it is scoped
+     * and shared with them — grants already include everyone who owes it.
+     */
+    private fun requireVisibleToCreator(
+        me: UUID?,
+        visibility: String,
+        holders: List<UUID>,
+        grants: List<UUID>,
+    ) {
+        val visible = visibility == "household" ||
+            (me != null && (me in holders || (visibility == "scoped" && me in grants)))
+        if (!visible) throw ApiException.forbidden(NOT_VISIBLE_TO_CREATOR)
+    }
+
     private fun resolveVisibility(requested: String?, householdDefault: String): String {
         if (requested != null) {
             if (requested !in visibilities) {
@@ -367,5 +392,11 @@ class LiabilityService(
             }
         }
         return (requested + holders.map { it.first }).distinct()
+    }
+
+    private companion object {
+        const val NOT_VISIBLE_TO_CREATOR =
+            "You wouldn't be able to see this once it was saved, so it hasn't been. " +
+                "Add yourself as someone who owes it, or share it with yourself or the household."
     }
 }

@@ -143,6 +143,17 @@ class ShareService(
             )
         }
 
+        // What the link would share, decided before a token exists or a link
+        // row is written. Under the sharer's own RLS either way, and in the
+        // same transaction; it needs nothing from the row.
+        val items = resolveScope(householdId, input)
+        if (items.isEmpty()) {
+            throw ApiException.badRequest(
+                "scope_empty",
+                "There's nothing to share in that slice — check the year, or pick some records.",
+            )
+        }
+
         val id = UUID.randomUUID()
         val token = newToken()
         val expiresAt = Instant.now().plus(input.expiresInDays.toLong(), ChronoUnit.DAYS)
@@ -164,13 +175,6 @@ class ShareService(
                 .addValue("maxViews", input.maxViews).addValue("createdBy", userId),
         )
 
-        val items = resolveScope(householdId, input)
-        if (items.isEmpty()) {
-            throw ApiException.badRequest(
-                "scope_empty",
-                "There's nothing to share in that slice — check the year, or pick some records.",
-            )
-        }
         items.forEach { (type, recordId) ->
             jdbc.update(
                 """

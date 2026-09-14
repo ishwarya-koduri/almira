@@ -565,4 +565,346 @@ class EmailOtpTest {
         assertThat(probe(listed, realResend.requestId, wrongFor(realCode))).isEqualTo("otp_invalid")
         assertThat(probe(unlisted, decoyResend.requestId, wrongFor(realCode))).isEqualTo("otp_invalid")
     }
+
+    // --- a restored emailed code keeps its attempt cap (security: known-issues 22) --
+
+    private val outright = listOf(SandboxFault.REJECTED, SandboxFault.UNAVAILABLE, SandboxFault.INSUFFICIENT_BALANCE)
+
+    private fun wrongCodes(n: Int, vararg avoid: String) =
+        (0 until n + avoid.size).map { "%06d".format(it) }.filter { it !in avoid }.take(n)
+
+    private fun attempts(email: String) =
+        redis.opsForHash<String, String>().get("otp:email:challenge:login:$email", "attempts")
+
+    /** Records the code before it blocks, so a test knows the in-flight code while the send is held. */
+    class GatedEmailSender(val faults: SandboxFaults = SandboxFaults()) : EmailOtpSender {
+        override val available = true
+        override val exposesCodeForDevelopment = false
+        val sent = CopyOnWriteArrayList<Pair<String, String>>()
+        val gates = java.util.concurrent.ConcurrentLinkedQueue<Pair<CountDownLatch, CountDownLatch>>()
+        override fun send(email: String, code: String) {
+            sent += email to code
+            gates.poll()?.let { (entered, release) -> entered.countDown(); release.await(10, TimeUnit.SECONDS) }
+            faults.apply("email")
+        }
+    }
+
+    private fun settled(otp: OtpService, requestId: String): String {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (System.nanoTime() < deadline) {
+            val status = otp.emailDelivery(requestId).status
+            if (status != "sending") return status
+            Thread.sleep(5)
+        }
+        throw AssertionError("send for $requestId never settled")
+    }
+
+    @Test
+    fun `a restored emailed code has only the attempts it had left, for every outright failure and every count`() {
+        val max = 5
+        for (fault in outright) {
+            for (k in 1 until max) {
+                val email = RecordingEmailSender()
+                val otp = service(email = email)
+                val a = address()
+                val first = otp.requestByEmail(a, ip(), login, unreported)
+                val code = email.lastCode()
+                val wrong = wrongCodes(max, code)
+                repeat(k) { i ->
+                    assertThat(refusal { otp.verifyByEmail(a, wrong[i], first.requestId, login) }.code).isEqualTo("otp_invalid")
+                }
+
+                redis.delete("otp:email:cooldown:login:$a")
+                email.faults.always("email", fault)
+                val resend = otp.requestByEmail(a, ip(), login, unreported)
+                assertThat(otp.emailDelivery(resend.requestId).status).isEqualTo("failed")
+                email.faults.clear()
+
+                val label = "$fault after $k wrong"
+                assertThat(challenge(a)["requestId"]).describedAs("$label: restored").isEqualTo(first.requestId)
+                assertThat(attempts(a)).describedAs("$label: attempts kept, not reset").isEqualTo("$k")
+                val next = refusal { otp.verifyByEmail(a, wrong[k], resend.requestId, login) }
+                if (k + 1 < max) {
+                    assertThat(next.code).describedAs(label).isEqualTo("otp_invalid")
+                    assertThat(next.details["attemptsRemaining"]).describedAs("$label: remaining").isEqualTo(max - k - 1)
+                } else {
+                    assertThat(next.code).describedAs("$label: the last attempt locks").isEqualTo("otp_locked")
+                    assertThat(refusal { otp.verifyByEmail(a, code, resend.requestId, login) }.code)
+                        .describedAs("$label: right code refused once locked").isEqualTo("otp_expired")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `guessing and failing to resend an email in a loop never judges more than the allowed wrong codes`() {
+        val max = 5
+        for (fault in outright) {
+            val email = RecordingEmailSender()
+            val otp = service(email = email)
+            val a = address()
+            var current = otp.requestByEmail(a, ip(), login, unreported).requestId
+            val code = email.lastCode()
+            val judged = mutableListOf<String>()
+            for ((i, guess) in wrongCodes(max * 6, code).withIndex()) {
+                val id = if (i % 2 == 0) current else null
+                judged += refusal { otp.verifyByEmail(a, guess, id, login) }.code
+                redis.delete("otp:email:cooldown:login:$a")
+                email.faults.always("email", fault)
+                runCatching { current = otp.requestByEmail(a, ip(), login, unreported).requestId }
+                email.faults.clear()
+            }
+            assertThat(judged.count { it == "otp_invalid" || it == "otp_locked" })
+                .describedAs("$fault: wrong codes judged against one code across ${max * 6} restores: $judged")
+                .isLessThanOrEqualTo(max)
+            assertThat(judged.count { it == "otp_locked" }).describedAs("$fault: locked once").isEqualTo(1)
+            assertThat(refusal { otp.verifyByEmail(a, code, current, login) }.code)
+                .describedAs("$fault: right code refused after the cap").isIn("otp_expired", "otp_stale")
+            assertThat(refusal { otp.verifyByEmail(a, code, null, login) }.code)
+                .describedAs("$fault: and without the id").isIn("otp_expired", "otp_invalid")
+        }
+    }
+
+    @Test
+    fun `a locked emailed code is not brought back by a resend that fails`() {
+        for (fault in outright) {
+            val email = RecordingEmailSender()
+            val otp = service(email = email, props = props(otp = AlmiraProperties.Otp(maxAttempts = 3, maxPerHour = 1_000, maxPerIpPerHour = 1_000)))
+            val a = address()
+            val first = otp.requestByEmail(a, ip(), login, unreported)
+            val code = email.lastCode()
+            assertThat(wrongCodes(3, code).map { refusal { otp.verifyByEmail(a, it, first.requestId, login) }.code })
+                .containsExactly("otp_invalid", "otp_invalid", "otp_locked")
+            redis.delete("otp:email:cooldown:login:$a")
+            email.faults.always("email", fault)
+            val resend = otp.requestByEmail(a, ip(), login, unreported)
+            assertThat(otp.emailDelivery(resend.requestId).status).isEqualTo("failed")
+            assertThat(challenge(a)).describedAs("$fault: nothing restored").isEmpty()
+            assertThat(refusal { otp.verifyByEmail(a, code, resend.requestId, login) }.code).describedAs(fault.name).isEqualTo("otp_expired")
+        }
+    }
+
+    @Test
+    fun `restoring an emailed code does not give it a longer life`() {
+        val email = RecordingEmailSender()
+        val otp = service(
+            email = email,
+            // Each deferred send settles on a whole-second tick, so the life
+            // must outlast a few of them for a restore to happen at all.
+            props = props(otp = AlmiraProperties.Otp(ttl = java.time.Duration.ofSeconds(5), resendCooldown = java.time.Duration.ZERO,
+                maxPerHour = 1_000, maxPerIpPerHour = 1_000)),
+        )
+        val a = address()
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        val first = otp.requestByEmail(a, ip(), login, unreported).requestId
+        var current = first
+        val code = email.lastCode()
+        var lastLife = redis.getExpire("otp:email:challenge:login:$a", TimeUnit.MILLISECONDS)
+        var restores = 0
+        email.faults.always("email", SandboxFault.REJECTED)
+        while (System.nanoTime() < deadline + TimeUnit.MILLISECONDS.toNanos(500)) {
+            runCatching { current = otp.requestByEmail(a, ip(), login, unreported).requestId }
+            val life = redis.getExpire("otp:email:challenge:login:$a", TimeUnit.MILLISECONDS)
+            if (life > 0) {
+                assertThat(challenge(a)["requestId"]).isEqualTo(first)
+                restores++
+                assertThat(life).describedAs("a restore never adds life").isLessThanOrEqualTo(lastLife)
+                lastLife = life
+                assertThat(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(life))
+                    .describedAs("never past the first send's expiry")
+                    .isLessThanOrEqualTo(deadline + TimeUnit.MILLISECONDS.toNanos(50))
+            }
+            Thread.sleep(100)
+        }
+        assertThat(restores).describedAs("the earlier code was put back at least twice").isGreaterThanOrEqualTo(2)
+        assertThat(refusal { otp.verifyByEmail(a, code, current, login) }.code).isEqualTo("otp_expired")
+    }
+
+    @Test
+    fun `wrong codes racing a failing email resend cannot buy more than the allowed attempts`() {
+        val max = 5
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(16)
+        val background = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()
+        try {
+            repeat(15) { round ->
+                val sender = GatedEmailSender()
+                val otp = service(email = sender, background = background)
+                val a = address()
+                val first = otp.requestByEmail(a, ip(), login, unreported)
+                assertThat(settled(otp, first.requestId)).isEqualTo("sent")
+                val code = sender.sent.last().second
+                val k = round % max
+                val judged = CopyOnWriteArrayList<String>()
+                wrongCodes(k, code).forEach { judged += refusal { otp.verifyByEmail(a, it, null, login) }.code }
+
+                redis.delete("otp:email:cooldown:login:$a")
+                val entered = CountDownLatch(1); val release = CountDownLatch(1)
+                sender.gates += entered to release
+                sender.faults.always("email", SandboxFault.REJECTED)
+                val resend = otp.requestByEmail(a, ip(), login, unreported)
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue()
+                val resendCode = sender.sent.last().second
+
+                val start = CountDownLatch(1)
+                val guesses = wrongCodes(16, code, resendCode).drop(k).map { guess ->
+                    pool.submit<String> { start.await(); refusal { otp.verifyByEmail(a, guess, null, login) }.code }
+                }
+                start.countDown()
+                release.countDown()
+                guesses.forEach { judged += it.get(10, TimeUnit.SECONDS) }
+                assertThat(settled(otp, resend.requestId)).isEqualTo("failed")
+
+                wrongCodes(16 + max, code, resendCode).drop(16).forEach {
+                    judged += refusal { otp.verifyByEmail(a, it, null, login) }.code
+                }
+                assertThat(judged.count { it == "otp_invalid" || it == "otp_locked" })
+                    .describedAs("round $round, $k before the race: $judged")
+                    .isLessThanOrEqualTo(max)
+                assertThat(refusal { otp.verifyByEmail(a, code, resend.requestId, login) }.code)
+                    .describedAs("round $round: the earlier code is refused after the cap").isIn("otp_expired", "otp_stale")
+            }
+        } finally {
+            pool.shutdownNow()
+            background.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `wrong codes that lock an in-flight email challenge lock the code it would restore`() {
+        val sender = GatedEmailSender()
+        val background = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()
+        try {
+            val otp = service(
+                email = sender, background = background,
+                props = props(otp = AlmiraProperties.Otp(maxAttempts = 3, maxPerHour = 1_000, maxPerIpPerHour = 1_000)),
+            )
+            val a = address()
+            val first = otp.requestByEmail(a, ip(), login, unreported)
+            assertThat(settled(otp, first.requestId)).isEqualTo("sent")
+            val code = sender.sent.last().second
+            assertThat(refusal { otp.verifyByEmail(a, wrongFor(code), null, login) }.code).isEqualTo("otp_invalid")
+
+            redis.delete("otp:email:cooldown:login:$a")
+            val entered = CountDownLatch(1); val release = CountDownLatch(1)
+            sender.gates += entered to release
+            sender.faults.always("email", SandboxFault.REJECTED)
+            val resend = otp.requestByEmail(a, ip(), login, unreported)
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue()
+            val resendCode = sender.sent.last().second
+            val during = wrongCodes(3, code, resendCode).drop(1).map { refusal { otp.verifyByEmail(a, it, null, login) }.code }
+            assertThat(during).describedAs("the third wrong code of three locks").containsExactly("otp_invalid", "otp_locked")
+            release.countDown()
+            assertThat(settled(otp, resend.requestId)).isEqualTo("failed")
+
+            assertThat(challenge(a)).describedAs("nothing restored").isEmpty()
+            // The right code first: a restored challenge at its cap must not accept it.
+            assertThat(refusal { otp.verifyByEmail(a, code, resend.requestId, login) }.code).isEqualTo("otp_expired")
+            assertThat(refusal { otp.verifyByEmail(a, wrongCodes(4, code).last(), resend.requestId, login) }.code)
+                .describedAs("no fourth wrong code is judged").isEqualTo("otp_expired")
+        } finally {
+            background.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `a code at its cap is never put back, even when the in-flight misses were counted without it`() {
+        // An instance still running the script from before the shared count (a
+        // rolling deploy) records misses against the in-flight challenge alone.
+        // FALL_BACK must still refuse to restore at the cap.
+        val sender = GatedEmailSender()
+        val background = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()
+        try {
+            val otp = service(
+                email = sender, background = background,
+                props = props(otp = AlmiraProperties.Otp(maxAttempts = 3, maxPerHour = 1_000, maxPerIpPerHour = 1_000)),
+            )
+            val a = address()
+            val first = otp.requestByEmail(a, ip(), login, unreported)
+            assertThat(settled(otp, first.requestId)).isEqualTo("sent")
+            val code = sender.sent.last().second
+            wrongCodes(2, code).forEach { refusal { otp.verifyByEmail(a, it, null, login) } }
+
+            redis.delete("otp:email:cooldown:login:$a")
+            val entered = CountDownLatch(1); val release = CountDownLatch(1)
+            sender.gates += entered to release
+            sender.faults.always("email", SandboxFault.REJECTED)
+            val resend = otp.requestByEmail(a, ip(), login, unreported)
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue()
+            redis.opsForHash<String, String>().increment("otp:email:challenge:login:$a", "attempts", 1)
+            release.countDown()
+            assertThat(settled(otp, resend.requestId)).isEqualTo("failed")
+
+            assertThat(challenge(a)).describedAs("2 + 1 of 3: not put back").isEmpty()
+            assertThat(refusal { otp.verifyByEmail(a, code, first.requestId, login) }.code).isEqualTo("otp_expired")
+        } finally {
+            background.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `a challenge at its cap does not accept the right code, however it got there`() {
+        val email = RecordingEmailSender()
+        val otp = service(email = email, props = props(otp = AlmiraProperties.Otp(maxAttempts = 3, maxPerHour = 1_000, maxPerIpPerHour = 1_000)))
+        val a = address()
+        val c = otp.requestByEmail(a, ip(), login, unreported)
+        redis.opsForHash<String, String>().put("otp:email:challenge:login:$a", "attempts", "3")
+        assertThat(refusal { otp.verifyByEmail(a, email.lastCode(), c.requestId, login) }.code).isEqualTo("otp_expired")
+        assertThat(challenge(a)).describedAs("and it is removed").isEmpty()
+    }
+
+    @Test
+    fun `a network's wrong-code allowance still counts across emailed restores`() {
+        val email = RecordingEmailSender()
+        val otp = service(
+            email = email,
+            props = props(otp = AlmiraProperties.Otp(maxAttempts = 10, maxPerHour = 1_000, maxPerIpPerHour = 1_000, maxVerifyFailuresPerIpPerHour = 3)),
+        )
+        val attacker = ip()
+        val a = address()
+        var current = otp.requestByEmail(a, ip(), login, unreported).requestId
+        val code = email.lastCode()
+        for (guess in wrongCodes(3, code)) {
+            assertThat(refusal { otp.verifyByEmail(a, guess, null, login, attacker) }.code).isEqualTo("otp_invalid")
+            redis.delete("otp:email:cooldown:login:$a")
+            email.faults.always("email", SandboxFault.REJECTED)
+            current = otp.requestByEmail(a, ip(), login, unreported).requestId
+            email.faults.clear()
+        }
+        val e = refusal { otp.verifyByEmail(a, code, current, login, attacker) }
+        assertThat(e.status).isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
+        assertThat(e.message).contains("this network")
+        assertThat(attempts(a)).isEqualTo("3")
+    }
+
+    @Test
+    fun `an address's and a network's request allowances still count across emailed restores`() {
+        val email = RecordingEmailSender()
+        val otp = service(
+            email = email,
+            props = props(otp = AlmiraProperties.Otp(resendCooldown = java.time.Duration.ZERO, maxPerHour = 2, maxPerIpPerHour = 1_000)),
+        )
+        val a = address()
+        otp.requestByEmail(a, ip(), login, unreported)
+        email.faults.always("email", SandboxFault.UNAVAILABLE)
+        repeat(6) { otp.requestByEmail(a, ip(), login, unreported) }
+        assertThat(redis.opsForValue().get("otp:rate:email:$a"))
+            .describedAs("the delivered send still counts; only the failed ones are given back").isEqualTo("1")
+        email.faults.clear()
+        otp.requestByEmail(a, ip(), login, unreported)
+        val e = refusal { otp.requestByEmail(a, ip(), login, unreported) }
+        assertThat(e.status).isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
+        assertThat(e.message).contains("this email address")
+
+        val netEmail = RecordingEmailSender()
+        val netOtp = service(
+            email = netEmail,
+            props = props(otp = AlmiraProperties.Otp(resendCooldown = java.time.Duration.ZERO, maxPerHour = 1_000, maxPerIpPerHour = 3)),
+        )
+        val network = ip()
+        val b = address()
+        netOtp.requestByEmail(b, network, login, unreported)
+        netEmail.faults.always("email", SandboxFault.REJECTED)
+        repeat(2) { netOtp.requestByEmail(b, network, login, unreported) }
+        assertThat(refusal { netOtp.requestByEmail(b, network, login, unreported) }.message).contains("this network")
+    }
 }

@@ -737,7 +737,37 @@ gives back are exactly as before, and a failed request cannot reset or add
 guesses. Decoys go through the same scripts, so a decoy's failed resend falls
 back the way a real one does. Same for phone and email, sign-in and step-up.
 Proven by four tests in `OtpServiceTest` and three in `EmailOtpTest` (the
-`known-issues 22` sections), each watched failing.
+`known-issues 22` sections), each watched failing, and by the attempt-cap tests
+below.
+
+**The attempt cap on a restored code** (2026-09-14, "Restored-code attempt
+cap"; treated as security). Tests written first against de68d05 found a hole:
+a wrong code typed while the resend was in flight was counted only against the
+new challenge's own count, so with *k* attempts used on the earlier code the
+in-flight challenge still took the full `max-attempts` wrong codes — up to
+`2 × max-attempts − 1` judged per counted send, and the per-number count of a
+failed resend is given back. `FALL_BACK` did refuse to restore at the cap, but
+nothing proved it: disabling that check left every test green. Now
+`RECORD_MISS` counts the set-aside challenge's attempts too and removes both at
+the cap, and `CONSUME` refuses a challenge at its cap. With the shared count
+the `FALL_BACK` and `CONSUME` checks are no longer reachable through the API;
+they stay for a miss recorded without the shared count (an instance on the old
+script during a rolling deploy), and tests set that state in Redis directly so
+each check is proven on its own. Proven for phone and email, each watched
+failing against the unfixed code and against mutations (attempts reset on
+restore, the shared count removed, the `FALL_BACK` check disabled, the
+`CONSUME` check disabled, a fresh lifetime on restore, the count given back to
+zero, restored misses not counted for the network): attempts kept for every
+outright failure and every *k*; a
+guess-and-failing-resend loop run six times past the cap judges at most
+`max-attempts` wrong codes and then refuses the right one; a locked code is not
+brought back; no restore adds lifetime; parallel wrong codes racing a failing
+resend stay within the cap; the network wrong-code allowance and the per-number
+and per-network request allowances count across restores.
+
+One consequence: while a resend is in flight, its `attemptsRemaining` counts
+the earlier code's wrong codes too, so someone who typed wrong codes and then
+pressed resend has fewer tries at the new code until its send settles.
 
 **What is left, narrowed:**
 

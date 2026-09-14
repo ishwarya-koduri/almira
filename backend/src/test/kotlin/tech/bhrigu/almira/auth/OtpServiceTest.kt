@@ -698,4 +698,314 @@ class OtpServiceTest {
         assertThat(redis.hasKey("otp:challenge:login:$number"))
             .describedAs("neither code was delivered, so neither is live").isFalse()
     }
+
+    // --- a restored code keeps its attempt cap (security: known-issues 22) --------
+    //
+    // A failed resend puts the earlier code back. If putting it back also gave
+    // it fresh attempts, "guess, resend until it fails, guess again" would be
+    // unlimited guesses at a live code. These hold the cap across restores.
+
+    private val outright = listOf(SandboxFault.REJECTED, SandboxFault.UNAVAILABLE, SandboxFault.INSUFFICIENT_BALANCE)
+
+    /** Wrong codes, distinct, never any code in [avoid]. */
+    private fun wrongCodes(n: Int, vararg avoid: String) =
+        (0 until n + avoid.size).map { "%06d".format(it) }.filter { it !in avoid }.take(n)
+
+    @Test
+    fun `a restored code has only the attempts it had left, for every outright failure and every count`() {
+        val max = 5
+        for (fault in outright) {
+            for (k in 1 until max) {
+                val (service, sender) = failingService(fault)
+                sender.faults.clear()
+                val number = phone()
+                val first = service.request(number, ip())
+                val code = sender.lastCode()
+                val wrong = wrongCodes(max, code)
+                repeat(k) { i ->
+                    assertThat(refusal { service.verify(number, wrong[i], first.requestId) }.code).isEqualTo("otp_invalid")
+                }
+
+                waitOutCooldown(number)
+                sender.faults.always("otp", fault)
+                refusal { service.request(number, ip()) }
+                sender.faults.clear()
+
+                val label = "$fault after $k wrong"
+                assertThat(redis.opsForHash<String, String>().get("otp:challenge:login:$number", "requestId"))
+                    .describedAs("$label: restored").isEqualTo(first.requestId)
+                assertThat(redis.opsForHash<String, String>().get("otp:challenge:login:$number", "attempts"))
+                    .describedAs("$label: attempts kept, not reset").isEqualTo("$k")
+                val next = refusal { service.verify(number, wrong[k], first.requestId) }
+                if (k + 1 < max) {
+                    assertThat(next.code).describedAs(label).isEqualTo("otp_invalid")
+                    assertThat(next.details["attemptsRemaining"]).describedAs("$label: remaining").isEqualTo(max - k - 1)
+                } else {
+                    assertThat(next.code).describedAs("$label: the last attempt locks").isEqualTo("otp_locked")
+                    assertThat(refusal { service.verify(number, code, first.requestId) }.code)
+                        .describedAs("$label: right code refused once locked").isEqualTo("otp_expired")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `guessing and failing to resend in a loop never judges more than the allowed wrong codes`() {
+        val max = 5
+        for (fault in outright) {
+            val (service, sender) = failingService(fault)
+            sender.faults.clear()
+            val number = phone()
+            val first = service.request(number, ip())
+            val code = sender.lastCode()
+            val judged = mutableListOf<String>()
+            for ((i, guess) in wrongCodes(max * 6, code).withIndex()) {
+                // With and without the request id: the attacker need not hold it.
+                val id = if (i % 2 == 0) first.requestId else null
+                judged += refusal { service.verify(number, guess, id) }.code
+                waitOutCooldown(number)
+                sender.faults.always("otp", fault)
+                runCatching { service.request(number, ip()) }
+                sender.faults.clear()
+            }
+            assertThat(judged.count { it == "otp_invalid" || it == "otp_locked" })
+                .describedAs("$fault: wrong codes judged against one code across ${max * 6} restores: $judged")
+                .isLessThanOrEqualTo(max)
+            assertThat(judged.count { it == "otp_locked" }).describedAs("$fault: locked once").isEqualTo(1)
+            assertThat(refusal { service.verify(number, code, first.requestId) }.code)
+                .describedAs("$fault: right code refused after the cap").isIn("otp_expired", "otp_stale")
+            assertThat(refusal { service.verify(number, code, null) }.code)
+                .describedAs("$fault: and without the id").isIn("otp_expired", "otp_invalid")
+        }
+    }
+
+    @Test
+    fun `a locked code is not brought back by a resend that fails`() {
+        for (fault in outright) {
+            val (service, sender) = failingService(fault, AlmiraProperties.Otp(maxAttempts = 3, maxPerHour = 1_000, maxPerIpPerHour = 1_000))
+            sender.faults.clear()
+            val number = phone()
+            val first = service.request(number, ip())
+            val code = sender.lastCode()
+            assertThat(wrongCodes(3, code).map { refusal { service.verify(number, it, first.requestId) }.code })
+                .containsExactly("otp_invalid", "otp_invalid", "otp_locked")
+            waitOutCooldown(number)
+            sender.faults.always("otp", fault)
+            refusal { service.request(number, ip()) }
+            assertThat(redis.hasKey("otp:challenge:login:$number")).describedAs("$fault: nothing restored").isFalse()
+            assertThat(refusal { service.verify(number, code, first.requestId) }.code).describedAs(fault.name).isEqualTo("otp_expired")
+        }
+    }
+
+    @Test
+    fun `restoring a code does not give it a longer life`() {
+        val otp = AlmiraProperties.Otp(ttl = Duration.ofSeconds(2), resendCooldown = Duration.ZERO, maxPerHour = 1_000, maxPerIpPerHour = 1_000)
+        val (service, sender) = failingService(SandboxFault.REJECTED, otp)
+        sender.faults.clear()
+        val number = phone()
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        val first = service.request(number, ip())
+        val code = sender.lastCode()
+        var lastLife = redis.getExpire("otp:challenge:login:$number", TimeUnit.MILLISECONDS)
+        var restores = 0
+        sender.faults.always("otp", SandboxFault.REJECTED)
+        // Keep failing to resend past the original expiry.
+        while (System.nanoTime() < deadline + TimeUnit.MILLISECONDS.toNanos(500)) {
+            runCatching { service.request(number, ip()) }
+            val life = redis.getExpire("otp:challenge:login:$number", TimeUnit.MILLISECONDS)
+            if (life > 0) {
+                assertThat(redis.opsForHash<String, String>().get("otp:challenge:login:$number", "requestId")).isEqualTo(first.requestId)
+                restores++
+                assertThat(life).describedAs("a restore never adds life").isLessThanOrEqualTo(lastLife)
+                lastLife = life
+                assertThat(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(life))
+                    .describedAs("never past the first send's expiry")
+                    .isLessThanOrEqualTo(deadline + TimeUnit.MILLISECONDS.toNanos(50))
+            }
+            Thread.sleep(100)
+        }
+        assertThat(restores).describedAs("the earlier code was put back again and again").isGreaterThanOrEqualTo(5)
+        assertThat(refusal { service.verify(number, code, first.requestId) }.code).isEqualTo("otp_expired")
+    }
+
+    @Test
+    fun `a code at its cap is never put back, even when the in-flight misses were counted without it`() {
+        // An instance still running the script from before the shared count (a
+        // rolling deploy) records misses against the in-flight challenge alone.
+        // FALL_BACK must still refuse to restore at the cap.
+        for (fault in outright) {
+            val sender = GatedSender()
+            val service = gatedService(sender, AlmiraProperties.Otp(maxAttempts = 3, maxPerHour = 1_000, maxPerIpPerHour = 1_000))
+            val number = phone()
+            val first = service.request(number, ip())
+            val code = sender.sent.last().second
+            wrongCodes(2, code).forEach { refusal { service.verify(number, it, null) } }
+
+            waitOutCooldown(number)
+            val entered = CountDownLatch(1); val release = CountDownLatch(1)
+            sender.gates += entered to release
+            sender.faults.always("otp", fault)
+            val pool = Executors.newSingleThreadExecutor()
+            try {
+                val resend = pool.submit<String> { refusal { service.request(number, ip()) }.code }
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue()
+                redis.opsForHash<String, String>().increment("otp:challenge:login:$number", "attempts", 1)
+                release.countDown()
+                resend.get(10, TimeUnit.SECONDS)
+            } finally {
+                pool.shutdownNow()
+            }
+            assertThat(redis.hasKey("otp:challenge:login:$number")).describedAs("$fault: 2 + 1 of 3, not put back").isFalse()
+            assertThat(refusal { service.verify(number, code, first.requestId) }.code).describedAs(fault.name).isEqualTo("otp_expired")
+        }
+    }
+
+    @Test
+    fun `a challenge at its cap does not accept the right code, however it got there`() {
+        val sender = RecordingSender()
+        val service = OtpService(redis, sender, props(otp = AlmiraProperties.Otp(maxAttempts = 3, maxPerHour = 1_000, maxPerIpPerHour = 1_000)))
+        val number = phone()
+        val c = service.request(number, ip())
+        redis.opsForHash<String, String>().put("otp:challenge:login:$number", "attempts", "3")
+        assertThat(refusal { service.verify(number, sender.lastCode(), c.requestId) }.code).isEqualTo("otp_expired")
+        assertThat(redis.hasKey("otp:challenge:login:$number")).describedAs("and it is removed").isFalse()
+    }
+
+    @Test
+    fun `wrong codes racing a failing resend cannot buy more than the allowed attempts`() {
+        val max = 5
+        val pool = Executors.newFixedThreadPool(17)
+        try {
+            repeat(15) { round ->
+                val sender = GatedSender()
+                val service = gatedService(sender, AlmiraProperties.Otp(maxAttempts = max, maxPerHour = 1_000, maxPerIpPerHour = 1_000))
+                val number = phone()
+                val first = service.request(number, ip())
+                val code = sender.sent.last().second
+                val k = round % max // 0..4 already used before the race
+                val judged = CopyOnWriteArrayList<String>()
+                wrongCodes(k, code).forEach { judged += refusal { service.verify(number, it, null) }.code }
+
+                waitOutCooldown(number)
+                val entered = CountDownLatch(1); val release = CountDownLatch(1)
+                sender.gates += entered to release
+                sender.faults.always("otp", SandboxFault.REJECTED)
+                val resend = pool.submit<String> { refusal { service.request(number, ip()) }.code }
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue()
+                val resendCode = sender.sent.last().second
+
+                val start = CountDownLatch(1)
+                val guesses = wrongCodes(16, code, resendCode).drop(k).map { guess ->
+                    pool.submit<String> { start.await(); refusal { service.verify(number, guess, null) }.code }
+                }
+                start.countDown()
+                release.countDown() // the failing resend restores while the guesses land
+                guesses.forEach { judged += it.get(10, TimeUnit.SECONDS) }
+                assertThat(resend.get(10, TimeUnit.SECONDS)).isEqualTo("otp_delivery_failed")
+
+                // And after the race settles, more guesses at whatever is live.
+                wrongCodes(16 + max, code, resendCode).drop(16).forEach {
+                    judged += refusal { service.verify(number, it, null) }.code
+                }
+                assertThat(judged.count { it == "otp_invalid" || it == "otp_locked" })
+                    .describedAs("round $round, $k before the race: $judged")
+                    .isLessThanOrEqualTo(max)
+                assertThat(refusal { service.verify(number, code, first.requestId) }.code)
+                    .describedAs("round $round: the earlier code is refused after the cap").isIn("otp_expired", "otp_stale")
+            }
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `wrong codes that lock the resend's challenge while it is in flight lock the code it would restore`() {
+        val sender = GatedSender()
+        val service = gatedService(sender, AlmiraProperties.Otp(maxAttempts = 3, maxPerHour = 1_000, maxPerIpPerHour = 1_000))
+        val number = phone()
+        val first = service.request(number, ip())
+        val code = sender.sent.last().second
+        assertThat(refusal { service.verify(number, wrongFor(code), null) }.code).isEqualTo("otp_invalid")
+
+        waitOutCooldown(number)
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        sender.gates += entered to release
+        sender.faults.always("otp", SandboxFault.REJECTED)
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            val resend = pool.submit<String> { refusal { service.request(number, ip()) }.code }
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue()
+            val resendCode = sender.sent.last().second
+            // Two more wrong codes while the resend is in flight: 1 + 2 = 3 of 3.
+            val during = wrongCodes(3, code, resendCode).drop(1).map { refusal { service.verify(number, it, null) }.code }
+            assertThat(during).describedAs("the third wrong code of three locks").containsExactly("otp_invalid", "otp_locked")
+            release.countDown()
+            assertThat(resend.get(10, TimeUnit.SECONDS)).isEqualTo("otp_delivery_failed")
+        } finally {
+            pool.shutdownNow()
+        }
+        assertThat(redis.hasKey("otp:challenge:login:$number")).describedAs("nothing restored").isFalse()
+        // The right code first: a restored challenge at its cap must not accept it.
+        assertThat(refusal { service.verify(number, code, first.requestId) }.code).isEqualTo("otp_expired")
+        assertThat(refusal { service.verify(number, wrongCodes(4, code).last(), first.requestId) }.code)
+            .describedAs("no fourth wrong code is judged").isEqualTo("otp_expired")
+    }
+
+    @Test
+    fun `a network's wrong-code allowance still counts across restores`() {
+        val (service, sender) = failingService(
+            SandboxFault.REJECTED,
+            AlmiraProperties.Otp(maxAttempts = 10, maxPerHour = 1_000, maxPerIpPerHour = 1_000, maxVerifyFailuresPerIpPerHour = 3),
+        )
+        sender.faults.clear()
+        val attacker = ip()
+        val number = phone()
+        val first = service.request(number, ip())
+        val code = sender.lastCode()
+        for (guess in wrongCodes(3, code)) {
+            assertThat(refusal { service.verify(number, guess, null, ip = attacker) }.code).isEqualTo("otp_invalid")
+            waitOutCooldown(number)
+            sender.faults.always("otp", SandboxFault.REJECTED)
+            refusal { service.request(number, ip()) }
+            sender.faults.clear()
+        }
+        val e = refusal { service.verify(number, code, first.requestId, ip = attacker) }
+        assertThat(e.status).isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
+        assertThat(e.message).contains("this network")
+        assertThat(redis.opsForHash<String, String>().get("otp:challenge:login:$number", "attempts")).isEqualTo("3")
+    }
+
+    @Test
+    fun `a number's and a network's request allowances still count across restores`() {
+        val (service, sender) = failingService(
+            SandboxFault.UNAVAILABLE,
+            AlmiraProperties.Otp(resendCooldown = Duration.ZERO, maxPerHour = 2, maxPerIpPerHour = 1_000),
+        )
+        sender.faults.clear()
+        val number = phone()
+        service.request(number, ip())
+        sender.faults.always("otp", SandboxFault.UNAVAILABLE)
+        repeat(6) { refusal { service.request(number, ip()) } }
+        assertThat(redis.opsForValue().get("otp:rate:phone:$number"))
+            .describedAs("the delivered send still counts; only the failed ones are given back").isEqualTo("1")
+        sender.faults.clear()
+        service.request(number, ip())
+        val e = refusal { service.request(number, ip()) }
+        assertThat(e.status).isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
+        assertThat(e.message).contains("this phone")
+
+        val (netService, netSender) = failingService(
+            SandboxFault.REJECTED,
+            AlmiraProperties.Otp(resendCooldown = Duration.ZERO, maxPerHour = 1_000, maxPerIpPerHour = 3),
+        )
+        netSender.faults.clear()
+        val network = ip()
+        val n = phone()
+        netService.request(n, network)
+        netSender.faults.always("otp", SandboxFault.REJECTED)
+        repeat(2) { assertThat(refusal { netService.request(n, network) }.code).isEqualTo("otp_delivery_failed") }
+        val ne = refusal { netService.request(n, network) }
+        assertThat(ne.status).isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
+        assertThat(ne.message).contains("this network")
+    }
 }

@@ -572,13 +572,16 @@ class OtpService(
         if (matches) {
             // 1 only if this call removed this exact challenge. A concurrent
             // winner, an expiry or a newer challenge all leave nothing to take.
-            val consumed = redis.execute(CONSUME, listOf(key), storedRequestId) ?: 0L
+            val consumed = redis.execute(CONSUME, listOf(key), storedRequestId, cfg.maxAttempts.toString()) ?: 0L
             if (consumed != 1L) throw expired(channel)
             return
         }
 
+        // Counted with the attempts of the challenge this one set aside, while
+        // that one waits on this one's send: a resend that then fails puts it
+        // back, so the two share one allowance until the send settles.
         val attempts = redis.execute(
-            RECORD_MISS, listOf(key), storedRequestId, cfg.maxAttempts.toString(),
+            RECORD_MISS, listOf(key, setAsideKey(storedRequestId)), storedRequestId, cfg.maxAttempts.toString(),
         ) ?: -1L
         if (attempts >= 0) missKey?.let(::recordNetworkMiss)
         when {
@@ -842,27 +845,47 @@ class OtpService(
             Long::class.javaObjectType,
         )
 
+        /**
+         * KEYS: challenge. ARGV: request id, max attempts. 1 when this call took
+         * the challenge. A challenge already at its cap is removed and not
+         * taken: none should exist (RECORD_MISS and FALL_BACK both remove one),
+         * so this is the second lock on the same door.
+         */
         private val CONSUME = DefaultRedisScript(
             """
-            if redis.call('HGET', KEYS[1], 'requestId') == ARGV[1] then
-              return redis.call('DEL', KEYS[1])
+            if redis.call('HGET', KEYS[1], 'requestId') ~= ARGV[1] then
+              return 0
             end
-            return 0
+            if tonumber(redis.call('HGET', KEYS[1], 'attempts') or '0') >= tonumber(ARGV[2]) then
+              redis.call('DEL', KEYS[1])
+              return 0
+            end
+            return redis.call('DEL', KEYS[1])
             """.trimIndent(),
             Long::class.javaObjectType,
         )
 
-        /** -1 when the challenge is gone or replaced; otherwise the new count. */
+        /**
+         * KEYS: challenge, the challenge it set aside (usually absent).
+         * ARGV: request id, max attempts.
+         * -1 when the challenge is gone or replaced; otherwise the count that
+         * decides: its own wrong codes plus those of the challenge it set aside,
+         * which exists only while this one's send has not settled. At the cap
+         * both are removed, so a failing send has nothing to put back. Without
+         * the set-aside count, a resend in flight was a fresh allowance on top
+         * of the attempts the earlier code had used (known-issues 22).
+         */
         private val RECORD_MISS = DefaultRedisScript(
             """
             if redis.call('HGET', KEYS[1], 'requestId') ~= ARGV[1] then
               return -1
             end
             local n = redis.call('HINCRBY', KEYS[1], 'attempts', 1)
-            if n >= tonumber(ARGV[2]) then
-              redis.call('DEL', KEYS[1])
+            local counted = n + tonumber(redis.call('HGET', KEYS[2], 'attempts') or '0')
+            if counted >= tonumber(ARGV[2]) then
+              redis.call('DEL', KEYS[1], KEYS[2])
             end
-            return n
+            return counted
             """.trimIndent(),
             Long::class.javaObjectType,
         )

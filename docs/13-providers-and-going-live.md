@@ -673,6 +673,30 @@ because an emailed code's step already switched to that id. It is put back only
 if nothing newer has replaced the failed request, and never after a timeout or
 a send that worked: a code that may have gone out is always the newest one.
 
+**The attempt cap is security, not housekeeping.** If putting a code back also
+reset its wrong-code count, "guess, resend until it fails, guess again" would
+be unlimited guesses at a live code. So a code and the resend that set it aside
+share **one** allowance until that resend's send settles:
+
+- a wrong code typed while the resend is in flight is judged against its own
+  count **plus** the earlier code's (`RECORD_MISS`), and `attemptsRemaining`
+  says so; at the cap both challenges are removed, so there is nothing to put
+  back;
+- a code put back carries its own count plus the wrong codes tried against the
+  failed one (`FALL_BACK`), and is not put back at all if that reaches the cap;
+- a challenge at its cap never accepts even the right code (`CONSUME` checks).
+  With the shared count this and the `FALL_BACK` check cannot be reached
+  through the API; they stay for a miss counted the old way (a rolling
+  deploy), and are tested by setting that state in Redis;
+- putting a code back never extends its life, and the per-network wrong-code
+  count, the per-number count of sends that went out and the per-network
+  request count all keep counting across restores.
+
+Once the resend has settled as sent or delayed, the earlier code is gone and
+the new code counts only its own wrong codes, as any fresh code does.
+`OtpServiceTest` and `EmailOtpTest` ("a restored code keeps its attempt cap")
+prove each point for phone and email, including guesses racing a failing resend.
+
 And a person who fixes a typo — or tries again once we have topped up — is not
 refused as "too many attempts". The per-network count is never given back: that is the limit
 that stops one network hammering the endpoint, and it holds whether or not our

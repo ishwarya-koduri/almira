@@ -1,0 +1,63 @@
+/* =============================================================================
+   The web client's money and date rules, without a browser (D-11, X-71).
+
+       /System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc \
+         -m scripts/check-format.js
+       # or: node scripts/check-format.js  (as an ES module)
+   ============================================================================= */
+
+import {
+  groupIndian, rupees, compactRupees, daysBetween, relativeKey, withoutZeroRows,
+} from "../backend/src/main/resources/static/app/format.js";
+
+const log = typeof print === "function" ? print : console.log;
+let failures = 0;
+function expect(label, actual, wanted) {
+  const a = JSON.stringify(actual);
+  const w = JSON.stringify(wanted);
+  if (a === w) log(`  ok   ${label}`);
+  else { failures += 1; log(`  FAIL ${label}\n         got    ${a}\n         wanted ${w}`); }
+}
+
+// Indian grouping: the last three digits, then pairs.
+expect("a lakh groups as 1,00,000", groupIndian(100000), "1,00,000");
+expect("forty-two lakh", rupees(4200000), "₹42,00,000");
+expect("a crore and a quarter", rupees(12500000), "₹1,25,00,000");
+expect("under a thousand is left alone", rupees(999), "₹999");
+expect("a negative figure keeps its sign", groupIndian(-150000), "-1,50,000");
+expect("no value is a dash, not ₹0", rupees(null), "—");
+
+// The short form for a tight list.
+expect("₹42 L, with no trailing zeros", compactRupees(4200000), "₹42 L");
+expect("₹4.5 L", compactRupees(450000), "₹4.5 L");
+expect("₹1.25 Cr", compactRupees(12500000), "₹1.25 Cr");
+expect("truncated, never rounded up past what is there", compactRupees(4299999), "₹42.99 L");
+expect("₹1.13 L, not the ₹1.12 L that dividing first gives", compactRupees(113000), "₹1.13 L");
+expect("below a lakh the full figure is already short", compactRupees(85000), "₹85,000");
+expect("a string from JSON is read as a number", compactRupees("2500000"), "₹25 L");
+expect("owed amounts keep their sign", compactRupees(-4200000), "-₹42 L");
+expect("no value has no short form", compactRupees(null), null);
+expect("nonsense has no short form", compactRupees("abc"), null);
+
+// Relative dates count calendar days, not 24-hour spans.
+const evening = new Date(2026, 8, 14, 21, 30);
+expect("tomorrow is 1 even late in the evening", daysBetween("2026-09-15", evening), 1);
+expect("today", relativeKey("2026-09-14", evening), { key: "when.today", count: 0 });
+expect("tomorrow", relativeKey("2026-09-15", evening), { key: "when.tomorrow", count: 1 });
+expect("yesterday", relativeKey("2026-09-13", evening), { key: "when.yesterday", count: 1 });
+expect("in 4 days", relativeKey("2026-09-18", evening), { key: "when.inDays", count: 4 });
+expect("12 days ago", relativeKey("2026-09-02", evening), { key: "when.daysAgo", count: 12 });
+expect("a timestamp is read by its date", relativeKey("2026-09-18T23:59:00Z", evening), { key: "when.inDays", count: 4 });
+expect("no date, no phrase", relativeKey(null, evening), null);
+
+// Noise rows.
+expect("a category holding nothing is dropped",
+  withoutZeroRows([{ key: "gold", value: 100 }, { key: "insurance", value: 0 }, { key: "cash", value: "0.00" }]),
+  [{ key: "gold", value: 100 }]);
+expect("no rows is no rows", withoutZeroRows(undefined), []);
+
+if (failures > 0) {
+  log(`\n${failures} failing`);
+  throw new Error(`${failures} failing`);
+}
+log("\nall passing");

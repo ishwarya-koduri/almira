@@ -1,14 +1,68 @@
 /* =============================================================================
-   Design tokens — docs/02 §2-§5.
-   The single source of truth for how Almira looks. These same values become a
-   Compose theme in the mobile app, so anything added here should be a token
-   rather than a one-off value in a rule.
+   Design tokens — docs/25 (the reference) and docs/02 (the reasoning).
 
-   The palette is deliberately small: neutrals carry the design, one accent, two
-   semantic hues, a gold used exactly once per screen, and a muted category set
-   that only ever appears as 8px dots. Fewer colours read as premium and, more
-   practically, mean nothing on screen competes with the number you came to see.
+   The single source of truth for how the web client looks. No colour, shadow,
+   type size or duration is written anywhere else in the web client: base.css
+   and the screens refer to these names, and scripts/check-design-tokens.js
+   fails if a literal colour turns up in base.css, if a size drops under the
+   floor, or if any text pair falls under the contrast it is meant to hold.
+   The same names and values become the Compose theme in the mobile app;
+   docs/25 has the mapping.
+
+   Colour has roles, not moods (docs/25 §2):
+     · teal   — the one primary action on a screen, focus, links, meters
+     · brass  — the one figure a screen is about (the net worth), in text
+     · gold   — decoration only: the hairline under that figure, a goal ring
+     · rust   — money owed and dues, and nothing else
+     · muted  — every secondary line, captions and notices included
+     · faint  — dividers and disabled chrome; never text
    ============================================================================= */
+
+/* --- Self-hosted type (P-36). Google Fonts' own subset files, downloaded once;
+       docs/25 §8 records where from, and the licences sit beside them.
+       unicode-range means a browser fetches the Telugu or Devanagari file only
+       when a page contains those letters, so an English reader never
+       downloads them. --- */
+@font-face {
+  font-family: "Fraunces"; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url("fonts/fraunces-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Fraunces"; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url("fonts/fraunces-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Inter"; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url("fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter"; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url("fonts/inter-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Noto Serif Telugu"; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url("fonts/noto-serif-telugu-telugu.woff2") format("woff2");
+  unicode-range: U+0951-0952, U+0964-0965, U+0C00-0C7F, U+1CDA, U+1CF2, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: "Noto Sans Telugu"; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url("fonts/noto-sans-telugu-telugu.woff2") format("woff2");
+  unicode-range: U+0951-0952, U+0964-0965, U+0C00-0C7F, U+1CDA, U+1CF2, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: "Noto Serif Devanagari"; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url("fonts/noto-serif-devanagari-devanagari.woff2") format("woff2");
+  unicode-range: U+0900-097F, U+1CD0-1CF9, U+200C-200D, U+20A8, U+20F0, U+25CC, U+A830-A839, U+A8E0-A8FF;
+}
+@font-face {
+  font-family: "Noto Sans Devanagari"; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url("fonts/noto-sans-devanagari-devanagari.woff2") format("woff2");
+  unicode-range: U+0900-097F, U+1CD0-1CF9, U+200C-200D, U+20A8, U+20F0, U+25CC, U+A830-A839, U+A8E0-A8FF;
+}
 
 :root {
   /* --- Light. The canvas is warm off-white "paper", not clinical white. --- */
@@ -16,21 +70,32 @@
   --surface:        #FFFFFF;
   --surface-sunken: #F4F1EA;
   --ink:            #1C1A17;
-  --ink-muted:      #6B6558;
-  --ink-faint:      #9A9384;
+  --ink-muted:      #6B6558;   /* 5.5:1 on canvas — every caption */
+  --ink-faint:      #9A9384;   /* 2.9:1 — dividers and disabled chrome, never text */
   --hairline:       #E7E2D8;
-  --accent:         #0F5A57;
+  --accent:         #0F5A57;   /* 8.0:1 on white */
   --accent-soft:    #DCEBE9;
   --accent-ink:     #FFFFFF;
+  --accent-text:    #0F5A57;   /* the accent as text on accent-soft */
   --positive:       #1B7A43;
-  --caution:        #B4520A;
-  --caution-soft:   #FBEFE4;
-  --gold:           #C9A227;
+  --caution:        #B4520A;   /* money owed and dues only */
+  --caution-soft:   #FCF5EE;
+  --brass:          #8A6D10;   /* the net-worth figure: 4.9:1 on white */
+  --gold:           #C9A227;   /* decorative rules and rings only: 2.4:1, never text */
+  --focus:          #0F5A57;
+  --scrim:          rgba(28, 26, 23, .35);
+  --on-strong:      #FFFFFF;   /* text on an ink ground (a toast) */
+  --block-border:   var(--hairline);
 
-  /* --- Category identifiers. Dots and thin chips only, never large fills.
-         Meaning never rides on colour alone — every one is paired with an
-         icon and a label, which is also what makes it work for the ~8% of
-         men with colour-vision deficiency. --- */
+  /* Charts (docs/25 §6). Theme colours only; no red/green pair anywhere. */
+  --chart-line:     var(--accent);
+  --chart-area:     color-mix(in srgb, var(--accent) 14%, transparent);
+  --chart-grid:     var(--hairline);
+  --chart-text:     var(--ink-muted);
+
+  /* --- Category identifiers. A line icon on a soft tint of the colour (D-10),
+         or an 8px dot where there is no room. Never a large fill, and never
+         the only way the category is told: the label is always beside it. --- */
   --cat-gold:         #C9A227;
   --cat-deposits:     #4E7C59;
   --cat-mutual_funds: #3E6B99;
@@ -44,28 +109,42 @@
   --cat-cash:         #7C8A6A;
   --cat-universal:    #6B6558;
 
-  /* --- Type. A humanist serif for numbers and headlines, a grotesk for UI.
-         Numbers are the hero, so they get the serif and tabular figures. --- */
-  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
-  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* --- Type. Fraunces for numbers and titles, Inter for the interface, and
+         Noto for Telugu and Devanagari, which neither of those has (D-03).
+         Each stack ends in a system face, so text is legible before a font
+         arrives and stays legible if it never does. --- */
+  --font-display: "Fraunces", "Noto Serif Telugu", "Noto Serif Devanagari", "Iowan Old Style", Georgia, serif;
+  --font-ui: "Inter", "Noto Sans Telugu", "Noto Sans Devanagari", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  /* 1.2 modular scale on a 16px base. Body never goes below 14px. */
-  --text-display: 2.98rem;
-  --text-h1:      2.07rem;
-  --text-h2:      1.73rem;
-  --text-h3:      1.44rem;
-  --text-h4:      1.2rem;
-  --text-lg:      1.13rem;
-  --text-base:    1rem;
-  --text-sm:      0.875rem;
-  --text-caption: 0.78rem;
-  --text-overline: 0.72rem;
+  /* The scale is 13 · 15 · 16 · 19 · 23 · 28 · 40 px, written in rem so the
+     device's text size and the in-app "Larger text" setting both scale it.
+     Nothing is smaller than 13px at the default size (D-04). */
+  --text-display: 2.5rem;      /* 40 — the one figure */
+  --text-h1:      1.75rem;     /* 28 — a screen title */
+  --text-h2:      1.4375rem;   /* 23 */
+  --text-h3:      1.1875rem;   /* 19 */
+  --text-h4:      1rem;        /* 16, semibold — a card title */
+  --text-lg:      1.1875rem;   /* 19 */
+  --text-base:    1rem;        /* 16 — body, on a phone too */
+  --text-sm:      0.9375rem;   /* 15 */
+  --text-caption: 0.8125rem;   /* 13 — the floor */
+  --text-overline: 0.8125rem;  /* 13 */
+
+  --leading-body:  1.55;
+  --leading-tight: 1.2;
+  /* Telugu and Devanagari sit taller than Latin and get more room (D-03). */
+  --leading-indic: 1.7;
 
   /* --- Space. Base unit 4px; use the tokens, not raw numbers. --- */
   --space-1: 4px;   --space-2: 8px;   --space-3: 12px;  --space-4: 16px;
   --space-5: 20px;  --space-6: 24px;  --space-8: 32px;  --space-10: 40px;
   --space-12: 48px; --space-16: 64px; --space-24: 96px;
+
+  /* Tap targets grow with the text, so a larger setting never leaves a
+     control smaller than the words in it. 44px at the default size (X-07). */
+  --target:     2.75rem;   /* 44 */
+  --row-height: 4rem;      /* 64 — a whole tappable row */
 
   --radius-sm: 8px;   /* inputs, chips */
   --radius-md: 12px;  /* buttons */
@@ -77,22 +156,31 @@
   --e1: 0 1px 2px rgba(28,26,23,.05), 0 1px 3px rgba(28,26,23,.04);
   --e2: 0 8px 30px rgba(28,26,23,.10);
 
+  /* --- Motion (X-73). Only to confirm that something happened, always under
+         200ms, and zero when the device or the person asks for less. --- */
   --fast: 120ms;
-  --base: 200ms;
-  --slow: 320ms;
+  --base: 160ms;
+  --slow: 190ms;
   --ease: cubic-bezier(.2,.0,.0,1);
   --spring: cubic-bezier(.2,.8,.2,1);
 
-  --content-max: 1120px;
+  /* --- Layout (D-02). Breakpoints are 600px and 1100px; a media query cannot
+         read a custom property, so those two numbers are repeated in base.css
+         and nowhere else. --- */
+  --content-max: 1200px;
   --reading-max: 720px;
+  --gutter: 16px;
+  --rail-width: 88px;
+  --sidebar-width: 224px;
+  --panel-width: 480px;
 
   color-scheme: light;
 }
 
-/* --- Dark. Full parity, not an afterthought: the accent is lifted because
-       #0F5A57 on a dark ground fails contrast. --- */
+/* --- Dark. Full parity: the accent is lifted because #0F5A57 fails on a dark
+       ground, and gold is bright enough here (9:1) to be the figure itself. --- */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme="light"]):not([data-theme="clear"]) {
     --canvas:         #14130F;
     --surface:        #1D1B16;
     --surface-sunken: #242019;
@@ -103,10 +191,16 @@
     --accent:         #3E9E99;
     --accent-soft:    #1E3B39;
     --accent-ink:     #0B1C1B;
+    --accent-text:    #8FD0CB;
     --positive:       #4FB477;
     --caution:        #E0873F;
     --caution-soft:   #33251A;
+    --brass:          #D8B95A;
     --gold:           #D8B95A;
+    --focus:          #8FD0CB;
+    --scrim:          rgba(0, 0, 0, .55);
+    --on-strong:      #14130F;
+    --block-border:   var(--hairline);
     --e1: 0 1px 2px rgba(0,0,0,.30), 0 1px 3px rgba(0,0,0,.20);
     --e2: 0 8px 30px rgba(0,0,0,.45);
     color-scheme: dark;
@@ -124,11 +218,96 @@
   --accent:         #3E9E99;
   --accent-soft:    #1E3B39;
   --accent-ink:     #0B1C1B;
+  --accent-text:    #8FD0CB;
   --positive:       #4FB477;
   --caution:        #E0873F;
   --caution-soft:   #33251A;
+  --brass:          #D8B95A;
   --gold:           #D8B95A;
+  --focus:          #8FD0CB;
+  --scrim:          rgba(0, 0, 0, .55);
+  --on-strong:      #14130F;
+  --block-border:   var(--hairline);
   --e1: 0 1px 2px rgba(0,0,0,.30), 0 1px 3px rgba(0,0,0,.20);
   --e2: 0 8px 30px rgba(0,0,0,.45);
   color-scheme: dark;
+}
+
+/* --- Clear (D-12). For low vision: ink on white, every text pair at 7:1 or
+       better, and a visible border on every block. The layout is identical;
+       only the tokens change. Chosen in Settings, or taken automatically when
+       the theme is System, the device is in light mode and asks for more
+       contrast; a dark-mode reader keeps dark, which is what they chose. --- */
+@media (prefers-contrast: more) and (prefers-color-scheme: light) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --canvas:         #FFFFFF;
+    --surface:        #FFFFFF;
+    --surface-sunken: #F2F2EF;
+    --ink:            #111111;
+    --ink-muted:      #3D3A34;
+    --ink-faint:      #5C574C;
+    --hairline:       #5C574C;
+    --accent:         #0F5A57;
+    --accent-soft:    #E3EFEE;
+    --accent-ink:     #FFFFFF;
+    --accent-text:    #0B4845;
+    --positive:       #125C31;
+    --caution:        #8A3D00;
+    --caution-soft:   #FFFFFF;
+    --brass:          #5E4A00;
+    --gold:           #5E4A00;
+    --focus:          #111111;
+    --scrim:          rgba(0, 0, 0, .6);
+    --on-strong:      #FFFFFF;
+    --block-border:   #111111;
+    --e1: none;
+    --e2: 0 0 0 2px #111111;
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="clear"] {
+  --canvas:         #FFFFFF;
+  --surface:        #FFFFFF;
+  --surface-sunken: #F2F2EF;
+  --ink:            #111111;
+  --ink-muted:      #3D3A34;
+  --ink-faint:      #5C574C;
+  --hairline:       #5C574C;
+  --accent:         #0F5A57;
+  --accent-soft:    #E3EFEE;
+  --accent-ink:     #FFFFFF;
+  --accent-text:    #0B4845;
+  --positive:       #125C31;
+  --caution:        #8A3D00;
+  --caution-soft:   #FFFFFF;
+  --brass:          #5E4A00;
+  --gold:           #5E4A00;
+  --focus:          #111111;
+  --scrim:          rgba(0, 0, 0, .6);
+  --on-strong:      #FFFFFF;
+  --block-border:   #111111;
+  --e1: none;
+  --e2: 0 0 0 2px #111111;
+  color-scheme: light;
+}
+
+/* --- Larger text (D-04). The in-app setting, for a parent whose phone is set
+       smaller than they would like. A percentage multiplies whatever the
+       browser already chose rather than replacing it, so the two never fight. --- */
+:root[data-text="larger"]  { font-size: 118.75%; }  /* 16 → 19 */
+:root[data-text="largest"] { font-size: 137.5%; }   /* 16 → 22 */
+
+/* --- Save-Data (X-72). The display serif is the largest file the page fetches
+       that nobody needs in order to read a number. With Data Saver on, a
+       system serif stands in and the Fraunces files are never requested. --- */
+:root[data-save-data="on"] {
+  --font-display: "Noto Serif Telugu", "Noto Serif Devanagari", "Iowan Old Style", Georgia, serif;
+}
+
+/* --- Reduced motion (X-73). Durations go to zero at the token, so every
+       transition written against them stops, not only the ones somebody
+       remembered to list. base.css stops keyframe animations the same way. --- */
+@media (prefers-reduced-motion: reduce) {
+  :root { --fast: 0ms; --base: 0ms; --slow: 0ms; }
 }

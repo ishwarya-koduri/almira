@@ -9,9 +9,9 @@
    explicitly: left to its defaults, tesseract.js fetches all three from a CDN,
    and ClientVendorAssetsTest fails if any of them goes missing from here.
 
-   The photo is scaled and handed to a worker in memory. Nothing is cached: the
-   model is an ordinary static file the service worker keeps like any other, and
-   the words read go no further than this page until the person sends them.
+   The photo is scaled and handed to a worker in memory, and nothing about it is
+   stored: the words read go no further than this page until the person sends
+   them. The engine and model are ordinary static files the service worker keeps.
    ============================================================================= */
 
 import { layout, fitWithin } from "./ocr-layout.js";
@@ -84,11 +84,12 @@ export async function readPhoto(file, { onProgress } = {}) {
   return { ...reading, confidence: Math.round(Number(data.confidence) || 0), canvas };
 }
 
-/** Frees the engine's memory — a phone does not need 40 MB held for a form it has left. */
+/** Frees the engine and its model — a phone should not hold them for a sheet it has left. */
 export async function releaseReader() {
   const current = engine;
   engine = null;
-  if (current) await (await current).terminate().catch(() => undefined);
+  if (!current) return;
+  try { await (await current).terminate(); } catch { /* it never started, or already stopped */ }
 }
 
 /** The patch of the photo a box covers, with a little room around it, as a data URL. */

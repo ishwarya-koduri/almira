@@ -1350,3 +1350,131 @@ decision is made.
 **Risk if left** A recorded sale that the department knows about but the
 household forgot is not caught before filing.
 
+
+---
+
+## 46. A consolidated account statement is opened on the device, but no registrar's layout is parsed
+
+**Where** `backend/src/main/resources/static/app/statement.js` (`suggestRows`),
+`screens/statement-import.js`; P-11.
+
+**What** Import a statement (CAS) decrypts the PDF with its password in the
+browser, extracts every line, and suggests a row for each line that names a
+folio — likely name from the line above, value from a number labelled "value"
+or else the last on the line, person from an "Investor:" or "Name:" line above.
+Those rules are generic. They are **not** a reader for the CAMS or KFintech
+CAS or the NSDL or CDSL eCAS: nobody on the project has confirmed those layouts
+from an authoritative sample or the registrars' own documentation, and the
+fixture (`scripts/browser-checks/fixtures/statement-synthetic-aes256.pdf`,
+`StatementFixtureTest`) is invented. A real statement may yield no suggestions,
+suggestions with the wrong value (units, NAV or cost instead of market value),
+or rows for lines that are not holdings. The review screen says the
+suggestions are unconfirmed, shows the words each came from, and lets every
+row be fixed, dropped or added from any line.
+
+**Which is right** A reader per format, each written against a statement the
+project may keep as a fixture (or one built from a registrar's published
+specification), recognising the scheme, ISIN, folio, closing units, NAV, cost
+and market value per holder, with the generic path kept as the fallback.
+
+**Why it is still here** It needs real statements, or permission to derive
+fixtures from them, and a human decision on keeping such a file in the
+repository. Parsing: **partial**.
+
+**When to fix** When a household offers a statement (with its details
+replaced) or a registrar's specification is to hand.
+
+**Risk if left** More typing and checking than the feature promises. Nothing
+wrong is saved without the person having seen it beside its source words.
+
+---
+
+## 47. Reading a photo on the device has been checked on a synthetic image in one browser
+
+**Where** `app/ocr.js`, `screens/photo-reader.js`,
+`scripts/browser-checks/on-device.html`; P-13.
+
+**What** tesseract.js 7 with the English integer model reads a clean, drawn
+image of a policy bond in about a second on a desktop Chromium (confidence 95),
+and the whole path — read, send the words with the photo, chips with their
+patches of the photo, the capture form filled — was run against a local
+server. Not yet checked: real photographs (angle, glare, folds, low light); a
+phone, where the engine and model are held while the sheet is open and released
+when it closes, and how much memory that needs was not measured; Safari and
+Firefox; and Telugu or Hindi text, for which no model is shipped. A PDF that is a scan with no text layer is still
+not read on the device; only images are.
+
+**Which is right** A pass on two or three mid-range Android phones and an
+iPhone with real bonds, FD receipts and passbooks, and a decision on shipping
+`tel` and `hin` models (about 2–4 MB each, loaded only when chosen). Rendering
+a scanned PDF's pages with pdf.js and reading them the same way is a small
+addition once the phone results are known.
+
+**Why it is still here** It needs devices and real paper, which the machine it
+was built on does not have.
+
+**When to fix** Before the capture screen is promoted as reading photos.
+
+**Risk if left** Poor readings on real photos. Every field is a suggestion shown
+beside its source and nothing saves until the form does.
+
+---
+
+## 48. The offline copy of the handbook is not protected from someone who can run the browser profile
+
+**Where** `app/offline-store.js`; docs/16 §2 "The offline copy"; P-21.
+
+**What** The copy is encrypted under a non-extractable WebCrypto key kept in a
+separate IndexedDB database, and deleted on sign-out and after 30 days. A
+non-extractable key cannot be read by script, but the browser stores it in the
+same profile, so someone who copies the whole profile while a copy exists, or
+who uses the unlocked browser, can read it. A session revoked from elsewhere
+leaves the copy readable offline until this device next reaches the server (or
+30 days pass). Verified in desktop Chromium through
+`scripts/browser-checks/on-device.html`; the offline launch through the service
+worker on a real phone is not yet verified (Doc 17 §7 already notes the same for
+the shell).
+
+**Which is right** Optionally wrap the key with a secret the person supplies at
+reading time — a WebAuthn PRF from the device's own unlock where supported, a
+short passphrase otherwise — so a copied profile is not enough. It is a trade
+against being able to read the handbook in a hurry, and is a product decision.
+
+**Why it is still here** The decision above, and WebAuthn PRF support on the
+phones this is for.
+
+**When to fix** With that decision, or if the setting is ever offered by default.
+
+**Risk if left** On a device with no disk encryption or screen lock, the
+handbook's names, references and values are as exposed as the signed-in
+session already is.
+
+---
+
+## 49. A private holding for someone else cannot be given a first value by the person who creates it
+
+**Where** `investment/InvestmentService.kt` (`create`, the `initialValuation`
+insert after the row); found through `importing/ImportService.kt`.
+
+**What** Creating a holding as **private** and owned by another member (for
+example a parent recording a managed child's fund), with `initialValuation`,
+fails with `403 forbidden`: the holding row is written, and the valuation insert
+that follows is refused by row-level security because the creator cannot see
+the private row they just made. The whole create rolls back. `POST
+/investments` has this today. The statement and spreadsheet import now retry
+such a row without its value and say "Saved without its value"
+(`ImportApiTest`).
+
+**Which is right** Either the create path writes the first valuation in the
+same statement as the row (so it is covered by the row's insert policy), or the
+valuations insert policy admits a record's creator for the transaction that
+created it. Either keeps the 404-not-403 rule for everyone else.
+
+**Why it is still here** It is a change to the investments write path and its
+RLS policies, which belongs with that module rather than an import.
+
+**When to fix** The next change to `InvestmentService.create` or the valuations
+policies.
+
+**Risk if left** A private holding recorded for someone else has no value until
+its owner adds one; totals for them under-count it.

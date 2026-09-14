@@ -52,6 +52,11 @@ Scope switcher and lens switcher are segmented controls ([Doc 02 §6.5](02-ux-an
 ```
 Five input modes converge here (smart form, quick-add parse chips, scan/OCR, voice, spreadsheet import); type-aware fields; validation on blur; autosaves a draft. Visibility is set at capture and editable later.
 
+**Read on this device** (P-11, P-13). Two of those modes read a file without it, or its password, leaving the phone or laptop:
+
+- **A photo or a scan.** *Read a document* with an image reads the words with tesseract.js in the browser (`app/ocr.js`), then sends the words with the photo to `parse-document` — the photo is stored as proof, as a PDF is. Each field comes back as a chip beside the patch of the photo it was read from; nothing is a holding until the form is saved. A browser without WebAssembly SIMD, or a photo with no words found, falls back to filling it in by hand.
+- **A consolidated account statement.** *Import a statement (CAS)* opens the password-protected PDF with pdf.js in the browser (`app/pdf-text.js`); a missing or wrong password is said as such, and a small lock opens when it is right. *Check what we found* lists a suggested row for every line that names a folio — likely name, folio and value, with the words each came from — grouped by the household member it matches, or under "Not yet matched to a person". Any line can be added as a row by hand. The kept rows become a CSV for the ordinary import (person, fund, folio, market value), dry run first; the value is saved as today's valuation. The suggestions are generic, not a parser for any registrar's layout (known-issues 46).
+
 **Quick add reads real sentences.** "HDFC FD 3 lakh 7.1% matures 5 March 2028 nominee Aarav" comes back as labelled chips — Type · Where · Amount · Rate · Matures · Nominee — with the sentence shown above them and the words each chip came from underlined. What it reads (`QuickAddParser`, pinned by `QuickAddParserTest`):
 
 - **Amounts** as written and said here: `1L`, `2.5Cr`, `50k`, `Rs. 3,00,000/-`, `three lakh`, `one crore twenty lakh`, `1 lakh 50 thousand`, `dedh lakh`, `dhai crore`. The amount chip carries the figure in words ("Three Lakh Rupees"), so a missing zero is caught before it is saved. A bare number under 1,000, a number only in words ("five years") and anything glued into a code (an ISIN) are not money.

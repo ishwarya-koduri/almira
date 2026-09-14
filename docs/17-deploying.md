@@ -581,6 +581,19 @@ Offline, the shell opens and says it needs a connection. Offline data sync is a
 separate project with a synchronisation model attached to it, and is out of
 scope.
 
+**The one exception is opt-in and is not a cache** (P-21). On a device where
+someone turns on Settings → *Readable without a connection*, the page keeps an
+encrypted copy of the family handbook and the people who help, and shows it
+when the API cannot be reached. It is an allowlist of fields, encrypted under a
+non-extractable WebCrypto key held apart from it, deleted on sign-out and after
+30 days, and it never passes through the service worker. Doc 16 §2 "The
+offline copy" is the threat model.
+
+The libraries under `/app/vendor` (pdf.js, tesseract.js and its English model —
+`app/vendor/SOURCE`) are cached the first time they are used, in a cache of
+their own that a shell change does not discard; they are never precached. Only
+opening a statement or reading a photo fetches them, from this server.
+
 Two notes for whoever verifies it:
 
 - It needs **HTTPS** (or localhost). A service worker will not register over
@@ -591,8 +604,11 @@ Two notes for whoever verifies it:
   asset changes the served `sw.js`, and the build fails if the `VERSION` line is
   missing (known-issues 3).
 - `scripts/check-service-worker.js` asserts the routing decisions — shell
-  precached, `/api` never cached, offline navigation falls back to the shell —
-  without a browser. Installability and the offline launch itself still need a
+  precached, `/api` never cached, offline navigation falls back to the shell,
+  the vendor cache survives a shell change — without a browser.
+  `scripts/browser-checks/serve.py` serves `on-device.html`, which checks the
+  offline copy's encryption and deletion, a protected PDF and a photo in a
+  real browser. Installability and the offline launch itself still need a
   real device; they could not be verified on the machine this was built on.
 
 ## 8 · Watching it: health, logs and alerts

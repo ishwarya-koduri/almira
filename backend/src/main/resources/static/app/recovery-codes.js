@@ -2,7 +2,8 @@
    The arithmetic of recovery (docs/12 §10), with nothing else in it.
 
    Pure functions over byte arrays: GF(2^8), Shamir's 2-of-3 split, and the
-   printed code. No crypto.subtle, no DOM, no network — so the same file runs
+   printed code. No crypto.subtle, no DOM, no network — the sentences a person
+   reads go through i18n.js, which needs none of those either — so the same file runs
    under a browser and under `jsc -m scripts/check-recovery.js`, and the fixed
    answers it is held to are the ones RecoveryReferenceTest holds the JVM to.
 
@@ -19,6 +20,8 @@
    share does not fail — it silently combines into a different secret, and
    only the wrap's GCM tag would say so.
    ============================================================================= */
+
+import { t } from "./i18n.js";
 
 export const SECRET_BYTES = 21;
 export const TYPE_KEY = 0x01;
@@ -85,10 +88,10 @@ export function split(secret, threshold, count, coefficient) {
 export function combine(shares) {
   const xs = new Set(shares.map((s) => s.x));
   if (shares.length === 0 || xs.size !== shares.length || xs.has(0)) {
-    throw new Error("These shares can't be combined — two of them are the same share.");
+    throw new Error(t("recovery.code.sameShare"));
   }
   const length = shares[0].y.length;
-  if (shares.some((s) => s.y.length !== length)) throw new Error("These shares are different lengths.");
+  if (shares.some((s) => s.y.length !== length)) throw new Error(t("recovery.code.lengths"));
   const secret = new Uint8Array(length);
   for (let i = 0; i < length; i++) {
     let value = 0;
@@ -161,7 +164,7 @@ export function normaliseCode(text) {
 export function decodeCode(text) {
   const cleaned = normaliseCode(text);
   if (cleaned.length !== 40) {
-    throw new Error(`A code is 40 letters and numbers. This one has ${cleaned.length}.`);
+    throw new Error(t("recovery.code.length", { count: cleaned.length }));
   }
   const raw = new Uint8Array(25);
   let buffer = 0;
@@ -169,7 +172,7 @@ export function decodeCode(text) {
   let at = 0;
   for (const character of cleaned) {
     const value = ALPHABET.indexOf(character);
-    if (value < 0) throw new Error(`"${character}" never appears in a code. Check that character.`);
+    if (value < 0) throw new Error(t("recovery.code.character", { character }));
     buffer = ((buffer << 5) | value) & 0xffff;
     bits += 5;
     if (bits >= 8) {
@@ -178,10 +181,10 @@ export function decodeCode(text) {
     }
   }
   if (crc16(raw.subarray(0, 23)) !== ((raw[23] << 8) | raw[24])) {
-    throw new Error("One of the characters is wrong. Check the code against the sheet, group by group.");
+    throw new Error(t("recovery.code.checksum"));
   }
   if (raw[0] !== TYPE_KEY && raw[0] !== TYPE_SHARE) {
-    throw new Error("This code was made by a newer version of Almira.");
+    throw new Error(t("recovery.code.newer"));
   }
   return { type: raw[0], x: raw[1], body: raw.slice(2, 23) };
 }

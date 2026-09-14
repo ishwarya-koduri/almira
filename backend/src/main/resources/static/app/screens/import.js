@@ -15,32 +15,22 @@ import { api } from "../api.js";
 import { el, mount, sheet, field, select, withBusy, toast } from "../ui.js";
 import { state } from "../state.js";
 import { reload } from "../app.js";
+import { t, categoryName } from "../i18n.js";
 
-const MAPPABLE = [
-  ["title", "Name"],
-  ["investedAmount", "Amount"],
-  ["quantity", "Quantity"],
-  ["unit", "Unit"],
-  ["startDate", "Start date"],
-  ["maturityDate", "Maturity date"],
-  ["institution", "Institution"],
-  ["reference", "Folio / policy / receipt number"],
-  ["type", "Type (if the sheet says)"],
-  ["notes", "Notes"],
-];
+// The column each field can come from; its label is looked up when drawn.
+const MAPPABLE = ["title", "investedAmount", "quantity", "unit", "startDate", "maturityDate",
+  "institution", "reference", "type", "notes"];
 
 export function openImport(onSaved) {
   const fileInput = el("input.input", {
     type: "file",
     accept: ".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "aria-label": "Spreadsheet",
   });
   const body = el("div.stack-3", {},
-    el("p.caption.muted", {},
-      "A CSV or Excel file with one holding per row. Nothing is saved until you've seen what it would do."),
-    field({ label: "Choose a file", control: fileInput }),
+    el("p.caption.muted", {}, t("import.explain")),
+    field({ label: t("import.chooseFile"), control: fileInput }),
   );
-  const next = el("button.btn.btn-primary.grow", { type: "button" }, "Read the file");
+  const next = el("button.btn.btn-primary.grow", { type: "button" }, t("import.read"));
 
   next.onclick = () => withBusy(next, async () => {
     const file = fileInput.files?.[0];
@@ -50,21 +40,21 @@ export function openImport(onSaved) {
     mapAndRun(file, preview, onSaved);
   });
 
-  const modal = sheet({ title: "Import a spreadsheet", body, footer: [next] });
+  const modal = sheet({ title: t("import.title"), body, footer: [next] });
 }
 
 function mapAndRun(file, preview, onSaved) {
   const columnOptions = [
-    { value: "", label: "— not imported —" },
+    { value: "", label: t("import.notImported") },
     ...preview.headers.map((header) => ({ value: header, label: header })),
   ];
 
   const mappingControls = new Map();
-  const mappingFields = MAPPABLE.map(([key, label]) => {
+  const mappingFields = MAPPABLE.map((key) => {
+    const label = t(`import.column.${key}`);
     const control = select({
       options: columnOptions,
       value: preview.suggestedMapping?.[key] || "",
-      "aria-label": label,
     });
     mappingControls.set(key, control);
     return field({ label, control });
@@ -72,26 +62,27 @@ function mapAndRun(file, preview, onSaved) {
 
   const typeSelect = select({
     options: [
-      { value: "", label: "Take it from the sheet, or Anything Else" },
+      { value: "", label: t("import.typeFromSheet") },
       ...state.taxonomy.flatMap((category) =>
-        category.types.map((type) => ({ value: type.id, label: `${category.categoryLabel} — ${type.label}` }))),
+        category.types.map((type) => ({
+          value: type.id, label: `${categoryName(category.categoryCode, category.categoryLabel)} — ${type.label}`,
+        }))),
     ],
-    "aria-label": "Type for every row",
   });
 
   const visibilitySelect = select({
     options: [
-      { value: "private", label: "Private — only the owner" },
-      { value: "household", label: `Shared with ${state.household.name}` },
+      { value: "private", label: t("detail.visibility.private") },
+      { value: "household", label: t("common.sharedWith", { name: state.household.name }) },
     ],
     value: state.user?.defaultVisibility || state.household.defaultVisibility,
-    "aria-label": "Who can see these",
   });
 
-  const outcome = el("div.stack-2", {});
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
-  const dryRun = el("button.btn.grow", { type: "button" }, "Show me what would happen");
-  const commit = el("button.btn.btn-primary.grow", { type: "button", disabled: true }, "Import");
+  // The dry run's answer arrives after a wait, so it is announced (X-85).
+  const outcome = el("div.stack-2", { "aria-live": "polite" });
+  const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
+  const dryRun = el("button.btn.grow", { type: "button" }, t("import.dryRun"));
+  const commit = el("button.btn.btn-primary.grow", { type: "button", disabled: true }, t("import.commit"));
 
   const request = () => ({
     typeId: typeSelect.value || null,
@@ -117,7 +108,9 @@ function mapAndRun(file, preview, onSaved) {
     showReport(report);
     if (isDryRun) commit.disabled = report.total === 0;
     if (!isDryRun) {
-      toast(`${report.imported} added${report.failed ? `, ${report.failed} skipped` : ""}.`);
+      toast(report.failed
+        ? t("import.doneSkipped", { added: report.imported, skipped: report.failed })
+        : t("import.done", { added: report.imported }));
       modal.close();
       await (onSaved ? onSaved() : reload());
     }
@@ -126,12 +119,12 @@ function mapAndRun(file, preview, onSaved) {
   const showReport = (report) => {
     mount(outcome,
       el("div.row.wrap", { style: { gap: "8px" } },
-        el("span.chip.chip-static", {}, `${report.total} rows`),
+        el("span.chip.chip-static", {}, t("import.rows", { count: report.total })),
         el("span.chip.chip-static", {},
-          report.dryRun ? `${report.wouldImport} to add` : `${report.imported} added`),
-        report.duplicates > 0 && el("span.chip.chip-static", {}, `${report.duplicates} already here`),
+          report.dryRun ? t("import.toAdd", { count: report.wouldImport }) : t("import.added", { count: report.imported })),
+        report.duplicates > 0 && el("span.chip.chip-static", {}, t("import.alreadyHere", { count: report.duplicates })),
         report.failed > 0 && el("span.chip.chip-static", { style: { color: "var(--caution)" } },
-          `${report.failed} with a problem`),
+          t("import.withProblem", { count: report.failed })),
       ),
       el("p.caption.muted", {}, report.note),
       // Problems first, then the rows that will land but lost a cell on the way.
@@ -140,14 +133,14 @@ function mapAndRun(file, preview, onSaved) {
         .filter((row) => row.outcome === "failed" || row.outcome === "skipped")
         .slice(0, 20)
         .map((row) => el("div.card.card-tight", {},
-          el("b", {}, `Row ${row.row}`), " ",
+          el("b", {}, t("import.row", { row: row.row })), " ",
           el("span.muted", {}, row.title || ""), " — ", row.message)),
       ...report.rows
         .filter((row) => row.outcome !== "failed" && row.outcome !== "skipped"
           && (row.message || "").includes("Couldn't read"))
         .slice(0, 20)
         .map((row) => el("p.caption.muted", {},
-          `Row ${row.row} — ${row.message}`)),
+          `${t("import.row", { row: row.row })} — ${row.message}`)),
     );
   };
 
@@ -155,23 +148,19 @@ function mapAndRun(file, preview, onSaved) {
   commit.onclick = () => run(commit, false);
 
   const modal = sheet({
-    title: `Import ${preview.fileName}`,
+    title: t("import.fileTitle", { name: preview.fileName }),
     body: el("div.stack-3", {},
       el("p.caption.muted", {}, preview.note),
       el("div.stack-2", {},
-        el("span.overline", {}, "First rows"),
+        el("span.overline", {}, t("import.firstRows")),
         sampleTable(preview),
       ),
       el("div.stack-2", {},
-        el("span.overline", {}, "Which column is which"),
+        el("span.overline", {}, t("import.whichColumn")),
         ...mappingFields,
       ),
-      field({
-        label: "Type for every row", control: typeSelect,
-        help: "One sheet is usually one kind of thing — all your FDs, or all your funds. " +
-          "Leave it unset only if a column above says the type.",
-      }),
-      field({ label: "Who can see these?", control: visibilitySelect }),
+      field({ label: t("import.typeForEvery"), control: typeSelect, help: t("import.typeHelp") }),
+      field({ label: t("import.whoCanSee"), control: visibilitySelect }),
       error,
       outcome,
     ),
@@ -180,7 +169,7 @@ function mapAndRun(file, preview, onSaved) {
 }
 
 function sampleTable(preview) {
-  const wrap = el("div", { style: { overflowX: "auto" } });
+  const wrap = el("div", { style: { overflowX: "auto" }, role: "region", tabindex: "0", "aria-label": t("import.firstRows") });
   const table = el("table.table", {},
     el("thead", {}, el("tr", {}, ...preview.headers.map((header) => el("th", {}, header)))),
     el("tbody", {}, ...preview.sample.map((row) =>

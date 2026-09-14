@@ -18,7 +18,7 @@ import {
   withBusy, toast, rupees, icon,
 } from "../ui.js";
 import { state, myMember, findType, startingVisibility, helpingWhom } from "../state.js";
-import { t } from "../i18n.js";
+import { t, categoryName } from "../i18n.js";
 import { reload } from "../app.js";
 import { openImport } from "./import.js";
 import { openStatementImport } from "./statement-import.js";
@@ -43,15 +43,15 @@ export function openCapture(onSaved) {
 
 function chooseHowToAdd(onSaved) {
   const quick = textInput({
-    placeholder: "1L gold 6.3g at ICICI 3 Aug",
-    "aria-label": "Describe what you're adding",
+    placeholder: t("capture.quick.example"),
+    "aria-label": t("capture.quick.label"),
     autocomplete: "off",
   });
   const chipHost = el("div.stack-2", {});
   // Never wraps (X-70): on a phone the label becomes an arrow, and the name
   // stays for a screen reader.
-  const parseButton = el("button.btn.btn-primary.btn-collapse", { type: "button", "aria-label": "Read it" },
-    el("span.btn-label", { "aria-hidden": "true" }, "Read it"), icon("arrow", "icon.btn-icon"));
+  const parseButton = el("button.btn.btn-primary.btn-collapse", { type: "button", "aria-label": t("capture.quick.read") },
+    el("span.btn-label", { "aria-hidden": "true" }, t("capture.quick.read")), icon("arrow", "icon.btn-icon"));
   let parsed = null;
   // Closed without going on to a next step is an abandonment at step 1
   // (docs/what-we-measure.md); every way forward sets this first.
@@ -87,8 +87,8 @@ function chooseHowToAdd(onSaved) {
               const found = findType(type.value);
               if (found) captureForm(found, onSaved, prefillFrom(result));
             },
-          }, "Check the details")
-        : el("p.caption.muted", {}, "Pick a type below and we'll carry the rest across."),
+          }, t("capture.parse.check"))
+        : el("p.caption.muted", {}, t("capture.parse.pickType")),
     );
   };
 
@@ -125,7 +125,7 @@ function chooseHowToAdd(onSaved) {
         return;
       }
       const result = await api.parseDocument(state.household.id, file);
-      toast(result.note || "Saved the document.");
+      toast(result.note || t("capture.document.saved"));
       useDocument(result);
     },
   });
@@ -134,29 +134,29 @@ function chooseHowToAdd(onSaved) {
   loadTemplates(templateHost, onSaved, advance);
 
   const modal = sheet({
-    title: "Add something",
+    title: t("app.addSomething"),
     onClose: () => { if (!movedOn) reportCaptureAbandoned(1); },
     body: el("div.stack-3", {},
       field({
-        label: "Say it in your own words",
+        label: t("capture.quick.field"),
         control: el("div.row", {}, quick, parseButton),
-        help: "Lakhs and crores are fine — “2.5Cr flat”, “50k SIP”.",
+        help: t("capture.quick.help"),
       }),
       chipHost,
       templateHost,
       el("div.stack-2", {},
-        el("span.overline", {}, "Or"),
+        el("span.overline", {}, t("capture.or")),
         el("div.row.wrap", { style: { gap: "8px" } },
           el("button.btn", {
             type: "button",
             onclick: () => { advance(); pickType((type) => captureForm(type, onSaved)); },
-          }, "Pick a type"),
+          }, t("capture.pickType")),
           el("button.btn", { type: "button", onclick: () => documentInput.click() },
-            "Read a document"),
+            t("capture.readDocument")),
           el("button.btn", {
             type: "button",
             onclick: () => { advance(); openImport(onSaved); },
-          }, "Import a spreadsheet"),
+          }, t("import.title")),
           el("button.btn", {
             type: "button",
             onclick: () => { advance(); openStatementImport(onSaved); },
@@ -220,7 +220,7 @@ async function loadTemplates(host, onSaved, closeParent) {
     const templates = await api.templates(state.household.id);
     if (!templates.length) return;
     mount(host,
-      el("span.overline", {}, "Saved shapes"),
+      el("span.overline", {}, t("capture.templates")),
       el("div.row.wrap", { style: { gap: "8px" } },
         ...templates.slice(0, 8).map((template) => el("button.chip", {
           type: "button",
@@ -236,7 +236,7 @@ async function loadTemplates(host, onSaved, closeParent) {
  * time, which is the whole saving.
  */
 function useTemplate(template, onSaved) {
-  const title = textInput({ value: template.title || template.name, "aria-label": "Name" });
+  const title = textInput({ value: template.title || template.name });
   const amount = moneyInput({ placeholder: "0" });
   if (template.investedAmount) {
     amount.input.value = String(template.investedAmount);
@@ -244,11 +244,11 @@ function useTemplate(template, onSaved) {
   }
   const startDate = textInput({ type: "date" });
   const owner = select({
-    options: state.members.map((m) => ({ value: m.id, label: m.isMe ? `${m.displayName} (me)` : m.displayName })),
-    value: myMember()?.id, "aria-label": "Owner",
+    options: state.members.map((m) => ({ value: m.id, label: m.isMe ? t("common.me", { name: m.displayName }) : m.displayName })),
+    value: myMember()?.id,
   });
-  const save = el("button.btn.btn-primary.grow", { type: "button" }, "Save");
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+  const save = el("button.btn.btn-primary.grow", { type: "button" }, t("app.save"));
+  const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
 
   save.onclick = () => withBusy(save, async () => {
     error.textContent = "";
@@ -260,14 +260,14 @@ function useTemplate(template, onSaved) {
         owners: [{ memberId: owner.value, sharePct: 100 }],
       });
       modal.close();
-      toast(created.visibleToYou ? "Saved." : "Saved. It's private to its owner.");
+      toast(created.visibleToYou ? t("common.saved") : t("capture.savedPrivate"));
       await (onSaved ? onSaved() : reload());
     } catch (apiError) {
       // A template can be missing something its type requires — an FD without
       // its interest rate. Say which field, and offer the full form.
       const fields = apiError.details?.fields;
       error.textContent = fields
-        ? `${Object.values(fields).join(". ")}. Open the full form to fill it in.`
+        ? t("capture.template.missing", { fields: Object.values(fields).join(". ") })
         : apiError.message;
     }
   });
@@ -276,11 +276,13 @@ function useTemplate(template, onSaved) {
     title: template.name,
     body: el("div.stack-3", {},
       el("p.caption.muted", {},
-        `${template.typeLabel}${template.institutionName ? ` at ${template.institutionName}` : ""}.`),
-      field({ label: "Name", control: title }),
-      field({ label: "Amount", control: amount }),
-      field({ label: "Date", control: startDate }),
-      field({ label: "Whose is it?", control: owner }),
+        template.institutionName
+          ? t("capture.template.typeAt", { type: template.typeLabel, institution: template.institutionName })
+          : t("capture.template.type", { type: template.typeLabel })),
+      field({ label: t("capture.field.title"), control: title }),
+      field({ label: t("capture.field.investedAmount"), control: amount }),
+      field({ label: t("common.date"), control: startDate }),
+      field({ label: t("capture.whose"), control: owner }),
       error,
     ),
     footer: [save],
@@ -293,7 +295,7 @@ function useTemplate(template, onSaved) {
 
 function pickType(onPick) {
   let picked = false;
-  const search = textInput({ type: "search", placeholder: "Search types…", "aria-label": "Search types" });
+  const search = textInput({ type: "search", placeholder: t("capture.searchTypes.placeholder"), "aria-label": t("capture.searchTypes.label") });
   const grid = el("div.stack", {});
 
   const draw = (query = "") => {
@@ -302,14 +304,15 @@ function pickType(onPick) {
       .map((category) => ({
         ...category,
         types: category.types.filter((type) =>
-          !q || type.label.toLowerCase().includes(q) || category.categoryLabel.toLowerCase().includes(q)),
+          !q || type.label.toLowerCase().includes(q) || category.categoryLabel.toLowerCase().includes(q)
+            || categoryName(category.categoryCode, category.categoryLabel).toLowerCase().includes(q)),
       }))
       .filter((category) => category.types.length > 0);
 
     mount(grid, ...(groups.length === 0
-      ? [el("p.muted", {}, "Nothing matches. Try a different word — or pick “Anything Else”.")]
+      ? [el("p.muted", {}, t("capture.searchTypes.none"))]
       : groups.map((category) => el("div.stack-2", {},
-          el("div.overline", {}, category.categoryLabel),
+          el("div.overline", { role: "heading", "aria-level": "4" }, categoryName(category.categoryCode, category.categoryLabel)),
           el("div.row.wrap", { style: { gap: "8px" } },
             ...category.types.map((type) => el("button.chip", {
               type: "button",
@@ -323,7 +326,7 @@ function pickType(onPick) {
   draw();
 
   const modal = sheet({
-    title: "What are you adding?",
+    title: t("capture.whatAreYouAdding"),
     onClose: () => { if (!picked) reportCaptureAbandoned(2); },
     body: el("div.stack-3", {}, search, grid),
   });
@@ -379,40 +382,37 @@ export function captureForm(type, onSaved, prefill = null) {
     t("where.captureNote")));
 
   /* --- title, institution, ownership, visibility ---------------------------- */
-  const titleInput = textInput({ placeholder: titlePlaceholder(type), "aria-label": "Name" });
+  const titleInput = textInput({ placeholder: titlePlaceholder(type) });
   const titleField = field({
-    label: "What should we call it?", control: titleInput, required: true,
-    help: "Something you'll recognise in a list a year from now.",
+    label: t("common.whatToCallIt"), control: titleInput, required: true,
+    help: t("capture.titleHelp"),
   });
 
   const institutionSelect = select({
-    options: [{ value: "", label: "Not linked to an institution" }],
-    "aria-label": "Institution",
+    options: [{ value: "", label: t("common.noInstitution") }],
   });
   loadInstitutions(institutionSelect);
 
   // Setting things up for someone (X-32): their records are theirs by default.
   const startingOwner = prefill?.ownerId || helpingWhom()?.id || myMember()?.id;
   const ownerSelect = select({
-    options: state.members.map((m) => ({ value: m.id, label: m.isMe ? `${m.displayName} (me)` : m.displayName })),
+    options: state.members.map((m) => ({ value: m.id, label: m.isMe ? t("common.me", { name: m.displayName }) : m.displayName })),
     value: startingOwner,
-    "aria-label": "Owner",
   });
 
   const defaultVisibility = startingVisibility(startingOwner);
   const visibilitySelect = select({
     options: [
-      { value: "private", label: "Private — only the owner can see it" },
-      { value: "household", label: `Shared with ${state.household.name}` },
-      { value: "scoped", label: "Shared with specific people" },
+      { value: "private", label: t("capture.visibility.private") },
+      { value: "household", label: t("common.sharedWith", { name: state.household.name }) },
+      { value: "scoped", label: t("common.sharedWithSome") },
     ],
     value: defaultVisibility,
-    "aria-label": "Who can see this",
   });
 
   const scopedPicker = el("div.stack-2", { hidden: true },
-    el("span.caption.muted", {}, "Choose who can see it"),
-    el("div.row.wrap", { style: { gap: "8px" } },
+    el("span.caption.muted", { id: `scoped-${type.code}` }, t("capture.chooseWho")),
+    el("div.row.wrap", { role: "group", "aria-labelledby": `scoped-${type.code}`, style: { gap: "8px" } },
       ...state.members.filter((m) => !m.isMe).map((m) => el("button.chip", {
         type: "button", "aria-pressed": "false", "data-member": m.id,
         onclick: (event) => {
@@ -429,21 +429,21 @@ export function captureForm(type, onSaved, prefill = null) {
   /* --- custom fields — the "record anything" escape hatch -------------------- */
   const customHost = el("div.stack-3", {});
   const addCustom = el("button.btn.btn-sm", { type: "button", onclick: () => addCustomField() },
-    "＋ Add your own field");
+    t("capture.custom.add"));
 
   function addCustomField() {
-    const label = textInput({ placeholder: "What is it called?", "aria-label": "Field name" });
+    const label = textInput({ placeholder: t("capture.custom.namePlaceholder"), "aria-label": t("capture.custom.name") });
     const kind = select({
       options: [
-        { value: "text", label: "Text" }, { value: "money", label: "Amount" },
-        { value: "number", label: "Number" }, { value: "date", label: "Date" },
-        { value: "percent", label: "Percent" }, { value: "bool", label: "Yes / no" },
+        { value: "text", label: t("capture.custom.type.text") }, { value: "money", label: t("capture.field.investedAmount") },
+        { value: "number", label: t("capture.custom.type.number") }, { value: "date", label: t("common.date") },
+        { value: "percent", label: t("capture.custom.type.percent") }, { value: "bool", label: t("capture.custom.type.bool") },
       ],
-      "aria-label": "Field type",
+      "aria-label": t("capture.custom.type"),
     });
-    const value = textInput({ placeholder: "Value", "aria-label": "Field value" });
+    const value = textInput({ placeholder: t("capture.custom.valuePlaceholder"), "aria-label": t("capture.custom.value") });
     const counts = el("label.row", { style: { fontSize: "var(--text-caption)" } },
-      el("input", { type: "checkbox" }), " Count this amount in totals");
+      el("input", { type: "checkbox" }), ` ${t("capture.custom.counts")}`);
 
     const row = el("div.card.card-tight.stack-2", {},
       el("div.row", {}, label, kind),
@@ -451,7 +451,7 @@ export function captureForm(type, onSaved, prefill = null) {
         el("button.btn.btn-sm.btn-danger", {
           type: "button",
           onclick: () => { row.remove(); customFields.splice(customFields.indexOf(entry), 1); },
-        }, "Remove")),
+        }, t("app.remove"))),
       counts,
     );
     const entry = { label, kind, value, counts, row };
@@ -466,27 +466,26 @@ export function captureForm(type, onSaved, prefill = null) {
   // absolutely nothing -- while Enter in a text field still works, which makes
   // it look intermittent rather than broken.
   const formId = `capture-${type.code}`;
-  const save = el("button.btn.btn-primary.grow", { type: "submit", form: formId }, "Save");
-  const saveAnother = el("button.btn", { type: "button" }, "Save & add another");
-  const formError = el("div.help.error", { style: { minHeight: "1.15rem" } });
+  const save = el("button.btn.btn-primary.grow", { type: "submit", form: formId }, t("app.save"));
+  const saveAnother = el("button.btn", { type: "button" }, t("capture.saveAnother"));
+  const formError = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
 
   const form = el(`form#${formId}.stack-3`, { onsubmit: (event) => { event.preventDefault(); submit(save, false); } },
     titleField,
     essentials,
-    field({ label: "Where is it held?", control: institutionSelect,
-      help: "Which bank, fund house or broker — so you know what funds what." }),
-    field({ label: "Whose is it?", control: ownerSelect }),
-    field({ label: ["Who can see this?", helpMark("private")], control: visibilitySelect,
+    field({ label: t("capture.whereHeld"), control: institutionSelect, help: t("capture.whereHeldHelp") }),
+    field({ label: t("capture.whose"), control: ownerSelect }),
+    field({ label: [t("common.whoCanSee"), helpMark("private")], control: visibilitySelect,
       help: helpingWhom()
         ? t("capture.visibility.helping", { name: helpingWhom().displayName })
-        : "Private means only the owner. Not even a household admin." }),
+        : t("capture.visibility.help") }),
     scopedPicker,
     (more.children.length > 0 || true) && el("details.more", {},
-      el("summary", {}, "More details"),
+      el("summary", {}, t("common.moreDetails")),
       el("div.stack-3", { style: { paddingTop: "16px" } },
-        ...(more.children.length ? [more] : [el("p.caption.muted", {}, "Nothing else for this type.")]),
+        ...(more.children.length ? [more] : [el("p.caption.muted", {}, t("capture.nothingElse"))]),
         el("div.stack-2", {},
-          el("span.overline", {}, "Your own fields"),
+          el("span.overline", {}, t("capture.custom.title")),
           customHost,
           addCustom,
         ),
@@ -551,7 +550,7 @@ export function captureForm(type, onSaved, prefill = null) {
   const modal = sheet({
     title: helpingWhom()
       ? t("capture.titleFor", { type: type.label.toLowerCase(), name: helpingWhom().displayName })
-      : `Add ${type.label.toLowerCase()}`,
+      : t("capture.addType", { type: type.label.toLowerCase() }),
     onClose: () => { if (!saved) reportCaptureAbandoned(3); },
     body: form,
     footer: [save, saveAnother],
@@ -565,7 +564,7 @@ export function captureForm(type, onSaved, prefill = null) {
     controls.forEach((control) => control.field.setError?.(""));
 
     if (!titleInput.value.trim()) {
-      titleField.setError("Give it a name"); titleInput.focus(); return;
+      titleField.setError(t("common.giveItAName")); titleInput.focus(); return;
     }
 
     const body = {
@@ -588,7 +587,7 @@ export function captureForm(type, onSaved, prefill = null) {
       body.visibleToMemberIds = [...scopedPicker.querySelectorAll('[aria-pressed="true"]')]
         .map((chip) => chip.dataset.member);
       if (body.visibleToMemberIds.length === 0) {
-        formError.textContent = "Choose at least one person to share it with."; return;
+        formError.textContent = t("capture.chooseAtLeastOne"); return;
       }
     }
 
@@ -631,8 +630,8 @@ export function captureForm(type, onSaved, prefill = null) {
         // and the API tells us when the creator cannot read it back. Saying so
         // is far better than appearing to have lost it.
         toast(created.visibleToYou
-          ? `Saved — ${created.investment.valueFormatted || body.title}`
-          : "Saved. It's private to its owner, so it won't appear in your list.");
+          ? t("capture.savedWhat", { what: created.investment.valueFormatted || body.title })
+          : t("capture.savedPrivateList"));
         await (onSaved ? onSaved() : reload());
         if (andAnother) openCapture(onSaved);
       } catch (error) {
@@ -705,7 +704,7 @@ function buildColumnControl(key, def) {
     control.input.addEventListener("blur", () => {
       const value = control.value();
       wrapper.setError("");
-      if (def.required && value === null) wrapper.setError(`${def.label} is needed`);
+      if (def.required && value === null) wrapper.setError(t("capture.isNeeded", { label: def.label }));
       else if (value !== null) wrapper.querySelector(".help").textContent = inCurrency(value, currency);
     });
     return {
@@ -779,7 +778,7 @@ function buildAttributeControl(def) {
     }
     case "bool": {
       const input = el("input", { type: "checkbox" });
-      control = el("label.row", {}, input, el("span.caption.muted", {}, "Yes"));
+      control = el("label.row", {}, input, el("span.caption.muted", {}, t("common.yes")));
       read = () => (input.checked ? true : null);
       write = (value) => { input.checked = value === true || value === "true"; };
       break;
@@ -826,15 +825,15 @@ async function loadInstitutions(selectNode) {
 
 function titlePlaceholder(type) {
   const examples = {
-    fd: "SBI FD — 5 years",
-    gold_physical: "Wedding coins",
-    mf_sip: "Parag Parikh Flexi Cap",
-    stock_listed: "Infosys",
-    insurance_term: "LIC term cover",
-    property: "Flat, Kakinada",
-    universal: "A stake in Meera's bakery",
+    fd: "capture.example.fd",
+    gold_physical: "capture.example.gold_physical",
+    mf_sip: "capture.example.mf_sip",
+    stock_listed: "capture.example.stock_listed",
+    insurance_term: "capture.example.insurance_term",
+    property: "capture.example.property",
+    universal: "capture.example.universal",
   };
-  return examples[type.code] || type.label;
+  return examples[type.code] ? t(examples[type.code]) : type.label;
 }
 
 /**

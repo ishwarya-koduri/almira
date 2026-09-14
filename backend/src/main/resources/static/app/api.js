@@ -14,6 +14,7 @@
 import { remember, forget, reset, peek } from "./cache.js";
 import { clearAllDrafts } from "./drafts.js";
 import { disable as forgetOfflineCopy } from "./offline-store.js";
+import { t } from "./i18n.js";
 
 const REFRESH_KEY = "almira.refresh";
 
@@ -101,7 +102,7 @@ async function refreshTokens() {
     // outage is not a refusal, and signing someone out for it would also delete
     // the offline handbook at the moment they may be relying on it.
     if (response.status >= 500) {
-      throw new ApiError(response.status, "unavailable", "Almira can't be reached just now.");
+      throw new ApiError(response.status, "unavailable", t("api.unreachable"));
     }
     if (!response.ok) { await auth.clear(); return null; }
     auth.set(payload);
@@ -127,7 +128,7 @@ async function request(method, path, body, { retry = true } = {}) {
     throw new ApiError(
       response.status,
       error.code || "unknown",
-      error.message || "Something went wrong.",
+      clientSentence(error) || t("app.somethingWrong"),
       error.details,
     );
   }
@@ -153,12 +154,22 @@ function rememberErrorCode(code) {
 
 export function recentErrorCodes() { return [...errorCodes]; }
 
+/**
+ * The sentence to show for an error. The server's own sentences stay English
+ * (docs/14 rule 2); "offline" is the one written by this client's service
+ * worker, so it can be said in the reader's language.
+ */
+function clientSentence(error) {
+  if (error?.code === "offline") return t("api.offline");
+  return error?.message;
+}
+
 /** Sign-in calls: no token, no refresh, and the server's error as an ApiError. */
 async function unauthenticated(method, path, body) {
   const { response, payload } = await raw(method, path, body);
   if (!response.ok) {
     const e = payload?.error || {};
-    throw new ApiError(response.status, e.code || "unknown", e.message || "Something went wrong.", e.details);
+    throw new ApiError(response.status, e.code || "unknown", clientSentence(e) || t("app.somethingWrong"), e.details);
   }
   return payload;
 }
@@ -581,7 +592,7 @@ async function upload(path, file, fields = {}) {
     const error = payload?.error || {};
     rememberErrorCode(error.code);
     throw new ApiError(response.status, error.code || "unknown",
-      error.message || "Something went wrong.", error.details);
+      clientSentence(error) || t("app.somethingWrong"), error.details);
   }
   forget();
   return payload;
@@ -599,7 +610,7 @@ export async function downloadAuthenticated(path, fallbackName, { method = "GET"
     // to print yet" — rather than a generic failure.
     const error = await response.json().then((body) => body?.error).catch(() => null);
     throw new ApiError(response.status, error?.code || "download_failed",
-      error?.message || "That download didn't work.", error?.details);
+      clientSentence(error) || t("api.downloadFailed"), error?.details);
   }
   const disposition = response.headers.get("Content-Disposition") || "";
   const named = disposition.match(/filename="?([^"]+)"?/);

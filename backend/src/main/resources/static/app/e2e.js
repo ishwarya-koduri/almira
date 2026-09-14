@@ -12,6 +12,7 @@
    ============================================================================= */
 
 import { api } from "./api.js";
+import { t } from "./i18n.js";
 import {
   SECRET_BYTES, TYPE_KEY, TYPE_SHARE, split, combine, encodeCode, decodeCode,
 } from "./recovery-codes.js";
@@ -101,16 +102,16 @@ function parseEnvelope(envelopeText) {
   try {
     raw = fromBase64Url(envelopeText);
   } catch {
-    throw new Error("This doesn't look like sealed data.");
+    throw new Error(t("seal.error.notSealed"));
   }
-  if (raw.length < 33) throw new Error("This doesn't look like sealed data.");
+  if (raw.length < 33) throw new Error(t("seal.error.notSealed"));
   if (raw[0] !== 1) {
     // A version we do not know is not a thing to guess at: guessing here means
     // showing someone the wrong bytes and calling them their note.
-    throw new Error("This was sealed by a newer version of Almira.");
+    throw new Error(t("seal.error.newer"));
   }
   const keyVersion = new DataView(raw.buffer, raw.byteOffset).getUint32(1, false);
-  if (keyVersion < 1) throw new Error("This doesn't look like sealed data.");
+  if (keyVersion < 1) throw new Error(t("seal.error.notSealed"));
 
   return { keyVersion, iv: raw.slice(5, 17), body: raw.slice(17) };
 }
@@ -150,7 +151,7 @@ function aadFor(householdId, recordType, recordId, fieldKey) {
   // a fifth component and the "nothing contains a pipe" reasoning stops being
   // true. Refusing costs nothing; discovering it later costs a silent collision.
   if (parts.some((part) => part.includes("|"))) {
-    throw new Error("A record id or field name may not contain the | character.");
+    throw new Error(t("seal.error.separator"));
   }
   return encoder.encode(parts.join("|"));
 }
@@ -222,7 +223,7 @@ export async function enable(householdId, passphrase) {
 
 export async function unlock(householdId, passphrase) {
   const status = await api.e2eStatus(householdId);
-  if (!status.enabled) throw new Error("No passphrase has been set up for this household yet.");
+  if (!status.enabled) throw new Error(t("seal.error.noPassphrase"));
 
   const stored = status.key;
   const wrappingKey = await wrappingKeyFrom(
@@ -244,7 +245,7 @@ export async function unlock(householdId, passphrase) {
     // future-versioned envelope threw above, with its own sentence, because
     // telling someone their passphrase is wrong when it is not is worse than
     // telling them nothing.
-    throw new Error("That passphrase doesn't open this. Nothing has been changed.");
+    throw new Error(t("seal.error.wrongPassphrase"));
   }
 
   const key = await importContentKey(rawContentKey);
@@ -322,8 +323,8 @@ async function recoveryWrappingKey(secret, salt, kind) {
  * codes are the only form it leaves in, and the caller drops them once saved.
  */
 export async function prepareRecovery(kind) {
-  if (!contentKey) throw new Error("Unlock with your passphrase first.");
-  if (kind !== RECOVERY_KEY && kind !== RECOVERY_SHARES) throw new Error("That isn't a kind of recovery copy.");
+  if (!contentKey) throw new Error(t("seal.error.unlockFirst"));
+  if (kind !== RECOVERY_KEY && kind !== RECOVERY_SHARES) throw new Error(t("seal.error.notAKind"));
   const rawContentKey = new Uint8Array(await crypto.subtle.exportKey("raw", contentKey));
   const secret = randomBytes(SECRET_BYTES);
   const salt = randomBytes(16);
@@ -361,14 +362,14 @@ export function saveRecovery(householdId, prepared, holders) {
 export function secretFromCodes(kind, codes) {
   const decoded = codes.map((code) => String(code || "")).filter((code) => code.trim()).map(decodeCode);
   if (kind === RECOVERY_KEY) {
-    if (decoded.length !== 1) throw new Error("Type the code from the recovery sheet.");
-    if (decoded[0].type !== TYPE_KEY) throw new Error("That is a recovery share, not the recovery sheet.");
+    if (decoded.length !== 1) throw new Error(t("seal.error.typeSheetCode"));
+    if (decoded[0].type !== TYPE_KEY) throw new Error(t("seal.error.shareNotSheet"));
     return decoded[0].body;
   }
   if (decoded.some((code) => code.type !== TYPE_SHARE)) {
-    throw new Error("That is the recovery sheet, not a share. Choose “Recovery sheet” instead.");
+    throw new Error(t("seal.error.sheetNotShare"));
   }
-  if (decoded.length < 2) throw new Error("Type two of the three shares.");
+  if (decoded.length < 2) throw new Error(t("seal.error.twoShares"));
   return combine(decoded.map((code) => ({ x: code.x, y: code.body })));
 }
 
@@ -388,20 +389,20 @@ async function openRecoveryCopy(slot, secret) {
     ));
   } catch {
     throw new Error(slot.kind === RECOVERY_KEY
-      ? "That code doesn't open this recovery sheet. It may be an older sheet. Nothing has been changed."
-      : "Those shares don't open this. They may be from an older set, or not from the same set. Nothing has been changed.");
+      ? t("seal.error.sheetWrong")
+      : t("seal.error.sharesWrong"));
   }
   const key = await importContentKey(rawContentKey);
   await open(key, slot.verifier, null);
   if (await contentKeyIdOf(rawContentKey) !== slot.contentKeyId) {
-    throw new Error("This copy doesn't match the key it says it holds. Nothing has been changed.");
+    throw new Error(t("seal.error.copyMismatch"));
   }
   return { key, rawContentKey };
 }
 
 function slotOf(status, kind) {
   const slot = (status.slots || []).find((candidate) => candidate.kind === kind);
-  if (!slot) throw new Error(kind === RECOVERY_KEY ? "No recovery sheet has been made." : "No recovery shares have been made.");
+  if (!slot) throw new Error(t(kind === RECOVERY_KEY ? "seal.error.noSheet" : "seal.error.noShares"));
   return slot;
 }
 
@@ -428,7 +429,7 @@ export async function practiseRecovery(householdId, kind, codes) {
  */
 export async function recoverPassphrase(householdId, kind, codes, newPassphrase) {
   const [status, copies] = await Promise.all([api.e2eStatus(householdId), api.recovery(householdId)]);
-  if (!status.enabled) throw new Error("No passphrase has been set up for this household yet.");
+  if (!status.enabled) throw new Error(t("seal.error.noPassphrase"));
   const secret = secretFromCodes(kind, codes);
   let opened;
   try {
@@ -474,7 +475,7 @@ export async function openWithTheirRecovery(householdId, memberId, kind, codes) 
 /** A value [memberId] sealed, opened with the key their recovery copy gave this session. */
 export async function openSealedValueAs(memberId, householdId, recordType, recordId, fieldKey, ciphertext) {
   const key = subjectKeys.get(memberId);
-  if (!key) throw new Error("Open it with the recovery sheet or shares first.");
+  if (!key) throw new Error(t("seal.error.openFirst"));
   return open(key, ciphertext, aadFor(householdId, recordType, recordId, fieldKey));
 }
 
@@ -497,7 +498,7 @@ export async function openSealedValueAs(memberId, householdId, recordType, recor
 const valueBytes = (text) => encoder.encode(text);
 
 export async function sealField(householdId, recordType, recordId, fieldKey, text) {
-  if (!contentKey) throw new Error("Unlock with your passphrase first.");
+  if (!contentKey) throw new Error(t("seal.error.unlockFirst"));
   const ciphertext = await seal(
     contentKey, valueBytes(text), aadFor(householdId, recordType, recordId, fieldKey),
   );
@@ -521,7 +522,7 @@ export async function readSealed(householdId, recordType, recordId) {
     } catch {
       // Shown as unreadable rather than thrown: one bad value must not take the
       // whole screen down with it.
-      return { ...value, locked: true, error: "This one couldn't be opened." };
+      return { ...value, locked: true, error: t("seal.error.couldNotOpen") };
     }
   }));
 }
@@ -533,7 +534,7 @@ export async function readSealed(householdId, recordType, recordId) {
  * decides how to say which (docs/20).
  */
 export async function openSealedValue(householdId, recordType, recordId, fieldKey, ciphertext) {
-  if (!contentKey) throw new Error("Unlock with your passphrase first.");
+  if (!contentKey) throw new Error(t("seal.error.unlockFirst"));
   return open(contentKey, ciphertext, aadFor(householdId, recordType, recordId, fieldKey));
 }
 

@@ -24,7 +24,7 @@
 // does (backend/build.gradle.kts, known-issues 3). Bumping the number by hand
 // is still allowed and no longer required. Old caches are removed on activate,
 // so the version is the only bookkeeping.
-const VERSION = "almira-v39";
+const VERSION = "almira-v40";
 const SHELL = `${VERSION}-shell`;
 
 // The libraries under /app/vendor are pinned and their paths carry their
@@ -46,6 +46,10 @@ const SHELL_FILES = [
   "/app/tokens.css",
   "/app/base.css",
   "/app/app.js",
+  // app.js imports it: a redraw keeps the screen until the new one is ready (X-05).
+  "/app/redraw.js",
+  // app.js imports it too: headings a screen reader can jump between (X-85).
+  "/app/headings.js",
   "/app/api.js",
   // api.js imports it: sign-out clears drafts kept on the device (X-83).
   "/app/drafts.js",
@@ -56,6 +60,9 @@ const SHELL_FILES = [
   "/app/prefs.js",
   "/app/state.js",
   "/app/i18n.js",
+  // i18n.js imports them: Telugu and Hindi drafts awaiting review (X-06, docs/14).
+  "/app/i18n-te.js",
+  "/app/i18n-hi.js",
   "/app/screens/auth.js",
   "/app/auth-outcome.js",
   "/app/sign-in-security.js",

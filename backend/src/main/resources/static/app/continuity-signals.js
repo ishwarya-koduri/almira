@@ -13,7 +13,7 @@
 
 import { api, ApiError } from "./api.js";
 import {
-  el, mount, sheet, field, select, moneyInput, withBusy, toast, notice, ring, money, formatDate,
+  el, mount, sheet, field, select, moneyInput, withBusy, toast, notice, ring, money, formatDate, amountWords,
 } from "./ui.js";
 import { state } from "./state.js";
 import { t } from "./i18n.js";
@@ -42,7 +42,7 @@ const tickMark = () => el("span.signal-tick", { html: TICK, "aria-hidden": "true
 function periodWords(days) {
   const key = `quiet.period.${days}`;
   const text = t(key);
-  return text === key ? `${days} days` : text.toLowerCase();
+  return text === key ? t("sharing.days", { count: days }) : text.toLowerCase();
 }
 
 /** Pure: the sentence for one step, in the reader's language. */
@@ -125,7 +125,7 @@ function quietSheet(view, redraw) {
       onclick: () => { period = days; draw(); },
     }, t(`quiet.period.${days}`)))));
   draw();
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+  const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
   const save = el("button.btn.btn-primary.grow", { type: "button" }, t("app.save"));
   save.onclick = () => withBusy(save, async () => {
     error.textContent = "";
@@ -271,7 +271,7 @@ async function askSheet(redraw) {
   const index = await api.whereAndWho(hid).catch(() => ({ records: [] }));
   const records = index.records || [];
 
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+  const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
   if (people.length === 0 || records.length === 0) {
     sheet({
       title: t("ask.title"),
@@ -340,7 +340,7 @@ export function protectionCard(view, redraw) {
       gauge,
       el("div.stack-2", {},
         el("span.money-figure", {}, money(view.termCoverFormatted, view.termCover)),
-        el("span.caption", {}, view.termCoverInWords),
+        el("span.caption", {}, amountWords(view.termCoverInWords, view.termCover)),
         view.annualExpensesFormatted && el("span.caption", {},
           `${t("protect.expenses")}: ${view.annualExpensesFormatted}`),
       ),
@@ -380,7 +380,7 @@ function protectionSheet(view, redraw) {
     const box = el("input", { type: "checkbox", checked: chosen.has(member.id), value: member.id });
     return { member, box, row: el("label.check-row", {}, box, el("span.grow", {}, el("span.check-label", {}, member.displayName))) };
   });
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
+  const error = el("div.help.error", { role: "alert", style: { minHeight: "1.15rem" } });
   const save = el("button.btn.btn-primary.grow", { type: "button" }, t("app.save"));
   save.onclick = () => withBusy(save, async () => {
     error.textContent = "";

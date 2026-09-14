@@ -14,17 +14,12 @@ import { whereWhoCard } from "../where.js";
 import { sealedNoteCard } from "../sealed-notes.js";
 import { reload } from "../app.js";
 import { helpMark } from "../glossary.js";
+import { t } from "../i18n.js";
 
-const KINDS = [
-  { value: "savings", label: "Savings account" },
-  { value: "current", label: "Current account" },
-  { value: "demat", label: "Demat account" },
-  { value: "folio", label: "Mutual fund folio" },
-  { value: "wallet", label: "Wallet" },
-  { value: "locker", label: "Bank locker" },
-  { value: "other", label: "Something else" },
-];
-const KIND_LABEL = Object.fromEntries(KINDS.map((k) => [k.value, k.label]));
+// Labels are looked up when drawn, so a change of language reaches them.
+const KIND_CODES = ["savings", "current", "demat", "folio", "wallet", "locker", "other"];
+const kinds = () => KIND_CODES.map((value) => ({ value, label: t(`accounts.kind.${value}`) }));
+const kindLabel = (code) => (KIND_CODES.includes(code) ? t(`accounts.kind.${code}`) : code);
 
 export async function accountsScreen(host) {
   mount(host, el("div.stack", {}, skeletonRows(3)));
@@ -32,17 +27,16 @@ export async function accountsScreen(host) {
 
   mount(host, el("div.stack", {},
     el("div.row-between.wrap", {},
-      el("h1", {}, "Accounts"),
-      el("button.btn.btn-primary", { type: "button", onclick: () => openForm() }, "＋ Add an account"),
+      el("h1", {}, t("nav.accounts")),
+      el("button.btn.btn-primary", { type: "button", onclick: () => openForm() }, t("accounts.add")),
     ),
-    el("p.muted", { style: { marginTop: "-12px" } },
-      "Where things are held, so you know what funds what."),
+    el("p.muted", { style: { marginTop: "-12px" } }, t("accounts.lead")),
 
     rows.length === 0
       ? el("div.card", {}, empty({
-          title: "No accounts yet",
-          body: "Add the bank accounts, demat accounts and folios your holdings sit in.",
-          action: el("button.btn.btn-primary", { onclick: () => openForm() }, "＋ Add an account"),
+          title: t("accounts.empty.title"),
+          body: t("accounts.empty.body"),
+          action: el("button.btn.btn-primary", { type: "button", onclick: () => openForm() }, t("accounts.add")),
         }))
       : el("div.card.card-tight", {},
           el("div.list", {}, ...rows.map((row) => el("button.list-row", {
@@ -51,7 +45,7 @@ export async function accountsScreen(host) {
             el("div.grow", { style: { minWidth: 0 } },
               el("div.title", {}, row.label),
               el("div.meta", {}, [
-                KIND_LABEL[row.accountKind] || row.accountKind,
+                kindLabel(row.accountKind),
                 row.institutionName,
                 row.numberMasked,
                 row.holders.map((h) => h.name).filter(Boolean).join(" & "),
@@ -60,10 +54,11 @@ export async function accountsScreen(host) {
             el("div.amount", {},
               el("div.meta", {},
                 row.linkedInvestmentCount === 0
-                  ? "nothing linked"
-                  : `${row.linkedInvestmentCount} linked`),
+                  ? t("accounts.nothingLinked")
+                  : t("accounts.linked", { count: row.linkedInvestmentCount })),
             ),
-            row.hasFullNumber && el("span.pill.pill-accent", { title: "Full number stored, encrypted" }, "Full"),
+            row.hasFullNumber && el("span.pill.pill-accent", { title: t("accounts.fullStored") },
+              el("span", { "aria-hidden": "true" }, t("accounts.full")), el("span.sr-only", {}, t("accounts.fullStored"))),
           ))),
         ),
   ));
@@ -76,68 +71,61 @@ export async function accountsScreen(host) {
 
   function openForm(prefill = null) {
     const holderId = prefill?.memberId || myMember()?.id;
-    const label = textInput({ placeholder: "SBI savings — salary", "aria-label": "Name", value: prefill?.title || "" });
-    const kind = select({ options: KINDS, value: prefill?.accountKind || "savings", "aria-label": "Kind" });
-    const number = textInput({ placeholder: "Account number", "aria-label": "Account number" });
-    const ifsc = textInput({ placeholder: "SBIN0001234", "aria-label": "IFSC" });
+    const label = textInput({ placeholder: t("accounts.nameExample"), value: prefill?.title || "" });
+    const kind = select({ options: kinds(), value: prefill?.accountKind || "savings" });
+    const number = textInput({ placeholder: t("accounts.number") });
+    const ifsc = textInput({ placeholder: "SBIN0001234" });
 
     const storeFull = el("input", { type: "checkbox" });
     const storeFullRow = el("label.row", { style: { alignItems: "flex-start", gap: "8px" } },
       storeFull,
       el("div", {},
-        el("div", { style: { fontSize: "var(--text-sm)" } }, "Keep the whole number"),
-        el("div.caption.muted", {},
-          "Off by default. We keep only the last four digits — enough to recognise " +
-          "the account. Turn this on and the rest is stored encrypted, and seeing " +
-          "it later needs a fresh confirmation."),
+        el("div", { style: { fontSize: "var(--text-sm)" } }, t("accounts.keepWhole")),
+        el("div.caption.muted", {}, t("accounts.keepWholeHelp")),
       ),
     );
 
     const visibility = select({
       options: [
-        { value: "private", label: "Private — only its holders" },
-        { value: "household", label: `Shared with ${state.household.name}` },
+        { value: "private", label: t("accounts.visibility.private") },
+        { value: "household", label: t("common.sharedWith", { name: state.household.name }) },
       ],
       value: startingVisibility(holderId),
-      "aria-label": "Who can see this",
     });
 
     const institution = select({
-      options: [{ value: "", label: "Not linked to an institution" }],
-      "aria-label": "Institution",
+      options: [{ value: "", label: t("common.noInstitution") }],
     });
     api.institutions(state.household.id).then((list) => {
       list.forEach((i) => institution.append(el("option", { value: i.id }, i.name)));
       if (prefill?.institutionId) institution.value = prefill.institutionId;
     }).catch(() => { /* optional */ });
 
-    const labelField = field({ label: "What should we call it?", control: label, required: true });
-    const save = el("button.btn.btn-primary.grow", { type: "button" }, "Save");
+    const labelField = field({ label: t("common.whatToCallIt"), control: label, required: true });
+    const save = el("button.btn.btn-primary.grow", { type: "button" }, t("app.save"));
 
     const modal = sheet({
-      title: "Add an account",
+      title: t("accounts.addTitle"),
       body: el("div.stack-3", {},
         labelField,
-        field({ label: ["What kind?", helpMark("folio")], control: kind }),
-        field({ label: "Which bank or fund house?", control: institution }),
-        field({ label: "Account number", control: number,
-          help: "We'll keep only the last four digits unless you say otherwise." }),
+        field({ label: [t("common.whatKind"), helpMark("folio")], control: kind }),
+        field({ label: t("accounts.whichBank"), control: institution }),
+        field({ label: t("accounts.number"), control: number, help: t("accounts.numberHelp") }),
         storeFullRow,
         el("details.more", {},
-          el("summary", {}, "More details"),
+          el("summary", {}, t("common.moreDetails")),
           el("div.stack-3", { style: { paddingTop: "16px" } },
             field({ label: "IFSC", control: ifsc }),
           ),
         ),
-        field({ label: "Who can see this?", control: visibility,
-          help: "Private means only its holders — not even a household admin." }),
+        field({ label: t("common.whoCanSee"), control: visibility, help: t("accounts.visibility.help") }),
       ),
       footer: [save],
     });
 
     save.onclick = () => withBusy(save, async () => {
       labelField.setError("");
-      if (!label.value.trim()) { labelField.setError("Give it a name"); return; }
+      if (!label.value.trim()) { labelField.setError(t("common.giveItAName")); return; }
       try {
         await api.createAccount(state.household.id, {
           label: label.value.trim(),
@@ -150,7 +138,7 @@ export async function accountsScreen(host) {
           holders: [{ memberId: holderId, holderType: "primary" }],
         });
         modal.close();
-        toast("Saved.");
+        toast(t("common.saved"));
         await reload();
       } catch (error) { labelField.setError(error.message); }
     });
@@ -161,38 +149,38 @@ export async function accountsScreen(host) {
 
   async function openDetail(id) {
     const body = el("div.stack-3", {}, skeletonRows(2));
-    const modal = sheet({ title: "Account", body });
+    const modal = sheet({ title: t("accounts.detailTitle"), body });
     const row = await api.account(state.household.id, id);
 
     const numberLine = el("div", { style: { fontFamily: "var(--font-mono)" } },
-      row.numberMasked || "No number recorded");
+      row.numberMasked || t("accounts.noNumber"));
 
     const draw = () => mount(body, el("div.stack-3", {},
       el("div", {},
         el("h3", {}, row.label),
         el("div.caption.muted", {},
-          [KIND_LABEL[row.accountKind] || row.accountKind, row.institutionName]
+          [kindLabel(row.accountKind), row.institutionName]
             .filter(Boolean).join(" · ")),
       ),
 
       el("div.card.card-tight", {},
         el("div.row-between", {},
-          el("div", {}, el("div.overline", {}, "Number"), numberLine),
+          el("div", {}, el("div.overline", {}, t("accounts.numberShort")), numberLine),
           row.hasFullNumber && el("button.btn.btn-sm", {
             type: "button", onclick: (e) => reveal(e.currentTarget),
-          }, "Show full number"),
+          }, t("accounts.showFull")),
         ),
         !row.hasFullNumber && el("div.caption.muted", { style: { marginTop: "8px" } },
-          "Only the last four digits are saved for this account."),
+          t("accounts.lastFourOnly")),
       ),
 
       el("div.card.card-tight.stack-2", {},
-        el("div.overline", {}, "Holders & privacy"),
-        ...row.holders.map((h) => detailRow(h.name, h.holderType === "joint" ? "joint" : "primary")),
-        detailRow("Who can see it", row.visibility === "household"
-          ? `Everyone in ${state.household.name}`
-          : row.visibility === "scoped" ? "Specific people" : "Only its holders"),
-        detailRow("Holdings linked", String(row.linkedInvestmentCount)),
+        el("div.overline", {}, t("accounts.holdersPrivacy")),
+        ...row.holders.map((h) => detailRow(h.name, t(h.holderType === "joint" ? "accounts.holder.joint" : "accounts.holder.primary"))),
+        detailRow(t("common.whoCanSeeIt"), row.visibility === "household"
+          ? t("common.everyoneIn", { name: state.household.name })
+          : row.visibility === "scoped" ? t("common.specificPeople") : t("accounts.visibility.holdersOnly")),
+        detailRow(t("accounts.holdingsLinked"), String(row.linkedInvestmentCount)),
         row.ifsc && detailRow("IFSC", row.ifsc),
       ),
 
@@ -224,29 +212,28 @@ export async function accountsScreen(host) {
       // The button goes: it has done its job, and leaving it there invites a
       // second reveal that would write another audit entry for no new reason.
       button?.remove();
-      toast("Shown. This isn't saved anywhere on this device.");
+      toast(t("accounts.shown"));
     }
 
     async function confirmIdentity(button) {
       const challenge = await api.stepUpRequest();
       const code = textInput({
         class: "otp-input", inputMode: "numeric", autocomplete: "one-time-code",
-        maxLength: 6, placeholder: "······", "aria-label": "6-digit code",
+        maxLength: 6, placeholder: "······", "aria-label": t("common.sixDigitCode"),
       });
       const codeField = field({
         // Where it went depends on how this account signs in; older servers do not say.
-        label: challenge.channel === "email" ? "Enter the code we emailed you" : "Enter the code we texted you",
+        label: challenge.channel === "email" ? t("common.codeEmailed") : t("common.codeTexted"),
         control: code, required: true,
-        help: "Just to be sure it's you before we show the full number.",
+        help: t("accounts.revealHelp"),
       });
-      const confirm = el("button.btn.btn-primary", { type: "button" }, "Confirm");
+      const confirm = el("button.btn.btn-primary", { type: "button" }, t("stepUp.confirm"));
       const inner = sheet({
-        title: "Confirm it's you",
+        title: t("stepUp.title"),
         body: el("div.stack-3", {},
           codeField,
           challenge.developmentCode && el("div.banner.banner-accent", {},
-            el("div", {}, el("b", {}, "Development mode — "), "the code is ",
-              el("b", {}, challenge.developmentCode), "."),
+            el("div", {}, t("stepUp.developmentCode", { code: challenge.developmentCode })),
           ),
         ),
         footer: [confirm],

@@ -328,6 +328,22 @@ export const api = {
   // --- documents ------------------------------------------------------------
   documents:     (hid)            => api.get(`/api/v1/households/${hid}/documents`),
   documentAccess: (hid, id)       => api.post(`/api/v1/households/${hid}/documents/${id}/access`),
+
+  // --- data rights (docs/23 "Your data rights") -------------------------------
+  privacy:       ()               => api.get("/api/v1/me/privacy"),
+  acceptNotice:  (version)        => api.post("/api/v1/me/privacy/notice/accept", { version }),
+  changeConsent: (purpose, given) => api.post("/api/v1/me/privacy/consents", { purpose, given }),
+  consentHistory: ()              => api.get("/api/v1/me/privacy/history"),
+  accessSummary: ()               => api.get("/api/v1/me/privacy/summary"),
+  rightsRequest: (body)           => api.post("/api/v1/me/privacy/requests", body),
+  withdrawRightsRequest: (id)     => api.post(`/api/v1/me/privacy/requests/${id}/withdraw`),
+  nominate:      (body)           => api.post("/api/v1/me/privacy/nominees", body),
+  revokeNominee: (id)             => api.del(`/api/v1/me/privacy/nominees/${id}`),
+  parentalConsents: (hid)         => api.get(`/api/v1/households/${hid}/parental-consents`),
+  giveParentalConsent: (hid, memberId, body) =>
+    api.post(`/api/v1/households/${hid}/members/${memberId}/parental-consent`, body),
+  withdrawParentalConsent: (hid, id) =>
+    api.post(`/api/v1/households/${hid}/parental-consents/${id}/withdraw`),
 };
 
 /**

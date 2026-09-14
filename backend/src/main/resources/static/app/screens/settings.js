@@ -5,7 +5,7 @@ import {
   el, mount, sheet, select, field, textInput, toast, empty, rupees, formatDate, withBusy, segmented,
 } from "../ui.js";
 import { state, update } from "../state.js";
-import { reload, redraw } from "../app.js";
+import { reload, redraw, navigate } from "../app.js";
 import { t, language, LANGUAGES } from "../i18n.js";
 import { e2e, enable as enableE2e, unlock as unlockE2e } from "../e2e.js";
 import { privacyLink } from "../privacy.js";
@@ -408,7 +408,9 @@ function privacyCard() {
   return el("div.card.stack-3", {},
     el("h4", {}, t("privacy.title")),
     el("p.caption.muted", { style: { margin: 0 } }, t("privacy.summary")),
-    el("div.row", {}, privacyLink()),
+    el("div.row", {}, privacyLink(),
+      el("button.btn.btn-ghost.btn-sm", { type: "button", onclick: () => navigate("rights") },
+        t("rights.open"))),
   );
 }
 

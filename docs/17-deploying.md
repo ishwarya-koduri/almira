@@ -488,6 +488,11 @@ marker on each. What matters at deploy time, beyond the four secrets in §1:
   `ALMIRA_PROVIDER_*_MAX_ATTEMPTS` / `_RETRY_BACKOFF`, the
   `ALMIRA_PROVIDER_EMAIL_*` group, `ALMIRA_OTP_SEND_TIMEOUT` (default `5s`, must
   be >0 and ≤15s) and `ALMIRA_OUTBOX_POLL_INTERVAL` (default `PT2S`).
+- **Before 13 May 2027, not optional in practice:** `ALMIRA_GRIEVANCE_NAME`
+  and `ALMIRA_GRIEVANCE_EMAIL`, the grievance contact every rights reply names
+  (docs/23 "Your data rights"). Unset, the server starts and the page says no
+  contact has been named. `ALMIRA_GRIEVANCE_RESPONSE_DAYS` (default 30) outside
+  1–90 refuses to start.
 - **The one footgun:** enabling the email channel
   (`ALMIRA_SIGN_IN_CHANNELS` including `email`) with an **empty**
   `ALMIRA_ALPHA_EMAIL_ALLOWLIST` **refuses to start**, by design — an open email

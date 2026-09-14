@@ -7,7 +7,10 @@
    one changes, so does the other (scripts/check-spec.py holds them together).
 
    It is a draft, and says so: it has not had legal review, and the question of
-   a key holder's consent is open. It never states a legal conclusion.
+   a key holder's consent is open. It never states a legal conclusion. The
+   consent, rights, children and complaints sections describe what
+   screens/rights.js and the family screen actually do; the version a person
+   accepts is recorded server-side (V45).
    ============================================================================= */
 
 import { el, sheet } from "./ui.js";
@@ -22,6 +25,10 @@ const SECTIONS = [
     "privacy.keyHolder.guidance",
     "privacy.keyHolder.pending",
   ]],
+  ["privacy.consent.title", ["privacy.consent.body"]],
+  ["privacy.rights.title", ["privacy.rights.body"]],
+  ["privacy.children.title", ["privacy.children.body"]],
+  ["privacy.grievance.title", ["privacy.grievance.body"]],
   ["privacy.never.title", ["privacy.never.body"]],
 ];
 

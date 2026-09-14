@@ -20,6 +20,7 @@ import { continuityScreen } from "./screens/continuity.js";
 import { t, language } from "./i18n.js";
 import { openCapture } from "./screens/capture.js";
 import { whereScreen } from "./where.js";
+import { rightsScreen } from "./screens/rights.js";
 
 // Labels are resolved at render time rather than here, so switching language
 // redraws the navigation without a reload.
@@ -35,7 +36,12 @@ const routes = {
   where: { label: "nav.where", render: whereScreen },
   family: { label: "nav.family", render: familyScreen },
   settings: { label: "nav.settings", render: settingsScreen },
+  // Reached from Settings rather than the rail: somewhere you go on purpose.
+  rights: { label: "rights.title", render: rightsScreen, hidden: true },
 };
+
+/** Whether a screen exists here. Lets a link to a flow built elsewhere degrade to words. */
+export function hasRoute(name) { return Boolean(routes[name]); }
 
 const root = document.getElementById("root");
 
@@ -72,7 +78,7 @@ function topbar(active) {
     // phone CSS hides it and [tabbar] takes over; both are rendered so that
     // rotating or resizing never needs a redraw.
     el("nav.segmented.only-wide", { "aria-label": "Sections" },
-      ...Object.entries(routes).map(([name, route]) =>
+      ...Object.entries(routes).filter(([, route]) => !route.hidden).map(([name, route]) =>
         el("button", {
           type: "button",
           "aria-pressed": name === active,

@@ -9,8 +9,8 @@ privacy policy as a launch requirement; this is the text that review starts
 from.
 
 **Where the product shows it.** The web client opens it as a sheet from
-**Settings → Privacy notice** and from the bottom of **onboarding** ("Read the
-privacy notice"), in English, Telugu and Hindi (`privacy.*` in
+**Settings → Privacy notice**, from **Your data rights**, and from the bottom of
+**onboarding** ("Read the privacy notice"), in English, Telugu and Hindi (`privacy.*` in
 `static/app/i18n.js`, rendered by `static/app/privacy.js`). The native app has
 no settings or onboarding screen to put it on yet, and no key-holder field of
 its own: its generic sealed-field screen shows the key-holder guidance
@@ -57,11 +57,91 @@ Whether recording another person this way needs their consent is pending
 legal review. We have not reached a conclusion, and this notice will change when
 there is one.
 
+### What you agree to, one purpose at a time
+
+Almira asks separately for each thing it does with your data: keeping your
+records and showing them to the people you choose, and sending reminders by
+email or text. You can withdraw either in one tap on Your data rights, the same
+way you gave it. Withdrawing the first means closing your account. Every choice
+is kept as a dated line you can see.
+
+### Your rights
+
+You can see what Almira holds about you and who else can see it, ask for
+something to be corrected, close your account and erase your data, name someone
+to act on these rights if you die or cannot act yourself, and complain.
+Settings → Your data rights has all five.
+
+### Children
+
+When you add a child, you do it as their parent or lawful guardian: you confirm
+that once with a code, and a dated line on their profile records it. Almira has
+no analytics or tracking of any kind, so nothing about a child's records is ever
+used that way.
+
+### Complaints
+
+Complaints go to the grievance contact named on Your data rights, with the date
+we reply by. We reply within the period shown there, and never more than 90
+days.
+
 ### What we never do
 
 Almira never moves money, never holds funds and never asks for a bank password.
 
 ---
+
+## Your data rights
+
+The DPDP Act 2023 and the DPDP Rules 2025 as things a person can do. The core
+obligations (Rules 3, 5–16) commence on **13 May 2027**; this is built ahead of
+them. Registration as a Consent Manager (from 13 November 2026) is not needed:
+Almira collects consent for itself, not for other fiduciaries. The database side
+is [Doc 05](05-security-and-privacy.md) §8.1 and migration V45.
+
+**Where it is.** Web client: **Settings → Your data rights** (route `#/rights`,
+`static/app/screens/rights.js`), not in the navigation — somewhere you go on
+purpose. The native app has no screen for it yet.
+
+**The page.** Five plain cards, each one tap:
+
+| Card | What it does | API |
+|---|---|---|
+| **See** | s.11 summary: what is held about you (counts, never amounts or titles), why, and who else can see it — household members with a login, your emergency contact, live guest links, nominees, the message providers configured on this server | `GET /api/v1/me/privacy/summary` (audited) |
+| **Correct** | a correction request for what you cannot edit yourself, with the date we reply by | `POST /api/v1/me/privacy/requests` `kind: correction` |
+| **Erase** | the account-closure flow (`#/close-account`, built by the lifecycle work); until that route exists on this server, a sheet says so and how to ask instead | lifecycle: `/api/v1/me/closure` |
+| **Nominate** | s.14: one or more people who may exercise your rights if you die or cannot act; needs a step-up | `POST/DELETE /api/v1/me/privacy/nominees` |
+| **Complain** | a grievance to the named contact, with the date we reply by | `POST /api/v1/me/privacy/requests` `kind: grievance` |
+
+Below the cards:
+
+- **The grievance contact** as a muted line: the configured name and address
+  (`ALMIRA_GRIEVANCE_NAME`, `ALMIRA_GRIEVANCE_EMAIL`) and the published period
+  (`ALMIRA_GRIEVANCE_RESPONSE_DAYS`, 1–90, default 30). Every rights reply from
+  the API carries the same block. Unset, the line says the contact has not been
+  named yet, rather than inventing one.
+- **What you've agreed to**, purpose by purpose (Rule 3's itemised notice).
+  `records` is given by using Almira and withdrawn by closing the account;
+  `messages` has one button that says Give or Withdraw, the same size in the
+  same place. Below it, the notice version in force, whether you accepted it,
+  and "a draft, not yet legally reviewed" while that is true.
+- **Who can act for you**: your emergency contact beside your nominees, with the
+  one sentence that tells them apart — *your emergency contact is someone in
+  your household who can ask to see the records you marked if you can't be
+  reached; a nominee can use your data rights (see, correct or erase your data)
+  if you die or can't act yourself.*
+- **Your requests**, each with "We reply by" or its outcome.
+- **Consent history** as a dated timeline: consents given and withdrawn, notice
+  versions accepted, and parental consents you gave or withdrew.
+
+**Children.** Family → Add someone with a date of birth under 18 opens
+"Adding Aarav's records" before anything is saved: parent or lawful
+guardian, a declaration that you are 18 or older and the child's parent or
+guardian, then a one-time code (the step-up). The member and the consent are
+saved together, and the child's row shows "Consent as parent: Ishwarya, 14 Sep
+2026". A child added before this shows "No parent's consent recorded yet" with
+a button to record it. Only the adult who gave consent can withdraw it.
+
 
 ## Why the key-holder paragraph says what it says
 
@@ -105,12 +185,27 @@ So, while legal review of third-party consent is **pending**:
 ## Not verified
 
 - The notice has not been read by counsel. Nor have the Telugu and Hindi
-  translations been checked by a native speaker.
+  translations been checked by a native speaker. The four sections added with
+  data rights (consent, rights, children, complaints) and every `rights.*`,
+  `family.consent.*` and `stepUp.*` string exist in English only; Telugu and
+  Hindi fall back to English until translated.
+- Legal review of the data-rights design (whether a step-up code and a
+  declaration are "verifiable" parental consent under Rule 10, whether the
+  `messages` default for people never asked is acceptable, whether the access
+  summary is a sufficient s.11 answer) needs counsel and has not happened.
 - Seen in a browser against a local development server (V33's change): the link
   at the end of onboarding opened the notice in Telugu, and Settings → Privacy
   notice opened it in English, with every section and the draft banner. Hindi
   was rendered for the editor's helper text, not for the notice. Not seen at
   phone width.
-- The native app has no screen for the notice itself.
+- The native app has no screen for the notice itself, nor for Your data rights
+  or the parental-consent step.
+- Seen in a browser at 420px against a local development server (V45's
+  change), in English: adding a ten-year-old opened the consent sheet, the code
+  sheet, and saved the child with "Consent as parent: Ishwarya, 14 Sept 2026";
+  on Your data rights, accepting the notice, giving consent to messages, the See
+  sheet and naming a nominee each worked and appeared on the timeline. Not seen
+  at 200% text, in Telugu or Hindi, or with the Erase card reaching a closure
+  screen (there is none on this branch).
 
 [‹ Index](README.md)

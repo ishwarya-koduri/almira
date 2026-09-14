@@ -610,3 +610,45 @@ details.more[open] > summary::before { transform: rotate(90deg); }
 }
 .table th { color: var(--ink-muted); font-weight: 600; }
 .table tr:last-child td { border-bottom: 0; }
+
+/* -----------------------------------------------------------------------------
+   Your data rights (screens/rights.js) and the parental-consent sheet.
+   Five plain cards, each a single tap target; notices as muted text with an
+   information mark rather than a coloured box.
+   ----------------------------------------------------------------------------- */
+.rights-grid {
+  display: grid; gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+}
+.rights-card {
+  appearance: none; font: inherit; text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; gap: var(--space-1);
+  min-height: 44px; padding: var(--space-4);
+  border: 1px solid var(--hairline); border-radius: var(--radius-md);
+  background: var(--surface); color: var(--ink);
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.rights-card:hover { border-color: var(--ink-muted); }
+.rights-card:active { background: var(--surface-sunken); }
+.rights-card-title { font-family: var(--font-display); font-size: var(--text-lg); font-weight: 600; }
+.rights-pair { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+.notice-line {
+  display: flex; gap: var(--space-2); align-items: baseline; margin: 0;
+  color: var(--ink-muted); font-size: var(--text-sm);
+}
+.notice-mark { flex: none; }
+.timeline { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--hairline); }
+.timeline li {
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); align-items: baseline;
+  padding: var(--space-2) 0 var(--space-2) var(--space-4); position: relative;
+}
+.timeline li::before {
+  content: ""; position: absolute; left: -4px; top: 1.05em;
+  width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+}
+.timeline time { min-width: 7.5rem; }
+.plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.consent-declaration {
+  display: flex; gap: var(--space-3); align-items: flex-start; cursor: pointer; min-height: 44px;
+}
+.consent-declaration input { width: 20px; height: 20px; margin-top: 2px; flex: none; }

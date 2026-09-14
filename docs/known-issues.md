@@ -767,3 +767,98 @@ or on `infra/deploy-and-pentest`; `deploy/restore/digest-check.sql` and
 migrated by the full application recorded versions 25, 27, 28, … 35 in that
 order, all successful, with 31 `ciphertext digests` between 30 and 32.
 `outOfOrder` is still not enabled anywhere.
+
+---
+
+## 24. Consent to messages is assumed until someone withdraws it
+
+**Where** `db/migrations/V45__data_rights_and_parental_consent.sql`
+(`app.messages_consent_withdrawn`), `backend/.../privacy/MessageConsent.kt`.
+
+**What** A person with no `messages` event at all — everyone who signed up
+before V45 — still gets reminders and the "still true?" digest by email and
+text. Only an explicit withdrawal stops them. The page shows such a person "Not
+asked yet: sent as before until you choose".
+
+**Which is right** Not decided. Rule 3 wants consent that is given, not
+presumed; stopping every existing reminder silently on the day this shipped
+would have been its own harm, and there are no live email or SMS providers yet.
+
+**Why it is still here** It is a product and legal decision, not a code one.
+
+**When to fix** Before 13 May 2027. Either ask everyone once (the notice
+acceptance is the natural moment) and flip the default in
+`app.messages_consent_withdrawn` to "not given", or have counsel say the
+current behaviour is acceptable.
+
+**Risk if left** Email or text reminders to someone who was never asked, once a
+live provider exists.
+
+---
+
+## 25. Parental consent checks the adult's sign-in, not their age
+
+**Where** `backend/.../privacy/ParentalConsent.kt`, `parental_consents.verification`.
+
+**What** Rule 10 asks for *verifiable* consent from a parent who is an adult.
+What Almira records is a declaration ("I am 18 or older, and this child's
+parent or lawful guardian") confirmed by a fresh step-up code to the adult's
+own sign-in phone or email. That proves who is signed in. It proves nothing
+about age: a phone number or an email address does not.
+
+**Which is right** Rule 10 points at reliable identity and age details already
+held, or a virtual token from an entity entrusted by law — DigiLocker's age
+token is the obvious one. `verification` is a checked column so a second value
+(`digilocker_age_token`) can be added without touching existing rows.
+
+**Why it is still here** DigiLocker needs a registered partner account and its
+connect flow is not safe yet (known issue 10). No outside call is added until it
+can be config-gated and tested against a sandbox.
+
+**When to fix** With DigiLocker going live, before 13 May 2027 if counsel says
+the declaration is not enough.
+
+**Risk if left** A minor could record "consent" for a sibling. Low while every
+child in Almira is added by the household that already holds their records.
+
+---
+
+## 26. Rights requests are answered by hand, and nominees cannot come forward in the product
+
+**Where** `data_rights_requests`, `data_rights_nominees` (V45).
+
+**What** A correction or complaint lands with its reply-by date, and nothing
+else happens: there is no operator screen, no alert as the date approaches, and
+the answer (`response`, `answered_at`, `status = answered`) has to be written on
+the owner connection. A nominee is recorded, but there is no flow for them to
+come forward, prove the death or incapacity, and act.
+
+**Which is right** An operator queue ordered by `respond_by`, with the answer
+written through a narrow function and audited; a nominee flow that ends in the
+same operator queue.
+
+**Why it is still here** It needs a staff role this product does not have yet,
+and a decision on what evidence a nominee must bring.
+
+**When to fix** Before any real person can send a request — at the latest,
+before 13 May 2027.
+
+**Risk if left** A request sits unanswered past its promised date.
+
+---
+
+## 27. The Erase card waits for the account-closure screen
+
+**Where** `static/app/screens/rights.js` (`CLOSE_ACCOUNT_ROUTE`).
+
+**What** Erase navigates to `#/close-account` when this build has that route.
+The closure API is being built separately (`/api/v1/me/closure`, lifecycle
+work) and has no web screen on this branch, so Erase opens a sheet saying
+closing from the app is not available on this server yet and suggesting a
+request instead. The `records` consent's "Withdraw by closing" does the same.
+
+**When to fix** When the closure screen merges: register it as `close-account`
+in `app.js` and the card follows. If it lands under another name, change the
+constant.
+
+**Risk if left** Erasure is a request rather than a button.

@@ -767,3 +767,46 @@ or on `infra/deploy-and-pentest`; `deploy/restore/digest-check.sql` and
 migrated by the full application recorded versions 25, 27, 28, … 35 in that
 order, all successful, with 31 `ciphertext digests` between 30 and 32.
 `outOfOrder` is still not enabled anywhere.
+
+---
+
+## 24. The public site, the breach plan and the usability protocol wait on people, not code
+
+**Where** `site/`, [Doc 26](26-incident-response.md),
+[Doc 24](24-usability-sessions.md).
+
+**What** All three are written and none can finish without a decision or a
+person the repository does not have:
+
+- **Nobody is named in the breach plan.** Doc 26 §2 has roles and no names, and
+  every notice template says `[CONTACT]`. Until both are filled in, there is a
+  runbook and still no owner. The plan has not been read by counsel or
+  rehearsed; there is no procedure for rotating `ALMIRA_KMS_MASTER_KEY`; and
+  whether the CERT-In six-hour directions apply is unconfirmed.
+- **The site's placeholders.** Pricing says no price is decided; *What we
+  measure* says nothing has been decided; status is hand-written with no feed;
+  the security page has no reporting address and no pen-test summary, because
+  none has been done (Doc 15 §11). The plan's direction also asks for a real
+  founder on the home page, which is the owner's to write. The domain is
+  undecided, so the `/sign-in` redirect in Doc 17 §9 names `example.in`.
+- **Nothing is native-reviewed.** The Telugu and Hindi home pages say so on the
+  page and are `noindex`; the Telugu and Hindi breach notices and the consent
+  script are marked "needs native review".
+- **No usability session has been run.** Doc 24 is the protocol only; the row
+  it serves stays open until five sessions have produced plan rows.
+
+**Which is right** The documents as written: each says what it is waiting on
+rather than pretending.
+
+**Why it is still here** Each item needs an owner decision, a lawyer, a native
+speaker or a family, not a change to the code.
+
+**When to fix** Before launch for the breach-plan names, the contact address,
+counsel's read and the site's reporting address; before the Telugu or Hindi pages
+are indexed for their review; before any UX row is acted on for the sessions.
+`scripts/check-site.py` forces the draft notice and `noindex` to be removed
+together.
+
+**Risk if left** A breach handled with nobody named and a notice written in a
+hurry; a public page in a language nobody checked.
+

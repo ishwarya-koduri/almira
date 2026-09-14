@@ -2008,6 +2008,9 @@
       },
       "E2eKeyEnvelope": {
         "properties": {
+          "contentKeyId": {
+            "type": "string"
+          },
           "iterations": {
             "format": "int32",
             "type": "integer"
@@ -2797,6 +2800,12 @@
           "reference": {
             "type": "string"
           },
+          "sealed": {
+            "items": {
+              "$ref": "#/components/schemas/SealedLine"
+            },
+            "type": "array"
+          },
           "title": {
             "type": "string"
           },
@@ -2826,6 +2835,7 @@
           "howToClaim",
           "investmentId",
           "nominees",
+          "sealed",
           "title",
           "typeCode",
           "typeLabel",
@@ -2835,6 +2845,10 @@
       },
       "HandbookInstrument": {
         "properties": {
+          "estateDocumentId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "executedOn": {
             "format": "date",
             "type": "string"
@@ -2854,6 +2868,12 @@
           "location": {
             "type": "string"
           },
+          "sealed": {
+            "items": {
+              "$ref": "#/components/schemas/SealedLine"
+            },
+            "type": "array"
+          },
           "title": {
             "type": "string"
           }
@@ -2861,6 +2881,7 @@
         "required": [
           "executors",
           "kind",
+          "sealed",
           "title"
         ],
         "type": "object"
@@ -2908,6 +2929,9 @@
           },
           "scoreExplanation": {
             "type": "string"
+          },
+          "sealedAccess": {
+            "$ref": "#/components/schemas/SealedAccessSummary"
           }
         },
         "required": [
@@ -4351,6 +4375,136 @@
         ],
         "type": "object"
       },
+      "RecoverySlot": {
+        "properties": {
+          "contentKeyId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "holders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kdf": {
+            "type": "string"
+          },
+          "kdfSalt": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "practicedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "shareCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "threshold": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "verifier": {
+            "type": "string"
+          },
+          "wrapAlgorithm": {
+            "type": "string"
+          },
+          "wrappedKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contentKeyId",
+          "createdAt",
+          "holders",
+          "kdf",
+          "kdfSalt",
+          "kind",
+          "updatedAt",
+          "verifier",
+          "wrapAlgorithm",
+          "wrappedKey"
+        ],
+        "type": "object"
+      },
+      "RecoverySlotBody": {
+        "properties": {
+          "contentKeyId": {
+            "type": "string"
+          },
+          "holders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kdf": {
+            "type": "string"
+          },
+          "kdfSalt": {
+            "type": "string"
+          },
+          "verifier": {
+            "type": "string"
+          },
+          "wrapAlgorithm": {
+            "type": "string"
+          },
+          "wrappedKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contentKeyId",
+          "holders",
+          "kdf",
+          "kdfSalt",
+          "verifier",
+          "wrapAlgorithm",
+          "wrappedKey"
+        ],
+        "type": "object"
+      },
+      "RecoveryStatus": {
+        "properties": {
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/RecoverySlot"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "caveats",
+          "slots"
+        ],
+        "type": "object"
+      },
       "RefreshBody": {
         "properties": {
           "refreshToken": {
@@ -4584,6 +4738,65 @@
         ],
         "type": "object"
       },
+      "SealedAccessSummary": {
+        "properties": {
+          "explanation": {
+            "type": "string"
+          },
+          "openableWithRecovery": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sealedBy": {
+            "items": {
+              "$ref": "#/components/schemas/SealedBy"
+            },
+            "type": "array"
+          },
+          "sealedLocations": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "explanation",
+          "openableWithRecovery",
+          "sealedBy",
+          "sealedLocations"
+        ],
+        "type": "object"
+      },
+      "SealedBy": {
+        "properties": {
+          "hasRecoveryKey": {
+            "type": "boolean"
+          },
+          "hasRecoveryShares": {
+            "type": "boolean"
+          },
+          "isMe": {
+            "type": "boolean"
+          },
+          "locations": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hasRecoveryKey",
+          "hasRecoveryShares",
+          "isMe",
+          "locations"
+        ],
+        "type": "object"
+      },
       "SealedField": {
         "properties": {
           "algorithm": {
@@ -4606,6 +4819,9 @@
           "recordType": {
             "type": "string"
           },
+          "sealedByMe": {
+            "type": "boolean"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
@@ -4619,6 +4835,50 @@
           "recordId",
           "recordType",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "SealedLine": {
+        "properties": {
+          "fieldKey": {
+            "type": "string"
+          },
+          "hasRecoveryKey": {
+            "type": "boolean"
+          },
+          "hasRecoveryShares": {
+            "type": "boolean"
+          },
+          "recoveryKeyHolder": {
+            "type": "string"
+          },
+          "sealedByMe": {
+            "type": "boolean"
+          },
+          "sealedByMemberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sealedByName": {
+            "type": "string"
+          },
+          "sentence": {
+            "type": "string"
+          },
+          "shareHolders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "fieldKey",
+          "hasRecoveryKey",
+          "hasRecoveryShares",
+          "sealedByMe",
+          "sentence",
+          "shareHolders"
         ],
         "type": "object"
       },
@@ -6166,6 +6426,9 @@
       },
       "WhereAndWhoValue": {
         "properties": {
+          "access": {
+            "$ref": "#/components/schemas/SealedLine"
+          },
           "ciphertext": {
             "type": "string"
           },
@@ -8361,6 +8624,195 @@
         },
         "tags": [
           "e-2e-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/e2e/recovery": {
+      "get": {
+        "operationId": "recoveryCopies",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryStatus"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "recovery-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/e2e/recovery/members/{memberId}": {
+      "get": {
+        "operationId": "recoveryCopiesOfMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "memberId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryStatus"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "recovery-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/e2e/recovery/{kind}": {
+      "delete": {
+        "operationId": "removeRecoveryCopy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "recovery-controller"
+        ]
+      },
+      "put": {
+        "operationId": "putRecoveryCopy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoverySlotBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoverySlot"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "recovery-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/e2e/recovery/{kind}/practice": {
+      "post": {
+        "operationId": "practiseRecoveryCopy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoverySlot"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "recovery-controller"
         ]
       }
     },

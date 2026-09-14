@@ -443,16 +443,16 @@ class RecoveryController(private val service: RecoveryService) {
 
     /** Your own recovery copies in this household, if any. */
     @GetMapping
-    fun mine(@PathVariable householdId: UUID): RecoveryStatus = service.mine(householdId)
+    fun recoveryCopies(@PathVariable householdId: UUID): RecoveryStatus = service.mine(householdId)
 
     /** Someone else's copies, for the person holding an open emergency window on them. 404 for anyone else. */
     @GetMapping("/members/{memberId}")
-    fun forMember(@PathVariable householdId: UUID, @PathVariable memberId: UUID): RecoveryStatus =
+    fun recoveryCopiesOfMember(@PathVariable householdId: UUID, @PathVariable memberId: UUID): RecoveryStatus =
         service.forMember(householdId, memberId)
 
     /** Creates a copy, or replaces one. Needs a step-up either way. */
     @PutMapping("/{kind}")
-    fun put(
+    fun putRecoveryCopy(
         @PathVariable householdId: UUID,
         @PathVariable kind: String,
         @RequestBody body: RecoverySlotBody,
@@ -460,13 +460,13 @@ class RecoveryController(private val service: RecoveryService) {
 
     /** Removes a copy. The paper already handed out stops working. Needs a step-up. */
     @DeleteMapping("/{kind}")
-    fun remove(@PathVariable householdId: UUID, @PathVariable kind: String): ResponseEntity<Void> {
+    fun removeRecoveryCopy(@PathVariable householdId: UUID, @PathVariable kind: String): ResponseEntity<Void> {
         service.remove(householdId, kind)
         return ResponseEntity.noContent().build()
     }
 
     /** Records that the owner opened this copy on their device and changed nothing. */
     @PostMapping("/{kind}/practice")
-    fun practice(@PathVariable householdId: UUID, @PathVariable kind: String): RecoverySlot =
+    fun practiseRecoveryCopy(@PathVariable householdId: UUID, @PathVariable kind: String): RecoverySlot =
         service.practice(householdId, kind)
 }

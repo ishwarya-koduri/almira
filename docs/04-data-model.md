@@ -21,7 +21,8 @@ households ─< invitations / activity_log / notifications / settings / exchange
 ```
 
 ## 2. Auth & tenancy
-- **users** — id · email citext unique · phone unique null · full_name · password_hash (Argon2id) · auth_provider · mfa_enabled · mfa_secret_enc bytea · locale · currency_pref · unit_pref · status · last_login_at · ts. *Idx:* unique(email); unique(phone) where not null.
+- **users** — id · email citext unique · phone unique null · full_name · password_hash (Argon2id) · auth_provider · locale · currency_pref · unit_pref · status · last_login_at · ts. *Idx:* unique(email); unique(phone) where not null.
+- **user_totp_factors** (V50) — user_id pk · secret_enc bytea (sealed under its own data key, wrapped by the KEK) · kek_id · confirmed_at · last_used_step (a code works once). **user_recovery_codes** — user · salt · code_hash (PBKDF2) · used_at. **user_passkeys** — user · credential_id unique · public_key_cose · signature_count · name · last_used_at. All three are under RLS to their own person only. The V1 `mfa_enabled` / `mfa_secret_enc` columns were never written and are dropped.
 - **households** — id · name · base_currency · **default_visibility** `private|household` · created_by→users · plan · ts. *Idx:* (created_by).
 - **household_memberships** — id · household_id · user_id · role `owner|admin|editor|viewer|restricted` · scoped_member_ids uuid[] null · status · ts. *Idx:* unique(household_id,user_id); (user_id); (household_id,role). **Role = capabilities only; it does NOT grant visibility into others' private records** (see Doc 05).
 - **members** — id · household_id · user_id null · display_name · relationship · date_of_birth · is_minor (generated) · avatar_url · notes · deleted_at · ts. *Idx:* (household_id) where deleted_at null; (user_id) where not null.

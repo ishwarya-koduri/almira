@@ -18,7 +18,7 @@
 
 // Bump this when the shell changes. Old caches are removed on activate, so the
 // version is the only bookkeeping.
-const VERSION = "almira-v26";
+const VERSION = "almira-v27";
 const SHELL = `${VERSION}-shell`;
 
 /**
@@ -41,6 +41,7 @@ const SHELL_FILES = [
   "/app/i18n.js",
   "/app/screens/auth.js",
   "/app/auth-outcome.js",
+  "/app/sign-in-security.js",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/favicon.svg",

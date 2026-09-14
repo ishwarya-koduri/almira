@@ -147,6 +147,43 @@ services:
       ALMIRA_NOTIFY_PROVIDER: ${ALMIRA_NOTIFY_PROVIDER:-log}
       ALMIRA_STORAGE_PROVIDER: ${ALMIRA_STORAGE_PROVIDER:-filesystem}
       ALMIRA_STORAGE_ROOT: /app/var/documents
+      # Sign-in, and the providers a code or a notice goes through. Named with
+      # NO value: Compose passes each through when .env.production (or the
+      # shell) sets it, and leaves it unset in the container otherwise, so the
+      # application's own default applies. `NAME: ${NAME}` would turn an unset
+      # variable into an empty one, and an empty value overrides the default —
+      # an empty ALMIRA_SIGN_IN_CHANNELS is not `phone`. Before these were
+      # listed, setting them in .env.production did nothing at all: the alpha
+      # could not be switched to email and no provider could be configured
+      # (docs/17 §6). No provider is chosen here.
+      ALMIRA_SIGN_IN_CHANNELS:
+      ALMIRA_ALPHA_EMAIL_ALLOWLIST:
+      ALMIRA_OTP_SEND_TIMEOUT:
+      ALMIRA_OTP_MAX_VERIFY_FAILURES_PER_IP_PER_HOUR:
+      ALMIRA_WEBAUTHN_RP_ID:
+      ALMIRA_WEBAUTHN_RP_NAME:
+      ALMIRA_WEBAUTHN_ORIGINS:
+      ALMIRA_OUTBOX_POLL_INTERVAL:
+      ALMIRA_PROVIDER_SMS_MODE:
+      ALMIRA_PROVIDER_SMS_BASE_URL:
+      ALMIRA_PROVIDER_SMS_API_KEY:
+      ALMIRA_PROVIDER_SMS_SENDER_ID:
+      ALMIRA_PROVIDER_SMS_TEMPLATE_ID:
+      ALMIRA_PROVIDER_SMS_TIMEOUT:
+      ALMIRA_PROVIDER_SMS_MAX_ATTEMPTS:
+      ALMIRA_PROVIDER_SMS_RETRY_BACKOFF:
+      ALMIRA_PROVIDER_EMAIL_MODE:
+      ALMIRA_PROVIDER_EMAIL_BASE_URL:
+      ALMIRA_PROVIDER_EMAIL_API_KEY:
+      ALMIRA_PROVIDER_EMAIL_TIMEOUT:
+      ALMIRA_PROVIDER_EMAIL_MAX_ATTEMPTS:
+      ALMIRA_PROVIDER_EMAIL_RETRY_BACKOFF:
+      ALMIRA_PROVIDER_PUSH_MODE:
+      ALMIRA_PROVIDER_PUSH_BASE_URL:
+      ALMIRA_PROVIDER_PUSH_API_KEY:
+      ALMIRA_PROVIDER_PUSH_TIMEOUT:
+      ALMIRA_PROVIDER_PUSH_MAX_ATTEMPTS:
+      ALMIRA_PROVIDER_PUSH_RETRY_BACKOFF:
     volumes:
       - documents:/app/var
     ports:

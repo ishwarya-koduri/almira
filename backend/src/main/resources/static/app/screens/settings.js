@@ -1,4 +1,4 @@
-/* Settings — preferences, sessions, and the trash. */
+/* Settings — preferences, how you sign in, sessions, and the trash. */
 
 import { api, auth } from "../api.js";
 import {
@@ -11,6 +11,7 @@ import { e2e, enable as enableE2e, unlock as unlockE2e } from "../e2e.js";
 import { privacyLink } from "../privacy.js";
 import { prefs, THEMES, TEXT_SIZES, DATA_MODES } from "../prefs.js";
 import { accountCard } from "../lifecycle.js";
+import { howYouSignInCard } from "../sign-in-security.js";
 
 export async function settingsScreen(host) {
   // Settings is a stack of independent things, and it used to be an
@@ -20,6 +21,7 @@ export async function settingsScreen(host) {
   const cards = await Promise.all([
     safely(() => preferencesCard()),
     safely(() => languageCard(host)),
+    safely(() => howYouSignInCard(() => settingsScreen(host))),
     safely(() => securityCard(host)),
     safely(() => sharingCard(host)),
     safely(() => ratesCard(host)),

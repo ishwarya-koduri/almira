@@ -741,6 +741,9 @@ class OtpService(
         const val LOGIN = "login"
         const val STEP_UP = "step_up"
 
+        /** A code to a number someone wants on their account: proves they receive its texts. */
+        const val PHONE_CHANGE = "phone_change"
+
         const val SENDING = "sending"
         const val SENT = "sent"
         const val DELAYED = "delayed"

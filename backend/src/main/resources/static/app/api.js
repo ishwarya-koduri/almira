@@ -171,6 +171,29 @@ export const api = {
     return payload;
   },
 
+  /**
+   * The second step of a sign-in, for an account with a second factor. The
+   * first step answered 401 second_factor_required with details.secondFactorToken
+   * and details.methods; each of these finishes it and signs in.
+   */
+  completeWithAuthenticator: async (secondFactorToken, code) => {
+    const payload = await unauthenticated("POST", "/api/v1/auth/second-factor/authenticator", { secondFactorToken, code });
+    auth.set(payload);
+    return payload;
+  },
+  completeWithRecoveryCode: async (secondFactorToken, code) => {
+    const payload = await unauthenticated("POST", "/api/v1/auth/second-factor/recovery-code", { secondFactorToken, code });
+    auth.set(payload);
+    return payload;
+  },
+  secondFactorPasskeyOptions: (secondFactorToken) =>
+    unauthenticated("POST", "/api/v1/auth/second-factor/passkey/options", { secondFactorToken }),
+  completeWithPasskey: async (secondFactorToken, requestId, credential) => {
+    const payload = await unauthenticated("POST", "/api/v1/auth/second-factor/passkey", { secondFactorToken, requestId, credential });
+    auth.set(payload);
+    return payload;
+  },
+
   signOut: async () => {
     try { await request("POST", "/api/v1/auth/logout"); } catch { /* leaving anyway */ }
     auth.clear();
@@ -209,6 +232,22 @@ export const api = {
   stepUpStatus:  ()               => api.get("/api/v1/auth/step-up"),
   stepUpRequest: ()               => api.post("/api/v1/auth/step-up/request"),
   stepUpVerify:  (body)           => api.post("/api/v1/auth/step-up/verify", body),
+  stepUpAuthenticator: (code)     => api.post("/api/v1/auth/step-up/authenticator", { code }),
+  stepUpRecoveryCode: (code)      => api.post("/api/v1/auth/step-up/recovery-code", { code }),
+  stepUpPasskeyOptions: ()        => api.post("/api/v1/auth/step-up/passkey/options"),
+  stepUpPasskey: (requestId, credential) => api.post("/api/v1/auth/step-up/passkey", { requestId, credential }),
+
+  // --- how you sign in ----------------------------------------------------------
+  signInMethods: ()               => api.get("/api/v1/auth/sign-in-methods"),
+  beginAuthenticator: ()          => api.post("/api/v1/auth/authenticator"),
+  confirmAuthenticator: (code)    => api.post("/api/v1/auth/authenticator/confirm", { code }),
+  removeAuthenticator: ()         => api.del("/api/v1/auth/authenticator"),
+  replaceRecoveryCodes: ()        => api.post("/api/v1/auth/recovery-codes"),
+  passkeyOptions: ()              => api.post("/api/v1/auth/passkeys/options"),
+  addPasskey:    (body)           => api.post("/api/v1/auth/passkeys", body),
+  removePasskey: (id)             => api.del(`/api/v1/auth/passkeys/${encodeURIComponent(id)}`),
+  requestPhoneChange: (phone)     => api.post("/api/v1/auth/phone/request", { phone }),
+  verifyPhoneChange: (body)       => api.post("/api/v1/auth/phone/verify", body),
 
   // --- liabilities ----------------------------------------------------------
   liabilities:   (hid)            => api.get(`/api/v1/households/${hid}/liabilities`),
@@ -388,7 +427,7 @@ export async function downloadAuthenticated(path, fallbackName) {
   URL.revokeObjectURL(url);
 }
 
-function deviceName() {
+export function deviceName() {
   const ua = navigator.userAgent;
   const browser = /Firefox/.test(ua) ? "Firefox"
     : /Edg/.test(ua) ? "Edge"

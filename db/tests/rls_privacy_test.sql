@@ -898,6 +898,64 @@ begin
   end;
   perform pg_temp.assert(refused, 'nobody writes a coming-of-age notice by hand');
 end $$;
+-- ------------------------------------------------- second factors (V50) --
+-- An authenticator secret, a recovery code and a passkey belong to one person.
+-- Not to their household's admin, not to a stranger, and not to a transaction
+-- that carries no identity at all.
+do $$ begin raise notice '--- second factors (V50) ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into user_totp_factors (user_id, secret_enc, kek_id, confirmed_at)
+  values (app.current_user_id(), '\x01'::bytea, 'test', now());
+insert into user_recovery_codes (user_id, salt, code_hash)
+  values (app.current_user_id(), '\x00'::bytea, '\x00'::bytea);
+insert into user_passkeys (user_id, credential_id, public_key_cose, name)
+  values (app.current_user_id(), '\xaa01'::bytea, '\xbb'::bytea, 'Phone');
+select pg_temp.assert((select count(*) from user_totp_factors) = 1
+                  and (select count(*) from user_recovery_codes) = 1
+                  and (select count(*) from user_passkeys) = 1,
+  'a person sees their own authenticator, recovery codes and passkeys');
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from user_totp_factors) = 0,
+  'an ADMIN of the same household sees no one else''s authenticator');
+select pg_temp.assert((select count(*) from user_recovery_codes) = 0,
+  'an ADMIN sees no one else''s recovery codes');
+select pg_temp.assert((select count(*) from user_passkeys) = 0,
+  'an ADMIN sees no one else''s passkeys');
+
+do $$
+declare n int;
+begin
+  update user_totp_factors set last_used_step = 1;
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'an ADMIN cannot touch someone else''s authenticator');
+  delete from user_passkeys;
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'an ADMIN cannot remove someone else''s passkey');
+  update user_recovery_codes set used_at = null;
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'an ADMIN cannot revive someone else''s recovery code');
+end $$;
+
+do $$
+begin
+  insert into user_passkeys (user_id, credential_id, public_key_cose, name)
+    values ((select v from t where k = 'ish'), '\xcc02'::bytea, '\xdd'::bytea, 'Planted');
+  perform pg_temp.assert(false, 'a passkey cannot be planted on someone else''s account');
+exception when insufficient_privilege then
+  perform pg_temp.assert(true, 'a passkey cannot be planted on someone else''s account');
+end $$;
+
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from user_totp_factors) + (select count(*) from user_recovery_codes)
+                      + (select count(*) from user_passkeys) = 0,
+  'a stranger sees no second factor of anyone''s');
+
+select set_config('app.user_id', '', false);
+select pg_temp.assert((select count(*) from user_totp_factors) + (select count(*) from user_recovery_codes)
+                      + (select count(*) from user_passkeys) = 0,
+  'with no identity, no second factor is visible');
 
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

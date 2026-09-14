@@ -13,6 +13,7 @@ data class AlmiraProperties(
     val providers: Providers = Providers(),
     val auth: Auth = Auth(),
     val outbox: Outbox = Outbox(),
+    val webauthn: WebAuthn = WebAuthn(),
     /**
      * Gates the checks that must not be bypassable by forgetting a flag:
      * anything other than exactly "development" makes them strict.
@@ -119,6 +120,22 @@ data class AlmiraProperties(
         /** Rows claimed per transaction. */
         val batchSize: Int = 50,
     )
+
+    /**
+     * Passkeys (auth/PasskeyService.kt). Off unless [rpId] and [origins] are
+     * both set: a passkey is bound to a domain for life, so the domain is chosen
+     * by whoever deploys, never defaulted. Nothing here calls out.
+     */
+    data class WebAuthn(
+        /** The registrable domain passkeys are made for, e.g. `almira.example.in`. `localhost` in development. */
+        val rpId: String = "",
+        /** What a person's device shows as the name of the site. */
+        val rpName: String = "Almira",
+        /** Exact origins a ceremony may come from, e.g. `https://almira.example.in`. */
+        val origins: List<String> = emptyList(),
+    ) {
+        val enabled: Boolean get() = rpId.isNotBlank() && origins.any { it.isNotBlank() }
+    }
 
     /**
      * How people may sign in. Checked at startup by SignInChannels, which

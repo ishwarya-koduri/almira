@@ -8,8 +8,12 @@
 Account takeover (credential stuffing, phishing) · database exfiltration (a dump must not reveal usable secrets) · broken access control (cross-household **and cross-member** leakage) · document leakage · a rogue insider · a lost/stolen device with an open session · abuse of scoped guest links · **coercion/surveillance of a vulnerable family member** (a first-class threat here, see §3).
 
 ## 2. Authentication & session
-- Email/phone + password (**Argon2id**) and SSO (Google/Apple).
-- **MFA** (TOTP + WebAuthn/passkeys); **required** for emergency-access grantors and for viewing full (unmasked) numbers.
+- Phone (or, in the closed alpha, email) + one-time code; no passwords. SSO (Google/Apple) is not built.
+- **Second factor** (built, V50): an authenticator app (RFC 6238, secret envelope-encrypted per person), **passkeys** (WebAuthn, off until a domain is configured) and single-use **recovery codes** (PBKDF2, shown once). Once an account has one, a correct one-time code is **not enough to sign in**: it earns a five-minute token, and the session starts only after the factor — the defence against a disconnected number reassigned to a stranger, or a swapped SIM. Five wrong answers end that sign-in; ten an hour stop the account.
+- **How you sign in** asks for at least two ways in (phone, email where offered, authenticator, each passkey), and refuses removing one that would leave fewer than two. Adding, replacing or removing a factor on an account that has one needs the factor itself.
+- **Changing the phone number** needs a signed-in session confirmed by the old channel or a second factor, then a code to the new number; a number held by another account is refused only after its code is proven.
+- **Every sign-in to an existing account, and every change to how it signs in, is audited and announced** to the in-app list every device reads and through the notification outbox ("New sign-in on Chrome on Android"). No location is shown: that would need a lookup this server does not make.
+- Step-up (re-authentication on this session) before full numbers or documents, by a code or any second factor. Making a second factor *required* for emergency-access grantors is still to do.
 - Short-lived access tokens + rotating refresh tokens; device/session list with remote revoke.
 - **Mobile:** biometric app-lock (Face/Touch), secrets in Keychain/Keystore, auto-lock on background, no sensitive data in logs; optional jailbreak/root signal.
 

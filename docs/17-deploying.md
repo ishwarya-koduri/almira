@@ -494,8 +494,19 @@ marker on each. What matters at deploy time, beyond the four secrets in §1:
   sign-in is a sign-in for anyone. Set the allowlist, or leave email off. Email
   still cannot deliver outside development until a live adapter exists (§5).
 
-The compose file passes only the required set and the two knobs; the optional
-variables are left to the application's own defaults for the reason above.
+The compose file passes the required set and the two knobs by value, and the
+sign-in variables (`ALMIRA_SIGN_IN_CHANNELS`, `ALMIRA_ALPHA_EMAIL_ALLOWLIST`,
+`ALMIRA_OTP_SEND_TIMEOUT`, `ALMIRA_OTP_MAX_VERIFY_FAILURES_PER_IP_PER_HOUR`, the
+`ALMIRA_WEBAUTHN_*` passkey settings) and the `ALMIRA_PROVIDER_SMS_*`, `_EMAIL_*`
+and `_PUSH_*` groups **by name only** (`ALMIRA_SIGN_IN_CHANNELS:` with no value).
+Compose passes a name-only variable through when `.env.production` sets it and
+leaves it unset in the container when it does not, so the application's default
+still applies — the reason above. Until 2026-09-14 these were not listed at all,
+and setting them in `.env.production` did nothing: a production stack could not
+be switched to the email alpha. Check what the container will get with
+`docker compose -f deploy/docker-compose.prod.yml --env-file .env.production config`.
+No provider is chosen by this; a live SMS or email adapter is still to be written
+(§5).
 
 ## 7 · The web client is installable
 

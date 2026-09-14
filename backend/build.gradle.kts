@@ -47,6 +47,19 @@ dependencies {
     // have one, without needing an OCR service account (see DocumentTextExtractor).
     implementation("org.apache.pdfbox:pdfbox:3.0.4")
 
+    // Passkeys (WebAuthn): attestation and assertion verification, COSE keys,
+    // signature counters, origin and RP-ID checks. Yubico's server library is
+    // the maintained reference implementation; this is exactly the kind of
+    // parsing and signature code that must not be hand-rolled. It makes no
+    // network calls: metadata-service lookups live in a separate artifact that
+    // is not used (auth/PasskeyService.kt).
+    implementation("com.yubico:webauthn-server-core:2.9.0") {
+        // Declared by the library and referenced by none of its classes. Left in,
+        // Spring Boot would see Apache HttpClient on the classpath and quietly
+        // switch the HTTP client every provider adapter is built on.
+        exclude(group = "org.apache.httpcomponents.client5", module = "httpclient5")
+    }
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:junit-jupiter:1.20.6")

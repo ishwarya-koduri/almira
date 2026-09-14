@@ -49,7 +49,8 @@ check it.*
 | Account and policy numbers | Anyone with a database dump | Envelope encryption, per-household DEK, KEK outside the DB, AAD binding to household/table/column | `EnvelopeCipherTest`, `AccountApiTest` |
 | Document contents | The same | Encrypted before storage; short-lived single-use download tickets after a step-up | `DocumentApiTest` |
 | Sealed fields | The operator, a subpoena, a full backup | Client-side AES-GCM under a PBKDF2 key the server never sees | `E2eApiTest` — searches the database for the plaintext |
-| A session | Token theft, a borrowed unlocked phone | Single-use refresh with reuse-detection; step-up for sensitive reads | `AuthApiTest` |
+| A session | Token theft, a borrowed unlocked phone | Single-use refresh with reuse-detection (audited in the revoking transaction); step-up for sensitive reads | `AuthApiTest`, `RefreshReuseApiTest` |
+| An account | A stranger given a recycled number, a SIM swap | Second factor after the one-time code; factor changes need the factor; two ways in; every new sign-in announced | `SecondFactorApiTest`, `PasskeyApiTest`, `PhoneChangeApiTest` |
 | A guest link | Anyone who receives or guesses one | 256-bit token stored hashed; scope materialised at creation; read-only guest transaction; expiry, view cap, revocation | `ShareApiTest`, SQL suite guest section |
 | Emergency access | A trusted contact acting too early, or a coercive one | Waiting period, owner veto, **inactivity requirement**, notifications, audit, continuity-only reveal, read-only | `EmergencyAccessApiTest`, SQL suite emergency section |
 | The audit trail | The application itself | `almira_app` has INSERT only on `activity_log` | `R__grants.sql`; SQL suite |
@@ -61,7 +62,7 @@ check it.*
 
 | | Where it applies | Control |
 |---|---|---|
-| **Spoofing** | Sign-in, guest links, the WhatsApp webhook | OTP with rate limits; 256-bit link tokens; signature verification required of any live gateway — and the sandbox says loudly that it verifies nothing |
+| **Spoofing** | Sign-in, guest links, the WhatsApp webhook | OTP with rate limits, and a second factor after it for accounts that have one; 256-bit link tokens; signature verification required of any live gateway — and the sandbox says loudly that it verifies nothing |
 | **Tampering** | Records, audit log, ciphertext | Optimistic concurrency with version checks; append-only audit; AAD binds every ciphertext to its location |
 | **Repudiation** | Any sensitive action | Append-only `activity_log` with actor, action, entity and diff; emergency and share flows log every transition |
 | **Information disclosure** | The whole product, really | Section 2 above |
@@ -105,6 +106,11 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | ID-3 | Step-up re-authentication for sensitive reads, scoped to the session — `auth/StepUpService.kt` |
 | ID-4 | OTP purposes namespaced so a sign-in code cannot elevate a session |
 | ID-5 | Rate limits per phone and per IP — `auth/OtpService.kt` |
+| ID-6 | Second factor after the one-time code for any account that has one: authenticator (RFC 6238, replay-guarded), passkey (WebAuthn), recovery code; five tries per pending sign-in, ten misses an hour per account — `auth/SecondFactorService.kt`, `auth/PasskeyService.kt` |
+| ID-7 | Factor secrets sealed per person (`crypto/UserSecretCipher.kt`); recovery codes PBKDF2; factor tables under RLS to their owner — V50, SQL suite "second factors" |
+| ID-8 | Removing or replacing a factor needs elevation by a factor, and never leaves fewer than two ways in — `auth/StepUpService.kt`, `auth/SignInMethodsService.kt` |
+| ID-9 | Phone number change needs an elevated session and a code to the new number — `AuthService.verifyPhoneChange` |
+| ID-10 | New sign-ins and sign-in changes audited and announced in-app and through the outbox — `auth/AccountNotices.kt` |
 
 ### Data protection
 | | |
@@ -172,5 +178,7 @@ disbelieving:
 | Key rotation cadence is undocumented; DR is only the manual backup and restore in Doc 17 §6 | Operational, and out of scope for a codebase that has not been deployed |
 | Incident and breach response is written ([Doc 26](26-incident-response.md)) but has no named owners, no counsel review and no rehearsal | Known-issues 25 |
 | No formal DPDP or SOC 2 programme | Design aligns; the programme is separate work |
+| A second factor is optional, and not yet required for emergency-access grantors | The card asks for two ways in; making it mandatory is a product decision (docs/05 §2) |
+| The native app cannot finish a sign-in that needs a second factor | known-issues 29 |
 
 [‹ Index](README.md)

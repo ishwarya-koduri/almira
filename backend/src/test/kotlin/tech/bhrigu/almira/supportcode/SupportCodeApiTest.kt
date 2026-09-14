@@ -98,6 +98,7 @@ class SupportCodeApiTest : ApiTestBase() {
         refused(mapOf("appVersion" to "1.0 for Asha Koduri"), "appVersion")
         refused(mapOf("platform" to "windows"), "platform")
         refused(mapOf("errorCodes" to (1..11).map { "code_$it" }), "errorCodes")
+        refused(mapOf("errorCodes" to listOf("plan_read_only", null)), "errorCodes")
         assertThat(rows()).isEqualTo(before)
 
         // A field outside the list is not stored, whatever it holds.

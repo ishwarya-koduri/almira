@@ -181,11 +181,16 @@ class SupportCodeService(
         body.language?.let { if (it !in LANGUAGES) problems["language"] = "Use en, te or hi" }
         body.errorCodes?.let { codes ->
             if (codes.size > MAX_ERROR_CODES) problems["errorCodes"] = "At most $MAX_ERROR_CODES"
-            else if (codes.any { !ERROR_CODE.matches(it) }) problems["errorCodes"] = "Only error codes, like plan_read_only"
+            // Typed String, but JSON can still put a null in a list; that is not an error code either.
+            else if (codes.any { code -> (code as String?)?.let { ERROR_CODE.matches(it) } != true }) {
+                problems["errorCodes"] = "Only error codes, like plan_read_only"
+            }
         }
         body.flags?.let { flags ->
             if (flags.size > MAX_FLAGS) problems["flags"] = "At most $MAX_FLAGS"
-            else if (flags.keys.any { !FLAG.matches(it) }) problems["flags"] = "Only switch names, like dataSaver"
+            else if (flags.any { (key, value) -> !FLAG.matches(key) || (value as Boolean?) == null }) {
+                problems["flags"] = "Only switch names, like dataSaver, each on or off"
+            }
         }
         if (problems.isNotEmpty()) {
             throw ApiException.badRequest(

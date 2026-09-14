@@ -42,7 +42,7 @@ fail() {
   exit 1
 }
 
-status() { curl -s -o "$2" -w '%{http_code}' --max-time "$TIMEOUT" "$BASE$1" 2>/dev/null || echo 000; }
+status() { curl -s -o "$2" -w '%{http_code}' --max-time "$TIMEOUT" "$BASE$1" 2>/dev/null; }
 body=$(mktemp); trap 'rm -f "$body"' EXIT
 
 code=$(status /health/live "$body")
@@ -55,11 +55,17 @@ fi
 
 code=$(status /health "$body")
 [ "$code" = 200 ] || fail "/health answered $code"
-python3 - "$body" "$ALLOW_DEV" <<'PY' || fail "$(python3 -c 'import json,sys; b=json.load(open(sys.argv[1])); print(f"rlsEnforced={b.get(\"rlsEnforced\")} environment={b.get(\"environment\")!r}")' "$body" 2>/dev/null || echo "/health is not JSON")"
+verdict=$(python3 - "$body" "$ALLOW_DEV" <<'PY'
 import json, sys
-b = json.load(open(sys.argv[1]))
-ok = b.get("rlsEnforced") is True and (sys.argv[2] == "1" or b.get("environment") != "development")
-sys.exit(0 if ok else 1)
+try:
+    b = json.load(open(sys.argv[1]))
+except ValueError:
+    print("/health is not JSON"); sys.exit(1)
+if b.get("rlsEnforced") is not True:
+    print(f"row-level security is NOT in force (dbRole={b.get('dbRole')!r})"); sys.exit(1)
+if sys.argv[2] != "1" and b.get("environment") == "development":
+    print("running with development settings"); sys.exit(1)
 PY
+) || fail "$verdict"
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ok   almira at $BASE: live, ready, row-level security in force"

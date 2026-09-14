@@ -1350,3 +1350,51 @@ decision is made.
 **Risk if left** A recorded sale that the department knows about but the
 household forgot is not caught before filing.
 
+
+---
+
+## 46. Continuity signals have a web client and no native screens
+
+**Where** `backend/src/main/resources/static/app/continuity-signals.js`,
+`where.js`; docs/27 §8. Nothing under `app/`.
+
+**What** "If you go quiet", still-reachable ticks, "Do you know where it is?",
+the backup key holders and term cover against expenses are built on the server
+and the web client only. The native app neither shows the cards nor opens
+`#/here/<token>` links, and its sealed-field screen does not know
+`key_holder_2` or `key_holder_3` by name.
+
+**Which is right** The same cards in the native app, reading the same endpoints;
+a one-tap link opening in the browser is fine as it is, since it needs no
+sign-in.
+
+**Why it is still here** The `app/` tree is being worked on elsewhere (as for
+issues 24 and 27).
+
+**When to fix** With the native Family plan screen.
+
+**Risk if left** A phone-only owner cannot turn the trigger on, answer a
+question or confirm they are reachable without the web client. A backup key
+holder sealed on the web shows on the phone as "a sealed note".
+
+---
+
+## 47. The continuity-signal strings are English in Telugu and Hindi
+
+**Where** `static/app/i18n.js`: `quiet.*`, `reach.*`, `ask.*`, `protect.*`,
+`chain.*`, `here.*`, `ready.asked*`. The server sentences in docs/27 (the
+check-in and reachability messages, the protection headline and caveats) are
+English by the rule in docs/14.
+
+**What** They fall back to English for a Telugu or Hindi reader.
+
+**Which is right** Reviewed translations. The words about going quiet and
+emergency access are the ones that most need a native speaker: "never sounds
+alarming" does not survive a literal translation.
+
+**Why it is still here** No reviewer was available, and a machine draft of these
+particular sentences could frighten the person reading it.
+
+**When to fix** With the next translation review (docs/14).
+
+**Risk if left** A mixed-language card on For my family.

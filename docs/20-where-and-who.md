@@ -320,6 +320,14 @@ keeps the question small either way. The privacy notice ([Doc 23](23-privacy-not
 says what is stored, that it names another person, that it is sealed, the
 guidance above, and that the consent question is pending legal review.
 
+**Since then** ([Doc 27](27-continuity-signals.md)). Two backup key holders
+(`key_holder_2`, `key_holder_3`) are sealed exactly like the first, with a
+plaintext tick per position that only the sealer can give (§6 there). And an
+owner may ask a *household member with a login* "Do you know where <title> is?"
+(§4 there). The question carries the record's title only, is chosen by the
+owner, and is not addressed from the sealed line — the person a key-holder line
+names is still never contacted by Almira.
+
 ## 5. Decision (e): visibility
 
 These fields follow the record's own visibility, and they are also sealed.

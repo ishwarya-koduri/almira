@@ -74,6 +74,8 @@ Store **masked** (last-4) by default; full numbers only on explicit opt-in, then
 ## 6. Emergency (continuity) access — safe by design
 Trusted contact + **time-delayed inactivity unlock** (configurable window), **vetoable by the owner at any point** during the window, with notifications to both parties throughout, then a **scoped read** (continuity summary or full-read) — all logged. No silent backdoor; the delay + veto + audit make it both humane and safe.
 
+As built: a request starts when a named contact asks (V20), and opens only if the person it concerns has shown no sign of themselves since (V25). An owner may also turn on **"if I go quiet"** — off by default, a step-up to turn on — which after two unanswered check-ins raises that same request in each contact's name; a sign-in or a one-tap "I'm here" keeps the window shut, and "I'm here" vetoes what it raised ([Doc 27](27-continuity-signals.md) §1–2).
+
 ## 7. Scoped external sharing (guest links)
 Single-scope, read-only, expiring, revocable, rate-limited, fully audited links (e.g., the FY tax pack to a CA for 7 days). Opening a link never exposes anything outside its slice; sensitive documents can be excluded per share; the link resolves to a least-privilege guest principal that still passes the §3 predicate for its scope. A tax-pack link may name one taxpayer (`scope_member_id`); its PDF and Schedule 112A CSV are served behind the same token (`/api/v1/share/{token}/tax-pack.pdf`, `/schedule-112a.csv`), each opened exactly like the link — counted, audited, and rendered inside the clamped read-only guest session ([Capital gains for a CA](tax/capital-gains.md) §5).
 

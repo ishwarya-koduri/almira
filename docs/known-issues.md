@@ -1013,7 +1013,8 @@ with a sentence, and nothing changes. The others are completeness.
 ## 32. Consent to messages is assumed until someone withdraws it
 
 **Where** `db/migrations/V45__data_rights_and_parental_consent.sql`
-(`app.messages_consent_withdrawn`), `backend/.../privacy/MessageConsent.kt`.
+(`app.messages_consent_withdrawn`), asked since V107 only inside
+`app.enqueue_outbound_message`; the runtime role can no longer call it.
 
 **What** A person with no `messages` event at all — everyone who signed up
 before V45 — still gets reminders and the "still true?" digest by email and

@@ -52,6 +52,16 @@ begin
     execute 'revoke execute on function app.member_present_since(uuid, timestamptz) from almira_app, public';
   end if;
 
+  -- Definer helpers that answer about a person or household the caller names
+  -- (V107). Only the sweeps on the owner connection and other definer
+  -- functions ask them; to the runtime role they would read birth and death
+  -- days, memorials and consent choices in any household past RLS.
+  if to_regprocedure('app.is_remembrance_day(uuid, date)') is not null then
+    execute 'revoke execute on function app.is_remembrance_day(uuid, date) from almira_app, public';
+    execute 'revoke execute on function app.notifications_stopped(uuid, uuid) from almira_app, public';
+    execute 'revoke execute on function app.messages_consent_withdrawn(uuid) from almira_app, public';
+  end if;
+
   -- Plans and support codes (V101, V102). A household's plan is set only by an
   -- operator as the schema owner, so the runtime role may read it and nothing
   -- else; a support code is made and taken back by its owner, and every other

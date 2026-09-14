@@ -1075,8 +1075,17 @@ insert into privacy_notice_acceptances (user_id, notice_version)
 
 select pg_temp.assert((select count(*) from consent_events) = 2,
   'a person sees their own consent history');
-select pg_temp.assert(app.messages_consent_withdrawn((select v from t where k='ish')),
-  'the latest event decides: given then withdrawn is withdrawn');
+do $$
+declare blocked boolean := false;
+begin
+  -- Even about oneself: the question takes any user id, so it is asked only
+  -- where an email or text is queued (app.enqueue_outbound_message, V107).
+  begin
+    perform app.messages_consent_withdrawn((select v from t where k='ish'));
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot ask whether anyone has withdrawn consent');
+end $$;
 
 do $$
 declare n int;
@@ -1285,19 +1294,33 @@ begin
 end $$;
 select set_config('app.guest_share_id', '', false);
 
-select pg_temp.assert(app.is_remembrance_day((select v from t where k='hh'), date '2031-04-02'),
-  'Aarav''s birthday is a remembrance day for the household');
-select pg_temp.assert(not app.is_remembrance_day((select v from t where k='hh'), date '2031-04-03'),
-  'the day after is not');
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    perform app.is_remembrance_day((select v from t where k='hh'), date '2031-04-02');
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot ask which days are birthdays in a household (V107)');
+  blocked := false;
+  begin
+    perform app.notifications_stopped((select v from t where k='out'), null);
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor whether someone is memorialised anywhere');
+end $$;
 -- ------------------------------------------------ product measurement (V70) --
 do $$ begin raise notice '--- measurement counts events, never people (V70) ---'; end $$;
 select pg_temp.as_user('ish');
 do $$
 declare blocked boolean;
 begin
-  perform pg_temp.assert(app.count_product_event('holding_added', 0::smallint, null,
-            (select v from t where k='hh'), '{}', array[(select v from t where k='i_private')]),
-    'an allowlisted event about an adult''s record is counted');
+  perform pg_temp.assert(
+    (select p.prorettype = 'void'::regtype from pg_proc p where p.oid =
+       'app.count_product_event(text, smallint, uuid, uuid, uuid[], uuid[], uuid[], uuid[])'::regprocedure),
+    'counting says nothing back, so it cannot tell who is a minor or who opted out (V107)');
+  perform app.count_product_event('holding_added', 0::smallint, null,
+            (select v from t where k='hh'), '{}', array[(select v from t where k='i_private')]);
   perform pg_temp.assert(not exists (select 1 from measurement_daily_counts),
     'the runtime role cannot read the counts it just added to');
 
@@ -1322,15 +1345,9 @@ begin
   end;
   perform pg_temp.assert(blocked, 'a first holding cannot be counted without a holding');
 
-  perform pg_temp.assert(not app.count_product_event('invite_sent', 0::smallint, null, null,
-            array[(select v from t where k='m_aarav')]),
-    'an event about a minor is not counted');
-
+  -- Whether a minor or an opt-out stopped a count is proven over HTTP, reading
+  -- the counts as the owner (MeasurementApiTest); here it can only be called.
   insert into measurement_opt_outs (user_id) values ((select v from t where k='ish'));
-  perform pg_temp.assert(not app.count_product_event('holding_added'),
-    'someone who opted out is not counted');
-  perform pg_temp.assert(not app.count_product_event('sign_in_completed', 0::smallint, (select v from t where k='ish')),
-    'nor when they are named as the actor before a session exists');
 
   perform pg_temp.as_user('ravi');
   perform pg_temp.assert(not exists (select 1 from measurement_opt_outs),
@@ -1341,8 +1358,6 @@ begin
   exception when others then blocked := true;
   end;
   perform pg_temp.assert(blocked, 'nor opt someone else out');
-  perform pg_temp.assert(app.count_product_event('holding_added'),
-    'and another person''s opt-out does not silence theirs');
 end $$;
 select pg_temp.as_user('ish');
 

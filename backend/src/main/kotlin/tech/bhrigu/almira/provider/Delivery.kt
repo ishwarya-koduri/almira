@@ -7,7 +7,6 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Component
 import org.springframework.transaction.support.TransactionSynchronization
 import org.springframework.transaction.support.TransactionSynchronizationManager
-import tech.bhrigu.almira.privacy.MessageConsent
 import tech.bhrigu.almira.reminder.Notifier
 import tech.bhrigu.almira.reminder.OutboundNotification
 import java.util.UUID
@@ -197,7 +196,6 @@ class RecordingNotifier(
     private val jdbc: NamedParameterJdbcTemplate,
     private val channels: List<ChannelSender>,
     private val outbox: NotificationOutbox,
-    private val consent: MessageConsent,
 ) : Notifier {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -207,9 +205,10 @@ class RecordingNotifier(
     override fun deliver(notification: OutboundNotification) {
         val logical = notification.idempotencyKey ?: "${notification.template}:${UUID.randomUUID()}"
         record(notification, keyFor(logical, channel))
-        // Withdrawn consent to messages stops email and text, never the in-app
-        // row above (docs/23 "Your data rights").
-        if (consent.suppressOutside(notification.userId, notification.template)) return
+        // Withdrawn consent to messages stops email and text for reminders and the
+        // digest, never the in-app row above (docs/23 "Your data rights").
+        // app.enqueue_outbound_message decides that (V107), as it does a memorial:
+        // whose consent it is is not something the runtime role may read.
         var queued = 0
         channels.forEach { sender ->
             runCatching {

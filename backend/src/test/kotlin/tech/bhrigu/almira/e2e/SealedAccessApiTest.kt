@@ -185,5 +185,11 @@ class SealedAccessApiTest : ApiTestBase() {
             .isEqualTo("Sealed by Ishwarya · only Ishwarya's passphrase opens it")
         assertThat(get("/api/v1/households/$householdId/e2e/recovery/members/$ownerMemberId", spouse).status())
             .isEqualTo(HttpStatus.NOT_FOUND)
+
+        // The raw list says whose it is too, so a client can say "sealed by someone else" rather than "corrupt".
+        assertThat(get("/api/v1/households/$householdId/e2e/values?recordType=investment&recordId=$shared", spouse).json()
+            .single().path("sealedByMe").asBoolean()).isFalse()
+        assertThat(get("/api/v1/households/$householdId/e2e/values?recordType=investment&recordId=$shared", owner).json()
+            .single().path("sealedByMe").asBoolean()).isTrue()
     }
 }

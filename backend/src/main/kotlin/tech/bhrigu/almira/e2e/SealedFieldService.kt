@@ -43,6 +43,12 @@ data class SealedField(
     val algorithm: String,
     val keyVersion: Int,
     val updatedAt: Instant,
+    /**
+     * Whether the caller sealed it. Each person's content key is their own, so
+     * a value someone else sealed will not open for this caller whatever they
+     * type; without this a client cannot tell that from corruption.
+     */
+    val sealedByMe: Boolean? = null,
 )
 
 /**
@@ -257,7 +263,7 @@ class SealedFieldService(
     fun list(householdId: UUID, recordType: String?, recordId: UUID?): List<SealedField> {
         households.get(householdId)
         val sql = buildString {
-            append("select * from sealed_values where household_id = :hid")
+            append("select *, sealed_by = app.current_user_id() as mine from sealed_values where household_id = :hid")
             if (recordType != null) append(" and record_type = :type")
             if (recordId != null) append(" and record_id = :rid")
             append(" order by updated_at desc")
@@ -275,6 +281,7 @@ class SealedFieldService(
                 algorithm = rs.getString("algorithm"),
                 keyVersion = rs.getInt("key_version"),
                 updatedAt = rs.getTimestamp("updated_at").toInstant(),
+                sealedByMe = rs.getBoolean("mine"),
             )
         }
     }

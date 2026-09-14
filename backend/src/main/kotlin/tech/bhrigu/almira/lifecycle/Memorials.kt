@@ -167,7 +167,7 @@ class MemorialService(
     ) == true
 
     companion object {
-        /** The one message the stop lets through (V40). */
+        /** Let through the stop (V40); the other warnings it lets through are listed in V103. */
         const val MARKED_TEMPLATE = "lifecycle.memorial.marked"
     }
 }

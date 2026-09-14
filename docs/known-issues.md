@@ -894,6 +894,13 @@ checkboxes stay unticked for this reason.
 - The coming-of-age month is India's month, not the household's `time_zone`.
 - A memorial stops messages from the moment it is made; a message already queued
   to the outbox a second earlier can still go.
+- A memorial does not stop the warnings a living person needs in order to say
+  no (V103, `app.never_stopped_by_memorial`): an emergency request or check-in
+  about them, a successor claiming the household, being asked to leave, and
+  account-security notices. Before V103 an admin who was also someone's trusted
+  contact could mark them and then ask for emergency access without the request
+  ever reaching them. The inactivity sweep still skips a memorialised owner, so
+  it raises no request against them either.
 
 **When to fix** The native screens before an App Store submission; the rest when
 someone is next in those files.

@@ -82,6 +82,39 @@ class MemorialApiTest : LifecycleTestSupport() {
     }
 
     @Test
+    fun `an emergency request against someone marked still reaches them, so they can say no`() {
+        // Ishwarya is Ravi's trusted contact and an admin: she can mark him and then ask.
+        post(
+            "/api/v1/households/$householdId/emergency/contacts", ravi,
+            mapOf("trustedMemberId" to ishwaryaMemberId, "waitDays" to 14),
+        )
+        stepUp(ishwarya)
+        assertThat(mark(ishwarya).status()).isEqualTo(HttpStatus.OK)
+        val raviId = userId(ravi)
+
+        val asked = post(
+            "/api/v1/households/$householdId/emergency/requests", ishwarya,
+            mapOf("subjectMemberId" to raviMemberId, "reason" to "Travelling"),
+        )
+        assertThat(asked.status().is2xxSuccessful).describedAs(asked.body).isTrue()
+        assertThat(templatesFor(raviId)).contains("emergency.requested")
+
+        // Checked where the message is written, not only on this path.
+        assertThat(
+            db.queryForObject(
+                "select app.record_in_app_message(?::uuid, ?::uuid, 'auth.new_sign_in', 't', gen_random_uuid()::text) is not null",
+                Boolean::class.java, householdId, raviId,
+            ),
+        ).isTrue()
+        assertThat(
+            db.queryForObject(
+                "select app.record_in_app_message(?::uuid, ?::uuid, 'emergency.named', 't', gen_random_uuid()::text) is null",
+                Boolean::class.java, householdId, raviId,
+            ),
+        ).describedAs("news that is not a warning still stops").isTrue()
+    }
+
+    @Test
     fun `a memorialised account can still see, cannot change anything, and says why`() {
         capture(ravi, householdId, "gold_physical", "Ravi's gold", BigDecimal(100_000))
         stepUp(ishwarya)

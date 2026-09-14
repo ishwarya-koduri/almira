@@ -42,6 +42,7 @@ export async function openDetail(id, onChanged) {
           el("div", { style: { fontFamily: "var(--font-display)", fontSize: "var(--text-h2)" } },
             record.valueFormatted || "Not known yet"),
           el("div.caption.muted", {}, valueExplanation(record)),
+          priceFedDetail(record),
           inBaseCurrency(record),
         ),
         el("button.btn.btn-sm", { type: "button", onclick: () => updateValue() }, "Update value"),
@@ -431,7 +432,41 @@ function rateSourceLabel(source) {
   return label === key ? plain : label;
 }
 
+/**
+ * A value from a published price says so, calmly: which price, per unit, and —
+ * when someone had entered a value of their own earlier — that it is kept, with
+ * its date. The feed never replaces a value entered on or after the price's
+ * date (docs/13 §6), so this is the only case there is to explain.
+ */
+function priceFedDetail(record) {
+  if (record.valuationSource !== "price_feed" || !record.unitPrice) return null;
+  const host = el("div.stack-2", {},
+    el("p.caption.muted.price-stamp", {},
+      el("span.info-mark", { "aria-hidden": "true" }, "i"),
+      t("value.perUnit", {
+        price: `₹${Number(record.unitPrice).toLocaleString("en-IN", { maximumFractionDigits: 4 })}`,
+        units: record.quantity,
+      })),
+  );
+  (async () => {
+    try {
+      const history = await api.valuations(state.household.id, record.id);
+      const entered = history.find((v) => v.source !== "price_feed");
+      if (entered) {
+        host.append(el("p.caption.muted", {}, t("value.enteredKept", {
+          value: rupees(entered.value), date: formatDate(entered.asOfDate),
+        })));
+      }
+    } catch { /* the history is a courtesy here; the stamp above already says what the figure is */ }
+  })();
+  return host;
+}
+
 function valueExplanation(record) {
+  if (record.valueBasis === "valued" && record.valuationSource === "price_feed") {
+    const key = { amfi: "value.atNav", nse: "value.atNseClose", bse: "value.atBseClose" }[record.priceSource];
+    if (key) return t(key, { date: formatDate(record.valuedOn) });
+  }
   switch (record.valueBasis) {
     case "valued": return `Your snapshot from ${formatDate(record.valuedOn)}`;
     case "at_cost": return "What you paid — add a value to see what it's worth today";

@@ -3301,6 +3301,9 @@
             },
             "type": "array"
           },
+          "priceSource": {
+            "type": "string"
+          },
           "quantity": {
             "type": "number"
           },
@@ -3335,6 +3338,12 @@
             "type": "string"
           },
           "unit": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "number"
+          },
+          "valuationSource": {
             "type": "string"
           },
           "value": {
@@ -6021,11 +6030,17 @@
           "note": {
             "type": "string"
           },
+          "priceSource": {
+            "type": "string"
+          },
           "quantity": {
             "type": "number"
           },
           "source": {
             "type": "string"
+          },
+          "unitPrice": {
+            "type": "number"
           },
           "value": {
             "type": "number"

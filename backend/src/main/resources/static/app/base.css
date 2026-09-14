@@ -415,6 +415,14 @@ main { flex: 1; width: 100%; max-width: var(--content-max); margin: 0 auto; padd
   color: var(--ink-muted);
   text-decoration: underline dotted; text-decoration-color: var(--ink-muted); text-underline-offset: 4px;
 }
+/* A figure from a published price carries a small info mark, never a coloured
+   box or a ticker: it is a fact about where the number came from, not news. */
+.price-stamp { display: flex; gap: var(--space-2); align-items: baseline; margin: 0; }
+.info-mark {
+  flex: none; display: inline-grid; place-items: center;
+  width: 1.1em; height: 1.1em; border-radius: 50%;
+  border: 1px solid currentColor; font-size: .85em; font-style: italic; line-height: 1;
+}
 .chip-unclear { border-style: dashed; background: transparent; color: var(--ink-muted); }
 
 .pill {

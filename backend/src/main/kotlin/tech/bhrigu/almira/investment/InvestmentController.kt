@@ -93,6 +93,16 @@ data class InvestmentResponse(
      */
     val valueBasis: String,
     val valuedOn: LocalDate?,
+    /**
+     * Where the current valuation came from — manual, import, quote_api or
+     * price_feed — so a figure from a published price can say so ("Valued at
+     * NAV as of …") and a typed one never does. Null when not valued.
+     */
+    val valuationSource: String? = null,
+    /** For a price-fed valuation: amfi, nse or bse. */
+    val priceSource: String? = null,
+    /** For a price-fed valuation: the NAV or closing price per unit. */
+    val unitPrice: BigDecimal? = null,
     val startDate: LocalDate?,
     val maturityDate: LocalDate?,
     /** Retired (V33, docs/20 §1): always absent. Kept because v1 is additive-only. */
@@ -297,6 +307,7 @@ internal fun InvestmentRow.toResponse() = InvestmentResponse(
     value = effectiveValue,
     valueFormatted = effectiveValue?.let { IndianNumbers.money(it, currency) },
     valueBasis = valueBasis, valuedOn = valuedOn,
+    valuationSource = valuationSource, priceSource = priceSource, unitPrice = unitPrice,
     startDate = startDate, maturityDate = maturityDate,
     institutionId = institutionId, institutionName = institutionName,
     accountId = accountId, accountLabel = accountLabel,

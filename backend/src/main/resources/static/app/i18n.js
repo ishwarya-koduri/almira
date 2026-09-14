@@ -203,6 +203,14 @@ const messages = {
     "money.asOf": "as of",
     "money.notConverted": "Not included in the total",
 
+    "value.atNav": "Valued at NAV as of {date}",
+    "value.atNseClose": "Valued at the NSE closing price as of {date}",
+    "value.atBseClose": "Valued at the BSE closing price as of {date}",
+    "value.perUnit": "{price} a unit × {units} units, from the day's published price.",
+    "value.enteredKept": "Your own value of {value} from {date} is kept in the history.",
+    "value.navShort": "NAV as of {date}",
+    "value.closeShort": "closing price as of {date}",
+
     "money.rateLine": "1 {from} = {rate} {to} · rate as of {date} · {source}",
     "money.rateUnavailable": "We couldn't fetch a rate just now.",
     "money.source.ecb": "ECB reference rate",

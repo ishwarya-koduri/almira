@@ -3,6 +3,7 @@
 import { api } from "../api.js";
 import { el, mount, categoryDot, skeletonRows, empty, rupees, formatDate, textInput } from "../ui.js";
 import { state } from "../state.js";
+import { t } from "../i18n.js";
 import { openCapture } from "./capture.js";
 import { openDetail } from "./detail.js";
 
@@ -106,7 +107,9 @@ function renderRows(rows) {
  */
 function valueNote(row) {
   switch (row.valueBasis) {
-    case "valued": return `valued ${formatDate(row.valuedOn)}`;
+    case "valued": return row.valuationSource === "price_feed"
+      ? t(row.priceSource === "amfi" ? "value.navShort" : "value.closeShort", { date: formatDate(row.valuedOn) })
+      : `valued ${formatDate(row.valuedOn)}`;
     case "at_cost": return "at cost";
     case "custom_field": return "your figure";
     default: return "no value yet";

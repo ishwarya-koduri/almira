@@ -190,6 +190,7 @@ export const api = {
   updateInvestment: (hid, id, b)  => api.patch(`/api/v1/households/${hid}/investments/${id}`, b),
   setVisibility: (hid, id, b)     => api.patch(`/api/v1/households/${hid}/investments/${id}/visibility`, b),
   addValuation:  (hid, id, b)     => api.post(`/api/v1/households/${hid}/investments/${id}/valuations`, b),
+  valuations:    (hid, id)        => api.get(`/api/v1/households/${hid}/investments/${id}/valuations`),
   archive:       (hid, id)        => api.del(`/api/v1/households/${hid}/investments/${id}`),
   restore:       (hid, id)        => api.post(`/api/v1/households/${hid}/trash/investments/${id}/restore`),
   trash:         (hid)            => api.get(`/api/v1/households/${hid}/trash`),

@@ -193,6 +193,22 @@ begin
   perform pg_temp.assert(n = 0, 'an admin cannot DELETE a record they cannot read');
 end $$;
 
+do $$ begin raise notice '--- a published-price label is the feed''s alone (V66) ---'; end $$;
+select pg_temp.as_user('ish');
+do $$
+declare blocked boolean := false;
+begin
+  -- The owner of the holding, on her own holding: allowed to value it, never
+  -- allowed to say the value came from AMFI or an exchange.
+  begin
+    insert into valuations (investment_id, as_of_date, value, source, price_source, unit_price, instrument)
+      values ((select v from t where k='i_private'), date '2026-09-11', 1, 'price_feed', 'amfi', 1, '122639');
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the application role cannot write a price-fed valuation, even as the owner');
+end $$;
+select pg_temp.as_user('ravi');
+
 do $$ begin raise notice '--- privilege escalation must be impossible ---'; end $$;
 do $$
 declare n int; blocked boolean := false;

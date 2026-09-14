@@ -1,0 +1,24 @@
+Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date
+ 
+Open Ended Schemes(Equity Scheme - Flexi Cap Fund)
+ 
+PPFAS Mutual Fund
+ 
+122639;INF879O01027;-;Parag Parikh Flexi Cap Fund;Direct Plan;Growth;89.5712;11-Sep-2026
+153964;-;INF879O01308;Parag Parikh Flexi Cap Fund;Direct Plan;Monthly IDCW Payout;89.5712;11-Sep-2026
+122640;INF879O01019;-;Parag Parikh Flexi Cap Fund;Regular Plan;Growth;81.6012;11-Sep-2026
+153965;-;INF879O01324;Parag Parikh Flexi Cap Fund;Regular Plan;Monthly IDCW Payout;81.6012;11-Sep-2026
+ 
+Open Ended Schemes(Index Funds - Equity Funds)
+ 
+UTI Mutual Fund
+ 
+120717;INF789F01WY2;INF789F01WZ9;UTI Nifty 50 Index Fund;Direct Plan;IDCW;83.0232;11-Sep-2026
+120716;INF789F01XA0;-;UTI Nifty 50 Index Fund;Direct Plan;Growth;164.7893;11-Sep-2026
+100822;INF789F01JN2;-;UTI Nifty 50 Index Fund;Regular Plan;Growth;162.2824;11-Sep-2026
+ 
+Open Ended Schemes(Income)
+ 
+ICICI Prudential Mutual Fund
+ 
+106290;INF109K01KM3;-;ICICI Prudential Interval Fund - Annual Interval Plan - I;;;10.7894;26-Sep-2017

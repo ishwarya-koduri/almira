@@ -77,6 +77,7 @@ class ConnectService(
     private val mapper: ObjectMapper,
     private val calls: ProviderCalls,
     private val props: tech.bhrigu.almira.config.AlmiraProperties,
+    private val cipher: tech.bhrigu.almira.crypto.EnvelopeCipher,
     transactionManager: org.springframework.transaction.PlatformTransactionManager,
 ) {
 
@@ -163,13 +164,42 @@ class ConnectService(
 
     // --- DigiLocker ------------------------------------------------------------
 
+    /**
+     * Begins a connection, and remembers the OAuth `state` it hands out so that
+     * [completeDocumentVault] can insist on it (known-issues 10).
+     *
+     * Only a hash is kept, with who started and until when. The state is not a
+     * secret the way a token is, but a column any member can read is no place
+     * for the one value that proves a sign-in began here.
+     */
     @Transactional
     fun startDocumentVault(householdId: UUID): Map<String, String> {
         val userId = userContext.require()
         households.get(householdId)
         requireEnabled(DIGILOCKER, vault.mode)
-        val state = UUID.randomUUID().toString()
-        upsertConnection(householdId, "digilocker", vault.mode, "pending", state, userId)
+        val state = newState()
+        jdbc.update(
+            """
+            insert into provider_connections (household_id, provider, mode, status, detail, created_by)
+            values (:hid, 'digilocker', :mode, 'pending', cast(:detail as jsonb), :by)
+            on conflict (household_id, provider) do update set
+              mode = excluded.mode, status = 'pending',
+              detail = provider_connections.detail || excluded.detail
+            """.trimIndent(),
+            MapSqlParameterSource()
+                .addValue("hid", householdId).addValue("mode", vault.mode.name.lowercase())
+                .addValue("by", userId)
+                .addValue(
+                    "detail",
+                    mapper.writeValueAsString(
+                        mapOf(
+                            STATE_HASH to sha256(state),
+                            STATE_EXPIRES to Instant.now().plus(STATE_LIFETIME).toString(),
+                            STATE_STARTED_BY to userId.toString(),
+                        ),
+                    ),
+                ),
+        )
         return mapOf("authorizationUrl" to vault.authorizationUrl(householdId, state), "state" to state)
     }
 
@@ -186,15 +216,19 @@ class ConnectService(
      * `provider_*` code and `details.connected = true`; the documents are then
      * one [listDocuments] away, with no new code.
      */
-    fun completeDocumentVault(householdId: UUID, code: String): List<VaultDocument> {
+    fun completeDocumentVault(householdId: UUID, code: String, state: String?): List<VaultDocument> {
         val userId = userContext.require()
         transactions.execute { households.get(householdId) }
         requireEnabled(DIGILOCKER, vault.mode)
+        // Before the code is spent: a code that arrives with somebody else's
+        // state, or none, is somebody else's DigiLocker (login CSRF), and
+        // redeeming it would import their documents into this household.
+        inTransaction { requireState(householdId, userId, state) }
         // Not idempotent: an authorisation code redeems once, so a retry after a
         // timeout would come back "rejected" and blame the person for our wait.
         val session = provider(DIGILOCKER, "exchange", idempotent = false) { vault.exchange(householdId, code) }
         transactions.execute {
-            upsertConnection(householdId, "digilocker", vault.mode, "active", session.token, userId)
+            storeSession(householdId, session)
             audit.record(
                 householdId = householdId, actorUserId = userId, action = "provider.connect",
                 entityType = "provider", entityId = null, diff = mapOf("provider" to "digilocker"),
@@ -218,7 +252,7 @@ class ConnectService(
         val session = inTransaction {
             households.get(householdId)
             requireEnabled(DIGILOCKER, vault.mode)
-            activeSession(householdId, "digilocker", requireActive = true)
+            activeSession(householdId, requireActive = true)
         }
         return provider(DIGILOCKER, "list") { vault.list(session) }
     }
@@ -232,7 +266,7 @@ class ConnectService(
         val session = inTransaction {
             households.get(householdId)
             requireEnabled(DIGILOCKER, vault.mode)
-            activeSession(householdId, "digilocker")
+            activeSession(householdId)
         }
         val available = provider(DIGILOCKER, "list") { vault.list(session) }.associateBy { it.uri }
 
@@ -540,6 +574,106 @@ class ConnectService(
         )
     }
 
+    // --- DigiLocker session at rest ----------------------------------------------
+
+    /**
+     * The `state` must be the one [startDocumentVault] handed to this same
+     * person, and not stale. Every way of failing gives the same answer, so the
+     * refusal says nothing about whose flow was in progress.
+     */
+    private fun requireState(householdId: UUID, userId: UUID, state: String?) {
+        val pending = jdbc.query(
+            """
+            select detail ->> '$STATE_HASH' as hash, detail ->> '$STATE_EXPIRES' as expires,
+                   detail ->> '$STATE_STARTED_BY' as started_by
+            from provider_connections where household_id = :hid and provider = 'digilocker'
+            """.trimIndent(),
+            mapOf("hid" to householdId),
+        ) { rs, _ -> Triple(rs.getString("hash"), rs.getString("expires"), rs.getString("started_by")) }
+            .firstOrNull()
+
+        val (hash, expires, startedBy) = pending ?: Triple(null, null, null)
+        val matches = hash != null && !state.isNullOrBlank() && state.length <= 200 &&
+            java.security.MessageDigest.isEqual(
+                sha256(state).toByteArray(Charsets.US_ASCII),
+                hash.toByteArray(Charsets.US_ASCII),
+            ) &&
+            startedBy == userId.toString() &&
+            runCatching { Instant.parse(expires) }.getOrNull()?.isAfter(Instant.now()) == true
+        if (!matches) {
+            throw ApiException.badRequest(
+                "connect_state_mismatch",
+                "That DigiLocker sign-in didn't start here, or took too long, so nothing was connected. " +
+                    "Please start again from Almira.",
+            )
+        }
+    }
+
+    /**
+     * V24's design, finally followed: the token encrypted with the household's
+     * data key in `access_token_enc`, its real expiry in `expires_at`, and
+     * `external_ref` — "never a credential" — left empty. The state is spent.
+     */
+    private fun storeSession(householdId: UUID, session: ProviderSession) {
+        jdbc.update(
+            """
+            update provider_connections set
+              mode = :mode, status = 'active', external_ref = null,
+              access_token_enc = :token, expires_at = :expires, scope = :scope,
+              detail = detail - '$STATE_HASH' - '$STATE_EXPIRES' - '$STATE_STARTED_BY'
+            where household_id = :hid and provider = 'digilocker'
+            """.trimIndent(),
+            MapSqlParameterSource()
+                .addValue("hid", householdId).addValue("mode", vault.mode.name.lowercase())
+                .addValue("token", cipher.encrypt(householdId, TOKEN_FIELD, session.token))
+                .addValue("expires", java.sql.Timestamp.from(session.expiresAt))
+                .addValue("scope", session.scope),
+        )
+    }
+
+    /**
+     * The stored session, decrypted, with the expiry it really has. An expired
+     * one is refused here rather than sent, so the answer is "connect again"
+     * and not the provider's rejection.
+     */
+    private fun activeSession(householdId: UUID, requireActive: Boolean = false): ProviderSession {
+        val stored = jdbc.query(
+            """
+            select access_token_enc, expires_at, scope from provider_connections
+            where household_id = :hid and provider = 'digilocker'
+              and (:anyStatus or status = 'active')
+            """.trimIndent(),
+            mapOf("hid" to householdId, "anyStatus" to !requireActive),
+        ) { rs, _ ->
+            val token = rs.getBytes("access_token_enc") ?: return@query null
+            ProviderSession(
+                token = cipher.decrypt(householdId, TOKEN_FIELD, token),
+                expiresAt = rs.getTimestamp("expires_at")?.toInstant() ?: Instant.EPOCH,
+                scope = rs.getString("scope") ?: "files.issueddocs",
+            )
+        }.firstOrNull()
+            ?: throw ApiException.badRequest(
+                "not_connected", "Connect that first — there's nothing to fetch yet.",
+            )
+        if (!stored.expiresAt.isAfter(Instant.now())) {
+            throw ApiException.badRequest(
+                "connection_expired",
+                "Your DigiLocker connection has run out. Connect again — your documents are still there.",
+            )
+        }
+        return stored
+    }
+
+    private fun newState(): String {
+        val bytes = ByteArray(32).also(java.security.SecureRandom()::nextBytes)
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    }
+
+    private fun sha256(value: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
     // --- plumbing --------------------------------------------------------------
 
     /**
@@ -599,16 +733,17 @@ class ConnectService(
             "not_connected", "Connect that first — there's nothing to fetch yet.",
         )
 
-    private fun activeSession(householdId: UUID, provider: String, requireActive: Boolean = false) = ProviderSession(
-        token = externalRef(householdId, provider, requireActive),
-        expiresAt = Instant.now().plusSeconds(3600),
-        scope = "files.issueddocs",
-    )
-
     private companion object {
         const val DIGILOCKER = "digilocker"
         const val AA = "aa"
         const val WHATSAPP = "whatsapp"
+
+        /** The AAD position of a DigiLocker token (docs/05 §4). */
+        const val TOKEN_FIELD = "provider_connections.access_token_enc"
+        const val STATE_HASH = "oauth_state_sha256"
+        const val STATE_EXPIRES = "oauth_state_expires_at"
+        const val STATE_STARTED_BY = "oauth_started_by"
+        val STATE_LIFETIME: java.time.Duration = java.time.Duration.ofMinutes(15)
     }
 
     private fun touchSync(householdId: UUID, provider: String) {

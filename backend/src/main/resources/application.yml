@@ -174,7 +174,7 @@ almira:
       max-attempts: ${ALMIRA_PROVIDER_PUSH_MAX_ATTEMPTS:3}
       retry-backoff: ${ALMIRA_PROVIDER_PUSH_RETRY_BACKOFF:500ms}
     digilocker:
-      mode: ${ALMIRA_PROVIDER_DIGILOCKER_MODE:sandbox}
+      mode: ${ALMIRA_PROVIDER_DIGILOCKER_MODE:disabled}
       base-url: ${ALMIRA_PROVIDER_DIGILOCKER_BASE_URL:}
       client-id: ${ALMIRA_PROVIDER_DIGILOCKER_CLIENT_ID:}
       client-secret: ${ALMIRA_PROVIDER_DIGILOCKER_CLIENT_SECRET:}

@@ -29,6 +29,7 @@ import javax.sql.DataSource
 @TestPropertySource(
     properties = [
         "almira.providers.aa.mode=sandbox",
+        "almira.providers.digilocker.mode=sandbox",
         "almira.providers.digilocker.timeout=1s",
         "almira.providers.digilocker.max-attempts=3",
         "almira.providers.aa.timeout=1s",
@@ -78,8 +79,8 @@ class ConnectCallsOutsideTransactionsApiTest : ApiTestBase() {
 
     @Test
     fun `listing documents from a hanging DigiLocker holds no connection, and gives up within the budget`() {
-        post(connect("digilocker/start"), owner)
-        post(connect("digilocker/complete"), owner, mapOf("code" to "one-time"))
+        val state = post(connect("digilocker/start"), owner).json().path("state").asText()
+        post(connect("digilocker/complete"), owner, mapOf("code" to "one-time", "state" to state))
         faults.always("digilocker", SandboxFault.HANG)
 
         val started = System.nanoTime()
@@ -94,8 +95,8 @@ class ConnectCallsOutsideTransactionsApiTest : ApiTestBase() {
 
     @Test
     fun `importing from a hanging DigiLocker holds no connection, and stores nothing`() {
-        post(connect("digilocker/start"), owner)
-        post(connect("digilocker/complete"), owner, mapOf("code" to "one-time"))
+        val state = post(connect("digilocker/start"), owner).json().path("state").asText()
+        post(connect("digilocker/complete"), owner, mapOf("code" to "one-time", "state" to state))
         faults.succeedFirst("digilocker", 1)
         faults.always("digilocker", SandboxFault.HANG)
 
@@ -134,8 +135,8 @@ class ConnectCallsOutsideTransactionsApiTest : ApiTestBase() {
 
     @Test
     fun `a working connect still imports`() {
-        post(connect("digilocker/start"), owner)
-        post(connect("digilocker/complete"), owner, mapOf("code" to "one-time"))
+        val state = post(connect("digilocker/start"), owner).json().path("state").asText()
+        post(connect("digilocker/complete"), owner, mapOf("code" to "one-time", "state" to state))
         val imported = post(connect("digilocker/import"), owner, mapOf("uris" to listOf("in.lic-POLICY-5567123456")))
         assertThat(imported.status()).isEqualTo(HttpStatus.OK)
         assertThat(imported.json().path("imported").asInt()).isEqualTo(1)

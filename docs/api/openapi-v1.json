@@ -993,6 +993,9 @@
         "properties": {
           "code": {
             "type": "string"
+          },
+          "state": {
+            "type": "string"
           }
         },
         "required": [

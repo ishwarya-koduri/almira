@@ -72,7 +72,7 @@ configured, and clients branch on the code.
 ```yaml
 almira:
   providers:
-    digilocker: { mode: sandbox }   # disabled | sandbox | live
+    digilocker: { mode: disabled }  # disabled | sandbox | live — hidden until a client offers it
     aa:         { mode: disabled }  # cut from v1
     whatsapp:   { mode: sandbox }
     sms:        { mode: sandbox }

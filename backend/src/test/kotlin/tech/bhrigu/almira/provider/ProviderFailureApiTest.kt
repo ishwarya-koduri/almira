@@ -23,7 +23,7 @@ import tech.bhrigu.almira.support.ApiTestBase
 // kept, and this suite is what keeps it honest, so it asks for it by name
 // (ProviderDisabledApiTest covers the default). One shared context for both
 // provider suites — the same properties are the same cache key.
-@TestPropertySource(properties = ["almira.providers.aa.mode=sandbox"])
+@TestPropertySource(properties = ["almira.providers.aa.mode=sandbox", "almira.providers.digilocker.mode=sandbox"])
 @DisplayName("Provider failures, end to end")
 class ProviderFailureApiTest : ApiTestBase() {
 
@@ -164,10 +164,9 @@ class ProviderFailureApiTest : ApiTestBase() {
 
     @Test
     fun `DigiLocker's failures are told apart, and a code is not redeemed twice`() {
-        post(connect("digilocker/start"), owner)
-
+        val state = post(connect("digilocker/start"), owner).json().path("state").asText()
         faults.always("digilocker", SandboxFault.TIMEOUT)
-        val timedOut = post(connect("digilocker/complete"), owner, mapOf("code" to "c"))
+        val timedOut = post(connect("digilocker/complete"), owner, mapOf("code" to "c", "state" to state))
         assertThat(timedOut.status()).isEqualTo(HttpStatus.GATEWAY_TIMEOUT)
         assertThat(timedOut.errorCode()).isEqualTo("provider_timeout")
         assertThat(timedOut.json().path("error").path("details").path("attempts").asInt())
@@ -175,12 +174,12 @@ class ProviderFailureApiTest : ApiTestBase() {
             .isEqualTo(1)
 
         faults.clear(); faults.always("digilocker", SandboxFault.REJECTED)
-        val rejected = post(connect("digilocker/complete"), owner, mapOf("code" to "c"))
+        val rejected = post(connect("digilocker/complete"), owner, mapOf("code" to "c", "state" to state))
         assertThat(rejected.status()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY)
         assertThat(rejected.errorCode()).isEqualTo("provider_rejected")
 
         faults.clear()
-        post(connect("digilocker/complete"), owner, mapOf("code" to "c"))
+        post(connect("digilocker/complete"), owner, mapOf("code" to "c", "state" to state))
         faults.always("digilocker", SandboxFault.UNAVAILABLE)
         val unavailable = post(connect("digilocker/import"), owner, mapOf("uris" to listOf("x")))
         assertThat(unavailable.status()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
@@ -204,12 +203,11 @@ class ProviderFailureApiTest : ApiTestBase() {
             val hid = createHousehold(owner, "Koduri ${fault.name}", "private", "Ishwarya").path("id").asText()
             val connectTo = { path: String -> "/api/v1/households/$hid/connect/$path" }
             faults.clear()
-            post(connectTo("digilocker/start"), owner)
-
+            val state = post(connectTo("digilocker/start"), owner).json().path("state").asText()
             // The exchange succeeds — the code is spent — and every list attempt fails.
             faults.succeedFirst("digilocker", 1)
             faults.always("digilocker", fault)
-            val failed = post(connectTo("digilocker/complete"), owner, mapOf("code" to "one-time"))
+            val failed = post(connectTo("digilocker/complete"), owner, mapOf("code" to "one-time", "state" to state))
             assertThat(failed.status()).describedAs(fault.name).isEqualTo(expected.first)
             assertThat(failed.errorCode()).describedAs(fault.name).isEqualTo(expected.second)
             assertThat(failed.json().path("error").path("details").path("connected").asBoolean())

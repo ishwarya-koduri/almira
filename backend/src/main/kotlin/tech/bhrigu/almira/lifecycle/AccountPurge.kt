@@ -52,6 +52,9 @@ data class PurgeResult(
  * **Order.** One transaction for the database. Document bytes are deleted only
  * after it commits, and sessions are revoked in Redis only then — a purge that
  * rolls back must leave a person able to sign in to an account that still exists.
+ * The storage keys are written to `pending_storage_deletions` in that
+ * transaction, so bytes storage fails to delete are tried again on every sweep
+ * until they are gone (V109).
  */
 @Component
 class AccountPurge(
@@ -64,6 +67,7 @@ class AccountPurge(
     private val transactions = TransactionTemplate(DataSourceTransactionManager(ownerDataSource))
     private val records = LifecycleRecords(jdbc)
     private val writes = LifecycleWrites(jdbc)
+    val pendingDeletions = PendingStorageDeletions(jdbc, storage)
 
     fun due(asOf: Instant): List<UUID> = jdbc.query(
         """
@@ -176,19 +180,15 @@ class AccountPurge(
                     "recordsErased" to erasedRecords, "sharesPassedOn" to passed,
                 ),
             )
+            pendingDeletions.queue(keys)
             storageKeys = keys
             PurgeResult(closureId, erasedHouseholds, leftHouseholds, erasedRecords, passed)
         } ?: return null
 
         sessions.forEach { runCatching { revocations.revoke(it) } }
-        storageKeys.forEach { key ->
-            runCatching { storage.delete(key) }.onFailure {
-                // The row is gone and the bytes are ciphertext under a key that
-                // named a household which no longer exists. Worth knowing; not
-                // worth undoing an erasure for.
-                log.warn("could not delete stored document after purge: {}", it.javaClass.simpleName)
-            }
-        }
+        // A key storage refuses stays queued, for the next sweep.
+        runCatching { pendingDeletions.deleteQueued(storageKeys) }
+            .onFailure { log.warn("could not delete stored documents after purge: {}", it.javaClass.simpleName) }
         log.info(
             "account purge {}: {} household(s) erased, {} left, {} record(s) erased, {} share(s) passed on",
             closureId, result.householdsErased, result.householdsLeft, result.recordsErased, result.sharesPassedOn,

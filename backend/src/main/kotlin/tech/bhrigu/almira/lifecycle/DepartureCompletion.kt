@@ -46,7 +46,8 @@ data class DepartureResult(
  * links to things that stay behind are cut, and their part of every joint record
  * passes to the other holders. If that transaction fails, the new document bytes
  * are removed and nothing in the old household has changed; the next sweep tries
- * again. Old document bytes are removed only after it commits.
+ * again. Old document bytes are removed only after it commits, from keys queued
+ * in that transaction and retried by the sweep until storage confirms (V109).
  *
  * **What cannot move.** A sealed field is bound to its household in the AAD
  * the client wrote (docs/12), and the server cannot re-seal what it cannot read.
@@ -75,6 +76,7 @@ class DepartureCompletion(
     private val runtime = runtimeJdbc
     private val records = LifecycleRecords(owner)
     private val writes = LifecycleWrites(owner)
+    private val pendingDeletions = PendingStorageDeletions(owner, storage)
 
     private data class Due(
         val id: UUID, val householdId: UUID, val memberId: UUID, val userId: UUID,
@@ -109,7 +111,10 @@ class DepartureCompletion(
                     mapOf("id" to departureId),
                 ) { rs, _ -> rs.getObject("id", UUID::class.java) }.isNotEmpty()
                 if (!locked) return@execute null
-                carryOut(departure, prepared).also { oldKeys = it.second }.first
+                carryOut(departure, prepared).also {
+                    oldKeys = it.second
+                    pendingDeletions.queue(oldKeys)
+                }.first
             }
         } catch (e: Exception) {
             newKeys.forEach { key -> runCatching { storage.delete(key) } }
@@ -119,11 +124,9 @@ class DepartureCompletion(
             newKeys.forEach { key -> runCatching { storage.delete(key) } }
             return null
         }
-        oldKeys.forEach { key ->
-            runCatching { storage.delete(key) }.onFailure {
-                log.warn("could not delete a moved document's old bytes: {}", it.javaClass.simpleName)
-            }
-        }
+        // Queued in the transaction: a key storage refuses is tried again by the sweep.
+        runCatching { pendingDeletions.deleteQueued(oldKeys) }
+            .onFailure { log.warn("could not delete a moved document's old bytes: {}", it.javaClass.simpleName) }
 
         tell(
             departure.userId, result.destinationHouseholdId ?: departure.householdId, "lifecycle.departure.completed.you",

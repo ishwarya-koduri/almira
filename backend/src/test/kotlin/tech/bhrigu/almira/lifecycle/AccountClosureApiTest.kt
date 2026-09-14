@@ -4,8 +4,19 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.core.io.ByteArrayResource
+import org.springframework.http.HttpEntity
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.util.LinkedMultiValueMap
+import org.springframework.web.client.RestTemplate
+import tech.bhrigu.almira.document.DocumentStorage
+import tech.bhrigu.almira.security.SessionRevocationCache
 import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
@@ -16,6 +27,9 @@ class AccountClosureApiTest : LifecycleTestSupport() {
 
     @Autowired private lateinit var purge: AccountPurge
     @Autowired private lateinit var sweep: LifecycleSweep
+    @Autowired private lateinit var storage: DocumentStorage
+    @Autowired private lateinit var revocations: SessionRevocationCache
+    @Autowired @Qualifier("ownerDataSource") private lateinit var ownerDataSource: javax.sql.DataSource
 
     private lateinit var ishwarya: String
     private lateinit var ravi: String
@@ -342,5 +356,44 @@ class AccountClosureApiTest : LifecycleTestSupport() {
             ),
         ).describedAs("the household's own audit lines outlive it").isGreaterThanOrEqualTo(1)
         assertThat(logRows).isGreaterThanOrEqualTo(1)
+    }
+    @Test
+    fun `bytes storage fails to delete after the purge stay queued and the next sweep deletes them`() {
+        val gold = capture(ravi, householdId, "gold_physical", "Ravi's gold", BigDecimal(200_000))
+        val http = RestTemplate(org.springframework.http.client.JdkClientHttpRequestFactory())
+        val uploaded = http.exchange(
+            url("/api/v1/households/$householdId/documents?docType=statement&entityType=investment&entityId=${gold.path("id").asText()}"),
+            HttpMethod.POST,
+            HttpEntity(
+                LinkedMultiValueMap<String, Any>().apply {
+                    add("file", object : ByteArrayResource("Ravi's will".toByteArray()) { override fun getFilename() = "will.txt" })
+                },
+                HttpHeaders().apply { contentType = MediaType.MULTIPART_FORM_DATA; setBearerAuth(ravi) },
+            ),
+            String::class.java,
+        )
+        val key = db.queryForObject(
+            "select storage_key from documents where id = ?::uuid", String::class.java,
+            mapper.readTree(uploaded.body).path("id").asText(),
+        )!!
+        stepUp(ravi)
+        post("/api/v1/me/closure", ravi).also { assertThat(it.status()).describedAs(it.body).isEqualTo(HttpStatus.CREATED) }
+
+        // Storage is down for the moment the purge deletes bytes.
+        val down = object : DocumentStorage by storage {
+            override fun delete(key: String) = throw java.io.UncheckedIOException(java.io.IOException("storage unavailable"))
+        }
+        val later = Instant.now().plus(Duration.ofDays(31))
+        assertThat(AccountPurge(ownerDataSource, down, revocations).purge(closureId(userId(ravi)), later)).isNotNull
+        assertThat(db.queryForObject("select count(*) from documents where storage_key = ?", Int::class.java, key)).isZero()
+        assertThat(storage.get(key)).describedAs("the bytes are still stored").isNotEmpty()
+        assertThat(
+            db.queryForObject("select attempts from pending_storage_deletions where storage_key = ?", Int::class.java, key),
+        ).describedAs("the key is recorded, with the failed attempt").isEqualTo(1)
+
+        sweep.run(later)
+        assertThat(db.queryForObject("select count(*) from pending_storage_deletions where storage_key = ?", Int::class.java, key))
+            .isZero()
+        assertThatThrownBy { storage.get(key) }.describedAs("the bytes are gone").isInstanceOf(Exception::class.java)
     }
 }

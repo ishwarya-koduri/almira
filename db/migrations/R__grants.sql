@@ -77,6 +77,12 @@ begin
     execute 'grant update (revoked_at) on support_codes to almira_app';
   end if;
 
+  -- Bytes an erasure still has to delete (V109). The sweep's alone, on the owner
+  -- connection; the key of an erased document is nothing the runtime role needs.
+  if to_regclass('public.pending_storage_deletions') is not null then
+    execute 'revoke all on pending_storage_deletions from almira_app';
+  end if;
+
   -- Anything a later migration creates inherits these defaults automatically.
   execute 'alter default privileges in schema public '
           'grant select, insert, update, delete on tables to almira_app';

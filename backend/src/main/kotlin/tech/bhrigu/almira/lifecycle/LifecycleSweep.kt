@@ -41,6 +41,9 @@ class LifecycleSweep(
     }
 
     fun run(asOf: Instant = Instant.now()): LifecycleSweepResult {
+        // Bytes an earlier purge or departure could not delete (V109).
+        runCatching { purge.pendingDeletions.deleteQueued() }
+            .onFailure { log.warn("retrying stored document deletions failed: {}", it.javaClass.simpleName) }
         var erased = 0
         purge.due(asOf).forEach { closure ->
             runCatching { purge.purge(closure, asOf) }

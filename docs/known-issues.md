@@ -1924,3 +1924,34 @@ answer should go into `DepartureCompletion.carryOut`, which has the same shape.
 **Risk if left** Rare (needs that sequence within thirty days), but a household
 nobody can run, with family records still in it, fixed only by hand in the
 database.
+
+---
+
+## 66. Erased documents' bytes stayed in storage for good if the delete after the purge failed
+
+**Resolved** (2026-09-15). Kept so the number means something where it is cited.
+
+**Where** `lifecycle/AccountPurge.kt` (`purge`), `lifecycle/DepartureCompletion.kt`
+(`complete`), `lifecycle/LifecycleSweep.kt` (`run`),
+`lifecycle/PendingStorageDeletions.kt`, and `pending_storage_deletions` (V109).
+
+**What changed** A purge, and a departure that erases or moves documents,
+deletes the document rows in its transaction and the stored bytes only after it
+commits. The storage keys were held only in memory and each delete was
+best-effort, logged by exception class alone. A storage outage at that moment
+left the bytes in the bucket permanently, with nothing naming them; in a
+household that carries on, the household's data key still exists, so the
+"erased" paper stayed readable to anyone holding the key-encryption key. Now
+the keys are written to `pending_storage_deletions` in the same transaction.
+Each is deleted after commit as before, and a key leaves the table only once
+storage has confirmed the delete; one that fails keeps its row (with an attempt
+count) and every lifecycle sweep tries it again first. A key a `documents` row
+names again is dropped from the table without deleting the bytes. The table is
+the owner connection's alone: row-level security on, no policy, nothing granted
+to the runtime role. Proven by `AccountClosureApiTest` ("bytes storage fails to
+delete after the purge stay queued and the next sweep deletes them").
+
+**What is still open** Bytes that were orphaned this way before V109 are not
+found: nothing recorded their keys, and finding them means listing the bucket
+against `documents`. The upload rollback in `DocumentService` and the removal of
+new copies when a departure's second step fails remain best-effort.

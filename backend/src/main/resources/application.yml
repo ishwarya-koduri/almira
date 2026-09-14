@@ -103,11 +103,6 @@ almira:
   outbox:
     poll-interval: ${ALMIRA_OUTBOX_POLL_INTERVAL:PT2S}
     batch-size: 50
-  # Who answers a complaint about personal data, and within how many days
-  # (DPDP Act s.13, Rules 9 and 14(3); docs/23 "Your data rights"). Shown in
-  # every rights reply. Unset name or email is reported as "not named yet",
-  # never filled in with something invented. The period must be 1 to 90 days or
-  # the server refuses to start.
   # "Contact us" in Settings (X-42). Off unless set: a channel ("whatsapp" or
   # "email"), its address (+91... or name@domain), and one stated reply time. No
   # provider is called; the client opens a wa.me or mailto: link itself. A
@@ -116,6 +111,11 @@ almira:
     channel: ${ALMIRA_SUPPORT_CHANNEL:}
     address: ${ALMIRA_SUPPORT_ADDRESS:}
     reply-time: ${ALMIRA_SUPPORT_REPLY_TIME:}
+  # Who answers a complaint about personal data, and within how many days
+  # (DPDP Act s.13, Rules 9 and 14(3); docs/23 "Your data rights"). Shown in
+  # every rights reply. Unset name or email is reported as "not named yet",
+  # never filled in with something invented. The period must be 1 to 90 days or
+  # the server refuses to start.
   privacy:
     grievance:
       name: ${ALMIRA_GRIEVANCE_NAME:}

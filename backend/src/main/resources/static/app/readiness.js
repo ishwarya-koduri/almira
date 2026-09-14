@@ -39,6 +39,18 @@ export function noScoreKey(readiness) {
   return "ready.null.nothingApplies";
 }
 
+/**
+ * "Someone can actually open it" (docs/22 §4.1): said beside the checks, never
+ * counted in them. Pure, so the choice of sentence can be reasoned about.
+ */
+export function openableKey(access) {
+  if (access.openableWithRecovery >= access.sealedLocations) return "ready.openable.all";
+  if (access.openableWithRecovery === 0) {
+    return access.sealedBy?.some((person) => person.isMe) ? "ready.openable.noneMine" : "ready.openable.none";
+  }
+  return "ready.openable.some";
+}
+
 /** Consecutive gaps on the same record become one to-do row. */
 export function groupGaps(gaps) {
   const groups = [];
@@ -113,6 +125,12 @@ export function readinessCard(readiness, open) {
     )),
   );
 
+  const access = readiness.sealedAccess;
+  const openable = access && el("p.notice", { "data-sealed-access": "true" },
+    el("span.info-mark", { "aria-hidden": "true" }, "i"),
+    el("span", {}, t(openableKey(access), { openable: access.openableWithRecovery, total: access.sealedLocations })),
+  );
+
   const groups = groupGaps(readiness.gaps);
   // An older server sends no list; the count alone is then only a caveat.
   const leftOut = Array.isArray(readiness.leftOut) ? readiness.leftOut : [];
@@ -150,6 +168,7 @@ export function readinessCard(readiness, open) {
     el("p.caption.muted", { style: { marginTop: 0 } }, t("ready.intro")),
     headline,
     checks,
+    openable,
     todo,
     caveats,
   );

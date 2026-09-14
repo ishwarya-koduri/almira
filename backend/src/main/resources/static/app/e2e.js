@@ -12,6 +12,9 @@
    ============================================================================= */
 
 import { api } from "./api.js";
+import {
+  SECRET_BYTES, TYPE_KEY, TYPE_SHARE, split, combine, encodeCode, decodeCode,
+} from "./recovery-codes.js";
 
 const ITERATIONS = 600_000;
 const VERIFIER = "almira";
@@ -20,10 +23,22 @@ const VERIFIER = "almira";
 let contentKey = null;
 let keyVersion = 1;
 
+/**
+ * Someone else's content key, opened with their recovery sheet or two of their
+ * shares under an open emergency window (docs/12 §10.5). Memory only, like the
+ * reader's own, and dropped by the same lock.
+ */
+const subjectKeys = new Map();
+
 export const e2e = {
   get isUnlocked() { return contentKey !== null; },
-  lock() { contentKey = null; },
+  lock() { contentKey = null; subjectKeys.clear(); },
+  /** Whether this session holds [memberId]'s key, opened with their recovery copy. */
+  hasKeyFor(memberId) { return subjectKeys.has(memberId); },
 };
+
+export const RECOVERY_KEY = "recovery_key";
+export const RECOVERY_SHARES = "recovery_shares";
 
 /* -----------------------------------------------------------------------------
    Bytes
@@ -196,6 +211,7 @@ export async function enable(householdId, passphrase) {
     wrappedKey: await seal(wrappingKey, rawContentKey, null, 1),
     verifier: await seal(key, encoder.encode(VERIFIER), null, 1),
     keyVersion: 1,
+    contentKeyId: await contentKeyIdOf(rawContentKey),
   };
   await api.putE2eKey(householdId, envelope);
 
@@ -259,8 +275,207 @@ export async function rotate(householdId, currentPassphrase, newPassphrase) {
     wrappedKey: await seal(wrappingKey, rawContentKey, null, nextVersion),
     verifier: await seal(contentKey, encoder.encode(VERIFIER), null, nextVersion),
     keyVersion: nextVersion,
+    // The same key, said so: while recovery copies exist the server refuses a
+    // passphrase write that does not name the key they wrap (docs/12 §10.4).
+    contentKeyId: await contentKeyIdOf(rawContentKey),
   });
   keyVersion = nextVersion;
+}
+
+/* -----------------------------------------------------------------------------
+   Recovery (docs/12 §10) — a sheet, or 2-of-3 shares, the server never sees
+   ----------------------------------------------------------------------------- */
+
+/**
+ * HMAC-SHA256(contentKey, "almira content key id v1"), first 16 bytes. A PRF
+ * output: it says which key without saying anything about the key, so the
+ * server can refuse to orphan a recovery copy without being able to open one.
+ */
+async function contentKeyIdOf(rawContentKey) {
+  const mac = await crypto.subtle.importKey("raw", rawContentKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const digest = new Uint8Array(await crypto.subtle.sign("HMAC", mac, encoder.encode("almira content key id v1")));
+  return toBase64Url(digest.slice(0, 16));
+}
+
+/**
+ * HKDF, not PBKDF2: stretching exists to slow guesses at something a person
+ * chose, and nobody chose a 168-bit random secret. The kind is in the info, so
+ * a sheet's secret can never open the shares' copy or the other way round.
+ */
+async function recoveryWrappingKey(secret, salt, kind) {
+  const base = await crypto.subtle.importKey("raw", secret, "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt, info: encoder.encode(`almira recovery v1|${kind}`) },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+/**
+ * Makes a recovery copy on this device and sends nothing. What comes back is
+ * the codes to print and the body to save — in that order, so no copy exists
+ * on the server before the person has the paper that opens it.
+ *
+ * The secret is wiped from this function's memory before it returns; the
+ * codes are the only form it leaves in, and the caller drops them once saved.
+ */
+export async function prepareRecovery(kind) {
+  if (!contentKey) throw new Error("Unlock with your passphrase first.");
+  if (kind !== RECOVERY_KEY && kind !== RECOVERY_SHARES) throw new Error("That isn't a kind of recovery copy.");
+  const rawContentKey = new Uint8Array(await crypto.subtle.exportKey("raw", contentKey));
+  const secret = randomBytes(SECRET_BYTES);
+  const salt = randomBytes(16);
+  try {
+    const wrappingKey = await recoveryWrappingKey(secret, salt, kind);
+    const body = {
+      kdf: "HKDF-SHA256",
+      kdfSalt: toBase64Url(salt),
+      wrapAlgorithm: "AES-GCM-256",
+      wrappedKey: await seal(wrappingKey, rawContentKey, null),
+      verifier: await seal(contentKey, encoder.encode(VERIFIER), null),
+      contentKeyId: await contentKeyIdOf(rawContentKey),
+    };
+    let codes;
+    if (kind === RECOVERY_KEY) {
+      codes = [encodeCode(TYPE_KEY, 0, secret)];
+    } else {
+      // One uniformly random byte per coefficient, zero included (recovery-codes.js).
+      const coefficients = randomBytes(SECRET_BYTES);
+      codes = split(secret, 2, 3, (i) => coefficients[i]).map((share) => encodeCode(TYPE_SHARE, share.x, share.y));
+      coefficients.fill(0);
+    }
+    return { kind, codes, body };
+  } finally {
+    secret.fill(0);
+    rawContentKey.fill(0);
+  }
+}
+
+export function saveRecovery(householdId, prepared, holders) {
+  return api.putRecovery(householdId, prepared.kind, { ...prepared.body, holders });
+}
+
+/** The secret behind a sheet's code, or behind two share codes. Says in words what is wrong. */
+export function secretFromCodes(kind, codes) {
+  const decoded = codes.map((code) => String(code || "")).filter((code) => code.trim()).map(decodeCode);
+  if (kind === RECOVERY_KEY) {
+    if (decoded.length !== 1) throw new Error("Type the code from the recovery sheet.");
+    if (decoded[0].type !== TYPE_KEY) throw new Error("That is a recovery share, not the recovery sheet.");
+    return decoded[0].body;
+  }
+  if (decoded.some((code) => code.type !== TYPE_SHARE)) {
+    throw new Error("That is the recovery sheet, not a share. Choose “Recovery sheet” instead.");
+  }
+  if (decoded.length < 2) throw new Error("Type two of the three shares.");
+  return combine(decoded.map((code) => ({ x: code.x, y: code.body })));
+}
+
+/**
+ * Opens a recovery copy with a secret, changing nothing. The GCM tag decides,
+ * because a wrong pair of shares does not fail on its own — it combines into a
+ * different secret — and then the verifier and the key id confirm it is the
+ * key the copy claims to be.
+ */
+async function openRecoveryCopy(slot, secret) {
+  const wrappingKey = await recoveryWrappingKey(secret, fromBase64Url(slot.kdfSalt), slot.kind);
+  const wrapped = parseEnvelope(slot.wrappedKey);
+  let rawContentKey;
+  try {
+    rawContentKey = new Uint8Array(await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: wrapped.iv }, wrappingKey, wrapped.body,
+    ));
+  } catch {
+    throw new Error(slot.kind === RECOVERY_KEY
+      ? "That code doesn't open this recovery sheet. It may be an older sheet. Nothing has been changed."
+      : "Those shares don't open this. They may be from an older set, or not from the same set. Nothing has been changed.");
+  }
+  const key = await importContentKey(rawContentKey);
+  await open(key, slot.verifier, null);
+  if (await contentKeyIdOf(rawContentKey) !== slot.contentKeyId) {
+    throw new Error("This copy doesn't match the key it says it holds. Nothing has been changed.");
+  }
+  return { key, rawContentKey };
+}
+
+function slotOf(status, kind) {
+  const slot = (status.slots || []).find((candidate) => candidate.kind === kind);
+  if (!slot) throw new Error(kind === RECOVERY_KEY ? "No recovery sheet has been made." : "No recovery shares have been made.");
+  return slot;
+}
+
+/**
+ * "Can you still open it?" Opens the copy on this device, records the date,
+ * and changes nothing else — not the passphrase, not the lock state.
+ */
+export async function practiseRecovery(householdId, kind, codes) {
+  const slot = slotOf(await api.recovery(householdId), kind);
+  const secret = secretFromCodes(kind, codes);
+  try {
+    const { rawContentKey } = await openRecoveryCopy(slot, secret);
+    rawContentKey.fill(0);
+  } finally {
+    secret.fill(0);
+  }
+  return api.practiseRecovery(householdId, kind);
+}
+
+/**
+ * A forgotten passphrase, replaced: the copy opens the content key, and a new
+ * passphrase wraps the same key. Nothing sealed is rewritten, the other copies
+ * keep working, and this session is unlocked afterwards (docs/12 §6, §10.4).
+ */
+export async function recoverPassphrase(householdId, kind, codes, newPassphrase) {
+  const [status, copies] = await Promise.all([api.e2eStatus(householdId), api.recovery(householdId)]);
+  if (!status.enabled) throw new Error("No passphrase has been set up for this household yet.");
+  const secret = secretFromCodes(kind, codes);
+  let opened;
+  try {
+    opened = await openRecoveryCopy(slotOf(copies, kind), secret);
+  } finally {
+    secret.fill(0);
+  }
+  const salt = randomBytes(16);
+  const wrappingKey = await wrappingKeyFrom(newPassphrase, salt, ITERATIONS);
+  const nextVersion = status.key.keyVersion + 1;
+  await api.putE2eKey(householdId, {
+    kdf: "PBKDF2-SHA256",
+    kdfSalt: toBase64Url(salt),
+    iterations: ITERATIONS,
+    wrapAlgorithm: "AES-GCM-256",
+    wrappedKey: await seal(wrappingKey, opened.rawContentKey, null, nextVersion),
+    verifier: await seal(opened.key, encoder.encode(VERIFIER), null, nextVersion),
+    keyVersion: nextVersion,
+    contentKeyId: await contentKeyIdOf(opened.rawContentKey),
+  });
+  opened.rawContentKey.fill(0);
+  contentKey = opened.key;
+  keyVersion = nextVersion;
+}
+
+/**
+ * For the person holding an open emergency window on [memberId], with that
+ * person's sheet or two of their shares. Their key is held in memory beside
+ * the reader's own, and opens only what they sealed.
+ */
+export async function openWithTheirRecovery(householdId, memberId, kind, codes) {
+  const slot = slotOf(await api.recoveryFor(householdId, memberId), kind);
+  const secret = secretFromCodes(kind, codes);
+  try {
+    const { key, rawContentKey } = await openRecoveryCopy(slot, secret);
+    rawContentKey.fill(0);
+    subjectKeys.set(memberId, key);
+  } finally {
+    secret.fill(0);
+  }
+}
+
+/** A value [memberId] sealed, opened with the key their recovery copy gave this session. */
+export async function openSealedValueAs(memberId, householdId, recordType, recordId, fieldKey, ciphertext) {
+  const key = subjectKeys.get(memberId);
+  if (!key) throw new Error("Open it with the recovery sheet or shares first.");
+  return open(key, ciphertext, aadFor(householdId, recordType, recordId, fieldKey));
 }
 
 /* -----------------------------------------------------------------------------
@@ -324,6 +539,53 @@ export async function openSealedValue(householdId, recordType, recordId, fieldKe
 
 export const unsealField = (householdId, recordType, recordId, fieldKey) =>
   api.unsealValue(householdId, recordType, recordId, fieldKey);
+
+/**
+ * The WebCrypto half of recovery, which `scripts/check-recovery.js` cannot
+ * reach: HKDF against RFC 5869 test case 1, then the wrapping keys and the key
+ * id against the constants RecoveryReferenceTest asserts on the JVM.
+ *
+ *   import('/app/e2e.js').then(m => m.recoverySelfTest())
+ */
+export async function recoverySelfTest() {
+  const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const unhex = (text) => Uint8Array.from(text.match(/../g), (pair) => parseInt(pair, 16));
+  const hkdfBits = async (ikm, salt, info, bits) => crypto.subtle.deriveBits(
+    { name: "HKDF", hash: "SHA-256", salt, info },
+    await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]), bits,
+  );
+  const exportable = async (secret, salt, kind) => hex(await hkdfBits(secret, salt, encoder.encode(`almira recovery v1|${kind}`), 256));
+
+  const secret = new Uint8Array(21).map((_, i) => i);
+  const salt = new Uint8Array(16).map((_, i) => i);
+  const checks = [
+    ["HKDF, RFC 5869 test case 1",
+      hex(await hkdfBits(unhex("0b".repeat(22)), unhex("000102030405060708090a0b0c"), unhex("f0f1f2f3f4f5f6f7f8f9"), 336)),
+      "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"],
+    ["the recovery sheet's wrapping key", await exportable(secret, salt, RECOVERY_KEY),
+      "94b5b1c89dd4196ad9b6de8cdd669f446013310874b9eb4d0bcea169811061ce"],
+    ["the recovery shares' wrapping key", await exportable(secret, salt, RECOVERY_SHARES),
+      "716457295b3df062e884456a9d4d37945b5cc88f5390a0da4d5045d3d50beb64"],
+    ["the content key id", await contentKeyIdOf(new Uint8Array(32).map((_, i) => 0x40 + i)), "VrqqDb7VVhHIkN5-ZUdCvQ"],
+  ];
+  const failed = checks.filter(([, actual, expected]) => actual !== expected);
+  if (failed.length) {
+    throw new Error("Recovery no longer agrees with the JVM reference:\n" +
+      failed.map(([what, actual, expected]) => `  ${what}\n    got      ${actual}\n    expected ${expected}`).join("\n"));
+  }
+  // And the key derived here opens a copy sealed with it, which is the half a person uses.
+  const wrapping = await recoveryWrappingKey(secret, salt, RECOVERY_KEY);
+  const rawKey = new Uint8Array(32).map((_, i) => 0x40 + i);
+  const slot = {
+    kind: RECOVERY_KEY, kdfSalt: toBase64Url(salt),
+    wrappedKey: await seal(wrapping, rawKey, null, 1),
+    verifier: await seal(await importContentKey(rawKey), encoder.encode(VERIFIER), null, 1),
+    contentKeyId: "VrqqDb7VVhHIkN5-ZUdCvQ",
+  };
+  const opened = await openRecoveryCopy(slot, secretFromCodes(RECOVERY_KEY, ["04000-0820C-20A1G-7104G-M2RC1-M70Y4-0H289-H8JCE"]));
+  if (hex(opened.rawContentKey) !== hex(rawKey)) throw new Error("A sheet's code did not open its own copy.");
+  return { agreed: [...checks.map(([what]) => what), "a sheet's code opens its copy"] };
+}
 
 /* -----------------------------------------------------------------------------
    The interop known answer (docs/zk-interop-acceptance.md B4)

@@ -27,7 +27,8 @@ import { api } from "./api.js";
 import { el, mount, sheet, field, textInput, withBusy, toast, skeletonRows } from "./ui.js";
 import { state } from "./state.js";
 import { t, language } from "./i18n.js";
-import { e2e, unlock as unlockE2e, sealField, unsealField, openSealedValue } from "./e2e.js";
+import { e2e, unlock as unlockE2e, sealField, unsealField, openSealedValue, openSealedValueAs } from "./e2e.js";
+import { sealReassurance, sealedLineText } from "./recovery.js";
 
 /** The contract with every other client, and with the server's index. */
 export const FIELD = {
@@ -51,7 +52,20 @@ const SLOTS = [
  */
 async function openSlot(recordType, recordId, fieldKey, value) {
   if (!value) return { state: "empty" };
-  if (!value.sealedByMe) return { state: "theirs" };
+  if (!value.sealedByMe) {
+    // Someone else's, opened only if this session holds their key from their
+    // recovery sheet or shares (docs/12 §10.5). Otherwise say who could open it.
+    const memberId = value.access?.sealedByMemberId;
+    if (memberId && e2e.hasKeyFor(memberId)) {
+      try {
+        const text = await openSealedValueAs(memberId, state.household.id, recordType, recordId, fieldKey, value.ciphertext);
+        return { state: "openedWithRecovery", text, access: value.access };
+      } catch {
+        return { state: "unreadable" };
+      }
+    }
+    return { state: "theirs", access: value.access };
+  }
   if (!e2e.isUnlocked) return { state: "locked" };
   try {
     const text = await openSealedValue(state.household.id, recordType, recordId, fieldKey, value.ciphertext);
@@ -70,8 +84,9 @@ async function openRecord(record) {
 function slotText(opened) {
   switch (opened.state) {
     case "open": return opened.text;
+    case "openedWithRecovery": return opened.text;
     case "empty": return null;
-    case "theirs": return t("where.theirs");
+    case "theirs": return sealedLineText(opened.access);
     case "locked": return t("where.lockedValue");
     default: return t("where.unreadable");
   }
@@ -81,7 +96,7 @@ function slotText(opened) {
    Unlocking, inline — the passphrase is asked for where it is needed
    ----------------------------------------------------------------------------- */
 
-function unlockForm(onUnlocked) {
+export function unlockForm(onUnlocked) {
   const passphrase = textInput({
     type: "password", autocomplete: "current-password", "aria-label": t("security.passphrase"),
   });
@@ -177,8 +192,10 @@ export async function openEditor(record, onSaved) {
   const people = el("datalist#" + listId, {});
   suggestions().forEach((role) => people.append(el("option", { value: role })));
 
-  const current = (slot) => (record.opened[slot].state === "open" ? record.opened[slot].text : "");
-  const theirs = (slot) => record.opened[slot].state === "theirs";
+  const current = (slot) => (["open", "openedWithRecovery"].includes(record.opened[slot].state) ? record.opened[slot].text : "");
+  // Not theirs to change even when opened with a recovery copy: the value stays
+  // the sealer's (docs/20 §5), and an heir reads it, never rewrites it.
+  const theirs = (slot) => ["theirs", "openedWithRecovery"].includes(record.opened[slot].state);
 
   const location = el("textarea.textarea", {
     rows: 3, value: current("originalLocation"), disabled: theirs("originalLocation"),
@@ -221,10 +238,13 @@ export async function openEditor(record, onSaved) {
     title: record.title,
     body: el("div.stack-3", {},
       el("p.caption.muted", {}, t("where.editorIntro")),
+      sealReassurance([location, holder]),
       field({ label: t("where.location"), control: location,
-        help: theirs("originalLocation") ? t("where.theirs") : t("where.locationHelp") }),
+        help: theirs("originalLocation") ? slotText({ state: "theirs", access: record.opened.originalLocation.access })
+          : t("where.locationHelp") }),
       field({ label: t("where.keyHolder"), control: holder,
-        help: theirs("keyHolder") ? t("where.theirs") : t("where.keyHolderHelp") }),
+        help: theirs("keyHolder") ? slotText({ state: "theirs", access: record.opened.keyHolder.access })
+          : t("where.keyHolderHelp") }),
       people,
       error,
     ),
@@ -354,7 +374,7 @@ function resultRow(record, query, onEdit) {
       el("span", {
         style: {
           textAlign: "right",
-          color: opened.state === "open" || opened.state === "empty" ? null : "var(--caution)",
+          color: ["open", "empty", "openedWithRecovery", "theirs"].includes(opened.state) ? null : "var(--caution)",
         },
       }, text ? highlight(text, opened.state === "open" ? query : "") : t("where.notRecorded")),
     );

@@ -10,6 +10,7 @@ import {
 import { state, myMember } from "../state.js";
 import { reload } from "../app.js";
 import { whereWhoCard } from "../where.js";
+import { sealedNoteCard } from "../sealed-notes.js";
 
 const KINDS = [
   { value: "home", label: "Home loan" },
@@ -233,6 +234,7 @@ export async function liabilitiesScreen(host) {
       ),
 
       whereWhoCard("liability", id),
+      sealedNoteCard("liability", id),
 
       el("div.row", {},
         el("button.btn.btn-danger", {

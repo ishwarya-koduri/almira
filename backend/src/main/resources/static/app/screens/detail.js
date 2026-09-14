@@ -8,6 +8,7 @@ import {
 import { state, findType } from "../state.js";
 import { reload } from "../app.js";
 import { whereWhoCard } from "../where.js";
+import { sealedNoteCard } from "../sealed-notes.js";
 
 export async function openDetail(id, onChanged) {
   const body = el("div.stack-3", {}, el("div.skeleton", { style: { height: "200px" } }));
@@ -73,6 +74,7 @@ export async function openDetail(id, onChanged) {
     nomineeCard(),
     // The only place where the original is gets recorded: sealed (docs/20 §1).
     whereWhoCard("investment", id),
+    sealedNoteCard("investment", id),
 
     el("div.row.wrap", { style: { gap: "8px" } },
       el("button.btn", { type: "button", onclick: () => duplicate() }, "Duplicate"),

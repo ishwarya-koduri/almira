@@ -1,6 +1,20 @@
 {
   "components": {
     "schemas": {
+      "AcceptWelcomeBody": {
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/VisibilityChoice"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "choices"
+        ],
+        "type": "object"
+      },
       "AcceptedInvitation": {
         "properties": {
           "householdId": {
@@ -595,6 +609,66 @@
         ],
         "type": "object"
       },
+      "ClosurePreview": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleBlocker"
+            },
+            "type": "array"
+          },
+          "erased": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleLine"
+            },
+            "type": "array"
+          },
+          "retention": {
+            "type": "string"
+          },
+          "stays": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleLine"
+            },
+            "type": "array"
+          },
+          "waitDays": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blockers",
+          "erased",
+          "retention",
+          "stays",
+          "waitDays"
+        ],
+        "type": "object"
+      },
+      "ClosureStatus": {
+        "properties": {
+          "closesAfter": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "daysLeft": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pending"
+        ],
+        "type": "object"
+      },
       "ColumnMapping": {
         "properties": {
           "institution": {
@@ -628,6 +702,67 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "ComingOfAgeNotice": {
+        "properties": {
+          "hasLogin": {
+            "type": "boolean"
+          },
+          "isMe": {
+            "type": "boolean"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "turnsAdultOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "welcomedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hasLogin",
+          "isMe",
+          "memberId",
+          "memberName",
+          "turnsAdultOn"
+        ],
+        "type": "object"
+      },
+      "ComingOfAgeWelcome": {
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/WelcomeRecord"
+            },
+            "type": "array"
+          },
+          "turnsAdultOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "welcomedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memberId",
+          "records",
+          "turnsAdultOn"
+        ],
         "type": "object"
       },
       "CommonFieldDef": {
@@ -1835,6 +1970,116 @@
         ],
         "type": "object"
       },
+      "DeparturePreview": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleBlocker"
+            },
+            "type": "array"
+          },
+          "goesWithYou": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleLine"
+            },
+            "type": "array"
+          },
+          "householdId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "householdName": {
+            "type": "string"
+          },
+          "joint": {
+            "items": {
+              "$ref": "#/components/schemas/JointRecordLine"
+            },
+            "type": "array"
+          },
+          "sealedFieldsThatStayBehind": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "staysWithHousehold": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleLine"
+            },
+            "type": "array"
+          },
+          "waitDays": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "blockers",
+          "goesWithYou",
+          "householdId",
+          "householdName",
+          "joint",
+          "sealedFieldsThatStayBehind",
+          "staysWithHousehold",
+          "waitDays"
+        ],
+        "type": "object"
+      },
+      "DepartureView": {
+        "properties": {
+          "canCancel": {
+            "type": "boolean"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/JointDecisionInput"
+            },
+            "type": "array"
+          },
+          "effectiveAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isMe": {
+            "type": "boolean"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "privateRecords": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "startedByAdmin": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "canCancel",
+          "decisions",
+          "effectiveAt",
+          "id",
+          "isMe",
+          "memberId",
+          "requestedAt",
+          "startedByAdmin",
+          "status"
+        ],
+        "type": "object"
+      },
       "DocumentCapture": {
         "properties": {
           "documentId": {
@@ -2964,6 +3209,9 @@
           "name": {
             "type": "string"
           },
+          "readOnly": {
+            "type": "boolean"
+          },
           "version": {
             "format": "int32",
             "type": "integer"
@@ -2976,6 +3224,7 @@
           "memberCount",
           "myRole",
           "name",
+          "readOnly",
           "version"
         ],
         "type": "object"
@@ -3424,6 +3673,56 @@
         ],
         "type": "object"
       },
+      "JointDecisionInput": {
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "recordId",
+          "recordType"
+        ],
+        "type": "object"
+      },
+      "JointRecordLine": {
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "otherHolders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "otherHolders",
+          "recordId",
+          "recordType",
+          "title"
+        ],
+        "type": "object"
+      },
       "LeftOutRecord": {
         "properties": {
           "recordId": {
@@ -3575,6 +3874,59 @@
         ],
         "type": "object"
       },
+      "LifecycleBlocker": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "householdId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "householdName": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "householdId",
+          "householdName",
+          "message"
+        ],
+        "type": "object"
+      },
+      "LifecycleLine": {
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "householdId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "householdName": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "type": "object"
+      },
       "LinkAssetBody": {
         "properties": {
           "investmentId": {
@@ -3674,6 +4026,16 @@
         ],
         "type": "object"
       },
+      "MarkPassedAwayBody": {
+        "properties": {
+          "note": {
+            "maxLength": 500,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "MeResponse": {
         "properties": {
           "currency": {
@@ -3729,6 +4091,13 @@
           "isMinor": {
             "type": "boolean"
           },
+          "memorialisedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "passedAway": {
+            "type": "boolean"
+          },
           "relationship": {
             "type": "string"
           },
@@ -3746,6 +4115,7 @@
           "isManaged",
           "isMe",
           "isMinor",
+          "passedAway",
           "version"
         ],
         "type": "object"
@@ -3763,6 +4133,18 @@
         "required": [
           "investmentId",
           "title"
+        ],
+        "type": "object"
+      },
+      "NameSuccessorBody": {
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memberId"
         ],
         "type": "object"
       },
@@ -4873,6 +5255,18 @@
         ],
         "type": "object"
       },
+      "StartDepartureBody": {
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "privateRecords": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "StepUpStatusResponse": {
         "properties": {
           "elevated": {
@@ -4978,6 +5372,46 @@
         },
         "required": [
           "until"
+        ],
+        "type": "object"
+      },
+      "SuccessorView": {
+        "properties": {
+          "canClaim": {
+            "type": "boolean"
+          },
+          "claimedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "claimedBasis": {
+            "type": "string"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "memberName": {
+            "type": "string"
+          },
+          "named": {
+            "type": "boolean"
+          },
+          "namedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "youAreTheSuccessor": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "canClaim",
+          "named",
+          "youAreTheSuccessor"
         ],
         "type": "object"
       },
@@ -5687,6 +6121,20 @@
         ],
         "type": "object"
       },
+      "UpdateDepartureBody": {
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/JointDecisionInput"
+            },
+            "type": "array"
+          },
+          "privateRecords": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateEstateDocument": {
         "properties": {
           "beneficiaries": {
@@ -6081,6 +6529,57 @@
           "name",
           "sizeBytes",
           "uri"
+        ],
+        "type": "object"
+      },
+      "VisibilityChoice": {
+        "properties": {
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "recordId",
+          "recordType",
+          "visibility"
+        ],
+        "type": "object"
+      },
+      "WelcomeRecord": {
+        "properties": {
+          "otherHolders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "recordId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "otherHolders",
+          "recordId",
+          "recordType",
+          "title",
+          "visibility"
         ],
         "type": "object"
       },
@@ -7064,6 +7563,110 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/coming-of-age": {
+      "get": {
+        "operationId": "comingOfAgeNotices",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ComingOfAgeNotice"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "coming-of-age-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/coming-of-age/welcome": {
+      "get": {
+        "operationId": "comingOfAgeWelcome",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComingOfAgeWelcome"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "coming-of-age-controller"
+        ]
+      },
+      "post": {
+        "operationId": "acceptComingOfAgeWelcome",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptWelcomeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComingOfAgeWelcome"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "coming-of-age-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/connect/aa/consent": {
       "get": {
         "operationId": "consentStatus",
@@ -7883,6 +8486,199 @@
         },
         "tags": [
           "dashboard-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/departures": {
+      "get": {
+        "operationId": "listDepartures",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DepartureView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "departure-controller"
+        ]
+      },
+      "post": {
+        "operationId": "startDeparture",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartDepartureBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepartureView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "departure-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/departures/preview": {
+      "get": {
+        "operationId": "departurePreview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeparturePreview"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "departure-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/departures/{departureId}": {
+      "patch": {
+        "operationId": "updateDeparture",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "departureId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDepartureBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepartureView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "departure-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/departures/{departureId}/cancel": {
+      "post": {
+        "operationId": "cancelDeparture",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "departureId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepartureView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "departure-controller"
         ]
       }
     },
@@ -11110,6 +11906,93 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/members/{memberId}/memorial": {
+      "delete": {
+        "operationId": "reverseMemorial",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "memberId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "memorial-controller"
+        ]
+      },
+      "post": {
+        "operationId": "markPassedAway",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "memberId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkPassedAwayBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "memorial-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/rates": {
       "get": {
         "operationId": "list_3",
@@ -12090,6 +12973,129 @@
         ]
       }
     },
+    "/api/v1/households/{householdId}/successor": {
+      "delete": {
+        "operationId": "removeSuccessor",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "succession-controller"
+        ]
+      },
+      "get": {
+        "operationId": "successor",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessorView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "succession-controller"
+        ]
+      },
+      "put": {
+        "operationId": "nameSuccessor",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NameSuccessorBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessorView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "succession-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/successor/claim": {
+      "post": {
+        "operationId": "claimSuccession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessorView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "succession-controller"
+        ]
+      }
+    },
     "/api/v1/households/{householdId}/tax/capital-gains": {
       "get": {
         "operationId": "capitalGains",
@@ -12801,6 +13807,97 @@
         },
         "tags": [
           "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/me/closure": {
+      "get": {
+        "operationId": "closureStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClosureStatus"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "account-closure-controller"
+        ]
+      },
+      "post": {
+        "operationId": "requestClosure",
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClosureStatus"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "account-closure-controller"
+        ]
+      }
+    },
+    "/api/v1/me/closure/cancel": {
+      "post": {
+        "operationId": "cancelClosure",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClosureStatus"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "account-closure-controller"
+        ]
+      }
+    },
+    "/api/v1/me/closure/preview": {
+      "get": {
+        "operationId": "closurePreview",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClosurePreview"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "account-closure-controller"
+        ]
+      }
+    },
+    "/api/v1/me/export": {
+      "get": {
+        "operationId": "downloadEverything",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "export-everything-controller"
         ]
       }
     },

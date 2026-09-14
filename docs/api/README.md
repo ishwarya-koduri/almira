@@ -419,6 +419,67 @@ record.
 
 ---
 
+## Endings and changes: closing, leaving, succession, a memorial, turning eighteen
+
+Everything here waits before it acts, and the wait is in the database, not the
+client: thirty days to close an account, seven to leave a household, a week after
+a memorial before a successor can claim. Render the dates the server returns and
+never compute your own. See [Doc 05 §12](../05-security-and-privacy.md#12-the-end-of-an-account-and-the-changes-in-between).
+
+**Previews change nothing, and every title in one is the caller's own.**
+`GET /me/closure/preview` returns `erased`, `stays`, `blockers`, `waitDays` and
+`retention`; `GET /households/{id}/departures/preview` returns `goesWithYou`,
+`staysWithHousehold`, `joint` (each with `otherHolders` and the leaver's
+`decision`), `blockers` and `sealedFieldsThatStayBehind`. Show both columns side
+by side, show every blocker as the thing to do next, and show `retention` as
+written — it is the legal sentence.
+
+**The starts need a step-up** (`403 step_up_required`): `POST /me/closure`,
+`POST /households/{id}/departures`, `POST /households/{id}/members/{memberId}/memorial`,
+`POST /households/{id}/successor/claim`, and `GET /me/export`. A download cannot
+read an error body easily, so check `GET /auth/step-up` before starting one.
+`409 closure_blocked` and `409 departure_blocked` carry `details.blockers`.
+
+**Undo is a first-class action.** `POST /me/closure/cancel` keeps the account;
+`POST /households/{id}/departures/{departureId}/cancel` is allowed to whoever
+started it (`canCancel` says whether that is the caller). An admin-started
+departure cannot be withdrawn by the person leaving, but they still choose
+`privateRecords` (`take` or `export_and_erase`) and each joint `decision`
+(`stays` or `take_my_share`) with `PATCH`. Anyone else sees only who is leaving
+and when: `privateRecords` and `decisions` are left out for them.
+
+**A memorial makes an account read-only in that household.** `MemberResponse`
+gains `passedAway` and `memorialisedAt`; `HouseholdResponse` gains `readOnly`,
+which is true for the caller when they are the one marked. Every write under
+that household then answers `403 memorial_read_only`, except
+`DELETE /households/{id}/members/{memberId}/memorial` by that person — the "I'm
+here" that undoes it. Messages to a memorialised person stop, apart from the one
+telling them they were marked.
+
+**Removing a member is for people without a login.** `DELETE /members/{id}` on
+someone with their own login answers `409 member_has_login`: ask them to leave
+instead. `409 member_has_holdings` now carries `details.visible` and
+`details.hidden`; the hidden ones are private to whoever recorded them, those
+people have been told, and the response never names a record.
+
+**A successor is visible to two people.** `GET /households/{id}/successor`
+answers `named: false` to everyone but the owner and the person named. `canClaim`
+is true only when the claim would succeed; `explanation` says why not.
+
+**Coming of age is a notice, then a welcome.** `GET /households/{id}/coming-of-age`
+lists members who turned or are turning eighteen this month; the next step for
+one with `hasLogin: false` is the ordinary invitation with their `memberId`.
+`GET …/coming-of-age/welcome` is `404` for anyone but that young adult, and
+`POST` with `choices` sets each record `private` or `household` through their
+own row-level security.
+
+**`GET /me/export` is `application/zip`**: `almira-everything.pdf`,
+`almira-everything.json`, `csv/…`, `documents/…` and `README.txt`. It holds what
+the caller can see and nothing else, account numbers to the last four digits,
+and sealed values as ciphertext.
+
+---
+
 ## A cold-start lesson, learned the expensive way
 
 An early build flagged **every brand-new record** as "not confirmed in over six
@@ -458,6 +519,16 @@ Corrections made under the freeze rule at the top of this file: responses the
 contract never declared, that reported a server fault for input the server
 rejected, corrected to a documented 4xx. Newest first. Additive changes to the
 contract itself are in `openapi-v1.json` and are not listed here.
+
+### 2026-09-14 — removing a member who has their own login is refused
+
+`DELETE /households/{id}/members/{memberId}` on a member with a login used to
+answer `204` and soft-delete the member row while leaving their membership
+active — a person who could still sign in to a household that no longer listed
+them. It now answers `409 member_has_login`; the way out is a departure
+(`POST /households/{id}/departures` with `memberId`). `409 member_has_holdings`
+gains `details.visible` and `details.hidden`, and counts records the caller
+cannot see, which it used to count as zero.
 
 ### 2026-09-13 — a request the server cannot read is a 4xx
 

@@ -28,6 +28,7 @@ data class LifecycleSweepResult(
 @Component
 class LifecycleSweep(
     private val purge: AccountPurge,
+    private val departures: DepartureCompletion,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -43,6 +44,12 @@ class LifecycleSweep(
                 .onSuccess { if (it != null) erased++ }
                 .onFailure { log.warn("account purge {} failed: {}", closure, it.javaClass.simpleName) }
         }
-        return LifecycleSweepResult(accountsErased = erased)
+        var departed = 0
+        departures.due(asOf).forEach { departure ->
+            runCatching { departures.complete(departure, asOf) }
+                .onSuccess { if (it != null) departed++ }
+                .onFailure { log.warn("departure {} failed: {}", departure, it.javaClass.simpleName) }
+        }
+        return LifecycleSweepResult(accountsErased = erased, departuresCompleted = departed)
     }
 }

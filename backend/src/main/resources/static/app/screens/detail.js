@@ -1,19 +1,29 @@
-/* Investment detail — everything about one holding, including who can see it. */
+/* Investment detail — everything about one holding, including who can see it.
+
+   A panel from the right on a tablet or desktop, wider on a desktop, with the
+   list it came from still beside it (X-53). The value and a small line of its
+   history come first; then four sections, one at a time: Details, Papers,
+   Family (who owns it, who can see it, who receives it) and Reminders. */
 
 import { api } from "../api.js";
 import {
-  el, mount, sheet, field, moneyInput, select, categoryDot, withBusy,
-  toast, rupees, formatDate,
+  el, mount, sheet, field, moneyInput, select, categoryIcon, withBusy,
+  toast, rupees, formatDate, segmented, areaTrend, onDemand, when, avatar,
 } from "../ui.js";
+import { confirmItsYou } from "../step-up.js";
 import { state, findType } from "../state.js";
 import { reload } from "../app.js";
 import { whereWhoCard } from "../where.js";
 import { sealedNoteCard } from "../sealed-notes.js";
 import { t } from "../i18n.js";
 
-export async function openDetail(id, onChanged) {
+const SECTIONS = ["details", "papers", "family", "reminders"];
+
+export async function openDetail(id, onChanged, { section = "details" } = {}) {
   const body = el("div.stack-3", {}, el("div.skeleton", { style: { height: "200px" } }));
-  const modal = sheet({ title: "Holding", body });
+  const modal = sheet({ title: t("detail.title"), body, wide: true });
+  let current = SECTIONS.includes(section) ? section : "details";
+  const changed = () => (onChanged ? onChanged() : reload());
 
   let record;
   try {
@@ -26,69 +36,201 @@ export async function openDetail(id, onChanged) {
   const type = findType(record.typeId);
   const schema = type?.schema || { common: {}, fields: [] };
 
-  const draw = () => mount(body, el("div.stack-3", {},
-
-    el("div.row", {},
-      categoryDot(record.categoryCode, record.color),
-      el("div.grow", {},
-        el("h3", {}, record.title),
-        el("div.caption.muted", {}, [record.typeLabel, record.institutionName].filter(Boolean).join(" · ")),
-      ),
-    ),
-
-    el("div.card.card-tight", {},
-      el("div.row-between", {},
-        el("div", {},
-          el("div.overline", {}, "Value"),
-          el("div", { style: { fontFamily: "var(--font-display)", fontSize: "var(--text-h2)" } },
-            record.valueFormatted || "Not known yet"),
-          el("div.caption.muted", {}, valueExplanation(record)),
-          priceFedDetail(record),
-          inBaseCurrency(record),
-        ),
-        el("button.btn.btn-sm", { type: "button", onclick: () => updateValue() }, "Update value"),
-      ),
-    ),
-
-    // Ownership and visibility sit together: they are the two questions this
-    // product exists to answer clearly.
-    el("div.card.card-tight.stack-2", {},
-      el("div.overline", {}, "Ownership & privacy"),
-      row("Owned by", record.owners.map((o) =>
-        `${o.name}${Number(o.sharePct) === 100 ? "" : ` (${o.sharePct}%)`}`).join(" & ")),
-      row("Who can see it", visibilityText(record)),
+  const draw = () => {
+    const sections = {
+      details: () => [detailsCard(), returnsCard(), actionsRow()],
+      papers: () => [papersCard(), whereWhoCard("investment", id), sealedNoteCard("investment", id)],
+      family: () => [ownershipCard(), nomineeCard()],
+      reminders: () => [remindersCard()],
+    };
+    const host = el("div.stack-3", { role: "tabpanel", "aria-label": t(`detail.section.${current}`) },
+      ...sections[current]());
+    mount(body, el("div.stack-3", {},
       el("div.row", {},
-        el("button.btn.btn-sm", { type: "button", onclick: () => changeVisibility() }, "Change who can see this"),
+        categoryIcon(record.categoryCode, record.color),
+        el("div.grow", { style: { minWidth: 0 } },
+          el("h3", { style: { margin: 0, overflowWrap: "anywhere" } }, record.title),
+          el("div.caption.muted", {}, [record.typeLabel, record.institutionName].filter(Boolean).join(" · ")),
+        ),
       ),
-    ),
 
-    el("div.card.card-tight.stack-2", {},
-      el("div.overline", {}, "Details"),
+      el("div.card.card-tight.stack-2", {},
+        el("div.row-between.wrap", { style: { alignItems: "flex-start" } },
+          el("div", { style: { minWidth: 0 } },
+            el("div.overline", {}, t("detail.value")),
+            el("div.detail-value", {}, record.valueFormatted || t("detail.notKnown")),
+            el("div.caption.muted", {}, valueExplanation(record)),
+            priceFedDetail(record),
+            inBaseCurrency(record),
+          ),
+          el("button.btn.btn-sm", { type: "button", onclick: () => updateValue() }, t("detail.updateValue")),
+        ),
+        historyLine(),
+      ),
+
+      el("div.detail-sections", {},
+        segmented(SECTIONS.map((name) => ({ value: name, label: t(`detail.section.${name}`) })), current,
+          (value) => { current = value; draw(); })),
+      host,
+    ));
+  };
+
+  /* --- value history (X-53) ------------------------------------------------ */
+
+  function historyLine() {
+    const host = el("div.detail-history", {});
+    (async () => {
+      try {
+        const history = await api.valuations(state.household.id, id);
+        const points = [...history]
+          .sort((a, b) => String(a.asOfDate).localeCompare(String(b.asOfDate)))
+          .map((v) => ({ label: formatDate(v.asOfDate), value: Number(v.value), formatted: rupees(v.value) }));
+        if (points.length < 2) {
+          mount(host, el("p.caption.muted", { style: { margin: 0 } }, t("detail.history.soon")));
+          return;
+        }
+        const summary = t("detail.history.summary", {
+          count: points.length, start: points[0].formatted, from: points[0].label,
+          end: points[points.length - 1].formatted,
+        });
+        mount(host, onDemand(t("block.showChart"), () => areaTrend(points, { summary, height: 64, fromZero: false })));
+      } catch { /* the history is a courtesy; the value above already says what is known */ }
+    })();
+    return host;
+  }
+
+  /* --- details ------------------------------------------------------------- */
+
+  function detailsCard() {
+    return el("div.card.card-tight.stack-2", {},
+      el("div.overline", {}, t("detail.section.details")),
       record.investedAmount && row("Amount invested", inOwnCurrency(record.investedAmount, record.currency)),
       record.quantity && row("Quantity", `${record.quantity} ${record.unit || ""}`.trim()),
       record.startDate && row(schema.common?.start_date?.label || "Started", formatDate(record.startDate)),
       record.maturityDate && row(schema.common?.maturity_date?.label || "Matures", formatDate(record.maturityDate)),
       ...attributeRows(record, schema),
       row("Added", formatDate(record.createdAt)),
-      row("Last confirmed", record.lastVerifiedAt ? formatDate(record.lastVerifiedAt) : "Never"),
-    ),
+    );
+  }
 
-    returnsCard(),
-    nomineeCard(),
-    // The only place where the original is gets recorded: sealed (docs/20 §1).
-    whereWhoCard("investment", id),
-    sealedNoteCard("investment", id),
+  function actionsRow() {
+    return el("div.stack-2", {},
+      el("div.row.wrap", { style: { gap: "8px" } },
+        el("button.btn", { type: "button", onclick: () => duplicate() }, "Duplicate"),
+        record.maturityDate && el("button.btn", { type: "button", onclick: () => renew() },
+          "Renew this"),
+        el("button.btn.btn-danger", { type: "button", onclick: () => archive() }, "Move to trash"),
+      ),
+      record.rolledFromId && el("p.caption.muted", {},
+        "This renewed an earlier record, which is kept as history."),
+    );
+  }
 
-    el("div.row.wrap", { style: { gap: "8px" } },
-      el("button.btn", { type: "button", onclick: () => duplicate() }, "Duplicate"),
-      record.maturityDate && el("button.btn", { type: "button", onclick: () => renew() },
-        "Renew this"),
-      el("button.btn.btn-danger", { type: "button", onclick: () => archive() }, "Move to trash"),
-    ),
+  /* --- family: who owns it, who can see it -------------------------------- */
 
-    record.rolledFromId && el("p.caption.muted", {},
-      "This renewed an earlier record, which is kept as history."),
-  ));
+  function ownershipCard() {
+    // Ownership and visibility sit together: they are the two questions this
+    // product exists to answer clearly.
+    return el("div.card.card-tight.stack-2", {},
+      el("div.overline", {}, "Ownership & privacy"),
+      el("div.stack-2", {}, ...record.owners.map((owner) => el("div.row", {},
+        avatar(owner.memberId, owner.name),
+        el("span.grow", {}, owner.name || t("detail.someone")),
+        Number(owner.sharePct) !== 100 && el("span.caption.muted", {}, `${owner.sharePct}%`)))),
+      row("Who can see it", visibilityText(record)),
+      el("div.row", {},
+        el("button.btn.btn-sm", { type: "button", onclick: () => changeVisibility() }, "Change who can see this"),
+      ),
+    );
+  }
+
+  /* --- papers -------------------------------------------------------------- */
+
+  function papersCard() {
+    const host = el("div.card.card-tight.stack-2", {},
+      el("div.overline", {}, t("detail.papers.title")),
+      el("div.skeleton", { style: { height: "40px" } }));
+    const input = el("input", {
+      type: "file", accept: "image/*,application/pdf", hidden: true, "aria-label": t("detail.papers.attach"),
+    });
+    const attach = el("button.btn.btn-sm", { type: "button", onclick: () => input.click() }, t("detail.papers.attach"));
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      withBusy(attach, async () => {
+        try {
+          await api.attachDocument(state.household.id, "investment", id, file);
+          toast(t("detail.papers.added"));
+          await drawPapers();
+          await changed();
+        } catch (error) { toast(error.message, { tone: "error" }); }
+        input.value = "";
+      });
+    });
+
+    const open = async (doc, button) => withBusy(button, async () => {
+      try {
+        // Opening a paper is a step-up action (docs/05 §4): a two-minute, single-use ticket.
+        if (!(await confirmItsYou(t("detail.papers.whyConfirm")))) return;
+        const ticket = await api.documentAccess(state.household.id, doc.id);
+        window.open(api.documentDownloadUrl(ticket.token), "_blank", "noopener");
+      } catch (error) { toast(error.message, { tone: "error" }); }
+    });
+
+    async function drawPapers() {
+      let docs;
+      try {
+        docs = await api.documentsFor(state.household.id, "investment", id);
+      } catch {
+        mount(host, el("div.overline", {}, t("detail.papers.title")),
+          el("p.caption.muted", {}, t("app.somethingWrong")));
+        return;
+      }
+      mount(host,
+        el("div.overline", {}, t("detail.papers.title")),
+        docs.length
+          ? el("div.list", {}, ...docs.map((doc) => {
+              const button = el("button.btn.btn-sm", { type: "button" }, t("detail.papers.open"));
+              button.onclick = () => open(doc, button);
+              return el("div.list-row", { style: { cursor: "default" } },
+                el("div.grow", { style: { minWidth: 0 } },
+                  el("div.title", {}, doc.fileName),
+                  el("div.meta", {}, [doc.docType.replace(/_/g, " "), doc.expiresOn && (doc.expired
+                    ? t("detail.papers.expired", { date: formatDate(doc.expiresOn) })
+                    : t("detail.papers.expires", { date: formatDate(doc.expiresOn) }))].filter(Boolean).join(" · "))),
+                button);
+            }))
+          : el("p.caption.muted", { style: { margin: 0 } }, t("detail.papers.none")),
+        el("div.row", {}, attach, input),
+      );
+    }
+    drawPapers();
+    return host;
+  }
+
+  /* --- reminders ----------------------------------------------------------- */
+
+  function remindersCard() {
+    const list = el("div.stack-2", {}, el("div.skeleton", { style: { height: "40px" } }));
+    (async () => {
+      try {
+        const reminders = (await api.reminders(state.household.id)).filter((r) => r.investmentId === id);
+        mount(list, reminders.length
+          ? el("div.list", {}, ...reminders.map((r) => el("div.list-row", { style: { cursor: "default" } },
+              el("div.grow", {}, el("div.title", {}, r.title), el("div.meta", {}, when(r.effectiveDate))),
+              r.amountFormatted && el("div.amount", {}, r.amountFormatted))))
+          : el("p.caption.muted", { style: { margin: 0 } }, t("detail.reminders.none")));
+      } catch {
+        mount(list, el("p.caption.muted", { style: { margin: 0 } }, t("app.somethingWrong")));
+      }
+    })();
+    return el("div.card.card-tight.stack-2", {},
+      el("div.overline", {}, t("detail.section.reminders")),
+      record.maturityDate && row(schema.common?.maturity_date?.label || "Matures", when(record.maturityDate)),
+      row(t("detail.lastConfirmed"), record.lastVerifiedAt ? formatDate(record.lastVerifiedAt) : t("detail.never")),
+      list,
+    );
+  }
 
   /* --- returns ------------------------------------------------------------- */
 
@@ -285,7 +427,7 @@ export async function openDetail(id, onChanged) {
   }
 
   function row(label, value) {
-    if (!value) return null;
+    if (value === null || value === undefined || value === "") return null;
     return el("div.row-between", { style: { fontSize: "var(--text-sm)" } },
       el("span.muted", {}, label), el("span", { style: { textAlign: "right" } }, value));
   }

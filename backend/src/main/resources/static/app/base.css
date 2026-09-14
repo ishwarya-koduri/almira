@@ -843,6 +843,66 @@ details.more[open] > summary::before { transform: rotate(90deg); }
 .chart-labels li { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
 .on-demand { min-height: var(--target); }
 
+/* Readiness in four parts (X-33): one teal ring, a quarter per check. */
+.part-ring { position: relative; width: 136px; height: 136px; flex: none; display: grid; place-items: center; }
+.part-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: var(--surface-sunken); stroke-width: 12; }
+.ring-track-none { stroke: var(--hairline); stroke-width: 2; }
+.ring-part { fill: none; stroke: var(--accent); stroke-width: 12; }
+:root[data-theme="clear"] .ring-track { stroke: var(--block-border); stroke-width: 2; }
+.part-ring-center { position: relative; text-align: center; padding: 0 var(--space-5); }
+.part-ring-center .figure { font-family: var(--font-display); font-size: var(--text-h2); font-variant-numeric: tabular-nums; line-height: var(--leading-tight); }
+.readiness-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5); }
+.readiness-head .grow { flex: 1; min-width: 12rem; }
+.movement { font-family: var(--font-display); font-size: var(--text-lg); margin: 0; }
+
+/* -----------------------------------------------------------------------------
+   People (X-54, X-56): initials in ink on a tint of the member's colour.
+   ----------------------------------------------------------------------------- */
+.avatar {
+  --member: var(--ink-muted);
+  display: inline-grid; place-items: center; flex: none;
+  width: 2rem; height: 2rem; border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--member) 16%, var(--surface));
+  box-shadow: inset 0 0 0 2px var(--member);
+  color: var(--ink); font-size: var(--text-caption); font-weight: 600; line-height: 1;
+}
+.avatar-md { width: 2.75rem; height: 2.75rem; font-size: var(--text-sm); }
+.avatar-more { --member: var(--ink-faint); }
+.avatars { display: inline-flex; flex: none; }
+.avatars .avatar + .avatar { margin-left: -0.5rem; }
+.avatars .avatar { border: 2px solid var(--surface); box-sizing: content-box; }
+
+/* The holding row (X-54): icon, title with one needs-doing line, owners, value, privacy. */
+.holding-row .needs { color: var(--ink); font-size: var(--text-caption); }
+@media (max-width: 599px) { .holding-row .avatars { display: none; } }
+
+/* The last known view, refreshed (X-38). */
+.updated { display: block; min-height: 1.2em; }
+
+/* -----------------------------------------------------------------------------
+   To review (X-51): a count on Home, then one card at a time.
+   ----------------------------------------------------------------------------- */
+.review-count { font-family: var(--font-display); font-size: var(--text-h2); font-variant-numeric: tabular-nums; }
+.review-step { display: flex; flex-direction: column; gap: var(--space-4); }
+.review-progress { height: 4px; border-radius: var(--radius-full); background: var(--surface-sunken); overflow: hidden; }
+.review-progress > i { display: block; height: 100%; background: var(--accent); transition: width var(--base) var(--ease); }
+.review-card { border: 1px solid var(--block-border); border-radius: var(--radius-lg); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
+.review-card h3 { margin: 0; font-family: var(--font-display); overflow-wrap: anywhere; }
+.review-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* A record's detail as a panel (X-53): value and a small history, then sections. */
+@media (min-width: 1100px) { .sheet.sheet-wide { width: min(var(--panel-wide), 100%); } }
+.detail-value { font-family: var(--font-display); font-size: var(--text-h2); font-variant-numeric: tabular-nums; }
+.detail-history .chart svg { max-height: 96px; }
+.detail-sections { position: sticky; top: 0; z-index: 1; background: var(--surface); padding: var(--space-2) 0; }
+.detail-sections .segmented { display: flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.detail-sections .segmented button { flex: 1 0 auto; padding: 0 var(--space-2); }
+
+/* What a member sees (X-56). */
+.preview-frame { border: 1px solid var(--block-border); border-radius: var(--radius-lg); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.preview-absent .title { color: var(--ink-muted); }
+
 /* -----------------------------------------------------------------------------
    Tables — used only for genuinely tabular things (an import preview).
    Wide ones scroll inside their own container so the page never does.

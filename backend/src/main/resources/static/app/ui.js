@@ -8,6 +8,7 @@
 import { groupIndian, relativeKey, rupees, compactRupees } from "./format.js";
 import { t } from "./i18n.js";
 import { savingData } from "./prefs.js";
+import { memberToneIndex, initials } from "./glance.js";
 
 /**
  * el("div.card", { onclick }, child, child)
@@ -67,6 +68,7 @@ export function mount(node, ...children) { clear(node); append(node, children); 
    ----------------------------------------------------------------------------- */
 
 export { groupIndian, rupees, compactRupees, withoutZeroRows } from "./format.js";
+export { memberToneIndex, initials } from "./glance.js";
 
 export function formatDate(iso) {
   if (!iso) return "—";
@@ -196,12 +198,13 @@ export function toast(message, { action, onAction, tone = "" } = {}) {
 }
 
 /* -----------------------------------------------------------------------------
-   Sheet — bottom sheet on mobile, centred dialog on desktop.
+   Sheet — a bottom sheet on a phone, a panel from the right from 600px.
    Focus is trapped and Escape closes, because a modal you cannot leave by
-   keyboard is a trap in the literal sense.
+   keyboard is a trap in the literal sense. `wide` gives a record's detail a
+   wider panel on a desktop (X-53), with the list it came from still beside it.
    ----------------------------------------------------------------------------- */
 
-export function sheet({ title, body, footer, onClose }) {
+export function sheet({ title, body, footer, onClose, wide = false }) {
   const previousFocus = document.activeElement;
 
   const close = () => {
@@ -224,11 +227,11 @@ export function sheet({ title, body, footer, onClose }) {
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
 
-  const panel = el("div.sheet", { role: "dialog", "aria-modal": "true", "aria-label": title },
+  const panel = el(`div.sheet${wide ? ".sheet-wide" : ""}`, { role: "dialog", "aria-modal": "true", "aria-label": title },
     el("div.grabber"),
     el("div.sheet-head", {},
       el("h3.grow", {}, title),
-      el("button.btn.btn-ghost.btn-sm", { type: "button", "aria-label": "Close", onclick: close }, "Close"),
+      el("button.btn.btn-ghost.btn-sm", { type: "button", "aria-label": t("app.close"), onclick: close }, t("app.close")),
     ),
     el("div.sheet-body", {}, body),
     footer && el("div.sheet-foot", {}, footer),
@@ -338,6 +341,38 @@ export function categoryDot(categoryCode, color) {
    States
    ----------------------------------------------------------------------------- */
 
+/* -----------------------------------------------------------------------------
+   People (X-54, X-56). Initials on a tint of the member's own colour, with a
+   ring of it: the same person reads as the same colour in every list. The
+   colour comes from the member's id, so it does not change with whoever is
+   looking or the order the roster is in.
+   ----------------------------------------------------------------------------- */
+
+/** One person. Decorative beside their written name; pass `label` when it stands alone. */
+export function avatar(memberId, name, { size = "sm", label = null } = {}) {
+  const node = el(`span.avatar.avatar-${size}`, label
+    ? { role: "img", "aria-label": label, title: label }
+    : { "aria-hidden": "true" }, initials(name));
+  node.style.setProperty("--member", `var(--member-${memberToneIndex(memberId)})`);
+  return node;
+}
+
+/** Up to three owners, overlapping, named once for a screen reader. */
+export function avatarStack(owners, label) {
+  const shown = owners.slice(0, 3);
+  return el("span.avatars", { role: "img", "aria-label": label, title: label },
+    ...shown.map((owner) => avatar(owner.memberId, owner.name)),
+    owners.length > 3 && el("span.avatar.avatar-sm.avatar-more", { "aria-hidden": "true" }, `+${owners.length - 3}`));
+}
+
+/**
+ * "Updated just now" (X-38): said once a quiet refresh lands, so a figure that
+ * was drawn from the last known view does not look like it is still loading.
+ */
+export function updatedNote() {
+  return el("span.caption.muted.updated", { role: "status" }, t("block.updatedNow"));
+}
+
 export function empty({ title, body, action }) {
   return el("div.empty", {}, el("h3", {}, title), el("p", {}, body), action);
 }
@@ -371,6 +406,44 @@ export function ring(percent, { label, size = "md" } = {}) {
   return node;
 }
 
+/**
+ * Readiness in four parts (X-33): one teal ring, a quarter for each check, each
+ * quarter filled as far as that check is done. A check that does not apply is
+ * an empty dashed quarter, not a full one. Gold stays off it.
+ *
+ * @param parts  [{ percent: 0–100 | null, label }] in the checks' order
+ * @param center what is written in the middle (a node or text)
+ * @param label  the accessible name: every part in words, never a lone number
+ */
+export function partRing(parts, { center, label } = {}) {
+  const r = 50;
+  const quarter = (2 * Math.PI * r) / Math.max(1, parts.length);
+  const gap = 6;
+  const arcs = [];
+  parts.forEach((part, index) => {
+    const start = index * quarter + gap / 2;
+    const length = quarter - gap;
+    const track = svg("circle", {
+      class: `ring-track${part.percent === null || part.percent === undefined ? " ring-track-none" : ""}`,
+      cx: 60, cy: 60, r,
+      "stroke-dasharray": `${length.toFixed(2)} ${(2 * Math.PI * r).toFixed(2)}`,
+      "stroke-dashoffset": (-start).toFixed(2),
+    });
+    arcs.push(track);
+    const filled = Math.max(0, Math.min(100, Number(part.percent) || 0)) / 100 * length;
+    if (filled > 0) {
+      arcs.push(svg("circle", {
+        class: "ring-part", cx: 60, cy: 60, r,
+        "stroke-dasharray": `${filled.toFixed(2)} ${(2 * Math.PI * r).toFixed(2)}`,
+        "stroke-dashoffset": (-start).toFixed(2),
+      }));
+    }
+  });
+  return el("div.part-ring", { role: "img", "aria-label": label || "" },
+    svg("svg", { viewBox: "0 0 120 120", "aria-hidden": "true", focusable: "false" }, ...arcs),
+    el("div.part-ring-center", { "aria-hidden": "true" }, center));
+}
+
 /* -----------------------------------------------------------------------------
    On demand (X-72). With Data Saver on, something heavy — a chart, a
    thumbnail — waits behind a button instead of loading by itself.
@@ -402,13 +475,21 @@ function svg(tag, attrs = {}, ...children) {
   return node;
 }
 
-/** points: [{ label, value }] in order. summary: one sentence a screen reader hears. */
-export function areaTrend(points, { summary, height = 160 } = {}) {
+/**
+ * points: [{ label, value }] in order. summary: one sentence a screen reader hears.
+ * `fromZero: false` fits the line to its own range, for a figure like net worth
+ * whose movement is small beside its size; the axis labels stay dates, never a
+ * truncated amount, so nothing reads as a bigger swing than the summary says.
+ */
+export function areaTrend(points, { summary, height = 160, fromZero = true } = {}) {
   const width = 600;
   const pad = 8;
   const values = points.map((p) => Number(p.value) || 0);
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
+  const top = Math.max(...values);
+  const bottom = Math.min(...values);
+  const spread = top - bottom || Math.abs(top) * 0.1 || 1;
+  const max = fromZero ? Math.max(top, 1) : top + spread * 0.15;
+  const min = fromZero ? Math.min(bottom, 0) : bottom - spread * 0.35;
   const x = (i) => pad + (i * (width - pad * 2)) / Math.max(1, points.length - 1);
   const y = (v) => height - pad - ((v - min) * (height - pad * 2)) / Math.max(1, max - min);
   const line = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");

@@ -11,6 +11,8 @@
    becomes the primary surface.
    ============================================================================= */
 
+import { remember, forget, reset, peek } from "./cache.js";
+
 const REFRESH_KEY = "almira.refresh";
 
 let accessToken = null;
@@ -26,6 +28,8 @@ export const auth = {
   },
   clear() {
     accessToken = null;
+    // Signed out, or the session ended: the last known views go with it (cache.js).
+    reset();
     try { localStorage.removeItem(REFRESH_KEY); } catch { /* ignore */ }
   },
   get isSignedIn() { return Boolean(accessToken || auth.refreshToken); },
@@ -95,6 +99,10 @@ async function request(method, path, body, { retry = true } = {}) {
       error.details,
     );
   }
+  // A read is kept as the last known view; any write makes every kept view
+  // possibly stale, so all of them go (cache.js).
+  if (method === "GET") remember(path, payload);
+  else forget();
   return payload;
 }
 
@@ -114,6 +122,9 @@ export const api = {
   patch:  (path, body) => request("PATCH", path, body),
   put:    (path, body) => request("PUT", path, body),
   del:    (path)       => request("DELETE", path),
+
+  /** The last known answer for a read, drawn at once while a fresh one is fetched (X-38). */
+  peek,
 
   // --- auth -----------------------------------------------------------------
   /**
@@ -217,8 +228,20 @@ export const api = {
   archive:       (hid, id)        => api.del(`/api/v1/households/${hid}/investments/${id}`),
   restore:       (hid, id)        => api.post(`/api/v1/households/${hid}/trash/investments/${id}/restore`),
   trash:         (hid)            => api.get(`/api/v1/households/${hid}/trash`),
-  dashboard:     (hid, scope, m)  => api.get(
-    `/api/v1/households/${hid}/dashboard?scope=${scope}${m ? `&member=${m}` : ""}`),
+  dashboardPath: (hid, scope, m)  =>
+    `/api/v1/households/${hid}/dashboard?scope=${scope}${m ? `&member=${m}` : ""}`,
+  dashboard:     (hid, scope, m)  => api.get(api.dashboardPath(hid, scope, m)),
+  trendPath:     (hid, scope, m)  =>
+    `/api/v1/households/${hid}/reports/net-worth-trend?months=12&scope=${scope}${m ? `&member=${m}` : ""}`,
+  netWorthTrend: (hid, scope, m)  => api.get(api.trendPath(hid, scope, m)),
+  // "To review" (X-51): everything waiting for this person, in order.
+  reviewPath:    (hid)            => `/api/v1/households/${hid}/review`,
+  review:        (hid)            => api.get(api.reviewPath(hid)),
+  // "What Ravi sees" (X-56): built by the server from what you can see.
+  memberPreview: (hid, memberId)  => api.get(`/api/v1/households/${hid}/members/${memberId}/preview`),
+  reminders:     (hid)            => api.get(`/api/v1/households/${hid}/reminders`),
+  documentsFor:  (hid, type, id)  => api.get(
+    `/api/v1/households/${hid}/documents?entityType=${encodeURIComponent(type)}&entityId=${encodeURIComponent(id)}`),
   invite:        (hid, body)      => api.post(`/api/v1/households/${hid}/invitations`, body),
 
   // --- accounts -------------------------------------------------------------
@@ -388,6 +411,10 @@ export const api = {
   // --- documents ------------------------------------------------------------
   documents:     (hid)            => api.get(`/api/v1/households/${hid}/documents`),
   documentAccess: (hid, id)       => api.post(`/api/v1/households/${hid}/documents/${id}/access`),
+  // A scan attached to a record, from its Papers section (X-53).
+  attachDocument: (hid, type, id, file) =>
+    upload(`/api/v1/households/${hid}/documents`, file, { entityType: type, entityId: id }),
+  documentDownloadUrl: (token)    => `/api/v1/documents/download?token=${encodeURIComponent(token)}`,
 
   // --- data rights (docs/23 "Your data rights") -------------------------------
   privacy:       ()               => api.get("/api/v1/me/privacy"),
@@ -440,6 +467,7 @@ async function upload(path, file, fields = {}) {
     throw new ApiError(response.status, error.code || "unknown",
       error.message || "Something went wrong.", error.details);
   }
+  forget();
   return payload;
 }
 

@@ -179,14 +179,17 @@ class AuthService(
 
         if (row.rotatedTo != null) {
             // Committed in its own transaction -- the throw below would roll an
-            // inline revocation back. See SessionRevoker.
-            sessionRevoker.revokeNow(row.sessionId, "refresh_token_reuse")
-            audit.record(
-                householdId = null, actorUserId = row.userId,
-                action = "auth.refresh_reuse_detected",
-                entityType = "session", entityId = row.sessionId,
-                ip = ip, userAgent = userAgent,
-            )
+            // inline revocation back. See SessionRevoker. The audit row goes in
+            // that transaction too: written here, the same throw rolled it back
+            // and the reuse was never on the record (known-issues 14).
+            sessionRevoker.revokeNow(row.sessionId, "refresh_token_reuse") {
+                audit.record(
+                    householdId = null, actorUserId = row.userId,
+                    action = "auth.refresh_reuse_detected",
+                    entityType = "session", entityId = row.sessionId,
+                    ip = ip, userAgent = userAgent,
+                )
+            }
             log.warn("refresh token reuse on session {} — session revoked", row.sessionId)
             throw ApiException.unauthorized(
                 "For your security we ended that session. Please sign in again.",

@@ -416,11 +416,12 @@ by `AlphaAllowlistEndedAtStartupApiTest`.
   check runs everywhere, so a phone-only server reads each signed-in account
   once a minute (cached per account) to learn it has a phone. Not measured;
   expected to be negligible beside the request itself.
-- **The refresh-reuse audit row.** Unrelated, noticed here:
-  `AuthService.refresh` writes `auth.refresh_reuse_detected` inside the
-  transaction its own throw rolls back, so that audit row is probably never
-  kept (the revocation itself is, via `SessionRevoker`). Not verified; no test
-  asserts the row.
+The refresh-reuse audit row, noticed here, is fixed (2026-09-14):
+`auth.refresh_reuse_detected` used to be written in the refresh's own
+transaction, which the refusal that follows rolls back, so the row was never
+kept. It is now written inside `SessionRevoker`'s own transaction, only by the
+call that ended the session. Proven by `RefreshReuseApiTest`, watched failing on
+the audit assertion before the move.
 
 ---
 

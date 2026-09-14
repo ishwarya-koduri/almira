@@ -117,6 +117,18 @@ limit counts is the one the reverse proxy vouches for, never a forwarding header
 the caller wrote. Codes are never written to logs or error responses, and a test
 drives every path a code travels, with logging at DEBUG, to prove it.
 
+**A one-time code is not an account.** Phone numbers in India are disconnected
+and handed to someone else; SIMs are swapped. So a person can add a second
+factor — an authenticator app, a passkey, or both — and once they have, a
+correct code only earns a five-minute token for a second step, never a session.
+The authenticator's secret is envelope-encrypted under a data key of its own,
+bound to the person and the column; recovery codes are stored as salted PBKDF2;
+passkeys are verified by Yubico's WebAuthn server library, bound to the
+configured domain, and make no outside calls. Every factor table is under
+row-level security to its own person. Taking a factor away needs the factor,
+never leaves fewer than two ways in, and — like a changed phone number or any
+new sign-in — is recorded and announced to the person's other devices.
+
 ## 6 · The three ways someone outside the family sees something
 
 Each is a **narrowing** of the model above, never a bypass.

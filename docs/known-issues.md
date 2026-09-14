@@ -378,7 +378,11 @@ tokens per user — designed in [providers/push.md](providers/push.md).
 itself is already off the request thread (the notification outbox, Doc 13); the
 worker passes `recipientHint = null` for the same reason.
 
-**Risk if left** None while every channel is a sandbox.
+**Risk if left** None while every channel is a sandbox. Since V50 it also
+means the account notices — "New sign-in on …", a changed phone number, a
+factor added or removed — reach only the in-app list for real: they are queued
+on every channel like any notification, and a live channel could not deliver
+them either.
 
 ---
 
@@ -768,3 +772,57 @@ or on `infra/deploy-and-pentest`; `deploy/restore/digest-check.sql` and
 migrated by the full application recorded versions 25, 27, 28, … 35 in that
 order, all successful, with 31 `ciphertext digests` between 30 and 32.
 `outOfOrder` is still not enabled anywhere.
+
+The same class of risk, re-checked for the catch-up plan (2026-09-14): its
+workstreams were given disjoint version ranges (V36–V39 and up, this sign-in
+work V50), so versions will have gaps on master. Gaps are harmless; what is not
+is a database that has applied a **higher** version before a lower one lands,
+because Flyway (no `outOfOrder`) then refuses to start with "Detected resolved
+migration not applied to database". The safe resolution, without rewriting any
+applied migration: merge every range before any shared or production database
+migrates past V35, and if one ever has, renumber the not-yet-applied lower
+migration above the highest applied version before it lands — exactly what was
+done for V26 → V31. `outOfOrder` stays off.
+
+---
+
+## 24. The native app cannot finish a sign-in that needs a second factor
+
+**Where** `app/shared/.../signin/SignInController.kt` and its screen.
+
+**What** Since V50 an account can add an authenticator app, a passkey and
+recovery codes (web: Settings, How you sign in). A correct one-time code to
+such an account answers `401 second_factor_required` with
+`details.secondFactorToken` and `details.methods`, and the session starts only
+at `POST /auth/second-factor/{authenticator,recovery-code,passkey}`
+(docs/api/README.md "Second factor"). The native app knows none of this: it
+shows the server's message ("One more step…") as a failed sign-in, and there is
+no way forward in it. An account without a second factor is unaffected, and the
+app offers no way to add one, so only someone who set one up on the web meets it.
+
+**Which is right** The web client's second step (`secondFactorStep` in
+`static/app/sign-in-security.js`): an authenticator code field, a passkey button
+where the platform supports one, a recovery code, and "Start again".
+
+**When to fix** Before the native app is given to anyone who uses the web
+client's How you sign in card. Authenticator and recovery code are two plain
+POSTs; a passkey needs the platform's credential manager.
+
+**Risk if left** A person locks themselves out of the native app (not the web)
+by adding a second factor.
+
+---
+
+## 25. The sign-in security screens are English in Telugu and Hindi
+
+**Where** `static/app/i18n.js`, every `signin.*` key.
+
+**What** The How you sign in card, the confirm sheet, the authenticator and
+recovery-code sheets, the phone-number change and the second sign-in step were
+written in English only. `t()` falls back to English, so a Telugu or Hindi
+reader sees these screens in English. The server's own sentences
+(`second_factor_invalid` and the rest) are English everywhere, as docs/14 says.
+
+**When to fix** With a reviewed translation; these are words about account
+security, where a loose translation does harm.
+

@@ -1,7 +1,7 @@
 # Building a client against Almira v1
 
-The contract is [`openapi-v1.json`](openapi-v1.json) — 120 paths, 163 operations,
-179 schemas. Generate a typed client from it; do not hand-write one.
+The contract is [`openapi-v1.json`](openapi-v1.json) — 137 paths, 181 operations,
+194 schemas. Generate a typed client from it; do not hand-write one.
 
 **v1 is additive-only.** New endpoints and new optional fields may appear; nothing
 will be removed, renamed or retyped. A breaking change goes to `/api/v2` and v1
@@ -26,6 +26,16 @@ only now in the file:
 | `GET /households/{householdId}/where-and-who` | [Phase 3 and 4](#phase-3-and-4-the-parts-that-decide-who-sees-what) |
 | `GET /households/{householdId}/still-true`, `POST …/still-true/{recordType}/{recordId}/confirm`, `POST …/snooze` | [Phase 3 and 4](#phase-3-and-4-the-parts-that-decide-who-sees-what) |
 | `GET /households/{householdId}/continuity/readiness` | [Phase 3 and 4](#phase-3-and-4-the-parts-that-decide-who-sees-what) |
+
+**Added with the second factor (V50), 2026-09-14** — all additive; see
+[Second factor and how you sign in](#second-factor-and-how-you-sign-in):
+`POST /auth/second-factor/authenticator`, `…/recovery-code`, `…/passkey/options`,
+`…/passkey`; `GET /auth/sign-in-methods`; `POST /auth/authenticator`,
+`POST /auth/authenticator/confirm`, `DELETE /auth/authenticator`;
+`POST /auth/recovery-codes`; `POST /auth/passkeys/options`, `POST /auth/passkeys`,
+`DELETE /auth/passkeys/{id}`; `POST /auth/step-up/authenticator`,
+`…/step-up/recovery-code`, `…/step-up/passkey/options`, `…/step-up/passkey`;
+`POST /auth/phone/request`, `POST /auth/phone/verify`.
 
 Existing schemas grew in the same freeze: `OtpChallengeResponse.channel`,
 `WhatsAppCapture.replyFailure`, `Completeness.scoreEarned` (always present) and
@@ -181,6 +191,65 @@ the failure codes above — the caller already owns the address, so there is
 nothing to enumerate.
 Elevation belongs to the **session**, so confirming on a phone does not unlock a
 browser someone else is sitting in front of.
+
+### Second factor and how you sign in
+
+An account may add an **authenticator app**, **passkeys** and **recovery codes**.
+Nothing changes for an account that has none.
+
+**Sign-in gains a second step for an account that has one.** A correct code to
+`POST /auth/otp/verify` or `/auth/otp/email/verify` then answers
+`401 second_factor_required` — not a session — with:
+
+```
+details: { secondFactorToken, methods: ["authenticator" | "passkey" | "recovery_code", …], expiresInSeconds: 300 }
+POST /api/v1/auth/second-factor/authenticator    { secondFactorToken, code }       → the login shape
+POST /api/v1/auth/second-factor/recovery-code    { secondFactorToken, code }       → the login shape
+POST /api/v1/auth/second-factor/passkey/options  { secondFactorToken }             → { requestId, options }
+POST /api/v1/auth/second-factor/passkey          { secondFactorToken, requestId, credential } → the login shape
+```
+
+Branch on the code, not the status: a client that treats every 401 from verify
+as "wrong code" strands the person. Wrong answers are `400 second_factor_invalid`
+with `attemptsRemaining`; the fifth is `second_factor_locked`; a used, expired or
+locked token is `second_factor_expired` — start again from the phone or address.
+After ten wrong answers in an hour an account answers `429`. A recovery code
+works once, and using one tells the account's devices.
+
+**Passkeys.** `options` is exactly what `navigator.credentials.create()` /
+`.get()` takes, with its binary fields (`challenge`, `user.id`, credential `id`s)
+as base64url strings; send the credential back the same way (`rawId`,
+`clientDataJSON`, `attestationObject` or `authenticatorData`/`signature`/
+`userHandle` as base64url). `app/sign-in-security.js` has both conversions. A
+ceremony is answered once. A server without a passkey domain answers
+`503 passkeys_unavailable`, and `GET /auth/sign-in-methods` says
+`passkeysAvailable: false`.
+
+**How you sign in** — `GET /auth/sign-in-methods`: masked `phone` and `email`
+with whether each signs in here, `authenticator`, `passkeys`, `recoveryCodesLeft`,
+`count`, `minimum` (2) and `meetsMinimum`. Ask for a second way until it is met.
+
+**Changing it needs this session confirmed.** Adding an authenticator
+(`POST /auth/authenticator` → `secret`, `otpauthUri`; then `…/confirm { code }` →
+`recoveryCodes`), adding a passkey, removing either and replacing recovery codes
+answer `403 step_up_required` until the session is elevated. When the account
+already has a second factor, a code alone is not enough: the 403 carries
+`details.requires: "second_factor"`, and only
+`POST /auth/step-up/{authenticator,recovery-code,passkey}` will do. Removing a
+factor that would leave fewer than two ways in is `409 sign_in_methods_minimum`:
+add the replacement first. Someone else's passkey id is `404`. Recovery codes
+come back only when made, with `Cache-Control: no-store` — show them once.
+
+**Changing the phone number**: `POST /auth/phone/request { phone }` on an elevated
+session (by a code to the current channel or any factor) sends a code to the new
+number; `POST /auth/phone/verify { phone, code, requestId }` returns the updated
+user and spends the elevation. `400 phone_unchanged` for the same number;
+`409 phone_in_use`, only after the code is proven, for a number another account
+holds. The old number no longer signs in to this account.
+
+Every sign-in to an existing account, and each of these changes, appears in
+`GET /me/messages` (templates `auth.new_sign_in`, `auth.phone_changed`,
+`auth.authenticator_added`, …) on every device.
 
 ---
 

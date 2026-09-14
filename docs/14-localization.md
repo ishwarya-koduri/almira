@@ -35,26 +35,46 @@ pretending otherwise would produce half-translated screens that look broken.
 | ✅ | Settings — the language card itself, extra-private mode, shared links, connected services, exchange rates |
 | ✅ | For my family — the whole screen, including the estate, contacts and emergency-access sections |
 | ✅ | Dates, in the reader's language — "in 4 days" too |
-| ⛔ | Settings → Preferences (appearance, text size, data saver), the section row inside a destination, "See the breakdown", "Add amount", "Light mode for your data" — English only, falling back from `te` and `hi` |
-| ⛔ | Reading on the device and the offline copy — Import a statement, Reading your photo, Settings → Readable without a connection, the offline handbook page (`statement.*`, `ocr.*`, `offline.*`) — English only, falling back from `te` and `hi`. The offline page's section headings reuse translated keys |
+| 🟡 | Every other screen's words, including Preferences, Import a statement, Reading your photo and the offline copy — machine-drafted Telugu and Hindi, not yet reviewed (below) |
 
 Telugu and Devanagari are set in Noto Sans and Noto Serif, served from the app
 itself, with a taller line height than Latin; the Latin faces have neither
 script (Doc 25 §3). The destination names — Home, Holdings, Family plan,
 Reports, You — are translated.
 
+## Machine-drafted words, awaiting a native speaker
+
+Every key English has now has Telugu and Hindi words. Most of them are
+**machine-drafted and have not been reviewed by a native speaker**; they must be
+reviewed before the app is shown to real families in those languages.
+
+| | English keys | Hand-written in `i18n.js` | Machine-drafted |
+|---|---|---|---|
+| Telugu | 1,979 | 224 | 1,755 (`app/i18n-te.js`) |
+| Hindi | 1,979 | 224 | 1,755 (`app/i18n-hi.js`) |
+
+A draft is used only where `i18n.js` has no hand-written entry for the key; a
+hand-written entry always wins. Names, acronyms and examples (EPF, NPS, SMS,
+"Infosys", the quick-capture example) are deliberately left as written.
+
+**To review one:** read it on the screen that shows it, write the corrected
+words into the `te` or `hi` block of `i18n.js`, and delete the key from the
+draft file. `scripts/check-i18n.js` (run with `jsc -m`) fails if a key is in
+both, if a draft's `{placeholders}` or ₹ figures differ from English, if a draft
+remains for a key English no longer has, or if a key has neither. When a draft
+file is empty, that language is fully reviewed.
+
 ## What is not, yet
 
 | | |
 |---|---|
-| ⛔ | Investments, Liabilities, Accounts, Goals, Tax, Reports, Family — headings and field labels |
 | ⛔ | The capture form, whose labels come from the taxonomy in the database |
 | ⛔ | Every sentence the server writes: errors, notes, disclaimers, the family handbook PDF |
 
 ## What it would take to finish
 
-1. **The remaining client screens** — mechanical: move each literal into
-   `i18n.js` and translate. The machinery is done and the pattern is set.
+1. **Native review of the drafts** — above. The client's own words are all
+   through `t()`, and `scripts/check-i18n.js` keeps it that way.
 2. **The taxonomy** — `investment_types.label` and each field's label live in the
    database, seeded by `db/taxonomy.py`. They need a translations table keyed by
    `(type_code, field_key, language)`, seeded the same way. This is the piece

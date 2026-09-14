@@ -13,12 +13,18 @@
 
    Anything short of a plain success goes through signInOutcome (auth-outcome.js):
    a delayed code still opens the code step, a refused channel switches to the
-   one the server named, and each way of not sending gets its own sentence. */
+   one the server named, and each way of not sending gets its own sentence.
+
+   A correct code to an account with a second factor answers
+   second_factor_required instead of signing in; the second step
+   (secondFactorStep in sign-in-security.js) finishes it with the authenticator
+   app, a passkey or a recovery code. */
 
 import { api } from "../api.js";
 import { el, mount, field, textInput, withBusy, toast } from "../ui.js";
 import { t } from "../i18n.js";
 import { signInOutcome, deliveryOutcome, deliveryWhenAskingStops } from "../auth-outcome.js";
+import { secondFactorStep } from "../sign-in-security.js";
 
 const CHANNELS = {
   phone: {
@@ -147,6 +153,16 @@ function showCodeStep(host, channels, channel, address, challenge, onSignedIn) {
       } catch (error) {
         // The verify endpoints refuse a disabled channel too, before the code
         // is looked at: no code typed here can ever work, so move.
+        // The code was right, and the account has a second factor: one more
+        // step, and no session until it is done (the recycled-number defence).
+        if (error.code === "second_factor_required") {
+          clearInterval(tick);
+          secondFactorStep(host, error.details, {
+            onSignedIn,
+            onStartAgain: () => showAddressStep(host, channels, channel, onSignedIn, { prefill: address }),
+          });
+          return;
+        }
         const outcome = signInOutcome(error, channel);
         if (outcome.kind === "switch") {
           clearInterval(tick);

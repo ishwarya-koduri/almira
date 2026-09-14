@@ -83,4 +83,20 @@ object IndianNumbers {
      */
     fun rupees(amount: BigDecimal): String =
         if (amount.signum() < 0) "\u2212₹${group(amount.abs())}" else "₹${group(amount)}"
+
+    /**
+     * An amount in the currency it is held in: "₹1,76,875" for rupees, and
+     * "USD 12,500.50" for anything else.
+     *
+     * The code rather than a symbol, because "$" is five different dollars; and
+     * Western grouping for foreign money, because that is how the statement it
+     * was copied from writes it — "USD 1,25,000" would match nothing the family
+     * has on paper.
+     */
+    fun money(amount: BigDecimal, currency: String): String {
+        if (currency.equals("INR", ignoreCase = true)) return rupees(amount)
+        val format = java.text.DecimalFormat("#,##0.##", java.text.DecimalFormatSymbols(java.util.Locale.ENGLISH))
+        val sign = if (amount.signum() < 0) "\u2212" else ""
+        return "$sign${currency.uppercase()} ${format.format(amount.abs())}"
+    }
 }

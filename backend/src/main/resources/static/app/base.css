@@ -546,6 +546,28 @@ span.chip { cursor: default; min-height: 32px; }
 .chip-row::-webkit-scrollbar { display: none; }
 @container (min-width: 900px) { .chip-row { flex-wrap: wrap; overflow: visible; } }
 
+/* Quick add (docs/03 §3): the sentence as typed, with each chip's words
+   underlined, and the words nothing was made of shown greyed rather than
+   folded into the name. Muted, never a warning colour — not understanding a
+   word is not an error the person made. */
+.parse-echo { margin: 0; line-height: 1.7; overflow-wrap: anywhere; }
+.parse-echo u {
+  text-decoration-color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 4px;
+}
+.parse-unclear {
+  color: var(--ink-muted);
+  text-decoration: underline dotted; text-decoration-color: var(--ink-muted); text-underline-offset: 4px;
+}
+/* A figure from a published price carries a small info mark, never a coloured
+   box or a ticker: it is a fact about where the number came from, not news. */
+.price-stamp { display: flex; gap: var(--space-2); align-items: baseline; margin: 0; }
+.info-mark {
+  flex: none; display: inline-grid; place-items: center;
+  width: 1.1em; height: 1.1em; border-radius: 50%;
+  border: 1px solid currentColor; font-size: .85em; font-style: italic; line-height: 1;
+}
+.chip-unclear { border-style: dashed; background: transparent; color: var(--ink-muted); }
+
 .pill {
   display: inline-flex; align-items: center; gap: 6px; flex: none;
   padding: 2px var(--space-2); border-radius: var(--radius-full);

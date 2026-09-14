@@ -148,6 +148,10 @@ object HandoverChecks {
         "savings_buffer" to a(Y, N, N),
         "cash_on_hand" to a(N, N, Y),
         "loan_given" to a(N, Y, Y),
+        // Abroad the nominee is a beneficiary designation, and it matters more,
+        // not less: without one the family faces probate in another country.
+        // Nothing physical to find — the statement is the document.
+        "foreign_asset" to a(Y, Y, N),
         "universal" to a(N, Y, Y),
     )
 
@@ -164,6 +168,7 @@ object HandoverChecks {
         "real_estate" to a(N, Y, Y),
         "alternatives" to a(N, Y, Y),
         "cash" to a(N, N, Y),
+        "foreign" to a(Y, Y, N),
         "universal" to a(N, Y, Y),
     )
 

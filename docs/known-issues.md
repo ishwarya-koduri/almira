@@ -1157,4 +1157,57 @@ version (1.21.x pins an old default), or an `api.version` in
 
 **When to fix** The next dependency update. **Risk if left** Local friction
 only; CI uses service containers.
+---
+
+## 37. The price and rate feeds have only been fetched from a laptop
+
+**Where** `market/MarketData.kt` (`HttpMarketFileFetcher`), `market/PriceFeed.kt`,
+`money/LiveRateSource.kt`; docs/13 §6.
+
+**What** Both feeds are off by default, and every test drives them with
+fixtures cut from the real files. The file formats and addresses were confirmed
+by downloading them on 14 September 2026 from a developer machine in India. No
+deployed server has fetched them. NSE's archive in particular is known to refuse
+requests it takes for automated traffic from some hosting ranges, and none of
+the three publishers promise their addresses.
+
+**What happens if it fails** Nothing breaks: the run logs `price feed <source>
+skipped` or `exchange-rate refresh skipped` at WARN and the last valuation or
+rate stays, with its date. But nobody is told, and a family would see "Valued
+at NAV as of" an ever older date.
+
+**When to fix** Before switching either flag on in production: run the job once
+from the production host and read the log line; add an alert on the WARN (or on
+the newest `price_feed` valuation being more than four days old) the way docs/17
+alerts on provider failures.
+
+---
+
+## 38. A holding abroad with a loan against it shows net equity in mixed currencies
+
+**Where** `investment/InvestmentController.kt` (`toResponse`, `netEquity`).
+
+**What** Found while formatting foreign values (P-30). `netEquity` is the
+holding's value minus the debt secured against it, subtracted as plain numbers.
+A holding in USD against a rupee loan subtracts rupees from dollars. Rare —
+a loan is seldom recorded against a foreign asset — and the dashboard's own
+totals convert before adding, so no household total is wrong.
+
+**When to fix** When liabilities learn their currency: convert the encumbrance
+into the holding's currency with `CurrencyService`, or leave `netEquity` null
+when the currencies differ and say why.
+
+---
+
+## 39. The phone app shows neither the "Didn't understand" chips nor the NAV stamp
+
+**Where** `app/shared` (quick-add chips, holding detail).
+
+**What** The web client renders the new quick-add fields (`notUnderstood`,
+`start`/`end`, `hint`, rate/maturity/nominee chips) and the price stamp
+(`valuationSource`, `priceSource`, `unitPrice`). All are additive v1 fields, so
+the app keeps working, but it still shows only the old chips, and a price-fed
+value there reads like any other snapshot.
+
+**When to fix** The next app stage that touches capture or the holding screen.
 

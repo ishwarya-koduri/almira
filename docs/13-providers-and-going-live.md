@@ -436,6 +436,106 @@ nowhere to go, which is why it is last. The APNs and FCM requirements are in
 
 ---
 
+## 6 · Market data — prices and exchange rates
+
+Not a provider in the sense above: no account, no contract, no key. AMFI, NSE,
+BSE and the European Central Bank publish these files for anyone. It lives here
+because it is the one other place the server reaches out, and the rule is the
+same — **off unless switched on**. With the defaults, no class that can make the
+request is even created (`LiveRateSourceTest` asserts it), and nothing about a
+household is ever sent: each fetch is a plain download of a public file, over
+HTTPS, with redirects refused and a size cap (`HttpMarketFileFetcher`).
+
+| Setting | Default | What it does |
+|---|---|---|
+| `ALMIRA_MARKET_FX_ENABLED` | `false` | Daily ECB euro reference rates |
+| `ALMIRA_MARKET_FX_CRON` | `0 15 21 * * *` (IST) | After the ECB publishes, around 16:00 CET |
+| `ALMIRA_MARKET_PRICES_ENABLED` | `false` | Nightly AMFI NAVs and NSE/BSE closing prices |
+| `ALMIRA_MARKET_PRICES_CRON` | `0 30 23 * * *` (IST) | After AMFI's evening file; both bhavcopies are out by then |
+| `ALMIRA_MARKET_PRICES_SOURCES` | `amfi,nse,bse` | Which files to read |
+
+### Exchange rates — `LiveRateSource`
+
+A `RateSource` (the interface V23 left for this). Once a day it reads
+`eurofxref-daily.xml` and:
+
+- records a **shared rupee rate** for every currency the ECB publishes, crossed
+  through the euro, marked `source = 'ecb'` and dated with the ECB's own date —
+  so the stored-rate lookup serves it, every converted figure can be traced, and
+  a restart loses nothing. A second run the same day records nothing new;
+- keeps the day's file in memory to answer a pair nobody stored (USD→GBP),
+  consulted **after** stored rates.
+
+It never outranks a household: a rate the household recorded still wins, because
+they know what they actually got. It simply beats the rates that shipped with the
+app by being newer. Currencies the ECB does not publish — the Gulf currencies
+among them — keep the seeded or household rate, and a holding in a currency with
+no rate at all is still left out of the total and said out loud (docs/07 §1).
+
+The web shows both amounts side by side on a holding held abroad: its own
+("USD 12,500"), and "≈ ₹11,94,439" beneath with `1 USD = 95.5551 INR · rate as of
+11 Sep 2026 · ECB reference rate`.
+
+**To switch on:** set `ALMIRA_MARKET_FX_ENABLED=true`. Nothing else is needed.
+**Not watched failing:** a failed fetch logs one WARN (`exchange-rate refresh
+skipped`) and the last recorded rate stays, with its date.
+
+### NAVs and closing prices — `PriceFeedJob`
+
+**The files, as confirmed from the publishers on 14 September 2026** (excerpts
+are the test fixtures in `backend/src/test/resources/market/`):
+
+- **AMFI** `https://portal.amfiindia.com/spages/NAVAll.txt` — semicolon-separated,
+  CRLF, section headings and fund-house names on their own lines. The header is
+  now `Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme
+  Name;Plan;Option;Net Asset Value;Date`; it used to have no `Plan` and `Option`.
+  Columns are found by name, so both layouts read. Dates are `11-Sep-2026`. The
+  file still lists schemes that stopped publishing (with dates from 2017).
+- **NSE** `https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_<yyyyMMdd>_F_0000.csv.zip`
+  and **BSE** `https://www.bseindia.com/download/BhavCopy/Equity/BhavCopy_BSE_CM_0_0_0_<yyyyMMdd>_F_0000.CSV`
+  — the common UDiFF layout both exchanges moved to in July 2024 (`TradDt`,
+  `FinInstrmTp`, `FinInstrmId`, `ISIN`, `TckrSymb`, `SctySrs`, `FinInstrmNm`,
+  `ClsPric`, …); NSE zips it, BSE does not. Only `STK` lines are read, at the
+  closing price. The retired pre-2024 bhavcopy layouts are not read.
+
+**Which holdings are valued** (`PriceFeedValuations`): active, in rupees, with
+units, of a built-in type —
+
+- a mutual fund (`mf_sip`, `mf_lumpsum`) whose new *ISIN or AMFI scheme code*
+  field (V66) names it — by ISIN (either of a line's two) or by scheme code;
+- a listed share or REIT (`stock_listed`, `reit`) by ISIN, or by ticker. A share
+  is valued from the exchange its *Exchange* field names; "Both" or nothing
+  means NSE, and BSE only where NSE has not priced it this week.
+
+Nothing is matched from a name. Value = units × price, to the paisa. The
+valuation is dated with the price's own date, marked `price_feed` with the file
+(`amfi`/`nse`/`bse`), the price per unit and the scheme code or ISIN it matched.
+A price more than seven days old, or dated in the future, is not used.
+
+**Never over what someone entered.** A valuation someone typed or imported,
+dated on or after the price's date, wins: the holding is left alone. One dated
+before stays in the history, and the new figure is current — so the screen says
+so: "Valued at NAV as of 11 Sep 2026", "₹89.5712 a unit × 120 units", and "Your
+own value of ₹9,500 from 1 Sep 2026 is kept in the history." A value typed over
+the same day's price becomes the person's and loses the price label. Clearing
+the ISIN stops the daily valuation. The database backs the label: the
+application role cannot write a `price_feed` valuation at all (V66 policy,
+asserted in `db/tests/rls_privacy_test.sql` and `PriceFeedApiTest`); only the
+job's system connection can.
+
+**Privacy.** A price-fed valuation follows its holding's visibility exactly, as
+every valuation does. The activity log gets one line per household per file
+(`investment.valuations_from_prices`, a count, no titles or amounts), not one
+per holding. The request to AMFI or an exchange carries nothing but the file's
+address.
+
+**To switch on:** `ALMIRA_MARKET_PRICES_ENABLED=true`. **Not watched failing
+against the live sites from a server** — see known issue 37 ("The price and rate feeds have only been fetched from a laptop"). A file that is not
+there (a holiday, a late publication, a refused request) logs one WARN (`price
+feed <source> skipped`) and the last valuation stays, with its date.
+
+---
+
 ## What "the stand-in" means now
 
 Notifications remain a stand-in on every channel but live email, but not an

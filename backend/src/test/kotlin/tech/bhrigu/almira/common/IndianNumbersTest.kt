@@ -85,4 +85,11 @@ class IndianNumbersTest {
     fun `zero has no sign`() {
         assertThat(IndianNumbers.rupees(BigDecimal.ZERO)).isEqualTo("₹0")
     }
+
+    @Test
+    fun `foreign money is shown with its code and the grouping on its statement`() {
+        assertThat(IndianNumbers.money(BigDecimal("125000.5"), "USD")).isEqualTo("USD 125,000.5")
+        assertThat(IndianNumbers.money(BigDecimal("-40"), "aed")).isEqualTo("\u2212AED 40")
+        assertThat(IndianNumbers.money(BigDecimal(125_000), "INR")).isEqualTo("₹1,25,000")
+    }
 }

@@ -136,6 +136,7 @@ class InvestmentService(
 ) {
     private val visibilities = setOf("private", "household", "scoped")
     private val statuses = setOf("active", "matured", "closed", "draft", "archived")
+    private val CURRENCY_CODE = Regex("^[A-Z]{3}$")
 
     @Transactional
     fun create(householdId: UUID, input: CreateInvestment): CreatedInvestment {
@@ -149,6 +150,8 @@ class InvestmentService(
         if (input.title.isBlank()) {
             throw ApiException.badRequest("title_required", "Give this a name you'll recognise.")
         }
+
+        val currency = resolveCurrency(input.currency, household.baseCurrency, type.schema)
 
         val id = input.id ?: UUID.randomUUID()
         // A retry of an offline capture arrives with the same id. If we can see
@@ -183,7 +186,7 @@ class InvestmentService(
         try {
             repo.insert(
                 id = id, householdId = householdId, typeId = type.id, title = input.title.trim(),
-                investedAmount = input.investedAmount, currency = input.currency ?: household.baseCurrency,
+                investedAmount = input.investedAmount, currency = currency,
                 quantity = input.quantity, unit = input.unit,
                 startDate = input.startDate, maturityDate = input.maturityDate,
                 institutionId = input.institutionId, accountId = input.accountId,
@@ -641,6 +644,38 @@ class InvestmentService(
             }
         }
         return (requested + owners.map { it.first }).distinct()
+    }
+
+    /**
+     * A three-letter code, upper-cased, or the household's own currency.
+     *
+     * Free text here was how a total ended up unable to find a rate for
+     * "dollars". A type that asks for the currency (something held abroad) has
+     * to be told one: defaulting it to rupees would convert a dirham balance at
+     * a rate of one.
+     */
+    private fun resolveCurrency(
+        value: String?,
+        baseCurrency: String,
+        schema: tech.bhrigu.almira.catalog.TypeSchema,
+    ): String {
+        val code = value?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
+        if (code == null) {
+            if (schema.common["currency"]?.required == true) {
+                throw ApiException.badRequest(
+                    "currency_required", "Which currency is it held in?",
+                    mapOf("fields" to mapOf("currency" to "Which currency is it held in?")),
+                )
+            }
+            return baseCurrency
+        }
+        if (!CURRENCY_CODE.matches(code)) {
+            throw ApiException.badRequest(
+                "currency_invalid", "Use a three-letter currency code, like USD or AED.",
+                mapOf("fields" to mapOf("currency" to "Use a three-letter code, like USD")),
+            )
+        }
+        return code
     }
 
     private fun requireVisibility(value: String) {

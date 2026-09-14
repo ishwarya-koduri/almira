@@ -68,6 +68,29 @@ class CaptureApiTest : ApiTestBase() {
             .contains("Angel Investment")
     }
 
+    /**
+     * The chips and the "didn't understand" words travel with their positions, so
+     * the client can underline the words each chip came from.
+     */
+    @Test
+    fun `a real sentence comes back as labelled chips with their positions`() {
+        val text = "SBI FD 3 lakh 7.1% matures 5 March 2028 nominee Aarav joint with Sita"
+        val parsed = post(
+            "/api/v1/households/$householdId/capture/parse-text", owner,
+            mapOf("text" to text),
+        ).json()
+
+        val fields = parsed.path("fields").associateBy { it.path("key").asText() }
+        assertThat(fields["attributes.interest_rate"]!!.path("label").asText()).isEqualTo("Rate")
+        assertThat(fields["maturityDate"]!!.path("value").asText()).isEqualTo("2028-03-05")
+        assertThat(fields["nomineeName"]!!.path("value").asText()).isEqualTo("Aarav")
+        val amount = fields["investedAmount"]!!
+        assertThat(text.substring(amount.path("start").asInt(), amount.path("end").asInt())).isEqualTo("3 lakh")
+        assertThat(amount.path("hint").asText()).isEqualTo("Three Lakh Rupees")
+        assertThat(fields["title"]?.path("value")?.asText() ?: "").doesNotContain("joint")
+        assertThat(parsed.path("notUnderstood").map { it.path("text").asText() }).containsExactly("joint with Sita")
+    }
+
     @Test
     fun `parsing saves nothing`() {
         post(

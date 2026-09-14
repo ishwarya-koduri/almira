@@ -182,6 +182,22 @@ almira:
     # included. Provider calls run outside any database transaction (known-issues 21).
     connect-budget: ${ALMIRA_PROVIDER_CONNECT_BUDGET:20s}
 
+  # Public market data (docs/13 §6). Both feeds are OFF unless switched on:
+  # with the defaults nothing here reaches the network. Nothing about a
+  # household is ever sent — each is a plain GET for a public file.
+  #   fx      the ECB's daily euro reference rates, recorded as shared rupee
+  #           rates marked "ecb" and dated with the ECB's date
+  #   prices  AMFI's daily NAV file and the NSE/BSE end-of-day bhavcopies,
+  #           recorded as valuations marked with their source and date
+  market-data:
+    fx:
+      enabled: ${ALMIRA_MARKET_FX_ENABLED:false}
+      cron: ${ALMIRA_MARKET_FX_CRON:0 15 21 * * *}
+    prices:
+      enabled: ${ALMIRA_MARKET_PRICES_ENABLED:false}
+      cron: ${ALMIRA_MARKET_PRICES_CRON:0 30 23 * * *}
+      sources: ${ALMIRA_MARKET_PRICES_SOURCES:amfi,nse,bse}
+
   # How people sign in: phone, email, or phone,email. phone by default, so a
   # fresh checkout, the suites and the e2e scripts are unchanged. The closed
   # alpha runs email alone, with an allowlist — two channels on at once let one

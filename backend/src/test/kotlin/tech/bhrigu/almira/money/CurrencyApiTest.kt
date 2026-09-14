@@ -126,4 +126,54 @@ class CurrencyApiTest : ApiTestBase() {
         assertThat(rates["AED"]!!.path("source").asText()).isEqualTo("manual")
         assertThat(rates["USD"]!!.path("source").asText()).isEqualTo("seed")
     }
+
+    // --- held abroad (P-30) ----------------------------------------------------
+
+    private fun heldAbroad(currency: String?) = post(
+        "/api/v1/households/$householdId/investments", owner,
+        buildMap {
+            put("typeId", typeId(owner, householdId, "foreign_asset"))
+            put("title", "Schwab brokerage")
+            put("investedAmount", 12_500)
+            currency?.let { put("currency", it) }
+            put("attributes", mapOf("country" to "United States", "holding_kind" to "shares"))
+            put("visibility", "household")
+        },
+    )
+
+    @Test
+    fun `something held abroad keeps its currency, and shows its own amount in it`() {
+        val created = heldAbroad("usd")
+
+        assertThat(created.status()).isEqualTo(HttpStatus.CREATED)
+        val investment = created.json().path("investment")
+        assertThat(investment.path("currency").asText()).isEqualTo("USD")
+        assertThat(investment.path("categoryCode").asText()).isEqualTo("foreign")
+        assertThat(investment.path("valueFormatted").asText())
+            .describedAs("dollars are not shown with a rupee sign")
+            .isEqualTo("USD 12,500")
+        // 12,500 USD at the seeded 88.50.
+        assertThat(dashboardTotal(owner, householdId)).isEqualByComparingTo(BigDecimal("1106250.00"))
+    }
+
+    /** Defaulting it to rupees would convert a dollar balance at a rate of one. */
+    @Test
+    fun `something held abroad has to say which currency`() {
+        val refused = heldAbroad(null)
+        assertThat(refused.status()).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(refused.errorCode()).isEqualTo("currency_required")
+    }
+
+    @Test
+    fun `a currency is a three-letter code, not a word`() {
+        val refused = foreignHolding("Old account", 100, "dollars")
+        assertThat(refused.status()).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(refused.errorCode()).isEqualTo("currency_invalid")
+
+        assertThat(
+            db.queryForObject(
+                "select count(*) from pg_constraint where conname = 'investment_currency_is_a_code'", Int::class.java,
+            ),
+        ).describedAs("and the database holds the same line").isEqualTo(1)
+    }
 }

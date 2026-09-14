@@ -11,7 +11,7 @@
 
 **Liabilities** — loan against an asset (encumbrance + net equity); loan with no linked asset; closed/foreclosed loans to history; part-prepayment; revolving card balances.
 
-**Valuation & money** — unknown cost basis (marked "at cost/unknown"); units-not-rupees (grams/units/shares); no live price → manual snapshots, never fabricated; multi-currency stored native, converted only for display; partial redemption/early FD break; rollover without losing history; **corporate actions** (split/bonus/merger/buyback) adjusting quantity & basis; rounding to paise / 0.001 g; never floats.
+**Valuation & money** — unknown cost basis (marked "at cost/unknown"); units-not-rupees (grams/units/shares); no live price → manual snapshots, never fabricated; multi-currency stored native, converted only for display (a *Held abroad* type asks for the currency and is refused without one; the ECB reference rates can be switched on, docs/13 §6); partial redemption/early FD break; rollover without losing history; **corporate actions** (split/bonus/merger/buyback) adjusting quantity & basis; rounding to paise / 0.001 g; never floats.
 
 **Returns & tax** — XIRR with irregular flows and open positions; realized vs unrealized separation; tax-lot method (FIFO vs average) affecting gains; STCG/LTCG threshold and holding-period edges; TDS captured; FY boundary mid-transaction.
 

@@ -2832,6 +2832,13 @@
           "display": {
             "type": "string"
           },
+          "end": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "hint": {
+            "type": "string"
+          },
           "key": {
             "type": "string"
           },
@@ -2840,6 +2847,10 @@
           },
           "sourceText": {
             "type": "string"
+          },
+          "start": {
+            "format": "int32",
+            "type": "integer"
           },
           "value": {
             "type": "string"
@@ -3813,6 +3824,9 @@
             },
             "type": "array"
           },
+          "priceSource": {
+            "type": "string"
+          },
           "quantity": {
             "type": "number"
           },
@@ -3847,6 +3861,12 @@
             "type": "string"
           },
           "unit": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "number"
+          },
+          "valuationSource": {
             "type": "string"
           },
           "value": {
@@ -4908,6 +4928,12 @@
           "input": {
             "type": "string"
           },
+          "notUnderstood": {
+            "items": {
+              "$ref": "#/components/schemas/WordSpan"
+            },
+            "type": "array"
+          },
           "note": {
             "type": "string"
           },
@@ -4918,6 +4944,7 @@
         "required": [
           "fields",
           "input",
+          "notUnderstood",
           "unparsed"
         ],
         "type": "object"
@@ -7615,11 +7642,17 @@
           "note": {
             "type": "string"
           },
+          "priceSource": {
+            "type": "string"
+          },
           "quantity": {
             "type": "number"
           },
           "source": {
             "type": "string"
+          },
+          "unitPrice": {
+            "type": "number"
           },
           "value": {
             "type": "number"
@@ -7852,6 +7885,27 @@
           "keyVersion",
           "sealedByMe",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "WordSpan": {
+        "properties": {
+          "end": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "start": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "end",
+          "start",
+          "text"
         ],
         "type": "object"
       }

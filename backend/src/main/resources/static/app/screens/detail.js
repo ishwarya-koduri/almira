@@ -9,6 +9,7 @@ import { state, findType } from "../state.js";
 import { reload } from "../app.js";
 import { whereWhoCard } from "../where.js";
 import { sealedNoteCard } from "../sealed-notes.js";
+import { t } from "../i18n.js";
 
 export async function openDetail(id, onChanged) {
   const body = el("div.stack-3", {}, el("div.skeleton", { style: { height: "200px" } }));
@@ -42,6 +43,8 @@ export async function openDetail(id, onChanged) {
           el("div", { style: { fontFamily: "var(--font-display)", fontSize: "var(--text-h2)" } },
             record.valueFormatted || "Not known yet"),
           el("div.caption.muted", {}, valueExplanation(record)),
+          priceFedDetail(record),
+          inBaseCurrency(record),
         ),
         el("button.btn.btn-sm", { type: "button", onclick: () => updateValue() }, "Update value"),
       ),
@@ -61,7 +64,7 @@ export async function openDetail(id, onChanged) {
 
     el("div.card.card-tight.stack-2", {},
       el("div.overline", {}, "Details"),
-      record.investedAmount && row("Amount invested", rupees(record.investedAmount)),
+      record.investedAmount && row("Amount invested", inOwnCurrency(record.investedAmount, record.currency)),
       record.quantity && row("Quantity", `${record.quantity} ${record.unit || ""}`.trim()),
       record.startDate && row(schema.common?.start_date?.label || "Started", formatDate(record.startDate)),
       record.maturityDate && row(schema.common?.maturity_date?.label || "Matures", formatDate(record.maturityDate)),
@@ -387,7 +390,91 @@ export async function openDetail(id, onChanged) {
   draw();
 }
 
+/**
+ * Something held abroad shows both amounts side by side: its own, which is the
+ * true one, and the household's currency beside it with the rate and the date
+ * that rate is from (docs/07 §1). With no rate the second figure is not
+ * guessed — the server says what is missing, and that sentence is shown.
+ */
+function inBaseCurrency(record) {
+  const base = state.household.baseCurrency || "INR";
+  if (!record.currency || record.currency === base || record.value === null || record.value === undefined) {
+    return null;
+  }
+  const host = el("div.stack-2", { "aria-live": "polite" });
+  (async () => {
+    try {
+      const converted = await api.convert(state.household.id, record.value, record.currency, base);
+      if (converted.convertedAmount === null || converted.convertedAmount === undefined) {
+        mount(host, el("p.caption.muted", {}, converted.note || t("money.notConverted")));
+        return;
+      }
+      mount(host,
+        el("div", { style: { fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" } },
+          `≈ ${base === "INR" ? rupees(converted.convertedAmount) : `${base} ${converted.convertedAmount}`}`),
+        el("div.caption.muted", {}, t("money.rateLine", {
+          from: record.currency,
+          rate: Number(converted.rate).toLocaleString("en-IN", { maximumFractionDigits: 4 }),
+          to: base,
+          date: formatDate(converted.rateAsOf),
+          source: rateSourceLabel(converted.rateSource),
+        })),
+      );
+    } catch {
+      mount(host, el("p.caption.muted", {}, t("money.rateUnavailable")));
+    }
+  })();
+  return host;
+}
+
+/** Rupees in Indian grouping; money held abroad with its code, as its statement writes it. */
+function inOwnCurrency(amount, currency) {
+  if (!currency || currency === "INR") return rupees(amount);
+  return `${currency} ${Number(amount).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
+function rateSourceLabel(source) {
+  const plain = String(source || "").replace(" (inverted)", "");
+  const key = `money.source.${plain}`;
+  const label = t(key);
+  return label === key ? plain : label;
+}
+
+/**
+ * A value from a published price says so, calmly: which price, per unit, and —
+ * when someone had entered a value of their own earlier — that it is kept, with
+ * its date. The feed never replaces a value entered on or after the price's
+ * date (docs/13 §6), so this is the only case there is to explain.
+ */
+function priceFedDetail(record) {
+  if (record.valuationSource !== "price_feed" || !record.unitPrice) return null;
+  const host = el("div.stack-2", {},
+    el("p.caption.muted.price-stamp", {},
+      el("span.info-mark", { "aria-hidden": "true" }, "i"),
+      t("value.perUnit", {
+        price: `₹${Number(record.unitPrice).toLocaleString("en-IN", { maximumFractionDigits: 4 })}`,
+        units: record.quantity,
+      })),
+  );
+  (async () => {
+    try {
+      const history = await api.valuations(state.household.id, record.id);
+      const entered = history.find((v) => v.source !== "price_feed");
+      if (entered) {
+        host.append(el("p.caption.muted", {}, t("value.enteredKept", {
+          value: rupees(entered.value), date: formatDate(entered.asOfDate),
+        })));
+      }
+    } catch { /* the history is a courtesy here; the stamp above already says what the figure is */ }
+  })();
+  return host;
+}
+
 function valueExplanation(record) {
+  if (record.valueBasis === "valued" && record.valuationSource === "price_feed") {
+    const key = { amfi: "value.atNav", nse: "value.atNseClose", bse: "value.atBseClose" }[record.priceSource];
+    if (key) return t(key, { date: formatDate(record.valuedOn) });
+  }
   switch (record.valueBasis) {
     case "valued": return `Your snapshot from ${formatDate(record.valuedOn)}`;
     case "at_cost": return "What you paid — add a value to see what it's worth today";

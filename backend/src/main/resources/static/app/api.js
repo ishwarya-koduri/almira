@@ -213,6 +213,7 @@ export const api = {
   updateInvestment: (hid, id, b)  => api.patch(`/api/v1/households/${hid}/investments/${id}`, b),
   setVisibility: (hid, id, b)     => api.patch(`/api/v1/households/${hid}/investments/${id}/visibility`, b),
   addValuation:  (hid, id, b)     => api.post(`/api/v1/households/${hid}/investments/${id}/valuations`, b),
+  valuations:    (hid, id)        => api.get(`/api/v1/households/${hid}/investments/${id}/valuations`),
   archive:       (hid, id)        => api.del(`/api/v1/households/${hid}/investments/${id}`),
   restore:       (hid, id)        => api.post(`/api/v1/households/${hid}/trash/investments/${id}/restore`),
   trash:         (hid)            => api.get(`/api/v1/households/${hid}/trash`),
@@ -326,6 +327,9 @@ export const api = {
   // --- currencies and providers ---------------------------------------------
   rates:         (hid, quote)     => api.get(`/api/v1/households/${hid}/rates?quote=${quote || "INR"}`),
   recordRate:    (hid, body)      => api.post(`/api/v1/households/${hid}/rates`, body),
+  convert:       (hid, amount, from, to) =>
+    api.get(`/api/v1/households/${hid}/rates/convert?amount=${encodeURIComponent(amount)}` +
+      `&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to || "INR")}`),
   providers:     (hid)            => api.get(`/api/v1/households/${hid}/connect/providers`),
 
   // --- zero-knowledge mode --------------------------------------------------

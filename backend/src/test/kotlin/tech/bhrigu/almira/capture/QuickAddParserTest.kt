@@ -27,6 +27,8 @@ class QuickAddParserTest {
     private val sbiId = UUID.randomUUID()
     private val angelOneId = UUID.randomUUID()
     private val hoablId = UUID.randomUUID()
+    private val hdfcId = UUID.randomUUID()
+    private val sipId = UUID.randomUUID()
 
     private val vocabulary = Vocabulary(
         types = listOf(
@@ -36,6 +38,7 @@ class QuickAddParserTest {
             TypeVocabulary(propertyId, "property", "Property", setOf("flat", "plot", "house", "property")),
             // A custom type, matched exactly like a built-in one.
             TypeVocabulary(angelTypeId, "angel_investment", "Angel Investment", setOf("angel investment")),
+            TypeVocabulary(sipId, "mf_sip", "Mutual Fund — SIP", setOf("sip", "mutual fund", "mf")),
         ),
         institutions = listOf(
             InstitutionVocabulary(iciciId, "ICICI Bank"),
@@ -43,6 +46,7 @@ class QuickAddParserTest {
             InstitutionVocabulary(sbiId, "State Bank of India"),
             InstitutionVocabulary(angelOneId, "Angel One"),
             InstitutionVocabulary(hoablId, "House of Abhinandan Lodha"),
+            InstitutionVocabulary(hdfcId, "HDFC Bank"),
         ),
     )
 
@@ -255,5 +259,183 @@ class QuickAddParserTest {
         val text = "2.5L fd at State Bank of India 15 Jan 2025"
         assertThat(parse(text).fields.map { it.value })
             .isEqualTo(parse(text).fields.map { it.value })
+    }
+
+    // --- real sentences (X-39) ------------------------------------------------
+
+    /**
+     * The sentence that started this: everything past the amount used to land in
+     * the name, so the chip read "7.1% matures nominee Aarav".
+     */
+    @Test
+    fun `reads the rate, the maturity and the nominee out of a real sentence`() {
+        val result = parse("HDFC FD 3 lakh 7.1% matures 5 March 2028 nominee Aarav")
+
+        assertThat(result.field("typeId")?.value).isEqualTo(fdId.toString())
+        assertThat(result.field("institutionId")?.display).isEqualTo("HDFC Bank")
+        assertThat(result.field("investedAmount")?.value).isEqualTo("300000")
+        assertThat(result.field("investedAmount")?.hint).isEqualTo("Three Lakh Rupees")
+        assertThat(result.field("attributes.interest_rate")?.value).isEqualTo("7.1")
+        assertThat(result.field("attributes.interest_rate")?.label).isEqualTo("Rate")
+        assertThat(result.field("maturityDate")?.value).isEqualTo("2028-03-05")
+        assertThat(result.field("maturityDate")?.label).isEqualTo("Matures")
+        assertThat(result.field("nomineeName")?.value).isEqualTo("Aarav")
+        assertThat(result.field("startDate"))
+            .describedAs("a maturity is not a purchase date")
+            .isNull()
+        assertThat(result.field("title")).isNull()
+        assertThat(result.notUnderstood).isEmpty()
+    }
+
+    @Test
+    fun `every chip says exactly where in the sentence its words are`() {
+        val text = "HDFC FD 3 lakh 7.1% matures 5 March 2028 nominee Aarav"
+        val result = parse(text)
+
+        assertThat(result.fields).allSatisfy {
+            assertThat(it.start).describedAs(it.key).isNotNull()
+            assertThat(text.substring(it.start!!, it.end!!)).describedAs(it.key).isEqualTo(it.sourceText)
+        }
+        assertThat(result.field("maturityDate")?.sourceText).isEqualTo("matures 5 March 2028")
+        assertThat(result.field("nomineeName")?.sourceText).isEqualTo("nominee Aarav")
+    }
+
+    @Test
+    fun `positions are counted in what was sent, leading spaces included`() {
+        val result = parse("   2L FD")
+        assertThat(result.field("investedAmount")?.start).isEqualTo(3)
+        assertThat(result.field("investedAmount")?.end).isEqualTo(5)
+    }
+
+    @Test
+    fun `when the bank is not one we know, it is the name and not a guess`() {
+        val result = parse("Canara FD 2L @ 6.8% p.a. from 12 Jan 2025 maturity 12/01/2030 nominee wife Priya")
+
+        assertThat(result.field("title")?.value).isEqualTo("Canara")
+        assertThat(result.field("attributes.interest_rate")?.value).isEqualTo("6.8")
+        assertThat(result.field("attributes.interest_rate")?.sourceText).isEqualTo("@ 6.8% p.a.")
+        assertThat(result.field("startDate")?.value).isEqualTo("2025-01-12")
+        assertThat(result.field("maturityDate")?.value).isEqualTo("2030-01-12")
+        assertThat(result.field("nomineeName")?.value).isEqualTo("Priya")
+        assertThat(result.field("nomineeRelationship")?.value).isEqualTo("wife")
+        assertThat(result.notUnderstood).isEmpty()
+    }
+
+    /**
+     * The other half of the fix: what still cannot be read is shown as not
+     * understood, never saved as part of the name.
+     */
+    @Test
+    fun `words after a fact that mean nothing go to didn't understand, not the name`() {
+        val result = parse("SBI FD 2L 7% joint with Sita")
+
+        assertThat(result.field("title")?.value).isEqualTo("SBI")
+        assertThat(result.notUnderstood.map { it.text }).containsExactly("joint with Sita")
+        assertThat(result.unparsed).isEqualTo("joint with Sita")
+        val span = result.notUnderstood.single()
+        assertThat("SBI FD 2L 7% joint with Sita".substring(span.start, span.end)).isEqualTo("joint with Sita")
+    }
+
+    @Test
+    fun `a maturity with no day is left for the form to ask, and is not the name`() {
+        val result = parse("3 lakh FD matures in March 2028")
+
+        assertThat(result.field("maturityDate")).isNull()
+        assertThat(result.field("startDate")).isNull()
+        assertThat(result.field("title")).isNull()
+        assertThat(result.notUnderstood.map { it.text }).containsExactly("matures in March 2028")
+    }
+
+    @Test
+    fun `a yearless maturity is the next one, not the last`() {
+        // Today is 6 September 2026.
+        assertThat(parse("FD matures 12 Jan").field("maturityDate")?.value).isEqualTo("2027-01-12")
+        assertThat(parse("FD due on 30 Nov").field("maturityDate")?.value).isEqualTo("2026-11-30")
+    }
+
+    @Test
+    fun `the name keeps its capitalised words and stops at what is plainly not a name`() {
+        assertThat(parse("nominee Lakshmi Devi 5L FD").field("nomineeName")?.value).isEqualTo("Lakshmi Devi")
+        val beforeBank = parse("nominee Aarav HDFC FD 1L")
+        assertThat(beforeBank.field("nomineeName")?.value).isEqualTo("Aarav")
+        assertThat(beforeBank.field("institutionId")?.display).isEqualTo("HDFC Bank")
+        assertThat(parse("FD 2L nominee: son Rohan").field("nomineeName")?.value).isEqualTo("Rohan")
+    }
+
+    @Test
+    fun `a lower-case nominee is taken alone, and offered less confidently`() {
+        val result = parse("fd 1l nominee aarav sbi")
+        assertThat(result.field("nomineeName")?.value).isEqualTo("aarav")
+        assertThat(result.field("nomineeName")?.confidence).isEqualTo("medium")
+    }
+
+    @Test
+    fun `amounts said in words, the way they are said here`() {
+        mapOf(
+            "three lakh FD" to "300000",
+            "fifty thousand rupees FD" to "50000",
+            "twenty five thousand SIP" to "25000",
+            "two and a half lakh FD" to "250000",
+            "one crore twenty lakh flat" to "12000000",
+            "1 lakh 50 thousand gold" to "150000",
+            "dedh lakh gold" to "150000",
+            "dhai crore plot" to "25000000",
+            "a lakh FD" to "100000",
+            "Rs. 3,00,000/- FD" to "300000",
+            "INR 45000 FD" to "45000",
+            "5 lakhs FD" to "500000",
+        ).forEach { (input, expected) ->
+            assertThat(parse(input).field("investedAmount")?.value).describedAs(input).isEqualTo(expected)
+        }
+        assertThat(parse("Rs. 3,00,000/- FD").field("investedAmount")?.sourceText).isEqualTo("Rs. 3,00,000/-")
+        assertThat(parse("Rs. 3,00,000/- FD").field("title")).isNull()
+    }
+
+    @Test
+    fun `numbers that are not money stay out of the amount`() {
+        assertThat(parse("stock INE009A01021").field("investedAmount"))
+            .describedAs("an ISIN has digits and a K in it, and is not ₹8,46,000")
+            .isNull()
+        assertThat(parse("FD for five years").field("investedAmount")).isNull()
+        assertThat(parse("3 lakh FD 2028").field("investedAmount")?.value)
+            .describedAs("a year after an amount is not added to it")
+            .isEqualTo("300000")
+        assertThat(parse("gold 3 Aug 25 lakh").field("investedAmount")?.value).isEqualTo("2500000")
+        assertThat(parse("gold 3 Aug 25 lakh").field("startDate")?.value).isEqualTo("2026-08-03")
+    }
+
+    @Test
+    fun `a fund name before the amount is the name, a stray word after it is not`() {
+        val result = parse("Parag Parikh Flexi Cap SIP 5k monthly")
+        assertThat(result.field("typeId")?.value).isEqualTo(sipId.toString())
+        assertThat(result.field("title")?.value).isEqualTo("Parag Parikh Flexi Cap")
+        assertThat(result.field("investedAmount")?.value).isEqualTo("5000")
+        assertThat(result.notUnderstood.map { it.text }).containsExactly("monthly")
+    }
+
+    @Test
+    fun `rates are only read with a percent`() {
+        assertThat(parse("FD 1L 7.25 percent").field("attributes.interest_rate")?.value).isEqualTo("7.25")
+        assertThat(parse("gold 7.1").field("attributes.interest_rate")).isNull()
+    }
+
+    @Test
+    fun `a name beside the type is the name, wherever the type is`() {
+        assertThat(parse("gold coins for Meera's wedding 20g").field("title")?.value).isEqualTo("Meera's wedding")
+    }
+
+    /**
+     * Seen in the browser: with the bank recognised, the words left after the
+     * nominee were the only leftover run, and became the deposit's name.
+     */
+    @Test
+    fun `leftover words after the facts are not the name just because nothing else is`() {
+        val result = parse("HDFC FD 3 lakh 7.1% matures 5 March 2028 nominee Aarav joint with Sita")
+        assertThat(result.field("title")).isNull()
+        assertThat(result.notUnderstood.map { it.text }).containsExactly("joint with Sita")
+
+        val afterWeight = parse("gold coins 20g for Meera's wedding")
+        assertThat(afterWeight.field("title")).isNull()
+        assertThat(afterWeight.notUnderstood.map { it.text }).containsExactly("Meera's wedding")
     }
 }

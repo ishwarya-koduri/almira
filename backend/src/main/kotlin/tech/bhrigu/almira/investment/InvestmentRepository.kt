@@ -61,6 +61,11 @@ data class InvestmentRow(
      * instead of replacing it (docs/07 §1).
      */
     val rolledFromId: UUID? = null,
+    /** Where the current valuation came from: manual | import | quote_api | price_feed. Null with no valuation. */
+    val valuationSource: String? = null,
+    /** For a price-fed valuation: amfi | nse | bse, and the price per unit it used. */
+    val priceSource: String? = null,
+    val unitPrice: BigDecimal? = null,
     val owners: List<OwnerShare> = emptyList(),
     val nominees: List<NomineeShare> = emptyList(),
     val visibleToMemberIds: List<UUID> = emptyList(),
@@ -78,6 +83,9 @@ data class ValuationRow(
     val quantity: BigDecimal?,
     val source: String,
     val note: String?,
+    /** amfi | nse | bse for a price-fed valuation; null otherwise. */
+    val priceSource: String? = null,
+    val unitPrice: BigDecimal? = null,
 )
 
 data class InvestmentFilter(
@@ -403,8 +411,12 @@ class InvestmentRepository(
         insert into valuations (investment_id, as_of_date, value, quantity, note, created_by)
         values (:id, :asOf, :value, :quantity, :note, :by)
         on conflict (investment_id, as_of_date)
+          -- A value typed over the same day's price-fed one becomes the
+          -- person's, and stops claiming to be a published price.
           do update set value = excluded.value, quantity = excluded.quantity,
-                        note = excluded.note, created_by = excluded.created_by
+                        note = excluded.note, created_by = excluded.created_by,
+                        source = excluded.source, price_source = null,
+                        unit_price = null, instrument = null
         """.trimIndent(),
         MapSqlParameterSource()
             .addValue("id", investmentId)
@@ -417,7 +429,7 @@ class InvestmentRepository(
 
     fun valuations(investmentId: UUID): List<ValuationRow> = jdbc.query(
         """
-        select id, as_of_date, value, quantity, source, note from valuations
+        select id, as_of_date, value, quantity, source, note, price_source, unit_price from valuations
         where investment_id = :id order by as_of_date desc
         """.trimIndent(),
         mapOf("id" to investmentId),
@@ -429,6 +441,8 @@ class InvestmentRepository(
             rs.getBigDecimal("quantity"),
             rs.getString("source"),
             rs.getString("note"),
+            rs.getString("price_source"),
+            rs.getBigDecimal("unit_price"),
         )
     }
 
@@ -552,6 +566,9 @@ class InvestmentRepository(
             version = rs.getInt("version"),
             createdAt = rs.getTimestamp("created_at").toInstant(),
             rolledFromId = rs.getObject("rolled_from_id", UUID::class.java),
+            valuationSource = rs.getString("valuation_source"),
+            priceSource = rs.getString("valuation_price_source"),
+            unitPrice = rs.getBigDecimal("valuation_unit_price"),
         )
     }
 
@@ -565,7 +582,9 @@ class InvestmentRepository(
                    -- names it directly.
                    coalesce(inst.name, acc_inst.name) as institution_name,
                    acc.label as account_label,
-                   v.effective_value, v.value_basis, v.valued_on
+                   v.effective_value, v.value_basis, v.valued_on,
+                   lv.source as valuation_source, lv.price_source as valuation_price_source,
+                   lv.unit_price as valuation_unit_price
             from investments i
             join investment_types t on t.id = i.type_id
             join asset_categories c on c.id = t.category_id
@@ -573,6 +592,14 @@ class InvestmentRepository(
             left join accounts acc on acc.id = i.account_id
             left join institutions acc_inst on acc_inst.id = acc.institution_id
             left join investment_value v on v.investment_id = i.id
+            -- The same row investment_value chose, for where it came from.
+            left join lateral (
+              select vl.source, vl.price_source, vl.unit_price
+              from valuations vl
+              where vl.investment_id = i.id
+              order by vl.as_of_date desc, vl.created_at desc
+              limit 1
+            ) lv on v.value_basis = 'valued'
         """
         const val SELECT = "$SELECT_BASE where i.household_id = :hid and i.deleted_at is null"
     }

@@ -808,3 +808,68 @@ or on `infra/deploy-and-pentest`; `deploy/restore/digest-check.sql` and
 migrated by the full application recorded versions 25, 27, 28, … 35 in that
 order, all successful, with 31 `ciphertext digests` between 30 and 32.
 `outOfOrder` is still not enabled anywhere.
+
+---
+
+## 24. A guard runs before the action it guards
+
+**The rule** (owner, 2026-09-14): a check that refuses something runs *before*
+the action it exists to prevent — not after it, relying on a rollback, a
+clean-up or a message to undo it. And its test proves **the action did not
+happen** when the check refuses, not merely that the check refused; it is
+watched failing with the check moved back after the action.
+
+Why it is a rule and not a fix: it was broken twice before anyone swept for it.
+6b's teardown enforced its limit after the fact, and a test checked its
+database URL only after Flyway had migrated the wrong database
+(TestDatabaseGuard, `41aa94d`). A sweep then found the class elsewhere. A
+rollback undoes rows; it does not undo a migration already committed, a data
+key cached in memory, a file in storage, a provider call, a message queued, or
+a process already serving.
+
+**Moved in front** (each commit names its watched-failing run):
+
+| Guard | Used to run after | Now | Commit |
+|---|---|---|---|
+| Sign-in channels, key-encryption key, JWT secret, OTP and provider bounds | Flyway migrate (and, in development, writing a new key file) | `StartupSettingsCheck`, an EnvironmentPostProcessor, before any context | `c377840` |
+| Per-network OTP request cap | the per-number counter's INCR | network cap first | `4e69e8a` |
+| Write permission on document upload (and capture, DigiLocker import) | provisioning/caching a data key and `storage.put` | `HouseholdService.requireWriter` (app.can_write_household) first | `9bc6396` |
+| A cached data key matches the stored one | encrypting under it | checked on every use | `a9a71ca` |
+| Creator can see the account/loan; holder, owner and role validation on edits; a holding's values before its custom fields; a contact's link targets; a share's scope; write permission before encrypting an account number | the inserts/updates, audit and read-back ("Saved, but…") | before any write | `0fb4fd5` |
+| Admin check for DigiLocker complete and AA consent; writer check for both imports | redeeming the code, creating the consent, list/fetch | before the provider call | `d6dca3f` |
+| Removing a stored document file | only an insert failure | any rollback (afterCompletion) | `a274bd9` |
+| Download ticket single use | GET, then an unchecked DEL | GETDEL | `9bdf10b` |
+| Guest link expiry, revocation, view limit | a stale read; the count was unconditional | the count carries the check (V36) | `3dcc6d1` |
+| Reminder "notified" claim | queueing the notifications, unconditional | conditional claim first, released if queueing throws | `5a52174` |
+| Test database is not `almira` | (the check was in front, but `?sslmode=` slipped past it) | reads the database name | `ac118c1` |
+| up.sh runtime role does not bypass RLS | the app starting and serving | SQL check before `up -d app` | `784aa65` |
+| uitest bridge port is free | starting the bridge | `claim-port.sh` before it | `3bb4ace` |
+| verify.sh scratch services are its own | the backend suite | preflight, and the suite gated on them | `57df7e6` |
+
+**Still open:**
+
+- **Flyway itself does not depend on the checks** (infra session:
+  `config/DatabaseConfig.kt`). `StartupSettingsCheck` covers every
+  configuration refusal a bean makes today; a new bean constructor refusal
+  added later is behind Flyway again unless it is added there too.
+  `PageChecksumCheck` and `KeyEncryptionKeyCheck` are the infra session's to
+  judge.
+- **A setting supplied by `@DynamicPropertySource` is invisible to
+  `StartupSettingsCheck`** — it arrives after the check. The beans still check
+  it. Tests that switch email on must supply the allowlist the same way
+  (`OtpCodeNeverLeaksTest`).
+- **The application does not refuse, at startup, a runtime role that bypasses
+  RLS** — only dev-personal/up.sh does, and `/health` reports it afterwards.
+  `scripts/bootstrap-prod-db.sh` still tells the operator to start the
+  application and then check. Infra session.
+- **The reminder sweep is still one transaction over two pools.** The claim is
+  in front and released on a throw, but a throw on reminder N still rolls back
+  the queued rows of reminders 1…N−1, whose claims have committed. Not a check
+  after an action, so not moved here.
+- **A guest view is counted before its payload is built**, so a payload that
+  fails still uses a view. Deliberate in the code ("accounting first"); a
+  design decision, not reordered here.
+- **verify.sh's preflight port check was not watched failing** (the harness
+  covers the suite gate), and verify.sh still `docker rm -f`s its own two
+  containers by name at the start of a run, which its header says it never
+  does.

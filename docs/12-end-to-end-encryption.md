@@ -734,6 +734,12 @@ with `l` for `1` (a tick); "Forgot it?" set a new passphrase from the sheet and
 the old one was refused; a spouse under an open window opened the location, the
 key holder and a sealed note with the sheet.
 
+**Watched failing:** the step-up removed from making a copy (the API test got
+`200` where it wants `403`); the passphrase-write guard removed (a different key
+was stored, `200` where it wants `409`); the copies' read policy without its
+owner-or-open-window condition (the SQL suite stopped at "a veto closes the
+recovery copy along with the records").
+
 **Not verified:** the native app (it neither makes nor uses copies); the printed
 page on paper (the print stylesheet was not sent to a printer); a QR code (not
 drawn); the recovery screens at phone width, in Telugu or Hindi (their strings

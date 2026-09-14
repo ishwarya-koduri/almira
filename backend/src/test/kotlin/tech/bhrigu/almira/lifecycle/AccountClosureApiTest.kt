@@ -196,6 +196,52 @@ class AccountClosureApiTest : LifecycleTestSupport() {
     }
 
     @Test
+    fun `a handbook edition, a lost-money check or a 2018 value he entered does not stop his erasure`() {
+        val ids = seed()
+        val raviId = userId(ravi)
+        db.update(
+            """
+            insert into handbook_editions (household_id, created_by, edition, link_expires_at)
+            values (?::uuid, ?::uuid, 1, now() + interval '365 days')
+            """.trimIndent(),
+            householdId, raviId,
+        )
+        db.update(
+            """
+            insert into lost_money_checks (household_id, member_id, portal, status, checked_on, created_by)
+            values (?::uuid, ?::uuid, 'udgam', 'nothing', current_date, ?::uuid)
+            """.trimIndent(),
+            householdId, ishwaryaMemberId, raviId,
+        )
+        db.update(
+            "insert into investment_fmv_2018 (investment_id, fmv_per_unit, recorded_by) values (?::uuid, 10, ?::uuid)",
+            ids.getValue("ishGold"), raviId,
+        )
+
+        stepUp(ravi)
+        post("/api/v1/me/closure", ravi)
+        val closure = closureId(raviId)
+
+        assertThat(purge.purge(closure, Instant.now().plus(Duration.ofDays(31)))).isNotNull
+        assertThat(db.queryForObject("select count(*) from users where id = ?::uuid", Int::class.java, raviId)).isZero()
+        assertThat(
+            db.queryForObject("select count(*) from handbook_editions where household_id = ?::uuid", Int::class.java, householdId),
+        ).describedAs("his editions go with him").isZero()
+        assertThat(
+            db.queryForObject(
+                "select created_by is null from lost_money_checks where household_id = ?::uuid and member_id = ?::uuid",
+                Boolean::class.java, householdId, ishwaryaMemberId,
+            ),
+        ).describedAs("the household's check stays, without his name").isTrue()
+        assertThat(
+            db.queryForObject(
+                "select recorded_by is null from investment_fmv_2018 where investment_id = ?::uuid",
+                Boolean::class.java, ids.getValue("ishGold"),
+            ),
+        ).isTrue()
+    }
+
+    @Test
     fun `an owner's household passes to the admin, and a household of one goes with its only person`() {
         stepUp(ishwarya)
         post("/api/v1/me/closure", ishwarya).also { assertThat(it.status()).describedAs(it.body).isEqualTo(HttpStatus.CREATED) }

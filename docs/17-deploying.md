@@ -456,6 +456,60 @@ the right key logs `opens all N household key(s)` and serves; the wrong key logs
 `Refusing to start — ALMIRA_KMS_MASTER_KEY is not the key this database was
 encrypted with` and does not.
 
+### A drill with nothing but Docker
+
+The drill above needs the compose stack. The database half of it can be proven
+on any machine with Docker, and should be, every time a migration lands:
+
+```bash
+./scripts/restore-drill-local.sh            # two throwaway containers, removed at the end
+```
+
+It starts a Postgres with page checksums, applies every migration in version
+order, seeds a small household **through row-level security as the runtime
+role** (`deploy/restore/drill/local-seed.sql`: an owner's private FD, an admin
+spouse's private SIP, a child's FD, a shared holding, a loan, a measurement
+count), takes a `pg_dump -Fc`, restores it into a second empty container with the
+runtime role created first, and stops unless all of these hold on the copy:
+
+- every table has exactly the rows it had in the source;
+- every table's RLS switch and every policy's text are identical, so a policy
+  that did not come back is named, not guessed at;
+- each of the two adults sees exactly their own private holding, and the runtime
+  role still cannot read the measurement counts;
+- `db/tests/rls_privacy_test.sql` passes against the copy (it rolls itself back);
+- the ciphertext sweep finds nothing.
+
+First run, 14 Sep 2026, on a developer machine: 57 tables and 186 rows equal, 53
+tables with RLS on and 201 policies identical, 70 privacy assertions passed.
+**Watched failing** three ways, by changing the copy straight after
+`pg_restore`: one table's rows deleted (named, with both counts), RLS disabled on
+`investments` (named), and one policy dropped (named, with its text).
+
+It does not take the documents volume, start the application or check the KMS
+key; `backup.sh`, `restore.sh` and `deploy/restore/drill/` above do.
+
+### Documents in object storage
+
+`ALMIRA_STORAGE_PROVIDER=s3` stores documents in S3 or anything S3-compatible
+(R2, MinIO, an Indian-region provider) instead of the documents volume. The
+filesystem stays the default, and nothing S3 is constructed or called unless this
+is set. What reaches the bucket is the same ciphertext the filesystem holds, so a
+misconfigured bucket leaks nothing readable; a private bucket is still the rule.
+
+It refuses to start without `ALMIRA_S3_BUCKET` and `ALMIRA_S3_REGION`, with only
+one of the two keys, or when a `HeadBucket` with these credentials fails; an
+unknown provider name also refuses (`StorageProviderCheck`). Leave both keys
+empty to use the SDK's default chain (an instance role). Most S3-compatible
+stores want `ALMIRA_S3_PATH_STYLE=true`. Keys are `ALMIRA_S3_PREFIX`
+(`documents/`) + `<household>/<document>`.
+
+**The bucket is not in `backup.sh`**, which tars the documents volume. With `s3`,
+turn on the provider's object versioning or replication and include the bucket in
+the restore drill by hand; a database restored without its documents leaves every
+holding pointing at a missing scan. Proven by `S3DocumentStorageTest` and
+`S3DocumentApiTest` against MinIO; not yet run against a real provider.
+
 ### The single small VPS this assumes
 
 One box runs Postgres, Redis and the application (§1). The compose file caps the
@@ -532,18 +586,104 @@ Two notes for whoever verifies it:
 - It needs **HTTPS** (or localhost). A service worker will not register over
   plain HTTP on a real hostname, so the install prompt will not appear until TLS
   is in front of it.
+- The cache turns over by itself. The build appends a fingerprint of every
+  static file to the worker's `VERSION` (`almira-v24+<12 hex>`), so a changed
+  asset changes the served `sw.js`, and the build fails if the `VERSION` line is
+  missing (known-issues 3).
 - `scripts/check-service-worker.js` asserts the routing decisions — shell
   precached, `/api` never cached, offline navigation falls back to the shell —
   without a browser. Installability and the offline launch itself still need a
   real device; they could not be verified on the machine this was built on.
 
-## 8 · Not covered here
+## 8 · Watching it: health, logs and alerts
+
+Three probes, none of which needs a session or carries household data:
+
+| Path | Answers | Use it for |
+|---|---|---|
+| `/health/live` | `200 {"status":"alive"}` while the process serves HTTP; touches nothing else | a restart policy. Never make it depend on the database: that restarts a healthy app in a loop through a database outage |
+| `/health/ready` | `200` when the database answers as the runtime role **with RLS in force** and Redis answers; `503` naming which is false | the load balancer and the compose healthcheck |
+| `/health` | the role name, `rlsEnforced` and the environment | a human, and the outside check below |
+
+**The outside check.** `./scripts/check-health.sh --base https://<host>` probes all
+three and prints one line; it fails when the app is down, not ready, not enforcing
+RLS, or running with development settings. Run it every minute from somewhere
+that is **not the host** (a cron on another box, or any uptime monitor pointed at
+`/health/ready`), with `--alert-cmd` set to your own mail, SMS or chat command. It
+sends nothing anywhere by itself.
+
+**Logs.** The production compose file sets `ALMIRA_LOG_FORMAT=json`: one object
+per line, `ts`, `level`, `logger`, `thread`, `message`, and for an error `error`
+(the exception classes) and `frames`. Deliberately **no MDC and no exception
+messages**, because a message is where personal data escapes (a constraint
+violation quotes the phone number that collided); emails and runs of ten or more
+digits are scrubbed from the message as a second line. Call sites already mask
+phones and emails. `text` is the readable default for a terminal; any other value
+refuses to start. The application's own loggers run at DEBUG (`application.yml`),
+which is a lot of transaction lines for a collector: set
+`LOGGING_LEVEL_TECH_BHRIGU_ALMIRA=INFO` in production if volume matters. Checked
+on a running jar: 20 000 lines from a load test parsed as JSON, and none held a
+test phone number.
+
+### When to be woken, and what to do
+
+Alert on these, most urgent first. Each has the first thing to look at.
+
+| Signal | Means | First move |
+|---|---|---|
+| `check-health.sh` fails on `live` for 2 minutes | the app is down | `docker compose … ps` and `logs app --tail 200`; a refusal to start names its reason in one line (§3) |
+| `ready` is 503 with `rlsEnforced:false` | the app is connected as the schema owner: **every member can see every record** | stop the app now (`… stop app`), then fix `ALMIRA_DB_APP_USER` (§2). Do not wait for users to leave |
+| `ready` is 503 with `database:false` or `redis:false` | nobody can sign in | Postgres or Redis container health, disk space (`df -h`), memory (§6 "single small VPS") |
+| any `"level":"ERROR"` line | an unhandled server fault, answered `500 internal_error` | the `logger`, `error` and `frames` fields; the request that caused it is not logged by design, so reproduce from the route |
+| repeated `one-time code by sms failed` or `… by email failed` (WARN) | sign-in codes are not being delivered | the provider's status page and balance; the `Providers:` line at startup says which mode each is in |
+| `notification outbox drain failed` (WARN) more than a few times an hour | reminders are queuing, not sending | database health, then the provider |
+| the newest backup directory is older than 26 hours | backups have stopped | the cron that runs `backup.sh`, disk space |
+| `/health` says `"environment":"development"` | development settings in production (codes echoed, checks relaxed) | set `ALMIRA_ENV=production` and restart |
+
+After any incident that users could see, say so in plain words where they will
+look, with what is wrong and when it will be fixed, before they have to ask.
+
+## 9 · Load, measured once on a laptop
+
+`./scripts/load-test.sh --base http://127.0.0.1:<port>` signs `--users` people in
+on a development server, gives each a household and three holdings, then sends
+`--requests` at `--concurrency`: 45% dashboard, 25% holdings list, 15% `/me`, 10%
+adding an FD, 5% still-true. It reports p50/p95/p99/max per kind and fails on any
+non-2xx or a p95 over `--p95-ms` (800 by default). It refuses anything that is not
+loopback, not in development mode, or a port a personal stack publishes. Start the
+server on a throwaway database with `ALMIRA_OTP_MAX_PER_IP_PER_HOUR` above the
+number of people.
+
+Run once, 14 Sep 2026, against the built jar on a developer laptop, with a
+throwaway Postgres and Redis in Docker, **while the machine was also running
+other test suites (load average 40–66)**. Treat the numbers as a floor, not a
+capacity figure:
+
+| Run | Requests | Throughput | p50 | p95 | p99 | Failures |
+|---|---|---|---|---|---|---|
+| 5 people, one at a time | 500 | 10/s | 38 ms | 195 ms | 472 ms | 0 |
+| 20 people, 20 at a time | 2 000 | 37/s | 401 ms | 1 178 ms | 1 618 ms | 0 |
+
+No request failed under either. The dashboard is the slowest read (p95 1 214 ms
+at 20 concurrent) and adding a holding the slowest write (p95 1 322 ms). The
+20-at-a-time run is over the 800 ms budget; whether that is this laptop's load or
+the application needs a run on the real host with nothing else on it, which is
+the first thing to do after the first deploy.
+
+## 10 · Not covered here
 
 Named rather than implied:
 
-- **Log aggregation, metrics and alerting.** The application logs to stdout and
-  exposes `/health`; nothing collects either.
-- **Automated backups.** The commands above are manual.
+- **Metrics and log collection.** Logs are JSON on stdout and the probes are
+  above; nothing in this repository collects, stores or graphs either, and the
+  alerts in §8 need something (an uptime monitor, a log shipper) to watch for them.
+- **A public status page.** The one-line public status ("All good", or what is
+  wrong and when it will be fixed) needs a page hosted apart from the app, so it
+  stays up when the app does not; there is no such site in this repository yet.
+- **Automated backups.** The commands above are manual; §8 says what to alert on
+  once a cron runs them.
+- **A deploy to a real host.** Everything above has run in containers on one
+  developer machine only.
 - **Zero-downtime deploys.** `up -d --build app` restarts the container.
 - **Horizontal scaling.** Nothing prevents more than one instance — sessions and
   rate limits are in Redis, not in memory — but it has not been tried.

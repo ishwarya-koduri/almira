@@ -1,5 +1,7 @@
 package tech.bhrigu.almira.invitation
 
+import tech.bhrigu.almira.measurement.ProductEvent
+import tech.bhrigu.almira.measurement.ProductMeasurement
 import org.springframework.dao.EmptyResultDataAccessException
 import org.springframework.jdbc.UncategorizedSQLException
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
@@ -40,6 +42,7 @@ class InvitationService(
     private val jwt: JwtService,
     private val audit: AuditService,
     private val userContext: RequestUserContext,
+    private val measurement: ProductMeasurement,
 ) {
     // "advisor" is a colleague rather than a member of the family: they see only
     // what has been explicitly shared with them, household visibility does not
@@ -113,6 +116,7 @@ class InvitationService(
             householdId = householdId, actorUserId = userId, action = "invitation.create",
             entityType = "invitation", entityId = id, diff = mapOf("role" to role),
         )
+        measurement.record(ProductEvent.INVITE_SENT, memberIds = listOf(memberId))
         return CreatedInvitation(
             invitation = list(householdId).first { it.id == id },
             token = token,
@@ -186,7 +190,7 @@ class InvitationService(
                 memberId = rs.getObject("member_id", UUID::class.java),
                 role = rs.getString("role"),
             )
-        }!!
+        }!!.also { measurement.record(ProductEvent.INVITE_ACCEPTED, memberIds = listOf(it.memberId)) }
     } catch (e: EmptyResultDataAccessException) {
         throw ApiException.notFound("That invitation link isn't valid.")
     } catch (e: UncategorizedSQLException) {

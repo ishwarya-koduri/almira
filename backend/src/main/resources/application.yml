@@ -64,6 +64,15 @@ almira:
   # the Dockerfile and the production compose file to production, the test
   # suite to development. Anything else has to choose.
   environment: ${ALMIRA_ENV:}
+  # text (default) for a terminal, json for a log collector: one object per
+  # line, no MDC and no exception messages, emails and long digit runs scrubbed
+  # (ops/JsonLogFormatter). The production compose file sets json.
+  log:
+    format: ${ALMIRA_LOG_FORMAT:text}
+  # Aggregate product events per day, about nobody (docs/what-we-measure.md).
+  # On by default, with an opt-out per person in Settings; false counts nothing.
+  measurement:
+    enabled: ${ALMIRA_MEASUREMENT_ENABLED:true}
   encryption:
     provider: ${ALMIRA_KMS_PROVIDER:local}
     # Base64, 32 bytes: openssl rand -base64 32
@@ -75,6 +84,16 @@ almira:
     provider: ${ALMIRA_STORAGE_PROVIDER:filesystem}
     root: ${ALMIRA_STORAGE_ROOT:./var/documents}
     max-file-bytes: 20971520
+    # Only read when provider is s3. Documents are encrypted before they reach
+    # either provider, so the bucket holds ciphertext. See docs/17 §6.
+    s3:
+      bucket: ${ALMIRA_S3_BUCKET:}
+      region: ${ALMIRA_S3_REGION:}
+      endpoint: ${ALMIRA_S3_ENDPOINT:}
+      access-key-id: ${ALMIRA_S3_ACCESS_KEY_ID:}
+      secret-access-key: ${ALMIRA_S3_SECRET_ACCESS_KEY:}
+      path-style: ${ALMIRA_S3_PATH_STYLE:false}
+      prefix: ${ALMIRA_S3_PREFIX:documents/}
   notifications:
     provider: ${ALMIRA_NOTIFY_PROVIDER:log}
   # Notifications are queued by the request or sweep that causes them and sent

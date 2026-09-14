@@ -1,5 +1,7 @@
 package tech.bhrigu.almira.continuity
 
+import tech.bhrigu.almira.measurement.ProductEvent
+import tech.bhrigu.almira.measurement.ProductMeasurement
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
@@ -104,6 +106,7 @@ class HandbookService(
     private val jdbc: NamedParameterJdbcTemplate,
     private val households: HouseholdService,
     private val sealedAccess: SealedAccessService,
+    private val measurement: ProductMeasurement,
 ) {
 
     @Transactional(readOnly = true)
@@ -331,6 +334,7 @@ class HandbookService(
     @Transactional(readOnly = true)
     fun printable(householdId: UUID): ByteArray {
         val handbook = build(householdId)
+        measurement.record(ProductEvent.HANDBOOK_PRINTED)
         val document = PDDocument()
         val body = PDType1Font(Standard14Fonts.FontName.HELVETICA)
         val bold = PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD)

@@ -14,6 +14,7 @@ import { prefs, THEMES, TEXT_SIZES, DATA_MODES } from "../prefs.js";
 import { accountCard } from "../lifecycle.js";
 import { howYouSignInCard } from "../sign-in-security.js";
 import { notificationsCard, quietPromiseCard } from "../notifications.js";
+import { measurementCard } from "../measurement.js";
 
 export async function settingsScreen(host) {
   // Settings is a stack of independent things, and it used to be an
@@ -34,6 +35,7 @@ export async function settingsScreen(host) {
     safely(() => trashCard()),
     safely(() => sessionsCard()),
     safely(() => accountCard(host, () => settingsScreen(host))),
+    safely(() => measurementCard()),
     safely(() => privacyCard()),
     safely(() => aboutCard()),
   ]);

@@ -184,6 +184,14 @@ services:
       ALMIRA_PROVIDER_PUSH_TIMEOUT:
       ALMIRA_PROVIDER_PUSH_MAX_ATTEMPTS:
       ALMIRA_PROVIDER_PUSH_RETRY_BACKOFF:
+      ALMIRA_S3_BUCKET:
+      ALMIRA_S3_REGION:
+      ALMIRA_S3_ENDPOINT:
+      ALMIRA_S3_ACCESS_KEY_ID:
+      ALMIRA_S3_SECRET_ACCESS_KEY:
+      # One JSON object per line for a log collector, with no MDC and no
+      # exception messages (docs/17 §8). `text` for reading by eye.
+      ALMIRA_LOG_FORMAT: ${ALMIRA_LOG_FORMAT:-json}
     volumes:
       - documents:/app/var
     ports:

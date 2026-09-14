@@ -1,5 +1,7 @@
 package tech.bhrigu.almira.stilltrue
 
+import tech.bhrigu.almira.measurement.ProductEvent
+import tech.bhrigu.almira.measurement.ProductMeasurement
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
@@ -92,6 +94,7 @@ class StillTrueService(
     private val households: HouseholdService,
     private val audit: AuditService,
     private val userContext: RequestUserContext,
+    private val measurement: ProductMeasurement,
 ) {
 
     @Transactional(readOnly = true)
@@ -141,6 +144,11 @@ class StillTrueService(
         audit.record(
             householdId = householdId, actorUserId = userId, action = "record.confirm_still_true",
             entityType = recordType, entityId = recordId,
+        )
+        measurement.record(
+            ProductEvent.STILL_TRUE_CONFIRMED,
+            investmentIds = listOfNotNull(recordId.takeIf { recordType == "investment" }),
+            liabilityIds = listOfNotNull(recordId.takeIf { recordType == "liability" }),
         )
         return find(householdId, recordType, recordId)
     }

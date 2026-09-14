@@ -21,6 +21,7 @@ import { state, myMember, findType } from "../state.js";
 import { t } from "../i18n.js";
 import { reload } from "../app.js";
 import { openImport } from "./import.js";
+import { reportCaptureAbandoned } from "../measurement.js";
 
 export function openCapture(onSaved) {
   chooseHowToAdd(onSaved);
@@ -47,6 +48,10 @@ function chooseHowToAdd(onSaved) {
   const parseButton = el("button.btn.btn-primary.btn-collapse", { type: "button", "aria-label": "Read it" },
     el("span.btn-label", { "aria-hidden": "true" }, "Read it"), icon("arrow", "icon.btn-icon"));
   let parsed = null;
+  // Closed without going on to a next step is an abandonment at step 1
+  // (docs/what-we-measure.md); every way forward sets this first.
+  let movedOn = false;
+  const advance = () => { movedOn = true; modal.close(); };
 
   const showParse = (result) => {
     parsed = result;
@@ -73,7 +78,7 @@ function chooseHowToAdd(onSaved) {
         ? el("button.btn.btn-primary", {
             type: "button",
             onclick: () => {
-              modal.close();
+              advance();
               const found = findType(type.value);
               if (found) captureForm(found, onSaved, prefillFrom(result));
             },
@@ -100,7 +105,7 @@ function chooseHowToAdd(onSaved) {
       toast(result.note || "Saved the document.");
       const type = result.fields.find((f) => f.key === "typeId");
       if (type && findType(type.value)) {
-        modal.close();
+        advance();
         captureForm(findType(type.value), onSaved, prefillFrom(result));
       } else {
         showParse({ ...result, unparsed: "" });
@@ -109,10 +114,11 @@ function chooseHowToAdd(onSaved) {
   });
 
   const templateHost = el("div.stack-2", {});
-  loadTemplates(templateHost, onSaved, () => modal.close());
+  loadTemplates(templateHost, onSaved, advance);
 
   const modal = sheet({
     title: "Add something",
+    onClose: () => { if (!movedOn) reportCaptureAbandoned(1); },
     body: el("div.stack-3", {},
       field({
         label: "Say it in your own words",
@@ -126,13 +132,13 @@ function chooseHowToAdd(onSaved) {
         el("div.row.wrap", { style: { gap: "8px" } },
           el("button.btn", {
             type: "button",
-            onclick: () => { modal.close(); pickType((type) => captureForm(type, onSaved)); },
+            onclick: () => { advance(); pickType((type) => captureForm(type, onSaved)); },
           }, "Pick a type"),
           el("button.btn", { type: "button", onclick: () => documentInput.click() },
             "Read a document"),
           el("button.btn", {
             type: "button",
-            onclick: () => { modal.close(); openImport(onSaved); },
+            onclick: () => { advance(); openImport(onSaved); },
           }, "Import a spreadsheet"),
           documentInput,
         ),
@@ -265,6 +271,7 @@ function useTemplate(template, onSaved) {
    ----------------------------------------------------------------------------- */
 
 function pickType(onPick) {
+  let picked = false;
   const search = textInput({ type: "search", placeholder: "Search types…", "aria-label": "Search types" });
   const grid = el("div.stack", {});
 
@@ -285,7 +292,7 @@ function pickType(onPick) {
           el("div.row.wrap", { style: { gap: "8px" } },
             ...category.types.map((type) => el("button.chip", {
               type: "button",
-              onclick: () => { modal.close(); onPick(type); },
+              onclick: () => { picked = true; modal.close(); onPick(type); },
             }, categoryDot(category.categoryCode, category.color), type.label)),
           ),
         ))));
@@ -296,6 +303,7 @@ function pickType(onPick) {
 
   const modal = sheet({
     title: "What are you adding?",
+    onClose: () => { if (!picked) reportCaptureAbandoned(2); },
     body: el("div.stack-3", {}, search, grid),
   });
 }
@@ -495,8 +503,10 @@ export function captureForm(type, onSaved, prefill = null) {
   );
   if (nomineeNote) form.insertBefore(nomineeNote, formError);
 
+  let saved = false;
   const modal = sheet({
     title: `Add ${type.label.toLowerCase()}`,
+    onClose: () => { if (!saved) reportCaptureAbandoned(3); },
     body: form,
     footer: [save, saveAnother],
   });
@@ -555,6 +565,7 @@ export function captureForm(type, onSaved, prefill = null) {
     await withBusy(button, async () => {
       try {
         const created = await api.capture(state.household.id, body);
+        saved = true;
         if (pendingNominee && created.visibleToYou) await saveNominee(created.id, pendingNominee);
         modal.close();
         // A record saved as Private for someone else is a legitimate outcome,

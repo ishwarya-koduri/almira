@@ -1,0 +1,125 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Almira — on-device checks</title>
+<!--
+  What scripts/check-*.js cannot reach under jsc: pdf.js opening a protected
+  PDF, tesseract.js reading words, and the offline copy's encryption, key and
+  deletion. Run with scripts/browser-checks/serve.py (it says how).
+-->
+<style>body{font:15px/1.5 system-ui,sans-serif;margin:24px;max-width:760px}pre{white-space:pre-wrap}</style>
+<h1>On-device checks</h1>
+<pre id="out" data-state="running">running…</pre>
+<script type="module">
+const out = document.getElementById("out");
+let failures = 0;
+const log = (line) => { out.textContent += `\n${line}`; };
+const expect = (label, actual, wanted) => {
+  const a = JSON.stringify(actual), w = JSON.stringify(wanted);
+  if (a === w) log(`  ok   ${label}`);
+  else { failures += 1; log(`  FAIL ${label}\n         got    ${a}\n         wanted ${w}`); }
+};
+const rejectsWith = async (promise) => { try { await promise; return "resolved"; } catch (e) { return e instanceof DOMException ? e.name : (e.code || e.name); } };
+
+try {
+  /* --- a protected statement (P-11) ------------------------------------------ */
+  log("\nA protected statement opens here, and only with its password");
+  const { readPdf } = await import("/app/pdf-text.js");
+  const { linesFromItems, suggestRows } = await import("/app/statement.js");
+  const blob = await (await fetch("/checks/fixtures/statement-synthetic-aes256.pdf")).blob();
+  const pdf = new File([blob], "statement.pdf", { type: "application/pdf" });
+  expect("no password asks for one", await rejectsWith(readPdf(pdf, "")), "password-needed");
+  expect("a wrong one says so", await rejectsWith(readPdf(pdf, "wrong")), "password-wrong");
+  const lines = (await readPdf(pdf, "almira-test")).map(linesFromItems);
+  expect("the right one yields every line, page by page", lines.map((page) => page.length), [7, 3]);
+  expect("a folio line reads as it prints", lines[0][4], "Folio No: 1234567/89 Units 1,234.567 Value 1,25,000.50");
+  expect("and becomes three suggestions", suggestRows(lines).map((row) => row.value), [125000.5, 40000, 18250.75]);
+  expect("a file that is not a PDF is unreadable", await rejectsWith(readPdf(new File(["hello"], "x.pdf"), "")), "unreadable");
+
+  /* --- a photo (P-13) ---------------------------------------------------------- */
+  log("\nA photo is read here");
+  const { canReadPhotos, readPhoto, releaseReader, crop } = await import("/app/ocr.js");
+  const { locate } = await import("/app/ocr-layout.js");
+  expect("this browser can", canReadPhotos(), true);
+  const canvas = document.createElement("canvas");
+  canvas.width = 1400; canvas.height = 560;
+  const g = canvas.getContext("2d");
+  g.fillStyle = "#f4efe2"; g.fillRect(0, 0, 1400, 560); g.fillStyle = "#222";
+  g.font = "bold 44px Georgia"; g.fillText("LIFE INSURANCE CORPORATION OF INDIA", 60, 110);
+  g.font = "36px Helvetica";
+  g.fillText("Policy No: 5567123456", 60, 230);
+  g.fillText("Sum Assured: Rs. 10,00,000", 60, 310);
+  g.fillText("Date of Maturity: 12 Nov 2035", 60, 390);
+  const photo = new File([await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.85))], "bond.jpg", { type: "image/jpeg" });
+  const started = performance.now();
+  const reading = await readPhoto(photo);
+  log(`         (read in ${Math.round(performance.now() - started)} ms, confidence ${reading.confidence})`);
+  expect("the policy number is in the words", reading.text.includes("Policy No: 5567123456"), true);
+  expect("the maturity date too", reading.text.includes("12 Nov 2035"), true);
+  const box = locate(reading, "Policy No: 5567123456");
+  expect("and where it was is on the second line", Boolean(box) && box.y0 > 150 && box.y1 < 260, true);
+  expect("a patch of the photo can be cut from there", (crop(reading.canvas, box) || "").startsWith("data:image/png"), true);
+  await releaseReader();
+
+  /* --- the offline copy (P-21) ------------------------------------------------ */
+  log("\nThe offline copy");
+  const store = await import("/app/offline-store.js");
+  await store.disable();
+  const parts = {
+    householdId: "h1",
+    handbook: { householdName: "Koduri", entries: [{ title: "SBI FD", reference: "FD-1234", nominees: ["Aarav"], sealed: [{ c: "x" }] }], debts: [], instruments: [] },
+    contacts: [{ name: "Ramesh Rao", phone: "98765 43210" }],
+    trusted: [],
+  };
+  expect("nothing is kept while the setting is off", await store.keep(parts), false);
+  expect("and nothing is read", await store.read(), null);
+
+  store.enable();
+  expect("with it on, a copy is kept", await store.keep(parts), true);
+  const copy = await store.read();
+  expect("and reads back as it was kept", [copy.handbook.householdName, copy.handbook.entries[0].reference, copy.contacts[0].phone], ["Koduri", "FD-1234", "98765 43210"]);
+
+  const raw = (name, id) => new Promise((resolve, reject) => {
+    const request = indexedDB.open(name);
+    request.onsuccess = () => {
+      const db = request.result;
+      const get = db.transaction("items").objectStore("items").get(id);
+      get.onsuccess = () => { resolve(get.result); db.close(); };
+      get.onerror = () => reject(get.error);
+    };
+    request.onerror = () => reject(request.error);
+  });
+  const sealed = await raw("almira-offline-data", "handbook");
+  const stored = new Uint8Array(sealed.ciphertext);
+  const asText = new TextDecoder("utf-8", { fatal: false }).decode(stored);
+  expect("what is stored is not the words", /SBI|FD-1234|Ramesh|98765/.test(asText), false);
+  expect("and there is no key beside it", Object.keys(sealed).sort(), ["ciphertext", "format", "iv"]);
+  const key = await raw("almira-offline-key", "device-key");
+  expect("the key is in a database of its own, and cannot be exported", [key.extractable, await rejectsWith(crypto.subtle.exportKey("raw", key))], [false, "InvalidAccessError"]);
+
+  // A key that is gone makes whatever is left unreadable, and it is cleared.
+  await new Promise((r) => { const q = indexedDB.deleteDatabase("almira-offline-key"); q.onsuccess = r; q.onerror = r; });
+  expect("without its key the copy is not read", await store.read(), null);
+  expect("and what was left is deleted", (await indexedDB.databases()).map((d) => d.name).filter((n) => n.startsWith("almira-offline")), []);
+
+  await store.keep(parts);
+  expect("a copy 31 days old is not shown", await store.read({ now: Date.now() + 31 * 86_400_000 }), null);
+
+  await store.keep(parts);
+  await store.disable();
+  expect("turning it off deletes both databases", (await indexedDB.databases()).map((d) => d.name).filter((n) => n.startsWith("almira-offline")), []);
+  expect("and the setting", store.isEnabled(), false);
+
+  const { auth } = await import("/app/api.js");
+  store.enable();
+  await store.keep(parts);
+  await auth.clear();
+  expect("signing out deletes the copy and its key", (await indexedDB.databases()).map((d) => d.name).filter((n) => n.startsWith("almira-offline")), []);
+  expect("and turns the setting off for whoever signs in next", store.isEnabled(), false);
+} catch (error) {
+  failures += 1;
+  log(`  FAIL an exception: ${error.stack || error}`);
+}
+
+log(failures === 0 ? "\nAll on-device checks passed." : `\n${failures} on-device checks failed.`);
+out.dataset.state = failures === 0 ? "passed" : "failed";
+</script>

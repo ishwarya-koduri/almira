@@ -11,6 +11,8 @@
    becomes the primary surface.
    ============================================================================= */
 
+import { disable as forgetOfflineCopy } from "./offline-store.js";
+
 const REFRESH_KEY = "almira.refresh";
 
 let accessToken = null;
@@ -24,9 +26,17 @@ export const auth = {
     accessToken = tokens.accessToken;
     try { localStorage.setItem(REFRESH_KEY, tokens.refreshToken); } catch { /* private mode */ }
   },
+  /**
+   * Signed out, by choice or because the server refused the session. The
+   * offline copy of the handbook goes with it (offline-store.js): a copy that
+   * outlived its session is exactly what a shared laptop must not keep.
+   * Resolves once the copy is deleted, so a reload straight after cannot cut
+   * that short.
+   */
   clear() {
     accessToken = null;
     try { localStorage.removeItem(REFRESH_KEY); } catch { /* ignore */ }
+    return forgetOfflineCopy().catch(() => undefined);
   },
   get isSignedIn() { return Boolean(accessToken || auth.refreshToken); },
 };
@@ -51,8 +61,20 @@ async function raw(method, path, body, token) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  // A proxy's HTML error page is not JSON; it is still an answer with a status.
+  let payload = null;
+  try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
   return { response, payload };
+}
+
+/**
+ * True when a failure means "no connection to Almira" rather than "Almira said
+ * no": the browser could not reach it, the service worker answered offline, or
+ * something in between answered 5xx. The offline handbook is offered for these.
+ */
+export function isUnreachable(error) {
+  if (error instanceof ApiError) return error.code === "offline" || error.status >= 500;
+  return error instanceof TypeError;
 }
 
 /**
@@ -68,7 +90,13 @@ async function refreshTokens() {
 
   refreshing = (async () => {
     const { response, payload } = await raw("POST", "/api/v1/auth/refresh", { refreshToken: token });
-    if (!response.ok) { auth.clear(); return null; }
+    // Only the server saying no ends the session. A 502 from a proxy during an
+    // outage is not a refusal, and signing someone out for it would also delete
+    // the offline handbook at the moment they may be relying on it.
+    if (response.status >= 500) {
+      throw new ApiError(response.status, "unavailable", "Almira can't be reached just now.");
+    }
+    if (!response.ok) { await auth.clear(); return null; }
     auth.set(payload);
     return payload.accessToken;
   })().finally(() => { refreshing = null; });
@@ -196,7 +224,7 @@ export const api = {
 
   signOut: async () => {
     try { await request("POST", "/api/v1/auth/logout"); } catch { /* leaving anyway */ }
-    auth.clear();
+    await auth.clear();
   },
 
   // --- resources ------------------------------------------------------------

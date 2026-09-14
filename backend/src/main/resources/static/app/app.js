@@ -2,7 +2,7 @@
    Shell, routing and bootstrap.
    ============================================================================= */
 
-import { api, auth, ApiError } from "./api.js";
+import { api, auth, ApiError, isUnreachable } from "./api.js";
 import { el, mount, toast, icon, notice } from "./ui.js";
 import { apply as applyPrefs, savingData } from "./prefs.js";
 import { state, update } from "./state.js";
@@ -22,6 +22,7 @@ import { t, language } from "./i18n.js";
 import { openCapture } from "./screens/capture.js";
 import { whereScreen } from "./where.js";
 import { rightsScreen } from "./screens/rights.js";
+import { offlineScreen, readOfflineCopy, keepOfflineCopy } from "./offline.js";
 
 // Labels are resolved at render time rather than here, so switching language
 // redraws the navigation without a reload. Every route that ever existed is
@@ -149,8 +150,9 @@ async function render() {
     try { await loadSession(); }
     catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        auth.clear(); mount(root, authScreen(afterSignIn)); return;
+        await auth.clear(); mount(root, authScreen(afterSignIn)); return;
       }
+      if (await showOfflineCopy(error, root)) return;
       mount(root, el("main.narrow", {}, el("div.banner", {}, error.message)));
       return;
     }
@@ -175,9 +177,29 @@ async function render() {
   try {
     await routes[name].render(view);
   } catch (error) {
+    if (await showOfflineCopy(error, root)) return;
     mount(view, el("div.banner", {}, error.message || "Something went wrong."));
   }
 }
+
+/**
+ * No connection, and a copy of the handbook kept on this device (P-21): show
+ * that instead of an error. Anything else is left to the caller. Coming back
+ * online draws the real app again by itself.
+ */
+async function showOfflineCopy(error, host) {
+  if (!isUnreachable(error)) return false;
+  const copy = await readOfflineCopy();
+  if (!copy) return false;
+  mount(host, el("div.app", {}, el("main", {}, offlineScreen(copy, { onRetry: render }))));
+  if (!waitingForConnection) {
+    waitingForConnection = true;
+    window.addEventListener("online", () => { waitingForConnection = false; render(); }, { once: true });
+  }
+  return true;
+}
+
+let waitingForConnection = false;
 
 async function afterSignIn() {
   await loadSession();
@@ -196,6 +218,9 @@ async function loadSession() {
     ]);
     update({ members, taxonomy });
   }
+  // In the background, and at most every half hour: a copy for a day without
+  // a connection, when this device has been asked to keep one.
+  keepOfflineCopy(household?.id || null);
 }
 
 export async function reload() {

@@ -174,6 +174,12 @@ The delivery backlog for **Almira**, organised by the phases in [Doc 07 §2](07-
 **2.3.2 Capital gains via tax lots** — *As an Organizer, I want realized gains classified.*
 - [ ] Tax lots track cost basis; holding period → STCG/LTCG with equity/debt rules; an FY realized-gains summary and an unrealized view exist; disclaimer shown.
 
+**2.3.3 A statement a CA can use** — *As an Organizer, I want to hand my CA something they can file from.* ([Capital gains for a CA](tax/capital-gains.md))
+- [x] Every sale lot by lot with section, rate and side of 23 July 2024; 31 January 2018 grandfathering from an owner-entered value; indexation and the land-or-building comparison; the 112A exemption; worked examples pinned by tests.
+- [x] A Schedule 112A-shaped CSV and a PDF with a one-page cover summary; both audited; "not tax advice" on the cover and every page.
+- [x] "Share with my CA" reuses the scoped guest link for one taxpayer's pack, and the PDF opens from the link.
+- [ ] AIS / 26AS reconciliation (needs the taxpayer's own statements).
+
 ### Epic 2.4 — Frictionless capture
 **2.4.1 Natural-language quick add** — *As an Organizer, I want to type shorthand and confirm.*
 - [ ] "1L gold 6.3g at ICICI Aug 3" parses into editable chips (type/amount/qty/institution/date); nothing saves until I confirm; unparsed parts are left blank.

@@ -40,13 +40,18 @@ object MessageTemplates {
     fun isEssential(template: String): Boolean = kindOf(template) in ESSENTIAL
 
     /** The SQL form of [isEssential], for the worker's "already told today?" check. */
-    const val ESSENTIAL_SQL = "(o.template like 'emergency.%' or o.template like 'lifecycle.%')"
+    const val ESSENTIAL_SQL =
+        "(o.template like 'emergency.%' or o.template like 'lifecycle.%' or o.template like 'auth.%')"
 
     fun kindOf(template: String): Kind = when {
         template.startsWith("reminder.") -> Kind.REMINDER
         template.startsWith("still_true.") -> Kind.STILL_TRUE
         template.startsWith("emergency.") -> Kind.EMERGENCY
         template.startsWith("lifecycle.") -> Kind.ACCOUNT
+        // Sign-in security notices (auth/AccountNotices.kt): a new sign-in, a
+        // changed phone number, a factor added or removed. Held by quiet hours
+        // or the daily limit, a warning of a takeover would arrive too late.
+        template.startsWith("auth.") -> Kind.ACCOUNT
         else -> Kind.OTHER
     }
 

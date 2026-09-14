@@ -62,6 +62,8 @@ class MessageTemplatesTest {
     fun `emergency and account messages are essential, reminders and Still true? are not`() {
         assertThat(MessageTemplates.isEssential("emergency.requested")).isTrue()
         assertThat(MessageTemplates.isEssential("lifecycle.memorial.marked")).isTrue()
+        assertThat(MessageTemplates.isEssential("auth.new_sign_in")).isTrue()
+        assertThat(MessageTemplates.isEssential("auth.phone_changed")).isTrue()
         assertThat(MessageTemplates.isEssential("reminder.maturity")).isFalse()
         assertThat(MessageTemplates.isEssential("still_true.digest")).isFalse()
     }

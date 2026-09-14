@@ -584,7 +584,8 @@ none in your quiet hours, never a sales message, and every reminder says why it
 came.** `DeliveryPacing` keeps it as the worker claims each row:
 
 1. **Essential messages go.** Emergency-access notices (`emergency.*`) and
-   notices about the person's own account (`lifecycle.*`) are not reminders:
+   notices about the person's own account (`lifecycle.*`, and the sign-in
+   security notices `auth.*`) are not reminders:
    they are not held by quiet hours, not counted against the day, and not
    stopped by a switched-off channel.
 2. **A switched-off channel is skipped** — `skipped`, `turned_off` — in every

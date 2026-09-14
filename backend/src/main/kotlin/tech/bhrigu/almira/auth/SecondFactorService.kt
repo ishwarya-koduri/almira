@@ -61,7 +61,10 @@ data class TotpEnrolment(val secret: String, val otpauthUri: String, val expires
  * **What is counted.** Five wrong answers end a pending sign-in, and after ten
  * wrong answers in an hour an account takes no more — at sign-in or when
  * confirming it's you — so a one-time code that leaks does not become a long
- * run of guesses at a six-digit authenticator code.
+ * run of guesses at a six-digit authenticator code. Each answer takes its
+ * attempt before it is checked, so answers sent in parallel cannot outrun the
+ * count; an answer that turns out correct gives the account's attempt back, and
+ * one whose check fails with an error keeps it.
  */
 @Service
 class SecondFactorService(
@@ -152,31 +155,38 @@ class SecondFactorService(
      * Ends a pending sign-in with [verify]'s verdict. True: the pending sign-in
      * is used up — by exactly one caller, however many race — and returned.
      * False: counted, and after [MAX_ATTEMPTS] it is gone.
+     *
+     * The attempt is taken from both allowances *before* [verify] runs, in one
+     * Redis script, so requests sent in parallel cannot all pass a check that
+     * none of them has counted against yet. A correct answer gives the
+     * account's attempt back.
      */
     fun complete(token: String, verify: (PendingSignIn) -> Boolean): PendingSignIn {
         val pending = pending(token)
-        enforceAccountAllowance(pending.userId)
+        val attempts = redis.execute(
+            RESERVE_PENDING,
+            listOf(pendingKey(token), accountMissKey(pending.userId)),
+            MAX_ATTEMPTS.toString(), MAX_MISSES_PER_ACCOUNT_PER_HOUR.toString(), ACCOUNT_WINDOW.seconds.toString(),
+        ) ?: -1L
+        when (attempts) {
+            -1L -> throw pendingExpired()
+            -2L -> throw pendingLocked()
+            -3L -> throw accountLimited(pending.userId)
+        }
         if (verify(pending)) {
+            refundAccountMiss(pending.userId)
             if (redis.delete(pendingKey(token)) != true) throw pendingExpired()
             return pending
         }
-        recordAccountMiss(pending.userId)
-        val attempts = redis.execute(COUNT_MISS, listOf(pendingKey(token))) ?: -1L
-        when {
-            attempts < 0 -> throw pendingExpired()
-            attempts >= MAX_ATTEMPTS -> {
-                redis.delete(pendingKey(token))
-                throw ApiException.badRequest(
-                    "second_factor_locked",
-                    "Too many tries. Start signing in again to get a new code.",
-                )
-            }
-            else -> throw ApiException.badRequest(
-                "second_factor_invalid",
-                "That code doesn't match. ${MAX_ATTEMPTS - attempts} tries left.",
-                mapOf("attemptsRemaining" to (MAX_ATTEMPTS - attempts).toInt()),
-            )
+        if (attempts >= MAX_ATTEMPTS) {
+            redis.delete(pendingKey(token))
+            throw pendingLocked()
         }
+        throw ApiException.badRequest(
+            "second_factor_invalid",
+            "That code doesn't match. ${MAX_ATTEMPTS - attempts} tries left.",
+            mapOf("attemptsRemaining" to (MAX_ATTEMPTS - attempts).toInt()),
+        )
     }
 
     // --- checking a factor ----------------------------------------------------------
@@ -187,8 +197,13 @@ class SecondFactorService(
      * answer counts toward the same ten as a sign-in's.
      */
     fun guarded(userId: UUID, verify: () -> Boolean): Boolean {
-        enforceAccountAllowance(userId)
-        return verify().also { if (!it) recordAccountMiss(userId) }
+        val reserved = redis.execute(
+            RESERVE_ACCOUNT,
+            listOf(accountMissKey(userId)),
+            MAX_MISSES_PER_ACCOUNT_PER_HOUR.toString(), ACCOUNT_WINDOW.seconds.toString(),
+        ) ?: -3L
+        if (reserved < 0) throw accountLimited(userId)
+        return verify().also { if (it) refundAccountMiss(userId) }
     }
 
     /** True, once per code, when [code] is the authenticator's current code. */
@@ -309,26 +324,26 @@ class SecondFactorService(
 
     // --- counting ------------------------------------------------------------------
 
-    private fun enforceAccountAllowance(userId: UUID) {
-        val key = accountMissKey(userId)
-        val misses = redis.opsForValue().get(key)?.toLongOrNull() ?: 0
-        if (misses >= MAX_MISSES_PER_ACCOUNT_PER_HOUR) {
-            val retry = redis.getExpire(key, TimeUnit.SECONDS).coerceAtLeast(60)
-            throw ApiException.tooManyRequests(
-                "Too many incorrect codes for this account. Please try again later.", retry,
-            )
-        }
+    private fun accountLimited(userId: UUID): ApiException {
+        val retry = redis.getExpire(accountMissKey(userId), TimeUnit.SECONDS).coerceAtLeast(60)
+        return ApiException.tooManyRequests(
+            "Too many incorrect codes for this account. Please try again later.", retry,
+        )
     }
 
-    private fun recordAccountMiss(userId: UUID) {
-        val key = accountMissKey(userId)
-        val count = redis.opsForValue().increment(key) ?: 1
-        if (count == 1L) redis.expire(key, Duration.ofHours(1))
+    /** A correct answer is not a miss: gives back the attempt taken before checking it. */
+    private fun refundAccountMiss(userId: UUID) {
+        redis.execute(REFUND_ACCOUNT, listOf(accountMissKey(userId)))
     }
 
     private fun pendingKey(token: String) = "mfa:pending:${jwt.hash(token)}"
     private fun enrolKey(userId: UUID) = "mfa:totp-enrol:$userId"
     private fun accountMissKey(userId: UUID) = "mfa:miss:user:$userId"
+
+    private fun pendingLocked() = ApiException.badRequest(
+        "second_factor_locked",
+        "Too many tries. Start signing in again to get a new code.",
+    )
 
     private fun pendingExpired() = ApiException.badRequest(
         "second_factor_expired",
@@ -342,13 +357,56 @@ class SecondFactorService(
         val PENDING_TTL: Duration = Duration.ofMinutes(5)
         val ENROLMENT_TTL: Duration = Duration.ofMinutes(10)
 
-        /** Counts a miss on a pending sign-in that still exists; -1 when it does not. */
-        private val COUNT_MISS = DefaultRedisScript(
+        val ACCOUNT_WINDOW: Duration = Duration.ofHours(1)
+
+        /**
+         * Takes one attempt from a pending sign-in (KEYS[1]) and from its
+         * account's hourly allowance (KEYS[2]) together, before the answer is
+         * checked. Returns the pending sign-in's attempts including this one;
+         * -1 when it does not exist, -2 when its tries are used up, -3 when the
+         * account's are. Nothing is counted when it refuses.
+         */
+        private val RESERVE_PENDING = DefaultRedisScript(
             """
             if redis.call('EXISTS', KEYS[1]) == 0 then
               return -1
             end
+            if tonumber(redis.call('HGET', KEYS[1], 'attempts') or '0') >= tonumber(ARGV[1]) then
+              return -2
+            end
+            if tonumber(redis.call('GET', KEYS[2]) or '0') >= tonumber(ARGV[2]) then
+              return -3
+            end
+            if redis.call('INCR', KEYS[2]) == 1 then
+              redis.call('EXPIRE', KEYS[2], ARGV[3])
+            end
             return redis.call('HINCRBY', KEYS[1], 'attempts', 1)
+            """.trimIndent(),
+            Long::class.javaObjectType,
+        )
+
+        /** Takes one attempt from an account's hourly allowance (KEYS[1]); -3 when none is left. */
+        private val RESERVE_ACCOUNT = DefaultRedisScript(
+            """
+            if tonumber(redis.call('GET', KEYS[1]) or '0') >= tonumber(ARGV[1]) then
+              return -3
+            end
+            local n = redis.call('INCR', KEYS[1])
+            if n == 1 then
+              redis.call('EXPIRE', KEYS[1], ARGV[2])
+            end
+            return n
+            """.trimIndent(),
+            Long::class.javaObjectType,
+        )
+
+        /** Gives an attempt back, never below zero and never creating the key. */
+        private val REFUND_ACCOUNT = DefaultRedisScript(
+            """
+            if tonumber(redis.call('GET', KEYS[1]) or '0') > 0 then
+              return redis.call('DECR', KEYS[1])
+            end
+            return 0
             """.trimIndent(),
             Long::class.javaObjectType,
         )

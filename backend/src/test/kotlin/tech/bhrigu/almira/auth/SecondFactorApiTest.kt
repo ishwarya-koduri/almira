@@ -4,7 +4,14 @@ import com.fasterxml.jackson.databind.JsonNode
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import tech.bhrigu.almira.common.ApiException
 import java.time.Instant
+import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * An authenticator app and recovery codes, from outside: setting one up, the
@@ -288,5 +295,52 @@ class SecondFactorApiTest : SignInApiTestBase() {
         val refused = post("/api/v1/auth/passkeys/options", account.token)
         assertThat(refused.statusCode.value()).isEqualTo(503)
         assertThat(refused.errorCode()).isEqualTo("passkeys_unavailable")
+    }
+
+    @Autowired private lateinit var secondFactorService: SecondFactorService
+
+    /**
+     * Runs [calls] callers at once through [attempt], each holding its answer
+     * open until all of them have reached the check (or a short wait runs out),
+     * and returns how many answers were checked.
+     */
+    private fun answersCheckedInParallel(calls: Int, attempt: (verify: () -> Boolean) -> Unit): Int {
+        val checked = AtomicInteger()
+        val allInside = CountDownLatch(calls)
+        val pool = Executors.newFixedThreadPool(calls)
+        try {
+            val done = (1..calls).map {
+                pool.submit {
+                    runCatching {
+                        attempt {
+                            checked.incrementAndGet()
+                            allInside.countDown()
+                            allInside.await(2, TimeUnit.SECONDS)
+                            false
+                        }
+                    }.onFailure { if (it !is ApiException) throw it }
+                }
+            }
+            done.forEach { it.get(30, TimeUnit.SECONDS) }
+        } finally {
+            pool.shutdownNow()
+        }
+        return checked.get()
+    }
+
+    @Test
+    fun `wrong answers sent in parallel are counted before any is checked`() {
+        val none = SecondFactors(authenticator = true, passkeys = 0, recoveryCodesLeft = 0)
+
+        val signingIn = UUID.randomUUID()
+        val token = secondFactorService.challenge(signingIn, none, null, null, null).details["secondFactorToken"] as String
+        val atSignIn = answersCheckedInParallel(20) { verify -> secondFactorService.complete(token) { verify() } }
+        assertThat(atSignIn).describedAs("answers checked for one pending sign-in").isEqualTo(SecondFactorService.MAX_ATTEMPTS)
+
+        val confirming = UUID.randomUUID()
+        val whenConfirming = answersCheckedInParallel(20) { verify -> secondFactorService.guarded(confirming) { verify() } }
+        assertThat(whenConfirming.toLong())
+            .describedAs("answers checked for one account in an hour")
+            .isEqualTo(SecondFactorService.MAX_MISSES_PER_ACCOUNT_PER_HOUR)
     }
 }

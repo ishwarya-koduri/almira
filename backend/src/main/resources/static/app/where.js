@@ -24,7 +24,7 @@
    ============================================================================= */
 
 import { api } from "./api.js";
-import { el, mount, sheet, field, textInput, withBusy, toast, skeletonRows } from "./ui.js";
+import { el, mount, sheet, field, textInput, withBusy, toast, skeletonRows, formatDate } from "./ui.js";
 import { state } from "./state.js";
 import { t, language } from "./i18n.js";
 import { e2e, unlock as unlockE2e, sealField, unsealField, openSealedValue, openSealedValueAs } from "./e2e.js";
@@ -34,12 +34,21 @@ import { sealReassurance, sealedLineText } from "./recovery.js";
 export const FIELD = {
   originalLocation: "original_location",
   keyHolder: "key_holder",
+  // The access chain (docs/27 §6): who next, and who after them. Sealed exactly
+  // like the key holder, because where the names are sealed the chain is too.
+  keyHolder2: "key_holder_2",
+  keyHolder3: "key_holder_3",
 };
 
 const SLOTS = [
   { slot: "originalLocation", fieldKey: FIELD.originalLocation, label: "where.location" },
-  { slot: "keyHolder", fieldKey: FIELD.keyHolder, label: "where.keyHolder" },
+  { slot: "keyHolder", fieldKey: FIELD.keyHolder, label: "where.keyHolder", position: 1 },
+  { slot: "keyHolder2", fieldKey: FIELD.keyHolder2, label: "chain.backup", position: 2 },
+  { slot: "keyHolder3", fieldKey: FIELD.keyHolder3, label: "chain.third", position: 3 },
 ];
+
+/** The "checked with them" tick at a place in the chain, or null. */
+const tickAt = (record, position) => (record.chain || []).find((tick) => tick.position === position) || null;
 
 /* -----------------------------------------------------------------------------
    Opening
@@ -76,9 +85,9 @@ async function openSlot(recordType, recordId, fieldKey, value) {
 }
 
 async function openRecord(record) {
-  const [originalLocation, keyHolder] = await Promise.all(SLOTS.map(({ slot, fieldKey }) =>
+  const values = await Promise.all(SLOTS.map(({ slot, fieldKey }) =>
     openSlot(record.recordType, record.recordId, fieldKey, record[slot])));
-  return { ...record, opened: { originalLocation, keyHolder } };
+  return { ...record, opened: Object.fromEntries(SLOTS.map(({ slot }, i) => [slot, values[i]])) };
 }
 
 function slotText(opened) {
@@ -151,10 +160,16 @@ export function whereWhoCard(recordType, recordId) {
     if (!record) { host.remove(); return; }
     const opened = await openRecord(record);
 
-    const rows = SLOTS.map(({ slot, label }) => el("div.row-between", { style: { fontSize: "var(--text-sm)" } },
-      el("span.muted", {}, t(label)),
-      el("span", { style: { textAlign: "right" } }, slotText(opened.opened[slot]) || t("where.notRecorded")),
-    ));
+    // The backups show only once there is one: an empty chain is not a gap.
+    const rows = SLOTS
+      .filter(({ slot, position }) => !position || position === 1 || opened.opened[slot].state !== "empty")
+      .map(({ slot, label, position }) => el("div.row-between", { style: { fontSize: "var(--text-sm)" } },
+        el("span.muted", {}, t(label)),
+        el("span", { style: { textAlign: "right" } },
+          slotText(opened.opened[slot]) || t("where.notRecorded"),
+          position && tickAt(opened, position) && el("span.caption", {},
+            ` · ${t("chain.checkedOn", { date: formatDate(tickAt(opened, position).confirmedAt) })}`)),
+      ));
 
     mount(host,
       el("div.overline", {}, t("where.cardTitle")),
@@ -206,13 +221,30 @@ export async function openEditor(record, onSaved) {
     placeholder: t("where.keyHolderPlaceholder"), "aria-label": t("where.keyHolder"),
     autocomplete: "off",
   });
+  // Who next if they can't be reached, and after them — sealed like the first.
+  const backup = (slot) => el("input.input", {
+    type: "text", value: current(slot), disabled: theirs(slot), list: listId,
+    placeholder: t("where.keyHolderPlaceholder"), "aria-label": t(SLOTS.find((s) => s.slot === slot).label),
+    autocomplete: "off",
+  });
+  const holder2 = backup("keyHolder2");
+  const holder3 = backup("keyHolder3");
+  // "Checked with them": only the person who sealed a name can say so, because
+  // nobody else can read who it names.
+  const checked = Object.fromEntries([["keyHolder", 1], ["keyHolder2", 2], ["keyHolder3", 3]].map(([slot, position]) => [
+    slot,
+    el("input", { type: "checkbox", checked: Boolean(tickAt(record, position)), disabled: theirs(slot) }),
+  ]));
+  const checkRow = (slot) => el("label.check-row", {},
+    checked[slot], el("span.grow", {}, el("span.check-label", {}, t("chain.checked"))));
+
   const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
   const save = el("button.btn.btn-primary.grow", { type: "button" }, t("app.save"));
 
   save.onclick = () => withBusy(save, async () => {
     error.textContent = "";
     try {
-      for (const [slot, control] of [["originalLocation", location], ["keyHolder", holder]]) {
+      for (const [slot, control] of [["originalLocation", location], ["keyHolder", holder], ["keyHolder2", holder2], ["keyHolder3", holder3]]) {
         if (theirs(slot)) continue;
         const { fieldKey } = SLOTS.find((s) => s.slot === slot);
         const text = control.value;
@@ -224,6 +256,17 @@ export async function openEditor(record, onSaved) {
           if (had) await unsealField(state.household.id, record.recordType, record.recordId, fieldKey);
         } else if (text !== current(slot)) {
           await sealField(state.household.id, record.recordType, record.recordId, fieldKey, text);
+        }
+        // After the name is sealed: writing a name again clears its tick on the
+        // server, so the tick is given afterwards, to the name as it now stands.
+        const { position } = SLOTS.find((s) => s.slot === slot);
+        if (position && text.trim() !== "") {
+          const had = Boolean(tickAt(record, position)) && text === current(slot);
+          if (checked[slot].checked && !had) {
+            await api.confirmChain(state.household.id, record.recordType, record.recordId, position);
+          } else if (!checked[slot].checked && had) {
+            await api.unconfirmChain(state.household.id, record.recordType, record.recordId, position).catch(() => {});
+          }
         }
       }
       modal.close();
@@ -238,13 +281,21 @@ export async function openEditor(record, onSaved) {
     title: record.title,
     body: el("div.stack-3", {},
       el("p.caption.muted", {}, t("where.editorIntro")),
-      sealReassurance([location, holder]),
+      sealReassurance([location, holder, holder2, holder3]),
       field({ label: t("where.location"), control: location,
         help: theirs("originalLocation") ? slotText({ state: "theirs", access: record.opened.originalLocation.access })
           : t("where.locationHelp") }),
       field({ label: t("where.keyHolder"), control: holder,
         help: theirs("keyHolder") ? slotText({ state: "theirs", access: record.opened.keyHolder.access })
           : t("where.keyHolderHelp") }),
+      checkRow("keyHolder"),
+      field({ label: t("chain.backup"), control: holder2,
+        help: theirs("keyHolder2") ? slotText({ state: "theirs", access: record.opened.keyHolder2.access })
+          : t("chain.help") }),
+      checkRow("keyHolder2"),
+      field({ label: t("chain.third"), control: holder3,
+        help: theirs("keyHolder3") ? slotText({ state: "theirs", access: record.opened.keyHolder3.access }) : "" }),
+      checkRow("keyHolder3"),
       people,
       error,
     ),
@@ -324,9 +375,11 @@ export async function whereScreen(host) {
     const matches = opened.filter((record) => {
       const location = record.opened.originalLocation;
       const holder = record.opened.keyHolder;
+      // An empty backup is not a gap; a backup's words are searchable like the first.
       if (missing) return location.state === "empty" || holder.state === "empty";
-      if (!query) return location.state !== "empty" || holder.state !== "empty";
-      return [record.title, location.text, holder.text].some((text) => fold(text).includes(query));
+      if (!query) return SLOTS.some(({ slot }) => record.opened[slot].state !== "empty");
+      return [record.title, ...SLOTS.map(({ slot }) => record.opened[slot].text)]
+        .some((text) => fold(text).includes(query));
     });
 
     mount(results,
@@ -391,6 +444,8 @@ function resultRow(record, query, onEdit) {
     ),
     line("where.location", record.opened.originalLocation),
     line("where.keyHolder", record.opened.keyHolder),
+    record.opened.keyHolder2.state !== "empty" && line("chain.backup", record.opened.keyHolder2),
+    record.opened.keyHolder3.state !== "empty" && line("chain.third", record.opened.keyHolder3),
   );
 }
 

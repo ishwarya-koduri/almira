@@ -385,6 +385,27 @@ export const api = {
   withdrawEmergencyAccess: (hid, id) =>
     api.post(`/api/v1/households/${hid}/emergency/requests/${id}/withdraw`),
 
+  // --- continuity signals (docs/27) -----------------------------------------
+  inactivity:    (hid)            => api.get(`/api/v1/households/${hid}/emergency/inactivity`),
+  setInactivity: (hid, body)      => api.put(`/api/v1/households/${hid}/emergency/inactivity`, body),
+  imHere:        (hid)            => api.post(`/api/v1/households/${hid}/emergency/inactivity/check-in`),
+  confirmReachable: (hid, contactId) =>
+    api.post(`/api/v1/households/${hid}/emergency/contacts/${contactId}/reachable`),
+  askReachable:  (hid, contactId) =>
+    api.post(`/api/v1/households/${hid}/emergency/contacts/${contactId}/reachable/ask`),
+  keyHolderAsks: (hid)            => api.get(`/api/v1/households/${hid}/key-holder-asks`),
+  askKeyHolder:  (hid, body)      => api.post(`/api/v1/households/${hid}/key-holder-asks`, body),
+  answerKeyHolder: (hid, id, answer) => api.post(`/api/v1/households/${hid}/key-holder-asks/${id}/answer`, { answer }),
+  withdrawKeyHolderAsk: (hid, id) => api.del(`/api/v1/households/${hid}/key-holder-asks/${id}`),
+  confirmChain:  (hid, type, id, position) =>
+    api.put(`/api/v1/households/${hid}/where-and-who/${type}/${id}/chain/${position}/confirmation`),
+  unconfirmChain: (hid, type, id, position) =>
+    api.del(`/api/v1/households/${hid}/where-and-who/${type}/${id}/chain/${position}/confirmation`),
+  protection:    (hid)            => api.get(`/api/v1/households/${hid}/continuity/protection`),
+  setProtectionInputs: (hid, body) => api.put(`/api/v1/households/${hid}/continuity/protection/inputs`, body),
+  /** A one-tap link. Nobody is signed in: the token in the body is the authority. */
+  redeemContinuityLink: (token)   => unauthenticated("POST", "/api/v1/continuity-links/redeem", { token }),
+
   // --- documents ------------------------------------------------------------
   documents:     (hid)            => api.get(`/api/v1/households/${hid}/documents`),
   documentAccess: (hid, id)       => api.post(`/api/v1/households/${hid}/documents/${id}/access`),

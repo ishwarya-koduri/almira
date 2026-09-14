@@ -131,6 +131,19 @@ export function readinessCard(readiness, open) {
     el("span", {}, t(openableKey(access), { openable: access.openableWithRecovery, total: access.sealedLocations })),
   );
 
+  // "Do you know where…?" — what the people you asked said (docs/27 §4). Beside
+  // the checks, never in them.
+  const answers = readiness.keyHolderAnswers;
+  const asked = answers && el("p.notice", { "data-key-holder-answers": "true" },
+    el("span.info-mark", { "aria-hidden": "true" }, "i"),
+    el("span", {}, [
+      t("ready.asked", { knows: answers.knows, asked: answers.asked }),
+      answers.notSure > 0 ? t("ready.askedNotSure", { count: answers.notSure }) : null,
+      answers.waiting > 0 ? t("ready.askedWaiting", { count: answers.waiting }) : null,
+      t("ready.askedNotScored"),
+    ].filter(Boolean).join(" ")),
+  );
+
   const groups = groupGaps(readiness.gaps);
   // An older server sends no list; the count alone is then only a caveat.
   const leftOut = Array.isArray(readiness.leftOut) ? readiness.leftOut : [];
@@ -169,6 +182,7 @@ export function readinessCard(readiness, open) {
     headline,
     checks,
     openable,
+    asked,
     todo,
     caveats,
   );

@@ -22,13 +22,16 @@ import { whereWhoCard, FIELD } from "../where.js";
 import { lockMark, sealedLineText, openTheirs } from "../recovery.js";
 import { e2e, openSealedValueAs } from "../e2e.js";
 import { loadReadiness, readinessCard } from "../readiness.js";
+import {
+  loadSignals, goingQuietCard, reachableLine, confirmReachableButton, questionsCard, protectionCard,
+} from "../continuity-signals.js";
 import { openDetail } from "./detail.js";
 import { navigate } from "../app.js";
 
 export async function continuityScreen(host) {
   mount(host, skeletonRows(4));
 
-  const [handbook, mismatches, estate, contacts, trusted, requests, readiness] = await Promise.all([
+  const [handbook, mismatches, estate, contacts, trusted, requests, readiness, signals] = await Promise.all([
     api.handbook(state.household.id),
     api.mismatches(state.household.id).catch(() => []),
     api.estateDocuments(state.household.id).catch(() => []),
@@ -36,7 +39,9 @@ export async function continuityScreen(host) {
     api.trustedContacts(state.household.id).catch(() => []),
     api.emergencyRequests(state.household.id).catch(() => []),
     loadReadiness(state.household.id),
+    loadSignals(state.household.id),
   ]);
+  const redraw = () => continuityScreen(host);
 
   mount(host, el("div.stack", {},
     el("div.row-between.wrap", {},
@@ -46,12 +51,15 @@ export async function continuityScreen(host) {
     el("p.muted", {}, t("continuity.intro")),
 
     readiness && readinessCard(readiness, fixers(estate, host)),
+    questionsCard(signals.asks, redraw),
     mismatches.length > 0 && mismatchCard(mismatches),
     theirSealedCard(handbook, requests, host),
     handbookCard(handbook, host),
     estateCard(estate, host, handbook),
     contactsCard(contacts, host),
     emergencyCard(trusted, requests, host),
+    goingQuietCard(signals.inactivity, redraw),
+    protectionCard(signals.protection, redraw),
   ));
 }
 
@@ -240,6 +248,8 @@ async function openTransmission(entry, host) {
 function sealedLabel(fieldKey) {
   if (fieldKey === FIELD.originalLocation) return t("where.location");
   if (fieldKey === FIELD.keyHolder) return t("where.keyHolder");
+  if (fieldKey === FIELD.keyHolder2) return t("chain.backup");
+  if (fieldKey === FIELD.keyHolder3) return t("chain.third");
   return t("note.title");
 }
 
@@ -300,7 +310,10 @@ async function showTheirs(person, handbook) {
   const rows = [];
   for (const record of index.records) {
     const lines = [];
-    for (const [slot, fieldKey, label] of [["originalLocation", FIELD.originalLocation, "where.location"], ["keyHolder", FIELD.keyHolder, "where.keyHolder"]]) {
+    for (const [slot, fieldKey, label] of [
+      ["originalLocation", FIELD.originalLocation, "where.location"], ["keyHolder", FIELD.keyHolder, "where.keyHolder"],
+      ["keyHolder2", FIELD.keyHolder2, "chain.backup"], ["keyHolder3", FIELD.keyHolder3, "chain.third"],
+    ]) {
       const value = record[slot];
       if (!value || value.access?.sealedByMemberId !== person.memberId) continue;
       let text;
@@ -566,9 +579,13 @@ function emergencyCard(trusted, requests, host) {
           el("button.btn.btn-sm", { type: "button", onclick: () => nameTrusted(host) },
             `＋ ${t("emergency.trusted")}`))
       : el("div.stack-2", {},
-          ...mine.map((contact) => el("div.row-between", {},
-            el("span", {}, contact.trustedMemberName),
-            el("span.caption.muted", {}, `${t("emergency.wait")}: ${contact.waitDays} days`),
+          ...mine.map((contact) => el("div.stack-2", {},
+            el("div.row-between", {},
+              el("span", {}, contact.trustedMemberName),
+              el("span.caption.muted", {}, `${t("emergency.wait")}: ${contact.waitDays} days`),
+            ),
+            // Once a year they say they can still be reached (docs/27 §3).
+            reachableLine(contact, () => continuityScreen(host)),
           )),
           el("div.row", {},
             el("button.btn.btn-sm", { type: "button", onclick: () => nameTrusted(host) },
@@ -584,7 +601,10 @@ function emergencyCard(trusted, requests, host) {
           toast("Asked. They've been told, and can stop it.");
           await continuityScreen(host);
         });
-        return el("div.row-between", {}, el("span", {}, contact.memberName), ask);
+        return el("div.stack-2", {},
+          el("div.row-between", {}, el("span", {}, contact.memberName), ask),
+          el("div.row", {}, confirmReachableButton(contact, () => continuityScreen(host))),
+        );
       }),
     ),
 

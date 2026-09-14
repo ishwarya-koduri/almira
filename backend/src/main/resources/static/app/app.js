@@ -22,6 +22,7 @@ import { t, language } from "./i18n.js";
 import { openCapture } from "./screens/capture.js";
 import { whereScreen } from "./where.js";
 import { rightsScreen } from "./screens/rights.js";
+import { hereScreen } from "./continuity-signals.js";
 
 // Labels are resolved at render time rather than here, so switching language
 // redraws the navigation without a reload. Every route that ever existed is
@@ -235,6 +236,15 @@ window.addEventListener("unhandledrejection", (event) => {
 // as normal — the token is single-use, so it is consumed and removed from the
 // address bar rather than left sitting in history.
 (async function start() {
+  // A one-tap "I'm here" or "still reachable" link lands as #/here/<token>
+  // (docs/27 §2). It needs nobody signed in, so it is answered before sign-in.
+  // The token leaves the address bar at once and lives only in this page.
+  const here = location.hash.match(/^#\/here\/([A-Za-z0-9_-]{43})$/);
+  if (here) {
+    history.replaceState(null, "", location.pathname);
+    mount(root, hereScreen(here[1]));
+    return;
+  }
   const invite = location.hash.match(/^#\/invite\/(.+)$/);
   if (invite && auth.isSignedIn) {
     try {

@@ -1350,3 +1350,71 @@ decision is made.
 **Risk if left** A recorded sale that the department knows about but the
 household forgot is not caught before filing.
 
+
+---
+
+## 46. A record kept for someone else can only be shared with the whole household
+
+**Where** `static/app/state.js` (`startingVisibility`); V8
+`app.can_grant_visibility`; docs/03 §1.3.
+
+**What** When an adult child sets Almira up for a parent (X-32), what they add
+is recorded as the parent's. Only a holder may share a record with named people
+(V8), so the helper cannot make "Amma's necklace" visible to just themselves.
+The web client therefore starts such a record at *Shared with the household*,
+says so on the form, and Amma can make it private when she joins. In a
+household with siblings, they see it too.
+
+**Which is right** Undecided, and deliberately not decided in code. Either the
+creator of a record for a managed member (no login) may grant sight to
+themselves — a change to the grant rule and its SQL assertions — or the helper
+path stays household-shared. It is a privacy-model decision for the owner.
+
+**Why it is still here** Weakening a grant rule is not a side effect a UI change
+should carry.
+
+**When to fix** When the owner decides; the change is V8's function, its
+assertions in `db/tests/rls_privacy_test.sql`, and `startingVisibility`.
+
+**Risk if left** A helper's records for a parent are visible to every member of
+the household until the parent joins and changes them.
+
+---
+
+## 47. The first session is in English only
+
+**Where** `static/app/i18n.js`: every key under `check.*`, `onboard.*`,
+`shelves.*`, `shelf.*`, `starter.*`, `goalStarter.*`, `welcome.*`, `draft.*`,
+`glossary.*`, `guide.*`, `help.*`, `helper.*`, `capture.titleFor` and
+`capture.visibility.helping`.
+
+**What** The readiness check, the shelves, the welcome, the guide and the
+glossary have English strings only; Telugu and Hindi fall back to English
+(docs/14). The glossary paragraphs in particular need a translator who knows
+the bank-form words in each language.
+
+**When to fix** With the next translation pass; no code change.
+
+**Risk if left** A Telugu or Hindi reader meets their first screens in English.
+
+---
+
+## 48. The welcome names the household owner, and opens the first household
+
+**Where** `guidance/Welcome.kt`; `static/app/app.js` (`loadSession`).
+
+**What** The welcome says "{owner} invited you", using the owner's name on the
+roster, because an invitee cannot read the invitations table (its policies are
+for admins) and the invitation's `invited_by` is not otherwise exposed. An admin
+who sent the link is not named. Separately, the client always opens
+`households[0]`: someone who already had a household and accepts an invitation
+to a second one is welcomed to the first.
+
+**Which is right** The inviter's own name, returned by `app.accept_invitation`
+alongside the household, and the client switching to the household just joined.
+
+**When to fix** The next time invitations are opened; the second half belongs
+with multi-household switching.
+
+**Risk if left** A slightly wrong name on one screen; a welcome to the wrong
+household for the rare person in two.

@@ -6,14 +6,35 @@ Uses the tokens and components from [Doc 02](02-ux-and-design-system.md). Wirefr
 
 ## 1. Onboarding (install → first record in < 2 min)
 ```
-Welcome → auth (email/Google/Apple, "🔒 encrypted")
+Welcome → auth (phone, "🔒 encrypted")
    ↓
-"Who are we tracking for?"  ● Just me   ○ Me + my family   (choice cards)
-   ↓ (family) add members: [+ Spouse] [+ Child] [+ Parent]
-   ↓ set your default visibility: ● Private   ○ Shared with household   (see Doc 05)
+"How ready is your family?"  8 questions · Yes / Partly / No / Not sure   [Start] [Skip for now]
+   ↓ the three things that matter most (worked out on the server, stored per person)
+"Who are you setting this up for?"  ● For me   ○ For a parent or someone else [name · relationship]
+   ↓ (for me) ● Just me  ○ Me and my family
+   ↓ default visibility: ● Private   ○ Shared with household   (see Doc 05)
    ↓
-"Add your first thing"  [🥇 Gold][🏦 FD][📈 Stocks][📊 MF][🛡 Insurance][✨ Custom]  ·  [Import spreadsheet]  ·  [Skip]
+The almirah: "The 15 things most Indian families have"  ◔ ring · three shelves · [Not for us]
 ```
+Every step can be skipped, and nothing on it stands between someone and a first record.
+
+### 1.1 The readiness check (X-30)
+Eight questions about paperwork, never money, answered before any data: a will; nominees; where the originals are; a second person who knows who to call; one list; insurance; what is owed; the locker. `PUT /api/v1/me/readiness-check` stores the answers (V85, the person's own row under RLS) and returns at most three gaps. Importance is a fixed order, not a model — will 10, nominees 9, papers 8, second person 7, one list 6, insurance 6, loans 5, locker 4 — multiplied by the answer (no 1, not sure 0.8, partly 0.5, yes 0), ties to the earlier question (`ReadinessScoring`). Each gap names what to do and the shelf that closes it. It can be answered again from the guide.
+
+### 1.2 The shelves (P-10)
+Fifteen shelves in three rows of five, easiest first and the house and the will last: savings account, deposit, gold, health cover, life policy, PPF, EPF, mutual funds, shares, post office savings, NPS, loans, locker, property, will. `GET /api/v1/households/{id}/first-session` says which have something on them, **counted from the records the caller can see** — never stored, so a shelf empties if its record goes and never fills from someone else's private record. Skipped shelves (`PUT …/first-session`) leave the ring rather than holding it below 100. Each shelf opens a starting point (§3.3). Home shows the ring and the next three until every shelf that applies is filled.
+
+### 1.3 Setting it up for someone (X-32)
+"For a parent or someone else" adds them to the roster as a managed member and records `settingUpFor: someone` against them. From then on the shelves, starters and the capture form speak about that person ("Does Amma have a bank locker?", "Add jewellery for Amma"), a shelf counts only their records, and new records default to being theirs. Because only a holder may share a record with named people (V8), a record in Amma's name starts **Shared with the household**, so her helper can read it back; the form says so, and she can make any of it private when she joins. A card on the shelves invites her to confirm it with her own login.
+
+### 1.4 The second family member's welcome (X-80)
+Accepting an invitation opens `#/welcome` instead of Home: "Ishwarya invited you to the Koduri household", then three cards counted by `GET /api/v1/households/{id}/welcome` through row-level security as the invitee — what you'll see (records you can read and do not own, three names as a preview), what stays yours (what you own that is private), what they'll see of yours (what you own that is shared). The first action is optional: add one thing of your own, or just look around; either marks the welcome seen. The owner never gets one. The name is the household owner's on the roster, not necessarily whoever sent the link (known-issues 48).
+
+### 1.5 Checklists that tick themselves (P-23)
+`GET /api/v1/households/{id}/guidance/checklists`: *Getting started* (readiness check, first record, a second person, a goal) and *For the family, on a hard day* (a nominee, where the originals are, someone to call, a trusted person, the will). Every item is a question asked of the visible records; nothing is ticked by hand. The guide (`#/guide`) shows them beside short explainers (a nominee is not always the heir; what sealed means; private means private; the handbook).
+
+### 1.6 Words and help (X-35, X-42)
+Legal words stay — "nominee" is on every bank form — and a "?" beside a hard word opens one plain paragraph (`glossary.js`, words in `i18n.js` as `glossary.<code>.*`). User-facing copy no longer says "zero-knowledge" or "end-to-end encrypted"; it says sealed, and what that means. Settings → Help opens the guide and "Contact us": a WhatsApp or email link and one stated reply time from `almira.support.*` (`GET /api/v1/support/contact`). Unset — the default — the card says no way to reach us has been set up. No provider is called; the phone opens the link.
 
 ## 2. Home
 ```
@@ -51,6 +72,12 @@ Scope switcher and lens switcher are segmented controls ([Doc 02 §6.5](02-ux-an
 └─────────────────────────────────────────────┘
 ```
 Five input modes converge here (smart form, quick-add parse chips, scan/OCR, voice, spreadsheet import); type-aware fields; validation on blur; autosaves a draft. Visibility is set at capture and editable later.
+
+### 3.3 Starting points (X-31)
+Each shelf has a ready-made card — SBI savings, SBI fixed deposit, wedding jewellery, family health cover, LIC policy, PPF, EPF, monthly SIP, shares, NSC, NPS, home loan, bank locker, house papers, will — and goals have "{child}'s degree · 2039", a wedding, retirement, a home. One tap opens the ordinary form with the name, the type, the institution (matched by name) and an obvious attribute filled in; nothing is saved until Save, and every value is editable. A starter never fills an identifier, an address, an amount, or where something is kept. Account, loan and will starters open their own screen's form (`state.pendingForm`). These are the client's, not the household's saved templates (the template module), which are shapes made from the family's own records.
+
+### 3.4 Drafts and saving offline (X-83)
+Each field that may be kept is written to this device as it is typed, with a small "✓ Saved on this phone" beside it; reopening the same type picks up where it stopped, and Home offers "Finish adding HDFC FD?". A save with no network is queued with a client-generated id and sent when the browser is back online (a resend after a lost response is `already_exists`, not a copy). `drafts.js` refuses, whatever a form asks: anything sealed, the where-and-who lines, and identifiers (account, policy, folio, PRAN, UAN, certificate numbers, phones, addresses, notes); a queued save carrying one is not queued. Drafts are keyed by user id, and every draft and queued save on the device is removed at sign-out. `scripts/check-drafts.js` asserts all of it.
 
 **Quick add reads real sentences.** "HDFC FD 3 lakh 7.1% matures 5 March 2028 nominee Aarav" comes back as labelled chips — Type · Where · Amount · Rate · Matures · Nominee — with the sentence shown above them and the words each chip came from underlined. What it reads (`QuickAddParser`, pinned by `QuickAddParserTest`):
 

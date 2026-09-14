@@ -171,6 +171,27 @@ class HouseholdService(
     // --- guards ---------------------------------------------------------------
 
     /**
+     * Refuses a caller who may not write to this household, with the answer
+     * the database policy gives when it refuses a write (the same 403 body).
+     *
+     * For a service to call BEFORE anything with an effect the policy cannot
+     * undo — provisioning or caching a data key, writing to storage, calling a
+     * provider. The policy still refuses at the insert; this makes sure nothing
+     * happened first (docs/known-issues.md, "A guard runs before the action it
+     * guards").
+     */
+    @Transactional(readOnly = true)
+    fun requireWriter(householdId: UUID) {
+        if (!repo.canWrite(householdId)) throw ApiException.forbidden()
+    }
+
+    /** As [requireWriter], for what only an owner or admin may do. */
+    @Transactional(readOnly = true)
+    fun requireAdministrator(householdId: UUID) {
+        if (!repo.canAdminister(householdId)) throw ApiException.forbidden()
+    }
+
+    /**
      * Capability check only. It gates who may MANAGE the household; it never
      * widens what anyone may SEE. Reads are decided entirely by RLS.
      */

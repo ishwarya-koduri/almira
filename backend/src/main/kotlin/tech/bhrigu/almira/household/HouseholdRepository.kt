@@ -64,6 +64,21 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
         householdMapper,
     )
 
+    /**
+     * The database's own write predicate, the one every insert and update
+     * policy checks — asked directly, so a service can refuse before it does
+     * anything the policy would only refuse afterwards. Guest sessions are
+     * refused by it too, which a role check alone would miss.
+     */
+    fun canWrite(householdId: UUID): Boolean = jdbc.queryForObject(
+        "select app.can_write_household(:hid)", mapOf("hid" to householdId), Boolean::class.java,
+    ) == true
+
+    /** The same for app.can_administer_household (owner or admin, never a guest). */
+    fun canAdminister(householdId: UUID): Boolean = jdbc.queryForObject(
+        "select app.can_administer_household(:hid)", mapOf("hid" to householdId), Boolean::class.java,
+    ) == true
+
     fun find(householdId: UUID, userId: UUID): HouseholdRow? = jdbc.query(
         "$HOUSEHOLD_SELECT and h.id = :hid",
         mapOf("userId" to userId, "hid" to householdId),

@@ -83,6 +83,12 @@ class DocumentService(
             }
         }
 
+        // Before the key and the storage write, not only at the insert: the
+        // insert's policy refuses a viewer too, but by then a data key may have
+        // been provisioned and bytes written to storage, and a rollback undoes
+        // neither. After the input checks, so a bad file is still a 400.
+        households.requireWriter(householdId)
+
         val id = UUID.randomUUID()
         // Household-scoped key: a stray listing of the bucket groups by family
         // rather than spilling everything into one flat namespace.

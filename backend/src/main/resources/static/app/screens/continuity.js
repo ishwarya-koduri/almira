@@ -15,7 +15,10 @@
 import { api, downloadAuthenticated } from "../api.js";
 import {
   el, mount, sheet, field, textInput, select, skeletonRows, empty, withBusy, toast, formatDate,
+  datedSteps, notice, segmented, moneyInput, chipRow,
 } from "../ui.js";
+import { guidedFlow, choiceList } from "../guided.js";
+import { confirmItsYou } from "../step-up.js";
 import { state } from "../state.js";
 import { t } from "../i18n.js";
 import { whereWhoCard, FIELD } from "../where.js";
@@ -28,7 +31,7 @@ import { navigate } from "../app.js";
 export async function continuityScreen(host) {
   mount(host, skeletonRows(4));
 
-  const [handbook, mismatches, estate, contacts, trusted, requests, readiness] = await Promise.all([
+  const [handbook, mismatches, estate, contacts, trusted, requests, readiness, sweep] = await Promise.all([
     api.handbook(state.household.id),
     api.mismatches(state.household.id).catch(() => []),
     api.estateDocuments(state.household.id).catch(() => []),
@@ -36,14 +39,23 @@ export async function continuityScreen(host) {
     api.trustedContacts(state.household.id).catch(() => []),
     api.emergencyRequests(state.household.id).catch(() => []),
     loadReadiness(state.household.id),
+    api.lostMoney(state.household.id).catch(() => null),
   ]);
+
+  // Holding an open window on someone is the one thing that outranks printing:
+  // heir mode takes the screen's single primary action (X-40).
+  const heirWindow = requests.find((request) => request.requestedByMe && request.status === "open");
 
   mount(host, el("div.stack", {},
     el("div.row-between.wrap", {},
       el("h2", {}, t("continuity.title")),
-      printButton(),
+      heirWindow
+        ? el("button.btn.btn-primary.btn-sm", { type: "button", onclick: () => navigate(`heir/${heirWindow.id}`) },
+            t("heir.open", { name: heirWindow.subjectName }))
+        : printButton(),
     ),
     el("p.muted", {}, t("continuity.intro")),
+    printCard(Boolean(heirWindow)),
 
     readiness && readinessCard(readiness, fixers(estate, host)),
     mismatches.length > 0 && mismatchCard(mismatches),
@@ -52,6 +64,7 @@ export async function continuityScreen(host) {
     estateCard(estate, host, handbook),
     contactsCard(contacts, host),
     emergencyCard(trusted, requests, host),
+    sweep && lostMoneyCard(sweep, host),
   ));
 }
 
@@ -93,8 +106,42 @@ function whenLastSheetCloses(callback) {
   observer.observe(document.body, { childList: true });
 }
 
-function printButton() {
-  const button = el("button.btn.btn-primary.btn-sm", { type: "button" }, t("continuity.print"));
+/**
+ * Three printed things, each for a different drawer (P-28, X-61). The handbook
+ * is the screen's primary action unless heir mode has taken it; these two sit
+ * beside it as ordinary buttons.
+ */
+function printCard(handbookToo) {
+  const kit = el("button.btn.btn-sm", { type: "button" }, t("kit.print"));
+  kit.onclick = () => withBusy(kit, async () => {
+    try {
+      await downloadAuthenticated(api.emergencyKitPdfUrl(state.household.id), "almira-emergency-kit.pdf");
+    } catch (error) {
+      toast(error.message, { tone: "error" });
+    }
+  });
+  const envelope = el("button.btn.btn-sm", { type: "button" }, t("envelope.print"));
+  envelope.onclick = () => withBusy(envelope, async () => {
+    if (!(await confirmItsYou(t("envelope.stepUp")))) return;
+    try {
+      await downloadAuthenticated(api.envelopePdfUrl(state.household.id), "almira-family-handbook.pdf", { method: "POST" });
+      toast(t("envelope.printed"));
+    } catch (error) {
+      toast(error.message, { tone: "error" });
+    }
+  });
+  return el("div.card.stack-2", { "data-print": "" },
+    el("h3", {}, t("print.title")),
+    el("div.print-choices", {},
+      el("div.stack-2", {}, kit, el("p.caption", {}, t("kit.explain"))),
+      el("div.stack-2", {}, envelope, el("p.caption", {}, t("envelope.explain"))),
+      handbookToo && el("div.stack-2", {}, printButton({ primary: false }), el("p.caption", {}, t("continuity.printExplain"))),
+    ),
+  );
+}
+
+function printButton({ primary = true } = {}) {
+  const button = el(`button.btn.btn-sm${primary ? ".btn-primary" : ""}`, { type: "button" }, t("continuity.print"));
   button.onclick = () => withBusy(button, async () => {
     try {
       await downloadAuthenticated(
@@ -398,76 +445,84 @@ function openWhere(document, host, onClose) {
   });
 }
 
+/**
+ * Recording a will or other paperwork, one question at a time (X-58). The
+ * answers are kept with the step so a person who stops comes back to them;
+ * where the original is comes after it is saved, sealed (docs/20).
+ */
 function newEstateDocument(host) {
-  const title = textInput({ placeholder: "Ishwarya's will", "aria-label": "Title" });
-  const kind = select({
-    options: [
-      { value: "will", label: "Will" },
-      { value: "codicil", label: "Codicil" },
-      { value: "poa", label: "Power of attorney" },
-      { value: "living_will", label: "Living will" },
-      { value: "trust", label: "Trust deed" },
-      { value: "nomination_letter", label: "Nomination letter" },
-      { value: "other", label: "Something else" },
-    ],
-    "aria-label": "Kind",
-  });
-  const member = select({
-    options: state.members.map((m) => ({
-      value: m.id, label: m.isMe ? `${m.displayName} (me)` : m.displayName,
-    })),
-    value: state.members.find((m) => m.isMe)?.id,
-    "aria-label": "Whose",
-  });
-  const executedOn = textInput({ type: "date", "aria-label": "Executed on" });
-  const visibility = select({
-    options: [
-      { value: "private", label: "Private — only me" },
-      { value: "household", label: `Shared with ${state.household.name}` },
-    ],
-    "aria-label": "Who can see this",
-  });
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
-  const save = el("button.btn.btn-primary.grow", { type: "button" }, t("app.save"));
+  const members = state.members.map((m) => ({
+    value: m.id, label: m.isMe ? t("guided.me", { name: m.displayName }) : m.displayName,
+  }));
+  const kinds = [
+    ["will", "estate.kind.will"], ["codicil", "estate.kind.codicil"], ["poa", "estate.kind.poa"],
+    ["living_will", "estate.kind.living_will"], ["trust", "estate.kind.trust"],
+    ["nomination_letter", "estate.kind.nomination_letter"], ["other", "estate.kind.other"],
+  ].map(([value, key]) => ({ value, label: t(key) }));
 
-  save.onclick = () => withBusy(save, async () => {
-    error.textContent = "";
-    if (!title.value.trim()) { error.textContent = "Give it a name."; return; }
-    try {
-      await api.createEstateDocument(state.household.id, {
-        memberId: member.value,
-        kind: kind.value,
-        title: title.value.trim(),
-        executedOn: executedOn.value || null,
-        visibility: visibility.value,
-      });
-      modal.close();
-      toast("Recorded.");
-      await continuityScreen(host);
-    } catch (apiError) {
-      error.textContent = apiError.message;
-    }
-  });
-
-  const modal = sheet({
-    title: t("estate.add"),
-    body: el("div.stack-3", {},
-      el("p.caption.muted", {},
-        "Almira records that the document exists and where it is. It does not draft it, " +
-        "and nothing here is legal advice."),
-      field({ label: "What is it?", control: kind }),
-      field({ label: "Name", control: title, required: true }),
-      field({ label: "Whose is it?", control: member }),
-      // Where the original is: the single most useful line about a will, and
-      // the one a hostile relative wants most. It is recorded sealed on the
-      // saved document (docs/20 §1), never in this plain form.
-      el("p.caption.muted", { "data-sealed-pointer": "location" },
-        t("where.estateNote")),
-      field({ label: "Signed on", control: executedOn }),
-      field({ label: "Who can see it?", control: visibility }),
-      error,
-    ),
-    footer: [save],
+  guidedFlow({
+    flow: "estate_document",
+    title: t("estate.add").replace(/^＋\s*/, ""),
+    keep: ["kind", "title", "memberId", "executedOn", "visibility"],
+    steps: [
+      {
+        key: "kind",
+        question: t("estate.q.kind"),
+        help: t("estate.q.kindHelp"),
+        build: (answers) => choiceList(kinds, answers.kind || "will", t("estate.q.kind")),
+      },
+      {
+        key: "memberId",
+        question: t("estate.q.whose"),
+        build: (answers) => choiceList(members, answers.memberId || state.members.find((m) => m.isMe)?.id, t("estate.q.whose")),
+      },
+      {
+        key: "title",
+        question: t("estate.q.title"),
+        help: t("estate.q.titleHelp"),
+        build: (answers) => {
+          const input = textInput({ value: answers.title || "", maxLength: 160, "aria-label": t("estate.q.title") });
+          return {
+            node: input,
+            value: () => input.value.trim(),
+            error: () => (input.value.trim() ? null : t("estate.q.titleMissing")),
+          };
+        },
+      },
+      {
+        key: "executedOn",
+        question: t("estate.q.signed"),
+        help: t("estate.q.signedHelp"),
+        build: (answers) => {
+          const input = textInput({ type: "date", value: answers.executedOn || "", "aria-label": t("estate.q.signed") });
+          return { node: input, value: () => input.value || null };
+        },
+      },
+      {
+        key: "visibility",
+        question: t("estate.q.visibility"),
+        build: (answers) => choiceList([
+          { value: "private", label: t("estate.q.private"), help: t("estate.q.privateHelp") },
+          { value: "household", label: t("estate.q.household", { household: state.household.name }) },
+        ], answers.visibility || "private", t("estate.q.visibility")),
+      },
+    ],
+    finish: {
+      label: t("app.save"),
+      run: async (answers) => {
+        const created = await api.createEstateDocument(state.household.id, {
+          memberId: answers.memberId,
+          kind: answers.kind,
+          title: answers.title,
+          executedOn: answers.executedOn || null,
+          visibility: answers.visibility,
+        });
+        toast(t("estate.recorded"));
+        await continuityScreen(host);
+        // The one line that matters most, asked next and sealed on this device.
+        if (created?.id) openWhere({ id: created.id, title: created.title || answers.title }, host);
+      },
+    },
   });
 }
 
@@ -548,62 +603,56 @@ function newContact(host) {
 }
 
 /* -----------------------------------------------------------------------------
-   Emergency access
+   Emergency access, as a dated picture (X-41)
    ----------------------------------------------------------------------------- */
 
 function emergencyCard(trusted, requests, host) {
   const mine = trusted.filter((contact) => !contact.theyTrustMe);
   const trustsMe = trusted.filter((contact) => contact.theyTrustMe);
 
-  return el("div.card.stack-3", {},
+  return el("div.card.stack-3", { "data-emergency": "" },
     el("h3", {}, t("emergency.title")),
-    el("p.caption.muted", {},
-      "Someone you name can ask to see what's marked for the family. Nothing opens for the " +
-      "waiting period, you're told the moment they ask, and you can stop it at any point."),
+    el("p.caption", {}, t("emergency.explain")),
 
-    mine.length === 0
-      ? el("div.row", {},
-          el("button.btn.btn-sm", { type: "button", onclick: () => nameTrusted(host) },
-            `＋ ${t("emergency.trusted")}`))
-      : el("div.stack-2", {},
-          ...mine.map((contact) => el("div.row-between", {},
-            el("span", {}, contact.trustedMemberName),
-            el("span.caption.muted", {}, `${t("emergency.wait")}: ${contact.waitDays} days`),
-          )),
-          el("div.row", {},
-            el("button.btn.btn-sm", { type: "button", onclick: () => nameTrusted(host) },
-              `＋ ${t("emergency.trusted")}`)),
-        ),
+    mine.length > 0 && el("div.stack-2", {},
+      ...mine.map((contact) => el("div.row-between", {},
+        el("span", {}, contact.trustedMemberName),
+        el("span.caption", {}, t("emergency.waitDays", { days: contact.waitDays })),
+      )),
+    ),
+    el("div.row", {},
+      el("button.btn.btn-sm", { type: "button", onclick: () => nameTrusted(host) },
+        `＋ ${t("emergency.trusted")}`)),
 
     trustsMe.length > 0 && el("div.stack-2", {},
-      el("span.overline", {}, "You are trusted by"),
+      el("span.overline", {}, t("emergency.trustedBy")),
       ...trustsMe.map((contact) => {
         const ask = el("button.btn.btn-sm", { type: "button" }, t("emergency.request"));
         ask.onclick = () => withBusy(ask, async () => {
           await api.requestEmergencyAccess(state.household.id, { subjectMemberId: contact.memberId });
-          toast("Asked. They've been told, and can stop it.");
+          toast(t("emergency.asked"));
           await continuityScreen(host);
         });
-        return el("div.row-between", {}, el("span", {}, contact.memberName), ask);
+        return el("div.row-between.wrap", {}, el("span", {}, contact.memberName), ask);
       }),
     ),
 
-    requests.length > 0 && el("div.stack-2", {},
-      el("span.overline", {}, "Requests"),
+    requests.length > 0 && el("div.stack-3", {},
+      el("span.overline", {}, t("emergency.requests")),
       ...requests.map((request) => requestRow(request, host)),
     ),
   );
 }
 
 function requestRow(request, host) {
-  const actions = el("div.row", { style: { gap: "8px" } });
+  const actions = el("div.row.wrap", { style: { gap: "8px" } });
 
   if (request.status === "waiting" || request.status === "open") {
     if (!request.requestedByMe) {
       const veto = el("button.btn.btn-sm.btn-danger", { type: "button" }, t("emergency.veto"));
       veto.onclick = () => withBusy(veto, async () => {
         await api.vetoEmergencyAccess(state.household.id, request.id);
-        toast("Stopped. Nothing was opened.");
+        toast(t("emergency.stopped"));
         await continuityScreen(host);
       });
       actions.append(veto);
@@ -617,65 +666,193 @@ function requestRow(request, host) {
     }
   }
 
-  return el("div.stack-2", {},
-    el("div.row-between", {},
-      el("span", {},
+  return el("div.stack-2", { "data-request": request.id },
+    el("div.row-between.wrap", {},
+      el("b", {},
         request.requestedByMe
-          ? `You asked about ${request.subjectName}`
-          : `${request.requestedByName} asked about ${request.subjectName}`),
+          ? t("emergency.youAsked", { name: request.subjectName })
+          : t("emergency.theyAsked", { who: request.requestedByName, name: request.subjectName })),
       el("span.chip.chip-static", {}, t(`emergency.status.${request.status}`)),
     ),
-    el("p.caption.muted", {}, request.explanation),
-    request.status === "waiting" && el("p.caption.muted", {},
-      `Opens ${formatDate(request.unlockAt)}.`),
-    actions,
+    request.timeline?.length
+      ? datedSteps(request.timeline, { label: t("emergency.timelineLabel") })
+      : el("p.caption", {}, request.explanation),
+    request.subjectHasBeenActive && notice(request.explanation),
+    actions.childElementCount > 0 && actions,
   );
 }
 
+/**
+ * Naming someone, one question at a time, ending on the picture of what it
+ * means — dated as if they asked today — before anything is saved (X-41, X-58).
+ */
 function nameTrusted(host) {
-  const who = select({
-    options: state.members.filter((m) => !m.isMe).map((m) => ({ value: m.id, label: m.displayName })),
-    "aria-label": "Who",
-  });
-  const wait = select({
-    options: [
-      { value: "7", label: "7 days" },
-      { value: "14", label: "14 days" },
-      { value: "30", label: "30 days" },
-      { value: "60", label: "60 days" },
-    ],
-    value: "14",
-    "aria-label": "Waiting period",
-  });
-  const error = el("div.help.error", { style: { minHeight: "1.15rem" } });
-  const save = el("button.btn.btn-primary.grow", { type: "button" }, t("app.save"));
+  const others = state.members.filter((m) => !m.isMe);
+  if (others.length === 0) {
+    toast(t("emergency.nobodyToName"));
+    navigate("family");
+    return;
+  }
 
+  guidedFlow({
+    flow: "emergency_setup",
+    title: t("emergency.trusted"),
+    keep: ["trustedMemberId", "waitDays"],
+    steps: [
+      {
+        key: "trustedMemberId",
+        question: t("emergency.q.who"),
+        help: t("emergency.q.whoHelp"),
+        build: (answers) => choiceList(
+          others.map((m) => ({ value: m.id, label: m.displayName })),
+          answers.trustedMemberId || others[0].id,
+          t("emergency.q.who"),
+        ),
+      },
+      {
+        key: "waitDays",
+        question: t("emergency.q.wait"),
+        help: t("emergency.q.waitHelp"),
+        build: (answers) => choiceList(
+          [7, 14, 30, 60].map((days) => ({ value: days, label: t("emergency.waitDays", { days }) })),
+          answers.waitDays || 14,
+          t("emergency.q.wait"),
+        ),
+      },
+      {
+        key: "confirmed",
+        question: t("emergency.q.picture"),
+        build: async (answers) => {
+          const preview = await api.emergencyPreview(state.household.id, answers.trustedMemberId, answers.waitDays);
+          const node = el("div.stack-3", {},
+            el("p.caption", {}, t("emergency.q.asIfToday", { name: preview.trustedMemberName })),
+            datedSteps(preview.steps, { label: t("emergency.timelineLabel") }),
+            el("div.stack-2", {},
+              el("span.overline", {}, t("emergency.willSee", { name: preview.trustedMemberName })),
+              el("ul.plain-list", {}, ...preview.willSee.map((line) => el("li", {}, line))),
+            ),
+            el("div.stack-2", {},
+              el("span.overline", {}, t("emergency.neverSee")),
+              el("ul.plain-list", {}, ...preview.neverSee.map((line) => el("li", {}, line))),
+            ),
+          );
+          return { node, value: () => true };
+        },
+      },
+    ],
+    finish: {
+      label: t("emergency.q.confirm"),
+      run: async (answers) => {
+        await api.nameTrustedContact(state.household.id, {
+          trustedMemberId: answers.trustedMemberId,
+          waitDays: Number(answers.waitDays),
+        });
+        toast(t("emergency.named"));
+        await continuityScreen(host);
+      },
+    },
+  });
+}
+
+/* -----------------------------------------------------------------------------
+   The lost-money sweep (P-25): one card per portal, per person. Links only.
+   ----------------------------------------------------------------------------- */
+
+function lostMoneyCard(sweep, host) {
+  let memberId = state.members.find((m) => m.isMe)?.id || state.members[0]?.id;
+  const portals = el("div.stack-3", {});
+
+  const draw = () => {
+    const people = chipRow(t("lostMoney.whose"), ...state.members.map((m) => el("button.chip", {
+      type: "button", "aria-pressed": m.id === memberId,
+      onclick: () => { memberId = m.id; draw(); },
+    }, m.displayName)));
+    mount(portals, people, ...sweep.portals.map((portal) => portalCard(portal,
+      sweep.checks.find((check) => check.portal === portal.code && check.memberId === memberId), memberId, host)));
+  };
+  draw();
+
+  return el("div.card.stack-3", { "data-lost-money": "" },
+    el("h3", {}, t("lostMoney.title")),
+    el("p.caption", {}, t("lostMoney.intro")),
+    portals,
+    notice(sweep.note),
+  );
+}
+
+function portalCard(portal, check, memberId, host) {
+  const member = state.members.find((m) => m.id === memberId);
+  const record = (status) => async () => {
+    await api.recordLostMoneyCheck(state.household.id, portal.code, { memberId, status });
+    // Redrawn in place: a tap halfway down the page should not jump to the top.
+    const y = window.scrollY;
+    await continuityScreen(host);
+    window.scrollTo(0, y);
+  };
+  const statusButtons = segmented([
+    { value: "checked", label: t("lostMoney.status.checked") },
+    { value: "found", label: t("lostMoney.status.found") },
+    { value: "nothing", label: t("lostMoney.status.nothing") },
+  ], check?.status, (status) => (status === "found" && !check?.investmentId
+    ? recordFound(portal, memberId, host)
+    : record(status)()));
+  statusButtons.setAttribute("aria-label", t("lostMoney.statusLabel", { portal: portal.name }));
+
+  return el("section.portal-card.stack-2", { "data-portal": portal.code },
+    el("div.row-between.wrap", {},
+      el("h4", {}, portal.name),
+      check && el("span.caption", {}, t("lostMoney.checkedOn", {
+        status: t(`lostMoney.status.${check.status}`), date: formatDate(check.checkedOn),
+      })),
+    ),
+    el("p.caption", {}, portal.finds),
+    el("details", {},
+      el("summary.caption", {}, t("lostMoney.howTo", { name: member?.displayName || "" })),
+      el("ol.portal-steps", {}, ...portal.howToSearch.map((line) => el("li", {}, line))),
+      el("p.caption", {}, `${t("lostMoney.youNeed")} ${portal.youNeed.join(" · ")}`),
+    ),
+    el("a.btn.btn-sm.portal-link", {
+      href: portal.url, target: "_blank", rel: "noopener noreferrer",
+    }, t("lostMoney.open", { portal: portal.name })),
+    statusButtons,
+    check?.investmentId && el("div.stack-2", {},
+      el("p.caption", {}, t("lostMoney.becameRecord", { title: check.recordTitle || t("lostMoney.aRecord") })),
+      el("details", {},
+        el("summary.caption", {}, t("lostMoney.howToClaim")),
+        el("ol.portal-steps", {}, ...portal.claim.map((step) => el("li", {}, el("b", {}, step.step), ` — ${step.detail}`))),
+      ),
+    ),
+  );
+}
+
+/** Found something: it becomes a record for the family plan, with how to claim it. */
+function recordFound(portal, memberId, host) {
+  const title = textInput({ maxLength: 160, placeholder: t("lostMoney.found.titlePlaceholder"), "aria-label": t("lostMoney.found.title") });
+  const amount = moneyInput({ "aria-label": t("lostMoney.found.amount") });
+  const where = textInput({ maxLength: 120, placeholder: t("lostMoney.found.wherePlaceholder"), "aria-label": t("lostMoney.found.where") });
+  const error = el("p.help.error", { role: "alert" });
+  const save = el("button.btn.btn-primary.grow", { type: "button" }, t("lostMoney.found.save"));
   save.onclick = () => withBusy(save, async () => {
     error.textContent = "";
+    if (!title.value.trim()) { error.textContent = t("estate.q.titleMissing"); return; }
     try {
-      await api.nameTrustedContact(state.household.id, {
-        trustedMemberId: who.value,
-        waitDays: Number(wait.value),
+      await api.recordFoundMoney(state.household.id, portal.code, {
+        memberId, title: title.value.trim(), amount: amount.value(), whereFound: where.value.trim() || null,
       });
       modal.close();
-      toast("Named. They've been told.");
+      toast(t("lostMoney.found.saved"));
       await continuityScreen(host);
-    } catch (apiError) {
-      error.textContent = apiError.message;
+    } catch (problem) {
+      error.textContent = problem.message;
     }
   });
-
   const modal = sheet({
-    title: t("emergency.trusted"),
+    title: t("lostMoney.found.heading", { portal: portal.name }),
     body: el("div.stack-3", {},
-      el("p.caption.muted", {},
-        "If you can't be reached, this person can ask to see what's marked for the family. " +
-        "They can't see anything today, and you'll be told the moment they ask."),
-      field({ label: "Who?", control: who, required: true }),
-      field({
-        label: t("emergency.wait"), control: wait,
-        help: "How long you have to say no. Long enough to notice, short enough to matter.",
-      }),
+      el("p.caption", {}, t("lostMoney.found.explain")),
+      field({ label: t("lostMoney.found.title"), control: title, required: true }),
+      field({ label: t("lostMoney.found.amount"), control: amount, help: t("lostMoney.found.amountHelp") }),
+      field({ label: t("lostMoney.found.where"), control: where }),
       error,
     ),
     footer: [save],

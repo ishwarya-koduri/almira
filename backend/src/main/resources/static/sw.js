@@ -17,11 +17,11 @@
    ============================================================================= */
 
 // The build appends a fingerprint of every other static file to this, so the
-// served value is "almira-v33+<12 hex>" and changes whenever any shell asset
+// served value is "almira-v34+<12 hex>" and changes whenever any shell asset
 // does (backend/build.gradle.kts, known-issues 3). Bumping the number by hand
 // is still allowed and no longer required. Old caches are removed on activate,
 // so the version is the only bookkeeping.
-const VERSION = "almira-v33";
+const VERSION = "almira-v34";
 const SHELL = `${VERSION}-shell`;
 
 /**

@@ -22,6 +22,7 @@ import { t, language } from "./i18n.js";
 import { openCapture } from "./screens/capture.js";
 import { whereScreen } from "./where.js";
 import { rightsScreen } from "./screens/rights.js";
+import { heirScreen } from "./screens/heir.js";
 
 // Labels are resolved at render time rather than here, so switching language
 // redraws the navigation without a reload. Every route that ever existed is
@@ -160,6 +161,20 @@ async function render() {
   // navigation that leads to empty ones.
   if (!state.household) {
     mount(root, el("div.app", {}, onboardingScreen(async () => { await loadSession(); render(); })));
+    return;
+  }
+
+  // Heir mode is a place of its own (X-40): no navigation, no notices, nothing
+  // but the task in front of them and a way back out.
+  const heir = location.hash.match(/^#\/heir\/([0-9a-f-]{36})$/);
+  if (heir) {
+    const view = el("div#view", {});
+    mount(root, el("div.app.heir-shell", {}, el("main", {}, view)));
+    try {
+      await heirScreen(view, heir[1]);
+    } catch (error) {
+      mount(view, el("div.banner", {}, error.message || "Something went wrong."));
+    }
     return;
   }
 

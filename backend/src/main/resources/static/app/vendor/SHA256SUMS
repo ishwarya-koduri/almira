@@ -1,0 +1,10 @@
+0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594  pdfjs-6.3.289/LICENSE.txt
+f401927e692efc7735e0cd528c490d0dd31b7f0972c122b7040df805be45cce4  pdfjs-6.3.289/pdf.min.mjs
+a33cfe728c584fdba4fcc1fd54bcdc2f9f2f13889ddbb5b2bd1d0f8cbe49b84e  pdfjs-6.3.289/pdf.worker.min.mjs
+c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08  tesseract-7.0.0/LICENSE-core.txt
+b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1  tesseract-7.0.0/LICENSE.txt
+45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91  tesseract-7.0.0/lang/eng.traineddata.gz
+e48e2f02ddae3716c8dd24bf41cd290d4efa96892d689cdc4013c2545d63f469  tesseract-7.0.0/tesseract-core-simd-lstm.js
+34e8d50cac216427d86bf397d610fdd9f49492539bbcdfbfccc4eda20c810bea  tesseract-7.0.0/tesseract-core-simd-lstm.wasm
+64871d76c75609fd5413b88a8171e2ef40deedd77d5875ba23df104b2d05eb29  tesseract-7.0.0/tesseract.esm.min.js
+576b7df7e3393e137e51849357c9adb53fe7ac1bb69bfa06cf3d61520f182c6d  tesseract-7.0.0/worker.min.js

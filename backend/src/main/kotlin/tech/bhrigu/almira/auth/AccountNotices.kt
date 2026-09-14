@@ -46,6 +46,20 @@ class AccountNotices(private val notifiers: List<Notifier>) {
         key = null,
     )
 
+    /**
+     * The number changed: told everywhere [changed] tells, and also by text to
+     * the number it changed from. By the time the outbox sends, the account's
+     * phone is the new number, which is the one handset that least needs telling.
+     */
+    fun phoneChanged(userId: UUID, previousPhone: String?, at: Instant = Instant.now()) = send(
+        userId,
+        template = Change.PHONE_CHANGED.template,
+        title = Change.PHONE_CHANGED.title,
+        body = "${Change.PHONE_CHANGED.title} at ${ist(at)}. If this wasn't you, sign in and open How you sign in straight away.",
+        key = null,
+        previousPhone = previousPhone,
+    )
+
     enum class Change(val template: String, val title: String) {
         PHONE_CHANGED("auth.phone_changed", "The phone number on your account was changed"),
         AUTHENTICATOR_ADDED("auth.authenticator_added", "An authenticator app was added to your account"),
@@ -56,10 +70,12 @@ class AccountNotices(private val notifiers: List<Notifier>) {
         RECOVERY_CODE_USED("auth.recovery_code_used", "A recovery code was used on your account"),
     }
 
-    private fun send(userId: UUID, template: String, title: String, body: String, key: String?) {
+    private fun send(
+        userId: UUID, template: String, title: String, body: String, key: String?, previousPhone: String? = null,
+    ) {
         val notification = OutboundNotification(
             userId = userId, householdId = null, reminderId = null,
-            template = template, title = title, body = body, idempotencyKey = key,
+            template = template, title = title, body = body, idempotencyKey = key, previousPhone = previousPhone,
         )
         notifiers.forEach {
             runCatching { it.deliver(notification) }

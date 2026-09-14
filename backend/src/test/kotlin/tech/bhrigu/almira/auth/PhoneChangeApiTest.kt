@@ -3,6 +3,10 @@ package tech.bhrigu.almira.auth
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import tech.bhrigu.almira.provider.NotificationOutbox
+import tech.bhrigu.almira.provider.SandboxSmsSender
+import java.util.UUID
 
 /**
  * Changing the number on an account (T-05): only from a signed-in session that
@@ -11,6 +15,9 @@ import org.junit.jupiter.api.Test
  */
 @DisplayName("Changing the phone number")
 class PhoneChangeApiTest : SignInApiTestBase() {
+
+    @Autowired private lateinit var outbox: NotificationOutbox
+    @Autowired private lateinit var sms: SandboxSmsSender
 
     private fun requestChange(account: Account, phone: String) =
         redis.delete("otp:cooldown:phone_change:$phone").let {
@@ -81,6 +88,44 @@ class PhoneChangeApiTest : SignInApiTestBase() {
                 Int::class.java, account.userId,
             ),
         ).isEqualTo(1)
+    }
+
+    @Test
+    fun `the old number is texted that the number changed, not only the new one`() {
+        val account = signUp()
+        stepUpByCode(account)
+        val newPhone = uniquePhone()
+        val challenge = requestChange(account, newPhone)
+        val changed = post(
+            "/api/v1/auth/phone/verify", account.token,
+            mapOf(
+                "phone" to newPhone,
+                "code" to challenge.json().path("developmentCode").asText(),
+                "requestId" to challenge.json().path("requestId").asText(),
+            ),
+        )
+        assertThat(changed.statusCode.value()).describedAs(changed.body).isEqualTo(200)
+        outbox.drain()
+
+        val texts = db.query(
+            """
+            select idempotency_key, status from outbound_messages
+            where user_id = ?::uuid and template = 'auth.phone_changed' and channel = 'sms'
+            """.trimIndent(),
+            { rs, _ -> rs.getString(1) to rs.getString(2) },
+            UUID.fromString(account.userId),
+        )
+        assertThat(texts.map { it.second }).containsOnly("sent")
+        assertThat(texts.map { sms.deliveries.recipientEnding(it.first) })
+            .describedAs("one text to the number it was, one to the number it is")
+            .containsExactlyInAnyOrder(account.phone.takeLast(4), newPhone.takeLast(4))
+        assertThat(
+            db.queryForObject(
+                "select count(*) from outbound_message_bodies b join outbound_messages o on o.id = b.message_id " +
+                    "where o.user_id = ?::uuid",
+                Int::class.java, UUID.fromString(account.userId),
+            ),
+        ).describedAs("the old number is not kept once it has been texted").isZero()
     }
 
     @Test

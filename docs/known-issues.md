@@ -1840,3 +1840,30 @@ mirroring their read policies.
 **Risk if left** None for privacy. A trusted contact working through a window
 cannot ask about the subject's accounts or papers, even when the person they
 would ask can already see them.
+
+---
+
+## 64. "The phone number on your account was changed" was texted only to the new number
+
+**Resolved** (2026-09-15). Kept so the number means something where it is cited.
+
+**Where** `auth/AuthService.kt` (`verifyPhoneChange`), `auth/AccountNotices.kt`
+(`phoneChanged`), `provider/Delivery.kt` (`RecordingNotifier`),
+`provider/NotificationOutbox.kt`, and `app.enqueue_outbound_message` (V108).
+
+**What changed** The outbox worker finds an SMS recipient when it sends (entry
+13): the account's phone. After a change that is already the new number, so the
+only text about the change went to the handset that had just proved it — in a
+takeover, the attacker's — and the number the owner still holds heard nothing.
+Now the notice is also queued as one more SMS whose address is fixed when it is
+queued: the number the account changed from. The address waits beside the body
+in `outbound_message_bodies` (unreadable to the runtime role) and is deleted
+with it once the message is finished. Only `auth.phone_changed` on `sms` may
+carry an address; the function refuses anything else. Push, email, the in-app
+row and the text to the new number are unchanged. Proven by
+`PhoneChangeApiTest` ("the old number is texted that the number changed…").
+
+**What is still open** A phone-only account steps up with a code to its current
+number, so where the attacker already receives that number's texts (a SIM swap)
+the extra text reaches them too. It helps when step-up was done another way (an
+authenticator, a recovery code, an already elevated stolen session).

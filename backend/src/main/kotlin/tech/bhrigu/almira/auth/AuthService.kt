@@ -288,7 +288,7 @@ class AuthService(
             ip = ip, userAgent = userAgent,
         )
         sessionId?.let(stepUp::spend)
-        notices.changed(userId, AccountNotices.Change.PHONE_CHANGED)
+        notices.phoneChanged(userId, before.phone)
         log.info("phone number changed for user {}", userId)
         return updated
     }

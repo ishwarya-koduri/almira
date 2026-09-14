@@ -19,6 +19,13 @@ data class OutboundNotification(
      * random key is made for it. Never personal data — it may be logged.
      */
     val idempotencyKey: String? = null,
+    /**
+     * A number that is no longer the account's but must hear about this too: the
+     * number a phone change moved away from. Queued as one more SMS, addressed
+     * when it is queued, since by send time the account's phone is the new one
+     * (known-issues 64). Only `auth.phone_changed` may carry it (V108).
+     */
+    val previousPhone: String? = null,
 )
 
 /**

@@ -162,6 +162,8 @@ class NotificationOutbox(
         val notification: OutboundNotification,
         val key: String,
         val resend: Boolean,
+        /** Fixed when queued (V108); null means "look the person up now". */
+        val address: String?,
     )
 
     private data class Candidate(
@@ -174,6 +176,7 @@ class NotificationOutbox(
         val key: String,
         val started: Boolean,
         val body: String?,
+        val address: String?,
         val timeZone: String?,
         val createdAt: java.time.Instant,
     )
@@ -186,7 +189,7 @@ class NotificationOutbox(
         val candidates = jdbc.query(
             """
             select o.id, o.household_id, o.user_id, o.channel, o.template, o.title, o.idempotency_key,
-                   o.send_started_at is not null as started, b.body, h.time_zone, o.created_at
+                   o.send_started_at is not null as started, b.body, b.address, h.time_zone, o.created_at
             from outbound_messages o
             left join outbound_message_bodies b on b.message_id = o.id
             left join households h on h.id = o.household_id
@@ -210,6 +213,7 @@ class NotificationOutbox(
                 key = rs.getString("idempotency_key"),
                 started = rs.getBoolean("started"),
                 body = rs.getString("body"),
+                address = rs.getString("address"),
                 timeZone = rs.getString("time_zone"),
                 createdAt = rs.getTimestamp("created_at").toInstant(),
             )
@@ -283,7 +287,7 @@ class NotificationOutbox(
                             .addValue("id", row.id),
                     )
                     claimed += Claimed(
-                        id = row.id, token = token, sender = sender, key = row.key, resend = row.started,
+                        id = row.id, token = token, sender = sender, key = row.key, resend = row.started, address = row.address,
                         notification = OutboundNotification(
                             userId = row.userId, householdId = row.householdId, reminderId = null,
                             template = row.template, title = row.title.orEmpty(), body = row.body,
@@ -328,7 +332,8 @@ class NotificationOutbox(
                 directory.locale(notification.userId),
             )
             val worded = notification.copy(title = composed.subject, body = composed.text)
-            val recipients = directory.recipients(notification.userId, sender.channel)
+            val recipients = row.address?.let { listOf(Recipient(it)) }
+                ?: directory.recipients(notification.userId, sender.channel)
             when {
                 // A sandbox reaches nobody, with or without an address; it is still called, as before.
                 recipients.isEmpty() && sender.mode != ProviderMode.LIVE -> {

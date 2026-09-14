@@ -230,6 +230,27 @@ class RecordingNotifier(
                 log.warn("could not queue an outbound message on {}: {}", sender.channel, it.javaClass.simpleName)
             }
         }
+        notification.previousPhone?.let { previous ->
+            if (channels.none { it.channel == "sms" }) return@let
+            runCatching {
+                jdbc.query(
+                    """
+                    select app.enqueue_outbound_message(:hid, :uid, 'sms', :template, :title, :body, :key, :address)
+                    """.trimIndent(),
+                    MapSqlParameterSource()
+                        .addValue("hid", notification.householdId)
+                        .addValue("uid", notification.userId)
+                        .addValue("template", notification.template)
+                        .addValue("title", notification.title)
+                        .addValue("body", notification.body)
+                        .addValue("key", keyFor("$logical:$PREVIOUS_PHONE", "sms"))
+                        .addValue("address", previous),
+                ) { _, _ -> }
+                queued++
+            }.onFailure {
+                log.warn("could not queue an outbound message to a previous number: {}", it.javaClass.simpleName)
+            }
+        }
         if (queued > 0) wakeAfterCommit()
     }
 
@@ -280,5 +301,8 @@ class RecordingNotifier(
 
         /** One logical message on one channel. */
         fun keyFor(logical: String, channel: String) = "$logical:$channel"
+
+        /** Marks the logical key of the copy sent to [OutboundNotification.previousPhone]. */
+        const val PREVIOUS_PHONE = "previous_phone"
     }
 }

@@ -3,6 +3,7 @@ package tech.bhrigu.almira.privacy
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
+import org.springframework.test.annotation.DirtiesContext
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.http.HttpStatus
@@ -22,6 +23,9 @@ import java.util.UUID
  * application's JDBC template is spied instead, and each test asserts that the
  * statement the refusal guards was never sent.
  */
+// A context of its own (a spy or a replaced bean), closed after this class so
+// its connection pools do not stay open beside every cached context.
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("A refused request writes nothing first")
 class CheckedBeforeWrittenApiTest : ApiTestBase() {
 

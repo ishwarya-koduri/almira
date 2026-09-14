@@ -3,6 +3,7 @@ package tech.bhrigu.almira.privacy
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
+import org.springframework.test.annotation.DirtiesContext
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.TestConfiguration
@@ -47,6 +48,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * the thing did not happen, not only that the answer was 403: the storage, the
  * key service and the sandbox providers are wrapped to count what reaches them.
  */
+// A context of its own (a spy or a replaced bean), closed after this class so
+// its connection pools do not stay open beside every cached context.
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("A refused write is refused before it acts")
 @Import(RefusedBeforeItActsApiTest.Counting::class)
 @TestPropertySource(properties = ["almira.providers.aa.mode=sandbox"])

@@ -2,6 +2,7 @@ package tech.bhrigu.almira.document
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
+import org.springframework.test.annotation.DirtiesContext
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
@@ -33,6 +34,9 @@ import java.util.concurrent.TimeUnit
  * read-then-delete leaves open. A redemption that takes and deletes the ticket
  * in one command never reaches the barrier.
  */
+// A context of its own (a spy or a replaced bean), closed after this class so
+// its connection pools do not stay open beside every cached context.
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("A download ticket is single-use under concurrency")
 @Import(DocumentTicketSingleUseApiTest.RacingRedis::class)
 class DocumentTicketSingleUseApiTest : ApiTestBase() {

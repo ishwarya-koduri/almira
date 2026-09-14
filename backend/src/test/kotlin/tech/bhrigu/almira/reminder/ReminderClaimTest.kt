@@ -3,6 +3,7 @@ package tech.bhrigu.almira.reminder
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.DisplayName
+import org.springframework.test.annotation.DirtiesContext
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.TestConfiguration
@@ -24,6 +25,9 @@ import java.time.LocalDate
  * Its own file rather than ReminderSweepTest, which belongs to the infra
  * session.
  */
+// A context of its own (a spy or a replaced bean), closed after this class so
+// its connection pools do not stay open beside every cached context.
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("Reminder sweep: the claim comes before the notification")
 @Import(ReminderClaimTest.Interfering::class)
 class ReminderClaimTest : ApiTestBase() {

@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.test.annotation.DirtiesContext
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import tech.bhrigu.almira.auth.EmailOtpSender
@@ -29,6 +30,10 @@ import java.util.UUID
  * why it came, a live channel with no address records that rather than
  * pretending, and each way the relay says no becomes the right kind.
  */
+// Closed after the class: its own properties make it a server of its own, and one
+// more cached server holding pools took the shared test database past
+// max_connections for the suites after it.
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("Live email over SMTP")
 class LiveEmailDeliveryApiTest : ApiTestBase() {
 

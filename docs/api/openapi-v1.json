@@ -2251,6 +2251,32 @@
         ],
         "type": "object"
       },
+      "DeviceResponse": {
+        "properties": {
+          "appVersion": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "installationId": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "installationId",
+          "lastSeenAt",
+          "platform"
+        ],
+        "type": "object"
+      },
       "DocumentCapture": {
         "properties": {
           "documentId": {
@@ -15807,6 +15833,90 @@
         ]
       }
     },
+    "/api/v1/me/devices": {
+      "get": {
+        "operationId": "devices",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "notification-settings-controller"
+        ]
+      }
+    },
+    "/api/v1/me/devices/{installationId}": {
+      "delete": {
+        "operationId": "removeDevice",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "notification-settings-controller"
+        ]
+      },
+      "put": {
+        "operationId": "registerDevice",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDeviceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "notification-settings-controller"
+        ]
+      }
+    },
     "/api/v1/me/export": {
       "get": {
         "operationId": "downloadEverything",
@@ -15840,6 +15950,74 @@
         },
         "tags": [
           "messages-controller"
+        ]
+      }
+    },
+    "/api/v1/me/notification-preferences": {
+      "get": {
+        "operationId": "preferences",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "notification-settings-controller"
+        ]
+      },
+      "put": {
+        "operationId": "updatePreferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPreferencesBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "notification-settings-controller"
+        ]
+      }
+    },
+    "/api/v1/me/notification-preferences/still-true/ask-later": {
+      "post": {
+        "operationId": "askLaterAboutStillTrue",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferencesResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "notification-settings-controller"
         ]
       }
     },

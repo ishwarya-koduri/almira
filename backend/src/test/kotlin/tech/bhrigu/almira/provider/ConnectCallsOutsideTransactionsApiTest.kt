@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpStatus
+import org.springframework.test.annotation.DirtiesContext
 import org.springframework.test.context.TestPropertySource
 import tech.bhrigu.almira.support.ApiTestBase
 import java.time.Duration
@@ -34,6 +35,10 @@ import javax.sql.DataSource
         "almira.providers.connect-budget=2s",
     ],
 )
+// Closed after the class: its own properties make it a server of its own, and one
+// more cached server holding pools took the shared test database past
+// max_connections for the suites after it.
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("Connect calls hold no database connection while they wait")
 class ConnectCallsOutsideTransactionsApiTest : ApiTestBase() {
 

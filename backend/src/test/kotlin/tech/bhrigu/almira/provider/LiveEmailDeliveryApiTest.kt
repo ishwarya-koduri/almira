@@ -140,6 +140,10 @@ class LiveEmailDeliveryApiTest : ApiTestBase() {
 
     @Test
     fun `a live channel with no address for the person records that, and nothing is sent`() {
+        // Mid-morning in the household's zone: run in the evening, quiet hours
+        // would hold the reminder and it would still be queued, not skipped.
+        val india = ZoneId.of("Asia/Kolkata")
+        pacing.clock = Clock.fixed(LocalDate.now(india).atTime(10, 0).atZone(india).toInstant(), ZoneOffset.UTC)
         val key = tell()
         outbox.drain()
         assertThat(email(key)).containsEntry("status", "skipped").containsEntry("failure", "no_recipient")

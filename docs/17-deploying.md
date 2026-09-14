@@ -587,7 +587,7 @@ Two notes for whoever verifies it:
   plain HTTP on a real hostname, so the install prompt will not appear until TLS
   is in front of it.
 - The cache turns over by itself. The build appends a fingerprint of every
-  static file to the worker's `VERSION` (`almira-v24+<12 hex>`), so a changed
+  static file to the worker's `VERSION` (`almira-v32+<12 hex>`), so a changed
   asset changes the served `sw.js`, and the build fails if the `VERSION` line is
   missing (known-issues 3).
 - `scripts/check-service-worker.js` asserts the routing decisions — shell
@@ -670,27 +670,7 @@ at 20 concurrent) and adding a holding the slowest write (p95 1 322 ms). The
 the application needs a run on the real host with nothing else on it, which is
 the first thing to do after the first deploy.
 
-## 10 · Not covered here
-
-Named rather than implied:
-
-- **Metrics and log collection.** Logs are JSON on stdout and the probes are
-  above; nothing in this repository collects, stores or graphs either, and the
-  alerts in §8 need something (an uptime monitor, a log shipper) to watch for them.
-- **A public status page.** The one-line public status ("All good", or what is
-  wrong and when it will be fixed) needs a page hosted apart from the app, so it
-  stays up when the app does not; there is no such site in this repository yet.
-- **Automated backups.** The commands above are manual; §8 says what to alert on
-  once a cron runs them.
-- **A deploy to a real host.** Everything above has run in containers on one
-  developer machine only.
-- **Zero-downtime deploys.** `up -d --build app` restarts the container.
-- **Horizontal scaling.** Nothing prevents more than one instance — sessions and
-  rate limits are in Redis, not in memory — but it has not been tried.
-- **An external penetration test.** Still to schedule, against a deployed
-  environment ([Doc 15 §11](15-security-whitepaper.md)).
-
-## 9 · The public website
+## 10 · The public website
 
 `site/` is the website people read before they decide to trust Almira: a home
 page, security, what we never do, and placeholders for pricing, what we measure
@@ -771,5 +751,26 @@ footer on every page says there is none.
   [Doc 26](26-incident-response.md) describes, by editing `site/status.html` and
   copying the directory again. Keep the host's credentials where the on-call
   person can reach them without the app being up.
+
+## 11 · Not covered here
+
+Named rather than implied:
+
+- **Metrics and log collection.** Logs are JSON on stdout and the probes are
+  above; nothing in this repository collects, stores or graphs either, and the
+  alerts in §8 need something (an uptime monitor, a log shipper) to watch for them.
+- **A live public status.** `site/status.html` carries the one-line public status
+  ("Nothing to report", or what is wrong and when it will be fixed) and is hosted
+  apart from the app (§10), but a person edits it by hand when the outside check
+  in §8 raises an alarm; nothing updates it automatically.
+- **Automated backups.** The commands above are manual; §8 says what to alert on
+  once a cron runs them.
+- **A deploy to a real host.** Everything above has run in containers on one
+  developer machine only.
+- **Zero-downtime deploys.** `up -d --build app` restarts the container.
+- **Horizontal scaling.** Nothing prevents more than one instance — sessions and
+  rate limits are in Redis, not in memory — but it has not been tried.
+- **An external penetration test.** Still to schedule, against a deployed
+  environment ([Doc 15 §11](15-security-whitepaper.md)).
 
 [‹ Index](README.md)

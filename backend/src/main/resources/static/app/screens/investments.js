@@ -6,7 +6,6 @@ import { state } from "../state.js";
 import { t } from "../i18n.js";
 import { openCapture } from "./capture.js";
 import { openDetail } from "./detail.js";
-import { t } from "../i18n.js";
 
 let filters = { q: "", category: null };
 

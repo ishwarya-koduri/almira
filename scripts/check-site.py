@@ -42,7 +42,7 @@ CHECKS = 0
 CSP = ("default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; "
        "base-uri 'none'; form-action 'none'")
 # The one link that leaves the site's own files: the host redirects it to the
-# app (docs/17 §9), so it is same-origin by construction.
+# app (docs/17 §10), so it is same-origin by construction.
 SIGN_IN = "/sign-in"
 DRAFT_LANGS = {"te", "hi"}
 # Tokens the site shares with the app. --brass and --mark-ground are the

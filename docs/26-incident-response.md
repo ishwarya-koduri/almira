@@ -257,7 +257,7 @@ launch. Square brackets are filled in at the time; keep them short.
 
 ### The status page
 
-`site/status.html` ([Doc 17 §9](17-deploying.md)) carries the same five parts in
+`site/status.html` ([Doc 17 §10](17-deploying.md)) carries the same five parts in
 fewer words, without anything that identifies a family:
 
 > **[Date] — [one-line title, e.g. "Some family records were visible to the wrong

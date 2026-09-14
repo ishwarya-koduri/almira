@@ -131,7 +131,7 @@ minutes stuck** — whichever is first — and move on without explaining.
 | 7 | *"Write down where the FD receipt is kept, so your family could find it. Your family should be able to read it; the company that makes the app should not."* | Sealing with a passphrase ([Doc 20](20-where-and-who.md)); whether "we cannot recover it" is understood |
 | 8 | *"Suppose you were not here next year. Show me what your family would need to do to find all this."* | Continuity, emergency access and readiness ([Doc 22](22-handover-readiness.md)) |
 | 9 | *"Switch the app to [Telugu / Hindi / English] and back."* | Only for sessions where it is natural; half-translated screens ([Doc 14](14-localization.md)) |
-| 10 | *"Is there anything here you would not trust? Why?"* | Asked last, open-ended; the answer to the question the public site ([Doc 17 §9](17-deploying.md)) is meant to settle |
+| 10 | *"Is there anything here you would not trust? Why?"* | Asked last, open-ended; the answer to the question the public site ([Doc 17 §10](17-deploying.md)) is meant to settle |
 
 Afterwards, **five minutes of questions**, still without leading:
 

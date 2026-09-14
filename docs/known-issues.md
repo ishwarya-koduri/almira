@@ -822,7 +822,7 @@ person the repository does not have:
   the security page has no reporting address and no pen-test summary, because
   none has been done (Doc 15 §11). The plan's direction also asks for a real
   founder on the home page, which is the owner's to write. The domain is
-  undecided, so the `/sign-in` redirect in Doc 17 §9 names `example.in`.
+  undecided, so the `/sign-in` redirect in Doc 17 §10 names `example.in`.
 - **Nothing is native-reviewed.** The Telugu and Hindi home pages say so on the
   page and are `noindex`; the Telugu and Hindi breach notices and the consent
   script are marked "needs native review".

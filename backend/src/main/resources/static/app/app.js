@@ -32,6 +32,7 @@ import { hereScreen } from "./continuity-signals.js";
 import { loadPlan, readOnlyNotice } from "./plan.js";
 import { noteScreen } from "./support.js";
 import { offlineScreen, readOfflineCopy, keepOfflineCopy } from "./offline.js";
+import { drawInPlace } from "./redraw.js";
 
 // Labels are resolved at render time rather than here, so switching language
 // redraws the navigation without a reload. Every route that ever existed is
@@ -157,7 +158,11 @@ function sections(active) {
   );
 }
 
-async function render() {
+/**
+ * @param inPlace keep the screen that is showing until its replacement is drawn
+ *                (X-05) — for a redraw of the same screen, never for navigation
+ */
+async function render({ inPlace = false } = {}) {
   if (!auth.isSignedIn) { mount(root, authScreen(afterSignIn)); return; }
 
   if (!state.user) {
@@ -191,7 +196,7 @@ async function render() {
     try {
       await heirScreen(view, heir[1]);
     } catch (error) {
-      mount(view, el("div.banner", {}, error.message || "Something went wrong."));
+      mount(view, el("div.banner", {}, error.message || t("app.somethingWrong")));
     }
     return;
   }
@@ -199,6 +204,9 @@ async function render() {
   const name = currentRoute();
   noteScreen(name);
   const view = el("div#view", {});
+  const showing = inPlace ? document.getElementById("view") : null;
+  // Read before the shell is rebuilt: moving the old screen blurs whatever had focus.
+  const focused = document.activeElement;
   const main = el("main", {},
     // X-72: say once, quietly, that the page is saving data and why a chart
     // might wait for a tap.
@@ -207,13 +215,16 @@ async function render() {
     // (docs/28 §2). Said once, at the top, with where to read what still works.
     readOnlyNotice(state.plan),
     sections(name),
-    view);
+    // The screen already showing is moved into the new shell as it is, and
+    // the new one takes its place once drawn: never a blank page in between.
+    showing || view);
   mount(root, el("div.app", {}, topbar(), main, navigation(name)));
   try {
-    await routes[name].render(view);
+    if (showing) await drawInPlace(showing, view, routes[name].render, window, focused);
+    else await routes[name].render(view);
   } catch (error) {
     if (await showOfflineCopy(error, root)) return;
-    mount(view, el("div.banner", {}, error.message || "Something went wrong."));
+    mount(view, el("div.banner", {}, error.message || t("app.somethingWrong")));
   }
 }
 
@@ -274,7 +285,7 @@ export async function reload() {
  * Redraw the shell without refetching anything. Changing language has to reach
  * the navigation and the header, not only the screen that offered the switch.
  */
-export function redraw() { render(); }
+export function redraw() { render({ inPlace: true }); }
 
 /* -----------------------------------------------------------------------------
    Bootstrap

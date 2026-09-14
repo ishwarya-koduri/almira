@@ -3,7 +3,12 @@
 # 14 · Language — what is translated, and what is not
 
 Three languages: **English, Telugu and Hindi**, chosen for who this is for. The
-switch is in Settings, applies instantly, and is remembered per browser. A
+switch is in Settings, applies instantly, and is remembered per browser. The
+screen is redrawn in place: the words showing stay until the same screen is
+ready in the new language, then swap at the same scroll position with focus on
+the button that was pressed (`app/redraw.js`, `scripts/check-redraw.js`). It
+used to empty the page first, which on a phone looked like Settings had gone
+blank (X-05). A
 missing key falls back to English rather than showing the key: a screen in two
 languages is confusing, a screen showing `home.attention.title` is broken.
 

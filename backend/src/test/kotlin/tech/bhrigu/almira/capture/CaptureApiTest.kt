@@ -219,6 +219,24 @@ class CaptureApiTest : ApiTestBase() {
         assertThat(result.path("documentId").asText()).isNotBlank()
     }
 
+    /**
+     * What a camera reads off a bond: the kind of policy on the line above its
+     * number, and a number long enough to look like money.
+     */
+    @Test
+    fun `a reference number is neither mistaken for a word nor read as an amount`() {
+        val result = mapper.readTree(
+            uploadDocument(
+                "a photo".toByteArray(), "bond.jpg", "image/jpeg",
+                text = "Endowment policy\nPolicy No: 5567123456\nSum Assured: Rs. 10,00,000",
+            ).body,
+        )
+
+        val fields = result.path("fields").associateBy { it.path("key").asText() }
+        assertThat(fields["attributes.policy_no"]!!.path("value").asText()).isEqualTo("5567123456")
+        assertThat(fields["investedAmount"]?.path("display")?.asText() ?: "").doesNotContain("5,56,71,23,456")
+    }
+
     @Test
     fun `a PDF's own text layer wins over what a device read`() {
         val bytes = pdf(listOf("Policy No: 5567123456"))

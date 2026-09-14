@@ -87,8 +87,11 @@ class DocumentCaptureService(
 
         // The same parser as quick-add, over the document's text. A certificate
         // reads much like shorthand: an amount, a date, an institution, a type.
-        val parsed = quickAdd.parse(householdId, condense(extracted.text))
+        // Reference numbers are taken out first: "Policy No: 5567123456" left in
+        // reads as an amount of ₹5,56,71,23,456.
         val identifiers = identifiers(extracted.text)
+        val withoutIdentifiers = identifiers.fold(extracted.text) { text, field -> text.replace(field.sourceText, " ") }
+        val parsed = quickAdd.parse(householdId, condense(withoutIdentifiers))
 
         val fields = parsed.fields.filterNot { it.key == "title" } + identifiers
         return DocumentCapture(
@@ -113,17 +116,21 @@ class DocumentCaptureService(
      */
     private fun identifiers(text: String): List<QuickAddParser.Field> = buildList {
         REFERENCE_PATTERNS.forEach { (key, label, pattern) ->
-            pattern.find(text)?.let { match ->
-                val value = match.groupValues.getOrNull(1)?.trim().orEmpty()
-                if (value.length in 4..40) {
-                    add(
-                        QuickAddParser.Field(
-                            key = "attributes.$key", label = label, value = value,
-                            display = value, sourceText = match.value.trim(),
-                            confidence = "medium",
-                        ),
-                    )
-                }
+            // The first match that is a number of some kind, trying every place
+            // the label appears: "Endowment policy\nPolicy No: 5567…" must not
+            // read the second "Policy" as the first one's number.
+            val match = generateSequence(pattern.find(text)) { previous -> pattern.find(text, previous.range.first + 1) }
+                .firstOrNull { it.groupValues.getOrNull(1).orEmpty().any(Char::isDigit) }
+                ?: return@forEach
+            val value = match.groupValues[1].trim()
+            if (value.length in 4..40) {
+                add(
+                    QuickAddParser.Field(
+                        key = "attributes.$key", label = label, value = value,
+                        display = value, sourceText = match.value.trim(),
+                        confidence = "medium",
+                    ),
+                )
             }
         }
     }

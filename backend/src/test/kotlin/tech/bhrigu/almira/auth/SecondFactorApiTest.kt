@@ -117,6 +117,12 @@ class SecondFactorApiTest : SignInApiTestBase() {
         assertThat(sessions(account.userId)).describedAs("no session for a code alone").isEqualTo(before)
         val token = details.path("secondFactorToken").asText()
         assertThat(token).hasSizeGreaterThanOrEqualTo(40)
+        assertThat(
+            db.queryForObject(
+                "select count(*) from activity_log where actor_user_id = ?::uuid and action = 'auth.second_factor_requested'",
+                Int::class.java, account.userId,
+            ),
+        ).describedAs("the request for a second factor is kept, though the sign-in's transaction rolls back").isEqualTo(1)
 
         val wrong = post(
             "/api/v1/auth/second-factor/authenticator",

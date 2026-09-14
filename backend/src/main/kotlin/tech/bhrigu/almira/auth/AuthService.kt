@@ -147,7 +147,11 @@ class AuthService(
     private fun requireNoSecondFactor(user: UserRow, deviceName: String?, userAgent: String?, ip: String?) {
         val factors = secondFactors.factors(user.id)
         if (factors.any) {
-            audit.record(null, user.id, "auth.second_factor_requested", "user", user.id, ip = ip, userAgent = userAgent)
+            // In a transaction of its own: the throw below rolls back the
+            // sign-in's transaction, and would take this row with it.
+            secondFactors.asUser(user.id) {
+                audit.record(null, user.id, "auth.second_factor_requested", "user", user.id, ip = ip, userAgent = userAgent)
+            }
             throw secondFactors.challenge(user.id, factors, deviceName, userAgent, ip)
         }
     }

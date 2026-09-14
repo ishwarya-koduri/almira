@@ -388,6 +388,13 @@ transaction, which the refusal that follows rolls back, so the row was never
 kept. It is now written inside `SessionRevoker`'s own transaction, only by the
 call that ended the session. Proven by `RefreshReuseApiTest`, watched failing on
 the audit assertion before the move.
+The same rollback took `auth.second_factor_requested` (fixed 2026-09-15): it was
+written in `verifyOtp`/`verifyEmailOtp`'s transaction just before the
+`second_factor_required` refusal rolled it back, so a correct one-time code on
+an account with a second factor (the recycled-number signal) left no row. It is
+now written in a transaction of its own (`SecondFactorService.asUser`). Proven
+by `SecondFactorApiTest`, watched failing on the audit assertion before the
+move. No notice is sent for this event; that remains a product suggestion.
 
 ---
 

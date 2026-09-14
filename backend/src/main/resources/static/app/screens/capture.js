@@ -21,6 +21,9 @@ import { state, myMember, findType } from "../state.js";
 import { t } from "../i18n.js";
 import { reload } from "../app.js";
 import { openImport } from "./import.js";
+import { openStatementImport } from "./statement-import.js";
+import { openPhotoReader } from "./photo-reader.js";
+import { canReadPhotos } from "../ocr.js";
 import { reportCaptureAbandoned } from "../measurement.js";
 
 export function openCapture(onSaved) {
@@ -96,20 +99,32 @@ function chooseHowToAdd(onSaved) {
     if (event.key === "Enter") { event.preventDefault(); parseButton.click(); }
   });
 
+  // A PDF or a photo, read into the same chips and the same form.
+  const useDocument = (result) => {
+    const type = result.fields.find((f) => f.key === "typeId");
+    if (type && findType(type.value)) {
+      advance();
+      captureForm(findType(type.value), onSaved, prefillFrom(result));
+    } else {
+      showParse({ ...result, unparsed: "" });
+    }
+  };
+
   const documentInput = el("input", {
     type: "file", accept: "application/pdf,image/*", hidden: true,
     onchange: async () => {
       const file = documentInput.files?.[0];
       if (!file) return;
+      // The same file chosen twice should still arrive.
+      documentInput.value = "";
+      // A photo is read on this device first (P-13); the server cannot read one.
+      if (file.type.startsWith("image/") && canReadPhotos()) {
+        openPhotoReader(file, { onFound: useDocument, onFallback: () => quick.focus() });
+        return;
+      }
       const result = await api.parseDocument(state.household.id, file);
       toast(result.note || "Saved the document.");
-      const type = result.fields.find((f) => f.key === "typeId");
-      if (type && findType(type.value)) {
-        advance();
-        captureForm(findType(type.value), onSaved, prefillFrom(result));
-      } else {
-        showParse({ ...result, unparsed: "" });
-      }
+      useDocument(result);
     },
   });
 
@@ -140,6 +155,10 @@ function chooseHowToAdd(onSaved) {
             type: "button",
             onclick: () => { advance(); openImport(onSaved); },
           }, "Import a spreadsheet"),
+          el("button.btn", {
+            type: "button",
+            onclick: () => { advance(); openStatementImport(onSaved); },
+          }, t("statement.button")),
           documentInput,
         ),
       ),

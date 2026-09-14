@@ -325,7 +325,9 @@ export const api = {
 
   // --- capture and import ---------------------------------------------------
   parseText:     (hid, text)      => api.post(`/api/v1/households/${hid}/capture/parse-text`, { text }),
-  parseDocument: (hid, file)      => upload(`/api/v1/households/${hid}/capture/parse-document`, file),
+  // `text`: what this device read from a photo (ocr.js), for a file the server cannot read itself.
+  parseDocument: (hid, file, text) =>
+    upload(`/api/v1/households/${hid}/capture/parse-document`, file, text ? { text } : {}),
   importPreview: (hid, file)      => upload(`/api/v1/households/${hid}/import/preview`, file),
   runImport:     (hid, file, options) =>
     upload(`/api/v1/households/${hid}/import`, file, options),

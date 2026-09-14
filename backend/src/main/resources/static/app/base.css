@@ -1008,3 +1008,31 @@ details.more[open] > summary::before { transform: rotate(90deg); }
   align-items: center; justify-content: start;
 }
 .quiet-hours .input { min-height: 44px; }
+
+/* -----------------------------------------------------------------------------
+   Reading on this device (P-11, P-13). A photo in a quiet frame shaped like the
+   paper it shows; each field a chip with the patch of the photo it came from;
+   a statement's lines as plain rows anyone can turn into a holding.
+   ----------------------------------------------------------------------------- */
+.photo-frame {
+  display: grid; place-items: center; max-height: 40vh; overflow: hidden;
+  border: 1px solid var(--block-border); border-radius: var(--radius-md);
+  background: var(--surface-sunken); padding: var(--space-2);
+}
+.photo-preview { max-width: 100%; max-height: calc(40vh - var(--space-4)); object-fit: contain; border-radius: var(--radius-sm); }
+.ocr-chips { display: grid; gap: var(--space-2); }
+.ocr-chip {
+  display: grid; grid-template-columns: minmax(0, 9rem) 1fr; gap: var(--space-3); align-items: center;
+  padding: var(--space-2) var(--space-3); min-height: var(--target);
+  border: 1px solid var(--block-border); border-radius: var(--radius-sm); background: var(--surface);
+}
+.ocr-crop {
+  display: block; max-width: 100%; max-height: 4rem; object-fit: contain;
+  border-radius: var(--radius-sm); background: var(--surface-sunken);
+}
+.ocr-value { font-weight: 600; overflow-wrap: anywhere; }
+.statement-line { gap: var(--space-2); min-height: var(--target); border-bottom: 1px solid var(--hairline); }
+.statement-line:last-child { border-bottom: 0; }
+.statement-row[data-included="false"] { background: transparent; }
+.statement-row[data-included="false"] .check-label { color: var(--ink-muted); }
+.offline .list-row .btn { flex: none; }

@@ -187,21 +187,10 @@ class OtpService(
     private val emailCodeKey: SecretKeySpec = deriveKey(props, "almira/otp-code/email/v1")
 
     init {
-        // Bounds, not preferences. Each of these is a config value that, set
-        // wrongly, turns sign-in into something an attacker can guess.
-        require(cfg.length in 6..8) {
-            "almira.otp.length must be 6 to 8 digits (is ${cfg.length}). Fewer is guessable."
-        }
-        require(!cfg.ttl.isNegative && !cfg.ttl.isZero && cfg.ttl <= MAX_TTL) {
-            "almira.otp.ttl must be more than zero and at most $MAX_TTL (is ${cfg.ttl})."
-        }
-        require(cfg.maxAttempts in 1..10) {
-            "almira.otp.max-attempts must be 1 to 10 (is ${cfg.maxAttempts})."
-        }
-        require(!cfg.sendTimeout.isNegative && !cfg.sendTimeout.isZero && cfg.sendTimeout <= MAX_SEND_TIMEOUT) {
-            "almira.otp.send-timeout must be more than zero and at most $MAX_SEND_TIMEOUT (is ${cfg.sendTimeout}). " +
-                "Somebody is waiting for this answer."
-        }
+        // Also run by StartupSettingsCheck, before the application context and
+        // so before the database is migrated; kept here for anything that
+        // builds this class directly.
+        checkBounds(cfg)
     }
 
     /**
@@ -734,6 +723,25 @@ class OtpService(
     private fun unmatchable(): String = HexFormat.of().formatHex(ByteArray(32).also(random::nextBytes))
 
     companion object {
+        /** The configuration bounds. See StartupSettingsCheck. */
+        fun checkBounds(cfg: AlmiraProperties.Otp) {
+            // Bounds, not preferences. Each of these is a config value that, set
+            // wrongly, turns sign-in into something an attacker can guess.
+            require(cfg.length in 6..8) {
+                "almira.otp.length must be 6 to 8 digits (is ${cfg.length}). Fewer is guessable."
+            }
+            require(!cfg.ttl.isNegative && !cfg.ttl.isZero && cfg.ttl <= MAX_TTL) {
+                "almira.otp.ttl must be more than zero and at most $MAX_TTL (is ${cfg.ttl})."
+            }
+            require(cfg.maxAttempts in 1..10) {
+                "almira.otp.max-attempts must be 1 to 10 (is ${cfg.maxAttempts})."
+            }
+            require(!cfg.sendTimeout.isNegative && !cfg.sendTimeout.isZero && cfg.sendTimeout <= MAX_SEND_TIMEOUT) {
+                "almira.otp.send-timeout must be more than zero and at most $MAX_SEND_TIMEOUT (is ${cfg.sendTimeout}). " +
+                    "Somebody is waiting for this answer."
+            }
+        }
+
         const val LOGIN = "login"
         const val STEP_UP = "step_up"
 

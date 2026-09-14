@@ -76,19 +76,10 @@ class ProviderCalls(
     private val problems = ConcurrentHashMap<String, Instant>()
 
     init {
-        // Bounds, checked at startup: a zero timeout fails every call, and a
-        // hundred attempts turns one outage into a hundred bills.
-        props.providers.all().forEach { (name, p) ->
-            require(!p.timeout.isNegative && !p.timeout.isZero && p.timeout <= MAX_TIMEOUT) {
-                "almira.providers.$name.timeout must be more than zero and at most $MAX_TIMEOUT (is ${p.timeout})."
-            }
-            require(p.maxAttempts in 1..MAX_ATTEMPTS) {
-                "almira.providers.$name.max-attempts must be 1 to $MAX_ATTEMPTS (is ${p.maxAttempts})."
-            }
-            require(!p.retryBackoff.isNegative && p.retryBackoff <= MAX_BACKOFF) {
-                "almira.providers.$name.retry-backoff must be 0 to $MAX_BACKOFF (is ${p.retryBackoff})."
-            }
-        }
+        // Also run by StartupSettingsCheck, before the application context and
+        // so before the database is migrated; kept here for anything that
+        // builds this class directly.
+        checkBounds(props.providers)
     }
 
     /** The value only. See [execute]. */
@@ -233,5 +224,22 @@ class ProviderCalls(
         val MAX_TIMEOUT: Duration = Duration.ofMinutes(2)
         val MAX_BACKOFF: Duration = Duration.ofSeconds(30)
         const val MAX_ATTEMPTS = 10
+
+        /** The configuration bounds. See StartupSettingsCheck. */
+        fun checkBounds(providers: AlmiraProperties.Providers) {
+            // Bounds, checked at startup: a zero timeout fails every call, and a
+            // hundred attempts turns one outage into a hundred bills.
+            providers.all().forEach { (name, p) ->
+                require(!p.timeout.isNegative && !p.timeout.isZero && p.timeout <= MAX_TIMEOUT) {
+                    "almira.providers.$name.timeout must be more than zero and at most $MAX_TIMEOUT (is ${p.timeout})."
+                }
+                require(p.maxAttempts in 1..MAX_ATTEMPTS) {
+                    "almira.providers.$name.max-attempts must be 1 to $MAX_ATTEMPTS (is ${p.maxAttempts})."
+                }
+                require(!p.retryBackoff.isNegative && p.retryBackoff <= MAX_BACKOFF) {
+                    "almira.providers.$name.retry-backoff must be 0 to $MAX_BACKOFF (is ${p.retryBackoff})."
+                }
+            }
+        }
     }
 }

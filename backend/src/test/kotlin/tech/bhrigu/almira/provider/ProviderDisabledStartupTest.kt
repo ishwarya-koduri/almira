@@ -1,7 +1,7 @@
 package tech.bhrigu.almira.provider
 
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.DynamicTest
@@ -121,7 +121,10 @@ class ProviderDisabledStartupTest {
      */
     @Test
     fun `email disabled while email is a sign-in channel refuses to start, naming both settings`() {
-        assertThatThrownBy {
+        // The innermost cause, which is the refusal itself: since
+        // StartupSettingsCheck it is thrown before any context exists, unwrapped;
+        // before, it came wrapped in the bean-creation failure.
+        val failure = catchThrowable {
             start(
                 mapOf("email" to "disabled"),
                 mapOf(
@@ -130,7 +133,7 @@ class ProviderDisabledStartupTest {
                 ),
             ).close()
         }
-            .rootCause()
+        assertThat(generateSequence(failure) { it.cause }.last())
             .isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("almira.auth.sign-in-channels")
             .hasMessageContaining("almira.providers.email.mode")

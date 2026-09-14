@@ -50,45 +50,15 @@ class SignInChannels(props: AlmiraProperties) {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    val enabled: List<OtpChannel> = parseChannels(props.auth.signInChannels)
-    private val allowlist: Set<String> = parseAllowlist(props.auth.emailAllowlist)
+    private val checked: Checked = check(props)
+    val enabled: List<OtpChannel> = checked.enabled
+    private val allowlist: Set<String> = checked.allowlist
 
     init {
-        require(OtpChannel.EMAIL !in enabled || allowlist.isNotEmpty()) {
-            "Email sign-in is enabled but almira.auth.email-allowlist (ALMIRA_ALPHA_EMAIL_ALLOWLIST) " +
-                "is empty, so nobody could sign in by email. List the testers' addresses, or " +
-                "take email out of almira.auth.sign-in-channels to end the email alpha. Taking email " +
-                "out signs every email-only account out when this server starts (docs/13 §5)."
-        }
-        require(OtpChannel.EMAIL !in enabled || props.providers.email.mode.trim().lowercase() != "disabled") {
-            "Email sign-in is enabled in almira.auth.sign-in-channels (ALMIRA_SIGN_IN_CHANNELS), but " +
-                "almira.providers.email.mode (ALMIRA_PROVIDER_EMAIL_MODE) is 'disabled', so no sign-in " +
-                "code could ever be emailed. Set the email provider to sandbox or live, or take email " +
-                "out of almira.auth.sign-in-channels. Taking email out signs every email-only account " +
-                "out when this server starts (docs/13 §5)."
-        }
-
-        val sink = props.auth.emailDecoySink.trim()
-        require(OtpChannel.EMAIL !in enabled || sink.isNotEmpty() ||
-            props.providers.email.mode.trim().lowercase() != "live") {
-            "Email sign-in is enabled with a live email provider, but almira.auth.email-decoy-sink " +
-                "(ALMIRA_ALPHA_EMAIL_DECOY_SINK) is empty. An address off the allowlist has its email " +
-                "sent there instead, so that its answer fails or succeeds with the provider as a listed " +
-                "address's does; without it the answer would tell anyone who is in the alpha. Set it to " +
-                "an address that accepts and discards mail, such as the provider's mailbox simulator (docs/13 §5)."
-        }
-        if (OtpChannel.EMAIL in enabled && sink.isNotEmpty()) {
-            val canonical = EmailAddress.canonicalOrNull(sink)
-            require(canonical != null) {
-                "almira.auth.email-decoy-sink (ALMIRA_ALPHA_EMAIL_DECOY_SINK) is not an email address."
-            }
-            require(canonical !in allowlist) {
-                "almira.auth.email-decoy-sink (ALMIRA_ALPHA_EMAIL_DECOY_SINK) is also on the email " +
-                    "allowlist. The sink is sent an email for every unlisted address anyone asks a code " +
-                    "for, so it must be a mailbox that discards them, not a tester's."
-            }
-        }
-
+        // The refusals are in [check], which StartupSettingsCheck also runs
+        // before the application context exists, so a server configured wrongly
+        // is refused before its database is migrated (docs/known-issues.md,
+        // "A guard runs before the action it guards").
         log.info(
             "Sign-in channels: {}{}",
             enabled.joinToString(",") { it.key },
@@ -96,30 +66,76 @@ class SignInChannels(props: AlmiraProperties) {
         )
     }
 
-    private fun parseChannels(configured: List<String>): List<OtpChannel> {
-        val raw = configured.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
-        val unknown = raw.filter { name -> OtpChannel.entries.none { it.key == name } }
-        require(unknown.isEmpty()) {
-            "almira.auth.sign-in-channels has ${unknown.joinToString { "'$it'" }}, which is not " +
-                "phone or email. Refusing rather than guessing which was meant."
-        }
-        require(raw.isNotEmpty()) {
-            "almira.auth.sign-in-channels is empty, so nobody could sign in. Set phone, email, or both."
-        }
-        return OtpChannel.entries.filter { channel -> channel.key in raw }
-    }
+    /** What [check] accepted. */
+    class Checked(val enabled: List<OtpChannel>, val allowlist: Set<String>)
 
-    private fun parseAllowlist(configured: List<String>): Set<String> {
-        val entries = configured.map { it.trim() }.filter { it.isNotEmpty() }
-        val malformed = entries.withIndex().filter { EmailAddress.canonicalOrNull(it.value) == null }
-        require(malformed.isEmpty()) {
-            // Positions, not the entries: this message goes to a log.
-            "almira.auth.email-allowlist entr${if (malformed.size == 1) "y" else "ies"} " +
-                "${malformed.joinToString { "#${it.index + 1}" }} " +
-                "${if (malformed.size == 1) "is not an email address" else "are not email addresses"}. " +
-                "A mistyped address would lock that tester out without any sign of why."
+    companion object {
+        /** Every refusal this class makes at startup, with no side effects. */
+        fun check(props: AlmiraProperties): Checked {
+            val enabled = parseChannels(props.auth.signInChannels)
+            val allowlist = parseAllowlist(props.auth.emailAllowlist)
+            require(OtpChannel.EMAIL !in enabled || allowlist.isNotEmpty()) {
+                "Email sign-in is enabled but almira.auth.email-allowlist (ALMIRA_ALPHA_EMAIL_ALLOWLIST) " +
+                    "is empty, so nobody could sign in by email. List the testers' addresses, or " +
+                    "take email out of almira.auth.sign-in-channels to end the email alpha. Taking email " +
+                    "out signs every email-only account out when this server starts (docs/13 §5)."
+            }
+            require(OtpChannel.EMAIL !in enabled || props.providers.email.mode.trim().lowercase() != "disabled") {
+                "Email sign-in is enabled in almira.auth.sign-in-channels (ALMIRA_SIGN_IN_CHANNELS), but " +
+                    "almira.providers.email.mode (ALMIRA_PROVIDER_EMAIL_MODE) is 'disabled', so no sign-in " +
+                    "code could ever be emailed. Set the email provider to sandbox or live, or take email " +
+                    "out of almira.auth.sign-in-channels. Taking email out signs every email-only account " +
+                    "out when this server starts (docs/13 §5)."
+            }
+
+            val sink = props.auth.emailDecoySink.trim()
+            require(OtpChannel.EMAIL !in enabled || sink.isNotEmpty() ||
+                props.providers.email.mode.trim().lowercase() != "live") {
+                "Email sign-in is enabled with a live email provider, but almira.auth.email-decoy-sink " +
+                    "(ALMIRA_ALPHA_EMAIL_DECOY_SINK) is empty. An address off the allowlist has its email " +
+                    "sent there instead, so that its answer fails or succeeds with the provider as a listed " +
+                    "address's does; without it the answer would tell anyone who is in the alpha. Set it to " +
+                    "an address that accepts and discards mail, such as the provider's mailbox simulator (docs/13 §5)."
+            }
+            if (OtpChannel.EMAIL in enabled && sink.isNotEmpty()) {
+                val canonical = EmailAddress.canonicalOrNull(sink)
+                require(canonical != null) {
+                    "almira.auth.email-decoy-sink (ALMIRA_ALPHA_EMAIL_DECOY_SINK) is not an email address."
+                }
+                require(canonical !in allowlist) {
+                    "almira.auth.email-decoy-sink (ALMIRA_ALPHA_EMAIL_DECOY_SINK) is also on the email " +
+                        "allowlist. The sink is sent an email for every unlisted address anyone asks a code " +
+                        "for, so it must be a mailbox that discards them, not a tester's."
+                }
+            }
+            return Checked(enabled, allowlist)
         }
-        return entries.mapNotNull(EmailAddress::canonicalOrNull).toSet()
+
+        private fun parseChannels(configured: List<String>): List<OtpChannel> {
+            val raw = configured.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+            val unknown = raw.filter { name -> OtpChannel.entries.none { it.key == name } }
+            require(unknown.isEmpty()) {
+                "almira.auth.sign-in-channels has ${unknown.joinToString { "'$it'" }}, which is not " +
+                    "phone or email. Refusing rather than guessing which was meant."
+            }
+            require(raw.isNotEmpty()) {
+                "almira.auth.sign-in-channels is empty, so nobody could sign in. Set phone, email, or both."
+            }
+            return OtpChannel.entries.filter { channel -> channel.key in raw }
+        }
+
+        private fun parseAllowlist(configured: List<String>): Set<String> {
+            val entries = configured.map { it.trim() }.filter { it.isNotEmpty() }
+            val malformed = entries.withIndex().filter { EmailAddress.canonicalOrNull(it.value) == null }
+            require(malformed.isEmpty()) {
+                // Positions, not the entries: this message goes to a log.
+                "almira.auth.email-allowlist entr${if (malformed.size == 1) "y" else "ies"} " +
+                    "${malformed.joinToString { "#${it.index + 1}" }} " +
+                    "${if (malformed.size == 1) "is not an email address" else "are not email addresses"}. " +
+                    "A mistyped address would lock that tester out without any sign of why."
+            }
+            return entries.mapNotNull(EmailAddress::canonicalOrNull).toSet()
+        }
     }
 
     fun isEnabled(channel: OtpChannel): Boolean = channel in enabled

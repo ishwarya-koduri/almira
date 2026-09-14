@@ -48,7 +48,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
  */
 @DisplayName("The one-time code never leaks")
 @Import(OtpCodeNeverLeaksTest.Recording::class)
-@TestPropertySource(properties = ["almira.otp.length=8", "almira.auth.sign-in-channels=phone,email"])
+@TestPropertySource(properties = ["almira.otp.length=8"])
 class OtpCodeNeverLeaksTest : ApiTestBase() {
 
     @TestConfiguration
@@ -327,6 +327,11 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
         @JvmStatic
         @org.springframework.test.context.DynamicPropertySource
         fun allowlist(registry: org.springframework.test.context.DynamicPropertyRegistry) {
+            // Together, and both here: StartupSettingsCheck sees
+            // @TestPropertySource values but not these, so email turned on
+            // there with its allowlist supplied here reads, before the context
+            // exists, as email with nobody listed.
+            registry.add("almira.auth.sign-in-channels") { "phone,email" }
             registry.add("almira.auth.email-allowlist") { listed }
         }
     }

@@ -290,7 +290,10 @@ class NotificationOutbox(
                 .addValue("status", status).addValue("provider", provider).addValue("failure", failure)
                 .addValue("attempts", attempts).addValue("id", row.id).addValue("token", row.token),
         )
-        if (recorded == 1) dropBody(row.id)
+        // Not ours any more: a worker that took the row over has recorded (or will record) its outcome.
+        // This worker's send is not written down, and not counted, a second time.
+        if (recorded != 1) return OutboxDrainResult()
+        dropBody(row.id)
         val resent = if (row.resend) 1 else 0
         return if (status == "sent") OutboxDrainResult(sent = 1, resent = resent) else OutboxDrainResult(failed = 1, resent = resent)
     }
@@ -300,6 +303,8 @@ class NotificationOutbox(
             """
             update outbound_messages
                set status = :status, failure = :failure, finished_at = now(), claimed_until = null,
+                   -- finished here, so no earlier claim on it can still record an outcome over this one
+                   claim_token = null,
                    attempts = attempts + case when :add then 1 else 0 end
              where id = :id
             """.trimIndent(),

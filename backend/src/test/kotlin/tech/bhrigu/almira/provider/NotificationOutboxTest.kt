@@ -396,6 +396,82 @@ class NotificationOutboxTest : ApiTestBase() {
     }
 
     @Test
+    fun `a worker that sent and was taken over before recording leaves the outcome the takeover recorded`() {
+        val calledWith = ConcurrentLinkedQueue<Pair<String, String>>()
+        val counted = channels.map { Counting(it, calledWith) }
+        val late = NotificationOutbox(ownerDataSource, counted, calls, props)
+        val takeover = NotificationOutbox(ownerDataSource, counted, calls, props)
+
+        val lateSent = LinkedBlockingQueue<UUID>()
+        val lateGo = LinkedBlockingQueue<Unit>()
+        late.afterSendBeforeRecord = { id -> lateSent.put(id); lateGo.poll(20, TimeUnit.SECONDS) }
+
+        data class Outcome(
+            val status: String, val provider: String?, val failure: String?, val attempts: Int,
+            val finishedAt: java.sql.Timestamp?,
+        )
+        fun outcome(id: UUID) = db.queryForObject(
+            "select status, provider, failure, attempts, finished_at from outbound_messages where id = ?",
+            { rs, _ -> Outcome(rs.getString(1), rs.getString(2), rs.getString(3), rs.getInt(4), rs.getTimestamp(5)) },
+            id,
+        )!!
+
+        val threads = Executors.newSingleThreadExecutor()
+        var lateResult: OutboxDrainResult? = null
+        val recordedByTakeover = mutableMapOf<String, Outcome>()
+        try {
+            outbox.whilePaused {
+                queueDirectly()
+                val channelOf = rows().associate { UUID.fromString(it.id) to it.channel }
+
+                // The late worker claims the whole batch; for each row it stamps, sends, and stops before recording.
+                val lateRun = threads.submit<OutboxDrainResult> { late.drain() }
+                repeat(3) { i ->
+                    val id = lateSent.poll(20, TimeUnit.SECONDS)
+                        ?: throw AssertionError("timed out waiting for the late worker to send row ${i + 1}")
+                    val channel = channelOf.getValue(id)
+                    assertThat(db.queryForObject("select status from outbound_messages where id = ?", String::class.java, id))
+                        .describedAs("$channel: sent, not yet recorded").isEqualTo("queued")
+
+                    // Its claim on that row runs out, and another worker takes it and records an outcome.
+                    db.update("update outbound_messages set claimed_until = now() - interval '1 second' where id = ?", id)
+                    takeover.drain()
+                    val taken = outcome(id)
+                    assertThat(taken.status).describedAs("$channel: the takeover recorded it").isNotEqualTo("queued")
+                    recordedByTakeover[channel] = taken
+
+                    // Now the late worker writes down what it saw.
+                    lateGo.put(Unit)
+                    if (i == 2) lateResult = lateRun.get(20, TimeUnit.SECONDS)
+                }
+            }
+        } finally {
+            threads.shutdownNow()
+            late.close()
+            takeover.close()
+        }
+
+        val after = byChannel()
+        for (channel in listOf("sms", "email", "push")) {
+            assertThat(outcome(UUID.fromString(after[channel]!!.id)))
+                .describedAs("$channel: the outcome is the takeover's, untouched by the worker that lost the claim")
+                .isEqualTo(recordedByTakeover[channel])
+        }
+        for (channel in listOf("sms", "email")) {
+            assertThat(after[channel]!!).extracting("status", "failure", "attempts")
+                .describedAs("$channel: re-sent by the takeover with the same key; the late send counted once, not twice")
+                .containsExactly("sent", null, 2)
+        }
+        assertThat(after["push"]!!).extracting("status", "failure", "attempts")
+            .describedAs("push cannot de-duplicate: the takeover marks it unconfirmed, and the late worker cannot turn that into sent")
+            .containsExactly("failed", "timeout", 1)
+        assertThat(calledWith.count { it == "push" to after["push"]!!.key!! })
+            .describedAs("push: called once, by the late worker, never again").isEqualTo(1)
+        assertThat(push.deliveries.times(after["push"]!!.key!!)).isEqualTo(1)
+        assertThat(lateResult!!.touched).describedAs("the late worker recorded nothing, so it reports nothing").isZero()
+    }
+
+    @Test
     fun `recording a notification that was recorded does not warn that it could not be`() {
         val logger = (org.slf4j.LoggerFactory.getILoggerFactory() as ch.qos.logback.classic.LoggerContext)
             .getLogger(RecordingNotifier::class.java)

@@ -494,8 +494,13 @@ Two workers can hold the same row only one after the other: a claim whose lease
 ran out can be taken, and the new claim has a new `claim_token`. Every write a
 worker makes to a claimed row — the send stamp and the outcome — is conditional on
 its own token, so a worker that was paused past its lease finds the row no longer
-its own and leaves it without calling the provider. `NotificationOutboxTest` runs
-exactly that interleaving with two workers.
+its own and leaves it without calling the provider. A row finished without a send
+(unconfirmed, skipped, bodiless) has its token cleared, so a worker that had
+already sent before its claim was taken over cannot write its outcome over the one
+the takeover recorded either — not turn an unconfirmed push into `sent`, not add
+its attempts a second time — and it counts nothing it did not record.
+`NotificationOutboxTest` runs both interleavings with two workers: paused before
+the send, and paused after the send and before the record.
 
 The worker passes the key to the adapter on every attempt:
 `ChannelSender.send(notification, recipientHint, idempotencyKey)`. Before calling

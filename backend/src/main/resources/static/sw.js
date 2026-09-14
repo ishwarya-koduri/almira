@@ -55,6 +55,8 @@ const SHELL_FILES = [
   "/app/drafts.js",
   // api.js imports it too: the last known views (X-38).
   "/app/cache.js",
+  // api.js imports it too: sign-out drops keys held in memory (e2e.js).
+  "/app/session-end.js",
   "/app/ui.js",
   "/app/format.js",
   "/app/prefs.js",

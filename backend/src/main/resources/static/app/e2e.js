@@ -13,6 +13,7 @@
 
 import { api } from "./api.js";
 import { t } from "./i18n.js";
+import { onSessionEnd } from "./session-end.js";
 import {
   SECRET_BYTES, TYPE_KEY, TYPE_SHARE, split, combine, encodeCode, decodeCode,
 } from "./recovery-codes.js";
@@ -37,6 +38,10 @@ export const e2e = {
   /** Whether this session holds [memberId]'s key, opened with their recovery copy. */
   hasKeyFor(memberId) { return subjectKeys.has(memberId); },
 };
+
+// Sign-out, a session the server ended, or a different person signing in on
+// this page: none of them reloads, so each drops the keys here (session-end.js).
+onSessionEnd(() => e2e.lock());
 
 export const RECOVERY_KEY = "recovery_key";
 export const RECOVERY_SHARES = "recovery_shares";

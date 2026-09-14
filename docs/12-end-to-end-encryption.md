@@ -665,7 +665,9 @@ and the other copy keeps working.
   recovery sheet · ask our lawyer". No pronouns: the server does not know them.
 - With the sheet or two shares, the person under the window opens the key in
   memory, beside their own, and reads what that person sealed on the records the
-  window shows. Lock or a reload drops it. They can read; they cannot rewrite
+  window shows. Lock, a reload, or the session ending drops it: sign-out, a
+  session the server ended (a refused refresh, a 401), or a different person
+  signing in on the same page (app/session-end.js). They can read; they cannot rewrite
   the value, which stays the sealer's (docs/20 §5).
 
 ### 10.6 Fixed answers

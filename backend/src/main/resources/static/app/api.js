@@ -14,6 +14,7 @@
 import { remember, forget, reset, peek } from "./cache.js";
 import { clearAllDrafts } from "./drafts.js";
 import { disable as forgetOfflineCopy } from "./offline-store.js";
+import { endSession } from "./session-end.js";
 import { t } from "./i18n.js";
 
 const REFRESH_KEY = "almira.refresh";
@@ -38,6 +39,9 @@ export const auth = {
    */
   clear() {
     accessToken = null;
+    // Keys held in memory (e2e.js) go too: no reload follows a session the
+    // server ended, and the next person signs in on this same page.
+    endSession();
     // Signed out, or the session ended: the last known views go with it (cache.js).
     reset();
     try { localStorage.removeItem(REFRESH_KEY); } catch { /* ignore */ }

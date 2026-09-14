@@ -23,6 +23,7 @@ import { openCapture } from "./screens/capture.js";
 import { whereScreen } from "./where.js";
 import { rightsScreen } from "./screens/rights.js";
 import { setOwner } from "./cache.js";
+import { sessionBelongsTo } from "./session-end.js";
 import { shelvesScreen, loadFirstSession } from "./shelves.js";
 import { guideScreen } from "./screens/guide.js";
 import { welcomeScreen } from "./screens/welcome.js";
@@ -287,6 +288,8 @@ async function loadSession() {
   const [user, households] = await Promise.all([api.me(), api.households()]);
   // The last known views belong to this person; someone else's are dropped (X-38).
   setOwner(user?.id);
+  // And keys held in memory for someone else are dropped (e2e.js).
+  sessionBelongsTo(user?.id);
   const household = households[0] || null;
   update({ user, households, household });
 

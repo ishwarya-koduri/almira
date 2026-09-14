@@ -214,6 +214,7 @@ def main() -> None:
     want("the doc says AES-GCM on iOS is injected from Swift",
          "injected from" in doc and "CryptoKit is Swift-only" in doc)
 
+    check_recovery(doc, web)
     check_plaintext_location_retired()
     check_privacy_notice()
 
@@ -225,6 +226,56 @@ def main() -> None:
             print(f"  · {failure}")
         sys.exit(1)
     print("docs/12 and the code agree.")
+
+
+# ---------------------------------------------------------------------------
+# docs/12 §10: recovery. The code format, the HKDF info and the key id are a
+# contract between clients as much as §2–§4 are, and the server enforces the
+# consistency rules the document states.
+# ---------------------------------------------------------------------------
+
+def check_recovery(doc: str, web: str) -> None:
+    print()
+    print("RECOVERY — docs/12 §10 read back out of both clients and the server")
+    codes = read("backend/src/main/resources/static/app/recovery-codes.js")
+    reference = read("backend/src/test/kotlin/tech/bhrigu/almira/e2e/RecoveryReference.kt")
+    reference_test = read("backend/src/test/kotlin/tech/bhrigu/almira/e2e/RecoveryReferenceTest.kt")
+    check_js = read("scripts/check-recovery.js")
+    service = read("backend/src/main/kotlin/tech/bhrigu/almira/e2e/SealedFieldService.kt")
+    recovery = read("backend/src/main/kotlin/tech/bhrigu/almira/e2e/Recovery.kt")
+    migration = read("db/migrations/V55__recovery_for_sealed_fields.sql")
+
+    alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+    want("the code alphabet is Crockford's, in the doc and both clients",
+         f"`{alphabet}`" in doc and f'"{alphabet}"' in codes and f'"{alphabet}"' in reference)
+    want("the secret is 21 bytes in both clients",
+         "SECRET_BYTES = 21" in codes and "SECRET_BYTES = 21" in reference and "**21 random bytes**" in doc)
+    want("the HKDF info is the same string in the doc, the web client and the reference",
+         "almira recovery v1\\|{kind}" in doc and "`almira recovery v1|${kind}`" in web
+         and '"almira recovery v1|$kind"' in reference)
+    want("the content key id is the same HMAC label everywhere",
+         "`almira content key id v1`" in doc and '"almira content key id v1"' in web
+         and '"almira content key id v1"' in reference)
+    want("shares are combined with the AES polynomial, reduced by 0x1b, in both clients",
+         "x ^= 0x1b" in codes and "x = x xor 0x1B" in reference)
+    fixed = (
+        ("the sheet code", "04000-0820C-20A1G-7104G-M2RC1-M70Y4-0H289-H8JCE", (doc, reference_test, check_js, web)),
+        ("the sheet's wrapping key", "94b5b1c89dd4196ad9b6de8cdd669f446013310874b9eb4d0bcea169811061ce", (doc, reference_test, web)),
+        ("the content key id", "VrqqDb7VVhHIkN5-ZUdCvQ", (doc, reference_test, web)),
+    )
+    for label, constant, sources in fixed:
+        want(f"{label} is the same fixed answer in the doc and every implementation that asserts it",
+             all(constant in source for source in sources))
+    want("a passphrase write while copies exist is refused unless it names the same key",
+         "recovery_copies_would_break" in service and "recovery_copies_would_break" in doc)
+    want("a copy of another key is refused",
+         "recovery_key_mismatch" in recovery and "recovery_key_mismatch" in doc)
+    want("making, replacing and removing a copy need a step-up",
+         code_only(recovery).count("requireStepUp(userId)") == 2 and "step-up" in doc)
+    want("the table allows only HKDF-SHA256 and AES-GCM-256",
+         "check (kdf = 'HKDF-SHA256')" in migration and "check (wrap_algorithm = 'AES-GCM-256')" in migration)
+    want("no Math.random anywhere near a secret",
+         "Math.random" not in code_only(codes) and "Math.random" not in code_only(web))
 
 
 # ---------------------------------------------------------------------------

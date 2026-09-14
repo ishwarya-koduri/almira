@@ -1,7 +1,7 @@
 # Building a client against Almira v1
 
-The contract is [`openapi-v1.json`](openapi-v1.json) — 120 paths, 163 operations,
-179 schemas. Generate a typed client from it; do not hand-write one.
+The contract is [`openapi-v1.json`](openapi-v1.json) — 124 paths, 168 operations,
+185 schemas. Generate a typed client from it; do not hand-write one.
 
 **v1 is additive-only.** New endpoints and new optional fields may appear; nothing
 will be removed, renamed or retyped. A breaking change goes to `/api/v2` and v1
@@ -380,6 +380,29 @@ yours to do on the device after unlocking, because the server cannot. Overwritin
 another member's value answers `409 sealed_by_someone_else`. Since V28 a
 ciphertext must be at least a 33-byte envelope with version byte 1. See
 [Doc 20](../20-where-and-who.md).
+
+**Recovery copies are a second wrapped copy of the content key, and nothing
+more.** `PUT /e2e/recovery/recovery_key` or `…/recovery_shares` stores a wrap
+the client made under a key derived (HKDF) from a secret it printed; the server
+never receives the code, a share or the secret. Creating, replacing and removing
+a copy answer `403 step_up_required` until the session has stepped up.
+`POST …/{kind}/practice` records that the owner opened it on the device and
+changes nothing else. `GET /e2e/recovery/members/{memberId}` returns someone
+else's copies only to the person holding an open emergency window on them, and
+`404` to everyone else. **One rule reaches the existing `PUT /e2e/key`:** while
+copies exist, the body must carry `contentKeyId` for the same content key, or
+the write answers `409 recovery_copies_would_break` and nothing changes. A
+rotation that sends it keeps every copy working; a client that does not know the
+field can still rotate a key that has no copies. The scheme — code format,
+Shamir over GF(256), HKDF info, key id — is [Doc 12 §10](../12-end-to-end-encryption.md#10-recovery),
+with the client half in Kotlin in `RecoveryReference.kt`.
+
+**A sealed line is never blank.** `sealed` on each handbook entry and
+instrument, and `access` on each where-and-who value, say who sealed it and who
+holds a recovery sheet or share: render `sentence`, or build your own from the
+fields. Only someone who can see the value already gets the line.
+`GET /continuity/readiness` adds `sealedAccess` — how many sealed locations
+someone other than the sealer could open — which never changes `score`.
 
 **"Still true?" is a list, a yes and a later.** `GET /still-true` returns the
 records that are due now and that the caller owns or holds. Each one carries a

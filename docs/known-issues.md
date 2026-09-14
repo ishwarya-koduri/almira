@@ -218,27 +218,23 @@ refused"), which also checks that nothing was stored.
 
 ## 8. The web client can set up zero-knowledge mode but cannot seal a field
 
-**Where** `backend/src/main/resources/static/app/` — `e2e.js` exports
-`sealField`, `readSealed` and `unsealField`; no screen calls them.
+**Resolved** (2026-09-14, "Recovery for sealed fields"). Kept as a stub so the
+number still means something where it is cited.
 
-**What** Settings can enable zero-knowledge mode, unlock it and lock it again.
-There is no interface anywhere in the web client for sealing a value on a record
-or for reading one back, so the feature is reachable from the browser only
-through the module's exported functions.
-
-This matters for how the interop evidence should be read: when the acceptance
-run says "the web client sealed it", the shipped `e2e.js` really did the sealing
-against the real API — but a person could not have done the same thing by
-clicking, because there is no button. The Android app has the screen; the web
-does not.
-
-**When to fix** The web-widening pass. The detail sheet is the natural home: a
-sealed field belongs beside the record it describes, not on a separate screen —
-which is also a hint that the app's current standalone "Sealed" screen is a
-staging post rather than the final shape.
-
-**Risk if left** No correctness or data risk. The capability exists and is
-proven; it is simply not offered.
+Partly stale by the time it was fixed: the where-and-who editor (docs/20) had
+already sealed "where the original is" and "who holds the key" from the browser
+since V28. What was still missing was a sealed field a person *chose to write*.
+Holdings, loans and accounts now carry a **Sealed note** card beside the
+where-and-who card (`static/app/sealed-notes.js`): one note per record under
+`fieldKey` `sealed_note`, sealed on the device, with the reassurance line and a
+lock that closes as you type. Any other sealed value on the record, such as one
+the native app wrote under its own key, is listed there read-only, so nothing
+sealed is invisible in the browser. `GET /e2e/values` gained `sealedByMe`
+(additive) so the card can say "sealed by someone else" rather than
+"unreadable". Checked in a browser against a local server: a note with a
+trailing space was sealed, reopened exactly, and the stored row was an envelope
+without the words. The card has no automated test (the web client has none for
+screens; see docs/20 §9).
 
 ---
 
@@ -756,3 +752,40 @@ or on `infra/deploy-and-pentest`; `deploy/restore/digest-check.sql` and
 migrated by the full application recorded versions 25, 27, 28, … 35 in that
 order, all successful, with 31 `ciphertext digests` between 30 and 32.
 `outOfOrder` is still not enabled anywhere.
+
+---
+
+## 24. Recovery for sealed fields: what is not built yet
+
+**Where** `app/` (native), `static/app/recovery.js`, `static/app/i18n.js`,
+docs/12 §10.
+
+**What** Recovery (V55, docs/12 §10) is built on the server and in the web
+client. Four things are not:
+
+- **The native app neither makes nor uses recovery copies.** It can still
+  rotate a passphrase for a key with no copies. **If a copy exists — made on the
+  web — the app's rotation is refused** with `409 recovery_copies_would_break`,
+  because it does not send `contentKeyId` and the server will not let a write
+  that does not name the key risk orphaning the copy. No data is lost; the app
+  should say to change the passphrase on the web until it sends the id.
+  To do on the app branch: HMAC-SHA256 key id on every `PUT /e2e/key`, then
+  the §10 flows, asserting the §10.6 constants (`InteropKatTest` style). This
+  branch did not edit `app/`, which is being changed elsewhere.
+- **No QR code is drawn on the printed sheet.** `qrPayload()` defines what it
+  would carry (`ALMIRA-RECOVERY:` and the 40 characters, QR alphanumeric mode).
+  A QR encoder is a few hundred lines with Reed-Solomon; writing one by hand
+  without a decoder to test it against was not worth risking on a page whose
+  job is to open things years later, and adding a dependency needs a decision.
+  The code is printed large, in groups of five, with a checksum that catches a
+  mistyped character.
+- **The recovery and sealed-line strings are English only** (`seal.*`,
+  `recovery.*`, `note.*`, `ready.openable.*`). Telugu and Hindi fall back to
+  English. They need a translator who can keep "recovery share" and "any two
+  open it" exact; a wrong word here is a family that thinks one share is enough.
+- **Not seen:** the print stylesheet on paper, the recovery sheets at phone
+  width and at 200% text.
+
+**Risk if left** The native one is the only one with a sharp edge: a person who
+made a sheet on the web and then changes their passphrase in the app is refused,
+with a sentence, and nothing changes. The others are completeness.

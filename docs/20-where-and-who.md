@@ -19,8 +19,9 @@ agreed to be written down.
 This document is the spec, and it records the decisions made when the feature
 was built. Status: **built** (migration V28, backend, web client). The older
 plaintext columns are **retired** (migration V33, §1), and so are the two seeded
-type fields that asked the same question in plain text (V34, §1). Native app:
-**no editor**; its generic sealed-field screen shows the key-holder guidance only
+type fields that asked the same question in plain text (V34, §1). Recovery
+for the family (V55, Doc 12 §10, §1.2 below) is **built** on the web and the
+server. Native app: **no editor**; its generic sealed-field screen shows the key-holder guidance only
 when the field key typed is `key_holder` or `original_location`. See §9.
 
 ---
@@ -151,12 +152,25 @@ Why:
    to `''`, or clear it by hand. The migration never makes that decision.
 2. **Continuity.** The people who most need "where is the will" are the family,
    after a death or incapacity. Emergency access (V20) gives a trusted contact
-   more *rows*. It cannot give them the passphrase. They will see that a location
-   is recorded, and they will not be able to read it. This is the real price of
-   the decision, and the UI says so plainly: *"Your family can't read these after
-   you're gone unless they have the passphrase. Decide now how they will get it."*
-   The handbook PDF is built on the server, so it cannot include these fields
-   either. A client-side print after unlocking would solve that. It is not built.
+   more *rows*. It cannot give them the passphrase, and until V55 they saw that a
+   location was recorded and could not read it.
+
+   *What was done* ([Doc 12 §10](12-end-to-end-encryption.md#10-recovery)):
+   the owner can make a **recovery sheet** or **2-of-3 recovery shares** on the
+   device. The server stores a second wrapped copy of the content key and never
+   the code. The person holding an open emergency window reads that copy, types
+   the sheet's code or two shares, and opens what the owner sealed, in memory,
+   on their device.
+
+   *And a sealed line is never blank.* The handbook (JSON and PDF), the index
+   below and the family screen say who sealed each value and who holds a way to
+   open it: *"Sealed by Ishwarya · our lawyer keeps the recovery sheet · ask our
+   lawyer"*, or *"only Ishwarya's passphrase opens it"* when there is no copy.
+   The caveat now reads: *"Your family can't read these after you're gone unless
+   they have your passphrase, your recovery sheet, or two of your recovery
+   shares. Decide now which they will have."* The words themselves still never
+   reach the server, so the PDF still cannot print them. A client-side print after
+   unlocking would; it is not built.
 
 ## 2. Decision (b): which records "every record" means
 
@@ -329,8 +343,14 @@ These fields follow the record's own visibility, and they are also sealed.
   slot. Sharing a sealed value between members is the "later phase" Doc 12 §2
   already names. It is not built.
 - **Guest links** already clamp `sealed_values` through
-  `app.guest_scope_allows`. **Emergency access** reaches these rows exactly when it
-  reaches the record, and gets ciphertext it cannot open (§1.2).
+  `app.guest_scope_allows`, and reach no recovery copy or holder (V55).
+  **Emergency access** reaches these rows exactly when it reaches the record. It
+  gets ciphertext it cannot open, unless the owner's recovery sheet or two shares
+  are in hand (§1.2), and then it reads and never rewrites.
+- **Who could open it.** Each value in the index carries `access`: who sealed it
+  (member id and name), whether that person has a recovery sheet or shares, who
+  holds them, and an English `sentence`. The holders are plain text by design
+  and are shown only to someone who can already see the value (Doc 12 §10.5).
 
 ## 6. Decision (f): what the server stores and may reveal
 
@@ -382,14 +402,22 @@ server release that accepts it. It would need coordinated client releases anyway
   legacy-note warning any more: the note cannot exist (§1).
 - **Capture and the new-will form** do not ask where the original is. Each shows
   a line pointing to the sealed card instead (§1).
-- **The editor** has two lines. Each is sealed on the device before it is sent,
-  exactly as typed, with no trim. A blank line removes that field. Roles and
+- **The editor** has two lines, and says above them *"Sealed on this device.
+  Almira can't read it."* with a lock that closes once either line has text.
+  Each is sealed on the device before it is sent, exactly as typed, with no trim. A blank line removes that field. Roles and
   relationships are suggested for the key holder, never member or contact names,
   and nothing is linked. Each line has its guidance under it (§4).
 - **The privacy notice** (Settings, and the end of onboarding) carries the
   key-holder paragraph ([Doc 23](23-privacy-notice.md)).
+- **A value someone else sealed** says who could open it (`seal.*`), not just
+  "Sealed by someone else".
+- **For my family** lists each sealed line under its holding or will, and
+  offers the person holding an open window **"Open with Ishwarya's sheet or
+  shares"** when a copy exists (Doc 12 §10.5).
 - **Strings** are in English, Telugu and Hindi (`where.*`, `nav.where`). The
-  caveats are server sentences, and they stay English (Doc 14).
+  recovery and sealed-line strings added with V55 (`seal.*`, `recovery.*`,
+  `note.*`) are English only and fall back to it. The caveats are server
+  sentences, and they stay English (Doc 14).
 - The service worker version is bumped so the new modules are fetched.
 
 ## 9. What is verified, and what is not
@@ -467,6 +495,16 @@ and a copy of it without the refusal (run in a rolled-back transaction) stripped
 the value. The refusal block, run as the app role with the RLS check removed,
 passed with a value present; with the check, it refused.
 
+**Verified for recovery (V55).** `SealedAccessApiTest`: a trusted contact with
+an open window reads *"Sealed by Ishwarya · Ravi and Amma each hold a recovery
+share · any two open it"* on the holding and the will, in the handbook, its PDF
+and the index, and never the words; before the window the holding is not in
+their handbook at all; the owner's own line says to make a recovery sheet; a
+member who can see a shared record reads "only Ishwarya's passphrase opens it"
+and cannot fetch her copy. In a browser against a local server, a spouse under
+an open window typed the sheet's code and read the location, the key holder and
+a sealed note; the editor's lock closed on typing.
+
 **Not verified:**
 
 - **The native app has no editor for these two fields.** It is not broken: the app only lists
@@ -481,8 +519,8 @@ passed with a value present; with the check, it refused.
   calling `e2e.js` from the page, and the form's own submit path was not
   exercised.
 - Search performance at thousands of records.
-- A trusted contact under an open emergency window seeing "locked" for these
-  fields. This follows from V20 plus V22 and is not tested end to end.
+- The recovery strings in Telugu and Hindi, and the family screen's sealed lines
+  at phone width.
 - The DPDP question in §4.
 
 [‹ Index](README.md)

@@ -287,9 +287,10 @@ security. Nothing is read from the owner pool.
     retired those columns (docs/20 §1), so that gap can no longer occur and
     the only location gap is `no_location`.
   - **What a sealed location does not prove.** The family can read it only with
-    the passphrase (docs/20 §1.2). The server cannot know whether they have
-    it. When any sealed location is counted, a caveat says so, in the same
-    words the where-and-who screen uses.
+    the passphrase, or with a recovery sheet or two recovery shares (docs/20
+    §1.2, docs/12 §10). The server cannot know whether they have them. When any
+    sealed location is counted, a caveat says so, in the same words the
+    where-and-who screen uses, and §4.1 says how many could be opened.
   - The key holder (`key_holder`) is not a check. It matters for a locker, and
     lockers are accounts, which are not counted (§2).
 - **`trusted_contact`:** you, as a member of this household, have named at
@@ -306,6 +307,40 @@ security. Nothing is read from the owner pool.
 
   If the viewer is not a person in the household (no member row), the check
   does not apply.
+
+### 4.1 "Someone can actually open it" — said, not scored
+
+A sealed location is recorded whether or not anyone but its sealer could read
+it, and the `location` check counts it either way, exactly as before. What the
+server *can* tell without opening anything is whether the person who sealed it
+has made a recovery copy the viewer can see (V55). `sealedAccess` says so:
+
+| field | |
+|---|---|
+| `sealedLocations` | counted records with a sealed location — the `location` check's `done` |
+| `openableWithRecovery` | of those, how many were sealed by someone with a recovery sheet or recovery shares |
+| `sealedBy` | per sealer: `memberId`, `name`, `isMe`, `locations`, `hasRecoveryKey`, `hasRecoveryShares` — the viewer first |
+| `explanation` | one English sentence, ending "This does not change the score." when not every location is openable |
+
+It is absent when no counted record has a sealed location.
+
+**Why information and not a fifth check.** The four checks are the owner's four
+(§1), each worth a quarter. A fifth would move every existing score by up to 20
+points on the day it shipped, with nobody having changed anything — the calendar
+problem §6 rejects, caused by a release instead of a date. And "someone can open
+it" is a property of a *person's* paper, not of each record: one recovery sheet
+makes every location that person sealed openable at once, so counting it per
+record would weigh a household-level act by the number of records, the drowning
+problem §1 rejects. The owner can decide to score it later; the fields are there.
+
+**What it does not prove.** That the sheet is still in the drawer, or that the
+shares' holders are still reachable. The copy's `practicedAt` (docs/12 §10.4)
+is the nearest thing, and it is the owner's word.
+
+**Per viewer, like everything else.** The recovery slots are read under the
+viewer's row-level security, which shows them only to someone who can see a
+value that person sealed. A location sealed by a co-owner who has a sheet counts
+as openable for anyone who sees that location.
 
 ### Why "a contact who knows" is the emergency contact, and not a contact card per record
 
@@ -390,7 +425,8 @@ API (`default-property-inclusion: non_null`).
   leftOut: [ { recordType, recordId, title } ],                    // the records behind leftOutCount (§2)
   checks: [ { code, label, done, applicable, percent | null } ],   // always all four, in order
   gaps:   [ { check, reason, recordType | null, recordId | null, title | null, fix } ],
-  caveats: [ "…" ] }
+  caveats: [ "…" ],
+  sealedAccess: { sealedLocations, openableWithRecovery, sealedBy: [ … ], explanation } }   // §4.1, absent when nothing is sealed; never scored
 ```
 
 - `gaps` lists every gap, with no cap. The household's own gap comes first,
@@ -414,8 +450,11 @@ opens the place where the item is fixed, and the card reloads after the fix.
 When records are left out of the family summary, the to-do list ends with one
 more item, "Left out of the family summary · N — check this is on purpose",
 with a row per record that opens it. That item counts as one in "To do". The
-caveats sit under a disclosure. Strings are in English, Telugu and Hindi
-(`ready.*`). If the endpoint fails (for example, on an older server), the card is
+caveats sit under a disclosure. Under the checks, one muted line with an info mark
+says how many sealed locations someone else could open (§4.1); when none can and
+the viewer sealed them, it points to a recovery sheet in Settings. Strings are in
+English, Telugu and Hindi (`ready.*`), except that line (`ready.openable.*`),
+which is English only for now. If the endpoint fails (for example, on an older server), the card is
 simply not drawn, and the screen does not fail with it.
 
 ## 8. What is verified, and what is not
@@ -456,6 +495,13 @@ reason, and passed again once it was restored):
 
 **Tested but not watched failing:**
 
+- `sealedAccess` leaves the score alone (§4.1). `HandoverReadinessApiTest`
+  ("whether anyone else could open a sealed location is said, and does not
+  change the score") checks that the same household scores 100 with identical
+  `checks` before and after a recovery copy exists, that the openable count
+  moves from 0 to 1, and that a spouse who cannot see the policy gets no
+  `sealedAccess` at all. No version of the code ever scored it, so there was
+  nothing to watch fail.
 - The check order and the gap order.
 - `nobody_to_name`, `no_trusted_contact` and `trusted_contact_cannot_ask` (the
   last one is watched failing above, through the login rule).

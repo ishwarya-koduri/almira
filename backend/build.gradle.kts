@@ -74,6 +74,12 @@ dependencies {
     implementation("software.amazon.awssdk:s3:2.54.17") {
         exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
     }
+    // QR codes on the printed emergency kit and the envelope edition of the
+    // handbook (continuity/QrCode.kt). ZXing's core module only: pure Java, no
+    // dependencies of its own, no network, and the reference encoder phone
+    // scanners are tested against. Reed-Solomon and mask scoring are exactly
+    // the kind of code that should not be hand-rolled for a page kept for years.
+    implementation("com.google.zxing:core:3.5.3")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")

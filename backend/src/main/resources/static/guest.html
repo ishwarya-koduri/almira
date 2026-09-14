@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en-IN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <!-- The token is in this page's address. It must not leave in a Referer, and
+       the page must not be indexed or kept: it holds nothing, and says so. -->
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Almira</title>
+  <link rel="preload" href="/app/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/app/tokens.css">
+  <link rel="stylesheet" href="/app/base.css">
+  <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <!-- A guest link, or a helper's link from heir mode (static/app/guest.js). -->
+  <div id="root">
+    <main class="guest">
+      <div class="stack-3">
+        <div class="skeleton" style="height:34px;width:65%"></div>
+        <div class="skeleton" style="height:20px;width:90%"></div>
+      </div>
+    </main>
+  </div>
+  <script type="module" src="/app/guest.js"></script>
+</body>
+</html>

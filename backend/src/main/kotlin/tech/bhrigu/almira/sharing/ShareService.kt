@@ -75,6 +75,9 @@ data class ShareRow(
     val downloadUrl: String? = null,
 )
 
+/** A link just made. [url] is the only time the token exists outside the person's hands. */
+data class IssuedLink(val shareId: UUID, val url: String)
+
 data class ShareViewRow(val viewedAt: Instant, val userAgent: String?)
 
 /** What a guest actually sees. One of these is populated, never both. */
@@ -140,8 +143,21 @@ class ShareService(
         isReadOnly = true
     }
 
+    /**
+     * [maxDays] is ninety for every link a person makes by hand. The envelope
+     * edition of the handbook (continuity/HandbookEnvelope.kt) asks for longer,
+     * and withdraws its previous link when it does; [wholeHandbook] makes that
+     * link carry the debts, paperwork and people the printed pages carry, not
+     * only the holdings.
+     */
     @Transactional
-    fun create(householdId: UUID, input: CreateShare, baseUrl: String): ShareRow {
+    fun create(
+        householdId: UUID,
+        input: CreateShare,
+        baseUrl: String,
+        maxDays: Int = MAX_DAYS,
+        wholeHandbook: Boolean = false,
+    ): ShareRow {
         val userId = userContext.require()
         households.get(householdId)
         if (input.label.isBlank()) {
@@ -163,7 +179,7 @@ class ShareService(
             }
         }
         if (input.scope == "tax_pack") FinancialYear.parse(input.financialYear)
-        if (input.expiresInDays !in 1..90) {
+        if (input.expiresInDays !in 1..maxDays) {
             throw ApiException.badRequest(
                 "expiry_invalid", "A link lasts between a day and ninety days.",
             )
@@ -191,7 +207,7 @@ class ShareService(
                 .addValue("member", input.memberId),
         )
 
-        val items = resolveScope(householdId, input)
+        val items = resolveScope(householdId, input, wholeHandbook)
         if (items.isEmpty()) {
             throw ApiException.badRequest(
                 "scope_empty",
@@ -259,7 +275,11 @@ class ShareService(
      * read, so a record they cannot see simply does not come back and cannot
      * enter the link.
      */
-    private fun resolveScope(householdId: UUID, input: CreateShare): List<Pair<String, UUID>> =
+    private fun resolveScope(
+        householdId: UUID,
+        input: CreateShare,
+        wholeHandbook: Boolean = false,
+    ): List<Pair<String, UUID>> =
         when (input.scope) {
             "tax_pack" -> {
                 val pack = tax.pack(householdId, input.memberId, input.financialYear)
@@ -275,7 +295,8 @@ class ShareService(
             "handbook" -> {
                 val book = handbook.build(householdId)
                 book.entries.map { "investment" to it.investmentId } +
-                    if (input.includeDocuments) documentsFor(book.entries.map { it.investmentId }) else emptyList()
+                    (if (input.includeDocuments) documentsFor(book.entries.map { it.investmentId }) else emptyList()) +
+                    (if (wholeHandbook) restOfHandbook(householdId, book) else emptyList())
             }
 
             else -> {
@@ -290,6 +311,21 @@ class ShareService(
                     if (input.includeDocuments) documentsFor(visible) else emptyList()
             }
         }
+
+    /** The debts, paperwork and people a printed handbook carries, by id, read under the sharer's RLS. */
+    private fun restOfHandbook(householdId: UUID, book: FamilyHandbook): List<Pair<String, UUID>> {
+        val params = mapOf("hid" to householdId)
+        val debts = jdbc.query(
+            "select id from liabilities where household_id = :hid and deleted_at is null and status = 'active'",
+            params,
+        ) { rs, _ -> "liability" to rs.getObject("id", UUID::class.java) }
+        val contacts = jdbc.query(
+            "select id from contacts where household_id = :hid and deleted_at is null",
+            params,
+        ) { rs, _ -> "contact" to rs.getObject("id", UUID::class.java) }
+        val instruments = book.instruments.mapNotNull { it.estateDocumentId }.map { "estate_document" to it }
+        return debts + contacts + instruments
+    }
 
     private fun documentsFor(investmentIds: List<UUID>): List<Pair<String, UUID>> {
         if (investmentIds.isEmpty()) return emptyList()
@@ -364,6 +400,44 @@ class ShareService(
      * to the share's own scope by [RequestUserContext.runAs].
      */
     fun open(token: String, ipHash: String?, userAgent: String?): GuestPayload {
+        val share = admit(token, ipHash, userAgent, helperLink = false)
+        return userContext.runAs(share.createdBy, guestShareId = share.share.id) {
+            readOnly.execute { payloadFor(share) }!!
+        }
+    }
+
+    /** What a link that has been let in is: whose, in which household, and until when. */
+    data class AdmittedLink(
+        val shareId: UUID,
+        val householdId: UUID,
+        val householdName: String,
+        val createdBy: UUID,
+        val sharedBy: String,
+        val label: String,
+        val expiresAt: Instant,
+    )
+
+    /**
+     * Opens a helper's link (V90, continuity/HeirMode.kt): the same checks, the
+     * same view count and audit as any link, and nothing else. The caller runs
+     * its read inside the guest session for [AdmittedLink.shareId].
+     */
+    fun admitHelperLink(token: String, ipHash: String?, userAgent: String?): AdmittedLink =
+        admit(token, ipHash, userAgent, helperLink = true).let {
+            AdmittedLink(
+                shareId = it.share.id, householdId = it.householdId, householdName = it.householdName,
+                createdBy = it.createdBy, sharedBy = it.sharedBy, label = it.share.label,
+                expiresAt = it.share.expiresAt,
+            )
+        }
+
+    /**
+     * A helper's link and a page link are two different doors. A helper's token
+     * opens only its task list, and any other token opens nothing there — so a
+     * link sent to an aunt for one task cannot be replayed at the ordinary
+     * guest endpoint to read the records behind it.
+     */
+    private fun admit(token: String, ipHash: String?, userAgent: String?, helperLink: Boolean): ShareLookup {
         // Nobody is signed in here, so this one lookup runs with definer rights,
         // keyed by the token hash alone. Everything after it runs as the sharer,
         // clamped to the share's own scope.
@@ -390,6 +464,9 @@ class ShareService(
         if (expired || revoked || usedUp) {
             throw ApiException.notFound("That link doesn't work. It may have expired or been withdrawn.")
         }
+        if ((share.share.scope == HELPER_SCOPE) != helperLink) {
+            throw ApiException.notFound("That link doesn't work. It may have expired or been withdrawn.")
+        }
 
         // Accounting first, in its own transaction and outside the guest scope:
         // a guest transaction is read-only, and counting the view is not part of
@@ -412,8 +489,80 @@ class ShareService(
             }
         }
 
-        return userContext.runAs(share.createdBy, guestShareId = share.share.id) {
-            readOnly.execute { payloadFor(share) }!!
+        // The name the household knows them by, before the account's — which
+        // is often unset, and "Shared by Someone" tells a family nothing.
+        val known = userContext.runAs(share.createdBy) {
+            transactions.execute {
+                jdbc.query(
+                    "select display_name from members where household_id = :hid and user_id = :uid",
+                    mapOf("hid" to share.householdId, "uid" to share.createdBy),
+                ) { rs, _ -> rs.getString("display_name") }.firstOrNull()
+            }
+        }
+        return if (known != null) share.copy(sharedBy = known) else share
+    }
+
+    /**
+     * A helper's link: no records until tasks are handed over, then exactly the
+     * records of those tasks ([replaceItems]). Made by the person holding an
+     * open emergency window, and ending when it does (V90).
+     */
+    @Transactional
+    fun issueHelperLink(householdId: UUID, label: String, expiresAt: Instant, baseUrl: String): IssuedLink {
+        val userId = userContext.require()
+        val id = UUID.randomUUID()
+        val token = newToken()
+        jdbc.update(
+            """
+            insert into guest_shares (id, household_id, label, scope, token_hash, expires_at, created_by)
+            values (:id, :hid, :label, :scope, :hash, :expiresAt, :createdBy)
+            """.trimIndent(),
+            MapSqlParameterSource()
+                .addValue("id", id).addValue("hid", householdId).addValue("label", label)
+                .addValue("scope", HELPER_SCOPE).addValue("hash", jwt.hash(token))
+                .addValue("expiresAt", java.sql.Timestamp.from(expiresAt))
+                .addValue("createdBy", userId),
+        )
+        audit.record(
+            householdId = householdId, actorUserId = userId, action = "share.create",
+            entityType = "guest_share", entityId = id, diff = mapOf("scope" to HELPER_SCOPE),
+        )
+        return IssuedLink(id, "$baseUrl/help/$token")
+    }
+
+    /** Sets what a link names, exactly. Only ever narrower than what its maker can see. */
+    @Transactional
+    fun replaceItems(shareId: UUID, items: List<Pair<String, UUID>>) {
+        jdbc.update("delete from guest_share_items where share_id = :sid", mapOf("sid" to shareId))
+        items.distinct().forEach { (type, recordId) ->
+            jdbc.update(
+                """
+                insert into guest_share_items (share_id, record_type, record_id)
+                values (:sid, :type, :rid) on conflict do nothing
+                """.trimIndent(),
+                mapOf("sid" to shareId, "type" to type, "rid" to recordId),
+            )
+        }
+    }
+
+    /** Withdraws links the caller made, by id, without a household lookup each. */
+    @Transactional
+    fun withdraw(householdId: UUID, shareIds: Collection<UUID>) {
+        if (shareIds.isEmpty()) return
+        val userId = userContext.require()
+        val withdrawn = jdbc.query(
+            """
+            update guest_shares set revoked_at = now()
+            where household_id = :hid and id in (:ids) and revoked_at is null
+            returning id
+            """.trimIndent(),
+            mapOf("hid" to householdId, "ids" to shareIds),
+        ) { rs, _ -> rs.getObject("id", UUID::class.java) }
+        withdrawn.forEach {
+            audit.record(
+                householdId = householdId, actorUserId = userId, action = "share.revoke",
+                entityType = "guest_share", entityId = it,
+            )
         }
     }
 
@@ -532,7 +681,9 @@ class ShareService(
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     }
 
-    private companion object {
-        val SCOPES = setOf("tax_pack", "handbook", "records")
+    companion object {
+        private val SCOPES = setOf("tax_pack", "handbook", "records")
+        const val MAX_DAYS = 90
+        const val HELPER_SCOPE = "heir_help"
     }
 }

@@ -13,18 +13,23 @@
 import { api } from "../api.js";
 import { el, mount, sheet, field, textInput, moneyInput, select, skeletonRows, empty, withBusy, toast, formatDate, ring, icon } from "../ui.js";
 import { state } from "../state.js";
+import { t } from "../i18n.js";
+import { GOAL_STARTERS } from "../starters.js";
 
 export async function goalsScreen(host) {
   mount(host, skeletonRows(3));
   const goals = await api.goals(state.household.id);
 
   if (goals.length === 0) {
-    mount(host, empty({
-      title: "No goals yet",
-      body: "A goal is a name, an amount and a date — “Aarav's degree, 2039”. " +
-        "Holdings you already have can fund it.",
-      action: el("button.btn.btn-primary", { type: "button", onclick: () => newGoal(host) }, "Set a goal"),
-    }));
+    mount(host, el("div.stack", {},
+      empty({
+        title: "No goals yet",
+        body: "A goal is a name, an amount and a date — “Aarav's degree, 2039”. " +
+          "Holdings you already have can fund it.",
+        action: el("button.btn.btn-primary", { type: "button", onclick: () => newGoal(host) }, "Set a goal"),
+      }),
+      goalStarters(host),
+    ));
     return;
   }
 
@@ -33,6 +38,7 @@ export async function goalsScreen(host) {
       el("h2", {}, "Goals"),
       el("button.btn.btn-primary.btn-sm", { type: "button", onclick: () => newGoal(host) }, icon("plus"), "New goal"),
     ),
+    goalStarters(host),
     ...goals.map((goal) => goalCard(goal, host)),
     el("p.caption.muted", {}, goals[0].disclaimer),
   ));
@@ -82,15 +88,44 @@ function goalCard(goal, host) {
 }
 
 
-function newGoal(host) {
-  const name = textInput({ placeholder: "Aarav's degree", "aria-label": "Goal name" });
+/**
+ * Ready-made goals (X-31): "Aarav's degree · 2039". One tap fills the name, the
+ * date and whose it is; the amount is left for the family, because what a
+ * degree will cost them is theirs to say, not ours to suggest.
+ */
+function goalStarters(host) {
+  const child = state.members.find((m) => m.isMinor);
+  const year = new Date().getFullYear();
+  return el("div.stack-2", { "data-goal-starters": "true" },
+    el("span.overline", {}, t("goalStarter.heading")),
+    el("div.row.wrap", { style: { gap: "8px" } },
+      ...GOAL_STARTERS.map((starter) => {
+        const forChild = starter.code === "education" || starter.code === "wedding";
+        const name = forChild && child
+          ? t(`goalStarter.${starter.code}.named`, { name: child.displayName })
+          : t(`goalStarter.${starter.code}`);
+        const targetYear = year + starter.yearsAhead;
+        return el("button.chip", {
+          type: "button",
+          onclick: () => newGoal(host, {
+            name, targetDate: `${targetYear}-06-01`, memberId: forChild && child ? child.id : "",
+          }),
+        }, `${name} · ${targetYear}`);
+      }),
+    ),
+  );
+}
+
+function newGoal(host, prefill = null) {
+  const name = textInput({ placeholder: "Aarav's degree", "aria-label": "Goal name", value: prefill?.name || "" });
   const target = moneyInput({ placeholder: "0" });
-  const date = textInput({ type: "date", "aria-label": "Target date" });
+  const date = textInput({ type: "date", "aria-label": "Target date", value: prefill?.targetDate || "" });
   const member = select({
     options: [
       { value: "", label: "The household's" },
       ...state.members.map((m) => ({ value: m.id, label: m.displayName })),
     ],
+    value: prefill?.memberId || "",
     "aria-label": "Whose goal",
   });
   const visibility = select({

@@ -16,7 +16,8 @@ import { api, downloadAuthenticated } from "../api.js";
 import {
   el, mount, sheet, field, textInput, select, skeletonRows, empty, withBusy, toast, formatDate,
 } from "../ui.js";
-import { state } from "../state.js";
+import { state, takePendingForm, startingVisibility } from "../state.js";
+import { helpMark } from "../glossary.js";
 import { t } from "../i18n.js";
 import { whereWhoCard, FIELD } from "../where.js";
 import { lockMark, sealedLineText, openTheirs } from "../recovery.js";
@@ -53,6 +54,10 @@ export async function continuityScreen(host) {
     contactsCard(contacts, host),
     emergencyCard(trusted, requests, host),
   ));
+
+  // A starter on the first session's shelves asked for this form (X-31).
+  const pending = takePendingForm("continuity");
+  if (pending) newEstateDocument(host, pending);
 }
 
 /* -----------------------------------------------------------------------------
@@ -114,7 +119,7 @@ function printButton() {
 function mismatchCard(mismatches) {
   // Urgent, but not a debt: a heavier edge rather than rust (D-01).
   return el("div.card.card-emphasis.stack-2", {},
-    el("h3", {}, t("estate.mismatch.title")),
+    el("h3.term", {}, t("estate.mismatch.title"), helpMark("nominee")),
     ...mismatches.map((mismatch) => el("div.stack-2", {},
       el("b", {}, mismatch.title),
       el("div.muted", {},
@@ -398,8 +403,8 @@ function openWhere(document, host, onClose) {
   });
 }
 
-function newEstateDocument(host) {
-  const title = textInput({ placeholder: "Ishwarya's will", "aria-label": "Title" });
+function newEstateDocument(host, prefill = null) {
+  const title = textInput({ placeholder: "Ishwarya's will", "aria-label": "Title", value: prefill?.title || "" });
   const kind = select({
     options: [
       { value: "will", label: "Will" },
@@ -410,13 +415,14 @@ function newEstateDocument(host) {
       { value: "nomination_letter", label: "Nomination letter" },
       { value: "other", label: "Something else" },
     ],
+    value: prefill?.estateKind || "will",
     "aria-label": "Kind",
   });
   const member = select({
     options: state.members.map((m) => ({
       value: m.id, label: m.isMe ? `${m.displayName} (me)` : m.displayName,
     })),
-    value: state.members.find((m) => m.isMe)?.id,
+    value: prefill?.memberId || state.members.find((m) => m.isMe)?.id,
     "aria-label": "Whose",
   });
   const executedOn = textInput({ type: "date", "aria-label": "Executed on" });
@@ -425,6 +431,9 @@ function newEstateDocument(host) {
       { value: "private", label: "Private — only me" },
       { value: "household", label: `Shared with ${state.household.name}` },
     ],
+    // A will starts private, as it always has; one for someone being helped
+    // starts where their helper can read it back (state.startingVisibility).
+    value: prefill?.memberId ? startingVisibility(prefill.memberId) : "private",
     "aria-label": "Who can see this",
   });
   const error = el("div.help.error", { style: { minHeight: "1.15rem" } });

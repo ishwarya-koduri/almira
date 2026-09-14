@@ -7,7 +7,7 @@ import {
   el, mount, sheet, field, textInput, moneyInput, select, skeletonRows, empty,
   withBusy, toast, rupees, formatDate,
 } from "../ui.js";
-import { state, myMember } from "../state.js";
+import { state, myMember, takePendingForm, startingVisibility } from "../state.js";
 import { reload } from "../app.js";
 import { whereWhoCard } from "../where.js";
 import { sealedNoteCard } from "../sealed-notes.js";
@@ -89,11 +89,16 @@ export async function liabilitiesScreen(host) {
         ),
   ));
 
+  // A starter on the first session's shelves asked for this form (X-31).
+  const pending = takePendingForm("liabilities");
+  if (pending) openForm(pending);
+
   // ---------------------------------------------------------------- form ---
 
-  function openForm() {
-    const title = textInput({ placeholder: "HDFC home loan", "aria-label": "Name" });
-    const kind = select({ options: KINDS, value: "home", "aria-label": "Kind" });
+  function openForm(prefill = null) {
+    const holderId = prefill?.memberId || myMember()?.id;
+    const title = textInput({ placeholder: "HDFC home loan", "aria-label": "Name", value: prefill?.title || "" });
+    const kind = select({ options: KINDS, value: prefill?.liabilityKind || "home", "aria-label": "Kind" });
     const outstanding = moneyInput({ placeholder: "0" });
     const emiAmount = moneyInput({ placeholder: "0" });
     const emiDay = textInput({ type: "number", min: 1, max: 31, placeholder: "5" });
@@ -119,7 +124,7 @@ export async function liabilitiesScreen(host) {
         { value: "private", label: "Private — only whoever owes it" },
         { value: "household", label: `Shared with ${state.household.name}` },
       ],
-      value: state.user?.defaultVisibility || state.household.defaultVisibility,
+      value: startingVisibility(holderId),
       "aria-label": "Who can see this",
     });
 
@@ -158,7 +163,7 @@ export async function liabilitiesScreen(host) {
         kind: kind.value,
         outstanding: outstanding.value(),
         visibility: visibility.value,
-        holders: [{ memberId: myMember()?.id, responsibilityPct: 100 }],
+        holders: [{ memberId: holderId, responsibilityPct: 100 }],
       };
       if (emiAmount.value() !== null) body.emiAmount = emiAmount.value();
       if (emiDay.value) body.emiDay = Number(emiDay.value);

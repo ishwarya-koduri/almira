@@ -9,10 +9,11 @@ import {
   el, mount, sheet, field, textInput, select, skeletonRows, empty,
   withBusy, toast,
 } from "../ui.js";
-import { state, myMember } from "../state.js";
+import { state, myMember, takePendingForm, startingVisibility } from "../state.js";
 import { whereWhoCard } from "../where.js";
 import { sealedNoteCard } from "../sealed-notes.js";
 import { reload } from "../app.js";
+import { helpMark } from "../glossary.js";
 
 const KINDS = [
   { value: "savings", label: "Savings account" },
@@ -67,11 +68,16 @@ export async function accountsScreen(host) {
         ),
   ));
 
+  // A starter on the first session's shelves asked for this form (X-31).
+  const pending = takePendingForm("accounts");
+  if (pending) openForm(pending);
+
   // ---------------------------------------------------------------- form ---
 
-  function openForm() {
-    const label = textInput({ placeholder: "SBI savings — salary", "aria-label": "Name" });
-    const kind = select({ options: KINDS, value: "savings", "aria-label": "Kind" });
+  function openForm(prefill = null) {
+    const holderId = prefill?.memberId || myMember()?.id;
+    const label = textInput({ placeholder: "SBI savings — salary", "aria-label": "Name", value: prefill?.title || "" });
+    const kind = select({ options: KINDS, value: prefill?.accountKind || "savings", "aria-label": "Kind" });
     const number = textInput({ placeholder: "Account number", "aria-label": "Account number" });
     const ifsc = textInput({ placeholder: "SBIN0001234", "aria-label": "IFSC" });
 
@@ -92,7 +98,7 @@ export async function accountsScreen(host) {
         { value: "private", label: "Private — only its holders" },
         { value: "household", label: `Shared with ${state.household.name}` },
       ],
-      value: state.user?.defaultVisibility || state.household.defaultVisibility,
+      value: startingVisibility(holderId),
       "aria-label": "Who can see this",
     });
 
@@ -102,6 +108,7 @@ export async function accountsScreen(host) {
     });
     api.institutions(state.household.id).then((list) => {
       list.forEach((i) => institution.append(el("option", { value: i.id }, i.name)));
+      if (prefill?.institutionId) institution.value = prefill.institutionId;
     }).catch(() => { /* optional */ });
 
     const labelField = field({ label: "What should we call it?", control: label, required: true });
@@ -111,7 +118,7 @@ export async function accountsScreen(host) {
       title: "Add an account",
       body: el("div.stack-3", {},
         labelField,
-        field({ label: "What kind?", control: kind }),
+        field({ label: ["What kind?", helpMark("folio")], control: kind }),
         field({ label: "Which bank or fund house?", control: institution }),
         field({ label: "Account number", control: number,
           help: "We'll keep only the last four digits unless you say otherwise." }),
@@ -140,7 +147,7 @@ export async function accountsScreen(host) {
           storeFullNumber: storeFull.checked,
           ifsc: ifsc.value.trim() || null,
           visibility: visibility.value,
-          holders: [{ memberId: myMember()?.id, holderType: "primary" }],
+          holders: [{ memberId: holderId, holderType: "primary" }],
         });
         modal.close();
         toast("Saved.");

@@ -13,6 +13,9 @@ import { openCapture } from "./capture.js";
 import { openDetail } from "./detail.js";
 import { t } from "../i18n.js";
 import { loadStillTrue, stillTrueCard } from "../still-true.js";
+import { captureForm } from "./capture.js";
+import { resumeCard } from "../draft-ui.js";
+import { shelvesCard } from "../shelves.js";
 
 export async function homeScreen(host) {
   mount(host, el("div.stack", {}, el("div.skeleton", { style: { height: "180px", borderRadius: "24px" } }), skeletonRows(3)));
@@ -51,6 +54,11 @@ export async function homeScreen(host) {
     // trust should show its own arithmetic. On a phone that arithmetic waits
     // behind a tap, so what is due next is still on the first screen (X-55).
     hero(data),
+
+    // A form left half-filled on this phone (X-83), then the shelves still to
+    // fill (P-10): both are things to finish, so both come before what there is.
+    resumeCard((type) => captureForm(type, () => homeScreen(host))),
+    shelvesCard(state.firstSession),
 
     // Next due, then To review, before any breakdown: what needs doing comes
     // before what there is.
@@ -114,6 +122,8 @@ export async function homeScreen(host) {
           `What's left is yours: ${data.netWorthFormatted}.`),
       ),
     ),
+
+    el("div.row", {}, el("a.link-quiet", { href: "#/guide" }, t("guide.homeLink"))),
   ));
 }
 

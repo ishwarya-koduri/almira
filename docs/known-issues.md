@@ -606,14 +606,27 @@ Owner's decision: completeness never shows 100 while any gap exists.
 - **Nothing recorded is no number.** The response keeps `score` (v1 froze it as
   a required integer, and `OpenApiContractTest` refuses un-requiring it), sets it
   to 0, and adds `scoreEarned: false` and a `scoreExplanation` sentence. A client
-  shows the sentence and no percentage when `scoreEarned` is false. The web card
-  does (`static/app/completeness.js`, `scripts/check-completeness.js`). Before,
-  `score` was 100.
+  shows the sentence and no percentage unless `scoreEarned` is true. The web card
+  does (`static/app/completeness.js`, `scripts/check-completeness.js`); a
+  response without `scoreEarned` is no number there either, since the web client
+  is served by the server it talks to. Before, `score` was 100.
+- **Both clients.** The native app shows neither score yet. Its models
+  (`app/shared/.../api/Models.kt`: `Completeness`, `HandoverReadiness`) carry
+  `scoreEarned`/`scoreExplanation` now, with `scoreEarned` required, and keep
+  `score` private: a screen can only ask `display()`, which is a percentage or
+  the sentence (`ScoreDisplayTest`). `scripts/check-spec.py` ("SCORES") fails if
+  any web module other than `completeness.js`/`readiness.js`, or any native
+  source outside `Models.kt`, reads a `score`, or if those places stop reading
+  `scoreEarned` / the null first. Checked in a running server: a brand-new
+  household's Reports and For my family cards show the sentence and no "%".
 - **Everything done is 100**, with `scoreEarned: true`.
 
 Watched failing: rounding half up again (unit and API tests get 100 for one gap
 in a thousand), returning 100 for nothing recorded (three tests), and the web
-helper ignoring `scoreEarned` (it shows "0%").
+helper ignoring `scoreEarned` (it shows "0%"); the guard with a screen reading
+`score` directly (web and native), with the readiness null test removed, and
+with `Completeness.score` made public; `ScoreDisplayTest` with `display()`
+ignoring `scoreEarned` (it gets `Percent(0%)`) and with a default for it.
 
 **What is left, and deliberately not changed:**
 

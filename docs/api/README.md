@@ -322,8 +322,11 @@ carries the ids to fix, so offer one tap. The `score` is rounded down, so it is
 `scoreEarned` is `false` (nothing recorded that the caller can see) there is no
 number: `score` is 0 only because v1 requires an integer there. Render
 `scoreExplanation` and the `nextStep` inviting a first record, and no
-percentage — neither 0% nor 100%. (Before 2026-09-14 an empty household scored
-100 and `scoreEarned` did not exist; known-issues 19.)
+percentage — neither 0% nor 100%. Show a number only when `scoreEarned` is
+`true`. (Before 2026-09-14 an empty household scored 100 and `scoreEarned` did
+not exist; known-issues 19.) In the app, read either score only through
+`Completeness.display()` / `HandoverReadiness.display()`; `scripts/check-spec.py`
+fails otherwise.
 
 **"Not confirmed lately" on the dashboard is the "Still true?" clock.** The
 `not_verified` attention item counts the holdings `still-true` considers due

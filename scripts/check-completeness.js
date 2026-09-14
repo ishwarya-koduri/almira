@@ -27,8 +27,10 @@ expect("everything done is 100%",
   completenessPercent({ score: 100, scoreEarned: true }), "100%");
 expect("an earned 0 is still a number",
   completenessPercent({ score: 0, scoreEarned: true }), "0%");
-expect("a server from before scoreEarned is shown as it was",
-  completenessPercent({ score: 72 }), "72%");
+expect("a response without scoreEarned is no number: it cannot say the score was earned",
+  completenessPercent({ score: 100 }), null);
+expect("scoreEarned false is no number whatever score holds",
+  completenessPercent({ score: 72, scoreEarned: false }), null);
 expect("no score at all is no number",
   completenessPercent({}), null);
 

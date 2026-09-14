@@ -13,6 +13,7 @@
 
 import { remember, forget, reset, peek } from "./cache.js";
 import { clearAllDrafts } from "./drafts.js";
+import { disable as forgetOfflineCopy } from "./offline-store.js";
 
 const REFRESH_KEY = "almira.refresh";
 
@@ -27,6 +28,13 @@ export const auth = {
     accessToken = tokens.accessToken;
     try { localStorage.setItem(REFRESH_KEY, tokens.refreshToken); } catch { /* private mode */ }
   },
+  /**
+   * Signed out, by choice or because the server refused the session. The
+   * offline copy of the handbook goes with it (offline-store.js): a copy that
+   * outlived its session is exactly what a shared laptop must not keep.
+   * Resolves once the copy is deleted, so a reload straight after cannot cut
+   * that short.
+   */
   clear() {
     accessToken = null;
     // Signed out, or the session ended: the last known views go with it (cache.js).
@@ -35,6 +43,7 @@ export const auth = {
     // Drafts and saves waiting for a network belong to the person who typed
     // them; the next person to sign in on this phone must not find them (X-83).
     try { clearAllDrafts(localStorage); } catch { /* ignore */ }
+    return forgetOfflineCopy().catch(() => undefined);
   },
   get isSignedIn() { return Boolean(accessToken || auth.refreshToken); },
 };
@@ -59,8 +68,20 @@ async function raw(method, path, body, token) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  // A proxy's HTML error page is not JSON; it is still an answer with a status.
+  let payload = null;
+  try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
   return { response, payload };
+}
+
+/**
+ * True when a failure means "no connection to Almira" rather than "Almira said
+ * no": the browser could not reach it, the service worker answered offline, or
+ * something in between answered 5xx. The offline handbook is offered for these.
+ */
+export function isUnreachable(error) {
+  if (error instanceof ApiError) return error.code === "offline" || error.status >= 500;
+  return error instanceof TypeError;
 }
 
 /**
@@ -76,7 +97,13 @@ async function refreshTokens() {
 
   refreshing = (async () => {
     const { response, payload } = await raw("POST", "/api/v1/auth/refresh", { refreshToken: token });
-    if (!response.ok) { auth.clear(); return null; }
+    // Only the server saying no ends the session. A 502 from a proxy during an
+    // outage is not a refusal, and signing someone out for it would also delete
+    // the offline handbook at the moment they may be relying on it.
+    if (response.status >= 500) {
+      throw new ApiError(response.status, "unavailable", "Almira can't be reached just now.");
+    }
+    if (!response.ok) { await auth.clear(); return null; }
     auth.set(payload);
     return payload.accessToken;
   })().finally(() => { refreshing = null; });
@@ -227,7 +254,7 @@ export const api = {
 
   signOut: async () => {
     try { await request("POST", "/api/v1/auth/logout"); } catch { /* leaving anyway */ }
-    auth.clear();
+    await auth.clear();
   },
 
   // --- resources ------------------------------------------------------------
@@ -378,7 +405,9 @@ export const api = {
 
   // --- capture and import ---------------------------------------------------
   parseText:     (hid, text)      => api.post(`/api/v1/households/${hid}/capture/parse-text`, { text }),
-  parseDocument: (hid, file)      => upload(`/api/v1/households/${hid}/capture/parse-document`, file),
+  // `text`: what this device read from a photo (ocr.js), for a file the server cannot read itself.
+  parseDocument: (hid, file, text) =>
+    upload(`/api/v1/households/${hid}/capture/parse-document`, file, text ? { text } : {}),
   importPreview: (hid, file)      => upload(`/api/v1/households/${hid}/import/preview`, file),
   runImport:     (hid, file, options) =>
     upload(`/api/v1/households/${hid}/import`, file, options),

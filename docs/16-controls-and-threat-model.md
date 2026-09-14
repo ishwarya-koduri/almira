@@ -56,6 +56,48 @@ check it.*
 | Emergency access | A trusted contact acting too early, or a coercive one | Waiting period, owner veto, **inactivity requirement**, notifications, audit, continuity-only reveal, read-only | `EmergencyAccessApiTest`, SQL suite emergency section |
 | The audit trail | The application itself | `almira_app` has INSERT only on `activity_log` | `R__grants.sql`; SQL suite |
 | Imported provider data | A provider returning too much, or the wrong household's | Imports arrive at the household's default visibility; the AA sandbox proves the consent gate | `ProviderApiTest` |
+| A statement's password, a photographed paper | The operator, any third-party service | Opened and read in the browser by vendored pdf.js and tesseract.js; only the rows or words the person keeps are sent; no library is fetched from anywhere else | `ClientVendorAssetsTest`, `scripts/browser-checks/on-device.html` |
+| The offline copy of the handbook | Whoever later uses a shared or lost device; a copy of the browser profile | Off by default; an allowlist of fields; AES-GCM under a non-extractable key held apart; deleted on sign-out and after 30 days — see below | `scripts/check-offline-store.js`, `on-device.html` |
+
+### The offline copy (P-21)
+
+What the web client keeps when someone turns on *Readable without a connection*
+on a device, and exactly what that does and does not protect
+(`app/offline-store.js`).
+
+**What is kept.** The fields the offline page draws, copied by allowlist: each
+included holding's title, type, institution, reference number, nominees' names,
+formatted value and the claim steps; debts by title, lender and outstanding
+amount; wills and papers by title, kind, executors and date; the people who help
+with their role, organisation, phone and email; trusted people by name. **Never**
+sealed values, where anything is kept, notes, addresses, internal ids, or
+anything the API adds later until someone adds it to the list on purpose. The
+copy is what this reader could already see: it is taken from responses the
+database had already filtered.
+
+**How.** AES-GCM-256 with a random 96-bit IV and fixed associated data, under a
+key made by `crypto.subtle.generateKey` with `extractable: false`. The key is
+stored in one IndexedDB database, the ciphertext in another. Nothing is put in
+Cache Storage, and the service worker never sees it.
+
+**When it goes.** Key first, then data, on: signing out; a refresh the server
+refuses (a revoked session, once the device is next online); leaving the
+household; turning the setting off; a copy that fails to decrypt; a copy older
+than 30 days or dated in the future. Signing out also turns the setting off, so
+the next person to sign in on the device does not inherit it.
+
+| Against | Does it help? |
+|---|---|
+| Someone who picks up the device after the owner signed out | **Yes.** The key and the data are deleted; a fragment left behind is ciphertext without a key |
+| A backup, sync or forensic copy of one IndexedDB database | **Yes.** The key and the data are not in the same database, and a non-extractable key's bytes are not readable by script |
+| A copy of the whole browser profile taken while the copy exists | **No, not by itself.** The browser stores a non-extractable key in its own profile; someone who can run that profile can decrypt. The refresh token beside it in `localStorage` already gives such a person the live account, so the copy adds little to what they have. Full-disk encryption and an OS lock are what defend this |
+| A script running on this origin (XSS) | **No.** It can ask the browser to decrypt, exactly as the page does. The same script could read everything the page reads while online |
+| A session revoked from another device while this one stays offline | **Partly.** The copy stays readable offline until the device reaches the server, or for at most 30 days |
+| Stale information in an emergency | Said on the page: "Last updated …", and "It may be out of date" |
+
+A passphrase or device unlock (WebAuthn PRF) wrapping the key would close the
+profile-copy row at the cost of needing to remember something in a crisis; it is
+not built (known-issues 60).
 
 ---
 
@@ -123,6 +165,8 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | DP-3 | Exports scoped by the caller's own visibility — `reports/ExportService.kt` |
 | DP-4 | Notification bodies never logged or stored — `provider/Delivery.kt` |
 | DP-5 | IP addresses hashed where recorded at all — `sharing/ShareController.kt` |
+| DP-6 | A protected statement is opened and a photo read in the browser; the server receives only the rows or words kept — `app/pdf-text.js`, `app/ocr.js` |
+| DP-7 | The opt-in offline copy: allowlisted fields, AES-GCM under a non-extractable key held apart, deleted on sign-out and after 30 days — `app/offline-store.js` |
 
 ### Audit
 | | |
@@ -138,6 +182,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | SC-2 | Migrations are forward-only and checksum-validated by Flyway; `scripts/check-migration.sh` proves the chain applies to an empty database |
 | SC-3 | The API is frozen at v1 and a contract test fails the build on any breaking change — `contract/OpenApiContractTest.kt` |
 | SC-4 | Every data-writing development script refuses a non-local or non-development target, from one shared implementation — `scripts/lib/require-development-server.sh` |
+| SC-5 | Browser libraries are vendored, pinned by version in their path, recorded with the npm integrity hash and a SHA-256 per file, and served from this origin only — `app/vendor/SOURCE`, `web/ClientVendorAssetsTest.kt` |
 
 ---
 
@@ -187,5 +232,6 @@ disbelieving:
 | No formal DPDP or SOC 2 programme | Design aligns; the programme is separate work |
 | A second factor is optional, and not yet required for emergency-access grantors | The card asks for two ways in; making it mandatory is a product decision (docs/05 §2) |
 | The native app cannot finish a sign-in that needs a second factor | known-issues 29 |
+| The offline copy of the handbook is readable by anyone who can run the browser profile it is in | Opt-in, and said so in Settings; a key wrapped by a passphrase or device unlock is not built (known-issues 60) |
 
 [‹ Index](README.md)

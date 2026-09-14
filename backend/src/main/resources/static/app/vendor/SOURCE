@@ -1,0 +1,44 @@
+Vendored libraries for reading on the device (P-11, P-13)
+==========================================================
+
+Served by this app, never from a CDN. Each file is byte-for-byte what the npm
+registry published; SHA256SUMS lists them and ClientVendorAssetsTest checks it.
+Paths carry the version, so a file never changes under a name — the service
+worker caches /app/vendor in a cache of its own (sw.js, VENDOR).
+
+pdfjs-6.3.289/  — Mozilla pdf.js, Apache-2.0 (LICENSE.txt)
+  package   pdfjs-dist@6.3.289
+  tarball   https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-6.3.289.tgz
+  integrity sha512-ZHjSVpDa3D6izMq8/04lvkhkATUmL9px6ChPaXc1k6nU2Mrhlg1/7F0bdUqCwUjw3NsPTfPZsMDUU6ZIcRaeQw==
+  files     legacy/build/pdf.min.mjs, legacy/build/pdf.worker.min.mjs
+            (the legacy build, for the older phone browsers a family actually has)
+
+tesseract-7.0.0/ — tesseract.js, Apache-2.0 (LICENSE.txt)
+  package   tesseract.js@7.0.0
+  tarball   https://registry.npmjs.org/tesseract.js/-/tesseract.js-7.0.0.tgz
+  integrity sha512-exPBkd+z+wM1BuMkx/Bjv43OeLBxhL5kKWsz/9JY+DXcXdiBjiAch0V49QR3oAJqCaL5qURE0vx9Eo+G5YE7mA==
+  files     dist/tesseract.esm.min.js, dist/worker.min.js
+
+  package   tesseract.js-core@7.0.0, Apache-2.0 (LICENSE-core.txt)
+  tarball   https://registry.npmjs.org/tesseract.js-core/-/tesseract.js-core-7.0.0.tgz
+  integrity sha512-WnNH518NzmbSq9zgTPeoF8c+xmilS8rFIl1YKbk/ptuuc7p6cLNELNuPAzcmsYw450ca6bLa8j3t0VAtq435Vw==
+  files     tesseract-core-simd-lstm.js, tesseract-core-simd-lstm.wasm
+            (one core only: WebAssembly SIMD, LSTM engine. Browsers without
+            SIMD are told photos cannot be read there; ocr.js canReadPhotos)
+
+  package   @tesseract.js-data/eng@1.0.0 (MIT packaging of Google's
+            tesseract-ocr/tessdata_best English model, Apache-2.0)
+  tarball   https://registry.npmjs.org/@tesseract.js-data/eng/-/eng-1.0.0.tgz
+  integrity sha512-mbTumm6KQPUHyzTPQaF3ObXYnx0SqqfV2nabqFVQBwD6Kl7PhGSLSzOlfFTWy0P3BjghaSKA2W9GB19Jk+ZcTg==
+  files     4.0.0_best_int/eng.traineddata.gz -> lang/eng.traineddata.gz
+
+Sizes, as served: pdf.js 1.8 MB (loaded only when a statement is opened);
+tesseract 5.8 MB, of which the core is 2.9 MB and the model 2.9 MB (loaded only
+when a photo is read). Neither is precached.
+
+To update: fetch the tarball, check its integrity against the registry, copy
+the same files into a new versioned directory, update the paths in
+pdf-text.js / ocr.js and VENDOR in sw.js, and regenerate SHA256SUMS:
+
+    cd backend/src/main/resources/static/app/vendor
+    find . -type f ! -name SHA256SUMS ! -name SOURCE | sort | sed 's#^\./##' | xargs shasum -a 256 > SHA256SUMS

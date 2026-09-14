@@ -31,6 +31,7 @@ import {
 } from "../continuity-signals.js";
 import { openDetail } from "./detail.js";
 import { navigate } from "../app.js";
+import { keepOfflineCopy } from "../offline.js";
 
 export async function continuityScreen(host) {
   mount(host, skeletonRows(4));
@@ -51,6 +52,9 @@ export async function continuityScreen(host) {
   // Holding an open window on someone is the one thing that outranks printing:
   // heir mode takes the screen's single primary action (X-40).
   const heirWindow = requests.find((request) => request.requestedByMe && request.status === "open");
+  // What was just read is what a day without a connection would show, when
+  // this device keeps a copy at all (P-21). Never waited on.
+  keepOfflineCopy(state.household.id, { handbook, contacts, trusted });
 
   mount(host, el("div.stack", {},
     el("div.row-between.wrap", {},

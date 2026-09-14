@@ -31,6 +31,7 @@ pretending otherwise would produce half-translated screens that look broken.
 | ✅ | For my family — the whole screen, including the estate, contacts and emergency-access sections |
 | ✅ | Dates, in the reader's language — "in 4 days" too |
 | ⛔ | Settings → Preferences (appearance, text size, data saver), the section row inside a destination, "See the breakdown", "Add amount", "Light mode for your data" — English only, falling back from `te` and `hi` |
+| ⛔ | Reading on the device and the offline copy — Import a statement, Reading your photo, Settings → Readable without a connection, the offline handbook page (`statement.*`, `ocr.*`, `offline.*`) — English only, falling back from `te` and `hi`. The offline page's section headings reuse translated keys |
 
 Telugu and Devanagari are set in Noto Sans and Noto Serif, served from the app
 itself, with a taller line height than Latin; the Latin faces have neither

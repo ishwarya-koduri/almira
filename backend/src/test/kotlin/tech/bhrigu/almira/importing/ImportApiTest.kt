@@ -241,6 +241,92 @@ class ImportApiTest : ApiTestBase() {
             .containsExactly(2, 3, 4)
     }
 
+    // --- a statement for several people (P-11) ---------------------------------
+
+    /**
+     * A consolidated account statement is built on the device from a PDF the
+     * server never sees, and arrives here as a sheet with a person, a fund and
+     * a folio per row. Each row must land as that person's, and a second run
+     * of the same statement must find every folio already here.
+     */
+    private val casCsv = """
+        Person,Fund,Folio,Market value
+        Ishwarya,Example Flexi Cap Fund - Direct Growth,1234567/89,"1,25,000.50"
+        Aarav,Example Liquid Fund - Direct Growth,99887766,40000
+    """.trimIndent()
+
+    private fun casRequest(dryRun: Boolean) = """
+        {"typeId":"${typeId(owner, householdId, "mf_lumpsum")}","visibility":"household","dryRun":$dryRun,
+         "mapping":{"title":"Fund","currentValue":"Market value","reference":"Folio","owner":"Person"}}
+    """.trimIndent()
+
+    @Test
+    fun `each row belongs to the person it names, and its folio is kept`() {
+        val aarav = addMember(owner, householdId, "Aarav").path("id").asText()
+
+        val report = mapper.readTree(upload("", casCsv, casRequest(dryRun = false), name = "statement.csv").body)
+        assertThat(report.path("imported").asInt()).isEqualTo(2)
+
+        val liquidId = get("/api/v1/households/$householdId/investments?q=Liquid", owner).json().single().path("id").asText()
+        val liquid = get("/api/v1/households/$householdId/investments/$liquidId", owner).json()
+        assertThat(liquid.path("owners").map { it.path("memberId").asText() }).containsExactly(aarav)
+        assertThat(liquid.path("attributes").path("folio_no").asText()).isEqualTo("99887766")
+        assertThat(liquid.path("investedAmount").isNull || liquid.path("investedAmount").isMissingNode)
+            .describedAs("a market value is not what went in")
+            .isTrue()
+        val valuations = get("/api/v1/households/$householdId/investments/$liquidId/valuations", owner).json()
+        assertThat(valuations.map { it.path("value").decimalValue().toInt() }).containsExactly(40_000)
+
+        assertThat(
+            db.queryForObject(
+                "select count(*) from activity_log where action = 'import.run' and household_id = ?::uuid",
+                Int::class.java, householdId,
+            ),
+        ).describedAs("a real import is audited").isEqualTo(1)
+
+        val second = mapper.readTree(upload("", casCsv, casRequest(dryRun = false), name = "statement.csv").body)
+        assertThat(second.path("duplicates").asInt())
+            .describedAs("the folio is what finds the row again")
+            .isEqualTo(2)
+    }
+
+    /**
+     * Saved as private for someone else, a holding cannot be read back by the
+     * person importing it, and that stops a first value being added to it
+     * (known-issues 61). The row must still land, and say what it left out.
+     */
+    @Test
+    fun `a private holding for someone else still lands, without its value, and says so`() {
+        val aarav = addMember(owner, householdId, "Aarav").path("id").asText()
+        val sheet = "Person,Fund,Folio,Market value\n$aarav,Example Index Fund,55501234,18250.75\n"
+        val body = casRequest(dryRun = false).replace("\"household\"", "\"private\"")
+
+        val report = mapper.readTree(upload("", sheet, body, name = "statement.csv").body)
+
+        assertThat(report.path("imported").asInt()).isEqualTo(1)
+        assertThat(report.path("rows")[0].path("message").asText()).contains("Saved without its value")
+    }
+
+    @Test
+    fun `a person the household does not know fails that row, not the others`() {
+        val report = mapper.readTree(upload("", casCsv, casRequest(dryRun = false), name = "statement.csv").body)
+
+        assertThat(report.path("imported").asInt()).isEqualTo(1)
+        val failed = report.path("rows").single { it.path("outcome").asText() == "failed" }
+        assertThat(failed.path("message").asText()).contains("“Aarav”")
+    }
+
+    @Test
+    fun `the preview guesses the person column`() {
+        val preview = mapper.readTree(upload("/preview", casCsv, name = "statement.csv").body)
+        val suggested = preview.path("suggestedMapping")
+        assertThat(suggested.path("owner").asText()).isEqualTo("Person")
+        assertThat(suggested.path("currentValue").asText()).isEqualTo("Market value")
+        assertThat(suggested.path("investedAmount").isNull || suggested.path("investedAmount").isMissingNode)
+            .describedAs("a market value is not guessed as the amount invested")
+            .isTrue()
+    }
+
     // --- refusals ------------------------------------------------------------
 
     @Test

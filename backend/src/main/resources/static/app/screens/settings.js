@@ -18,6 +18,7 @@ import { measurementCard } from "../measurement.js";
 import { helpMark } from "../glossary.js";
 import { planCard } from "../plan.js";
 import { supportCard } from "../support.js";
+import { offlineSettingsCard } from "../offline.js";
 
 export async function settingsScreen(host) {
   // Settings is a stack of independent things, and it used to be an
@@ -36,6 +37,7 @@ export async function settingsScreen(host) {
     safely(() => ratesCard(host)),
     safely(() => connectCard(host)),
     safely(() => trashCard()),
+    safely(() => offlineSettingsCard(state.household.id)),
     safely(() => sessionsCard()),
     safely(() => accountCard(host, () => settingsScreen(host))),
     safely(() => measurementCard()),
@@ -426,6 +428,8 @@ async function sessionsCard() {
     el("div.row", {},
       el("button.btn.btn-danger", {
         type: "button",
+        // signOut resolves once the offline copy is deleted too, so the reload
+        // cannot interrupt that.
         onclick: async () => { await api.signOut(); location.reload(); },
       }, "Sign out here"),
     ),

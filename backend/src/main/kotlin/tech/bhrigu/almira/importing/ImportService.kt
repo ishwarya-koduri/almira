@@ -1,8 +1,10 @@
 package tech.bhrigu.almira.importing
 
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.catalog.CatalogService
 import tech.bhrigu.almira.common.ApiException
@@ -11,6 +13,8 @@ import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.investment.CreateInvestment
 import tech.bhrigu.almira.investment.InvestmentFilter
 import tech.bhrigu.almira.investment.InvestmentService
+import tech.bhrigu.almira.investment.OwnerInput
+import tech.bhrigu.almira.investment.ValuationInput
 import tech.bhrigu.almira.security.RequestUserContext
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -30,6 +34,19 @@ data class ColumnMapping(
     val reference: String? = null,
     /** A per-row type, by label or code. Falls back to [ImportRequest.typeId]. */
     val type: String? = null,
+    /**
+     * Whose it is: a member's name as the household knows them, or their id.
+     * Unmapped or blank means the person importing, as capture does. A name
+     * that matches nobody fails that row rather than guessing — a consolidated
+     * statement for three people must not land as one person's.
+     */
+    val owner: String? = null,
+    /**
+     * What it is worth now, as a statement says — recorded as a valuation dated
+     * today, never as the amount invested, so returns are not computed from a
+     * market value mistaken for cost.
+     */
+    val currentValue: String? = null,
 )
 
 data class ImportRequest(
@@ -97,6 +114,7 @@ class ImportService(
     private val households: HouseholdService,
     private val audit: AuditService,
     private val userContext: RequestUserContext,
+    private val transactions: TransactionTemplate,
 ) {
 
     @Transactional(readOnly = true)
@@ -153,6 +171,7 @@ class ImportService(
         }
 
         val institutions = catalog.institutions(householdId, null, null)
+        val members = if (request.mapping.owner != null) households.members(householdId) else emptyList()
         val existing = investments.list(householdId, InvestmentFilter(limit = 500))
         val outcomes = mutableListOf<RowOutcome>()
 
@@ -215,7 +234,22 @@ class ImportService(
                 return@forEachIndexed
             }
 
+            val ownerCell = cell(request.mapping.owner)
+            val ownerId = ownerCell?.let { text ->
+                members.firstOrNull { it.id.toString().equals(text, true) }?.id
+                    ?: members.filter { it.displayName.trim().equals(text, true) }
+                        .singleOrNull()?.id
+            }
+            if (ownerCell != null && ownerId == null) {
+                outcomes += RowOutcome(
+                    rowNumber, "failed", title, null,
+                    "We don't know who “$ownerCell” is. Use a name from your household.",
+                )
+                return@forEachIndexed
+            }
+
             val quantity = read(request.mapping.quantity, "Quantity", Coerce::number)
+            val currentValue = read(request.mapping.currentValue, "Value", Coerce::money)
             val startDate = read(request.mapping.startDate, "Start date", Coerce::date)
             val maturityDate = read(request.mapping.maturityDate, "Maturity date", Coerce::date)
 
@@ -225,14 +259,18 @@ class ImportService(
             if (request.dryRun) {
                 outcomes += RowOutcome(
                     rowNumber, "would-import", title, null,
-                    listOfNotNull(amount?.let { "as ${IndianNumbers.rupees(it)}" }, warning)
+                    listOfNotNull(
+                        amount?.let { "as ${IndianNumbers.rupees(it)}" },
+                        currentValue?.let { "worth ${IndianNumbers.rupees(it)}" },
+                        warning,
+                    )
                         .joinToString(". ").ifEmpty { null },
                 )
                 return@forEachIndexed
             }
 
-            try {
-                val created = importRow(
+            val save = { value: BigDecimal? ->
+                importRow(
                     householdId, type.id, title, amount,
                     quantity = quantity,
                     unit = cell(request.mapping.unit),
@@ -244,8 +282,37 @@ class ImportService(
                     },
                     notes = cell(request.mapping.notes),
                     visibility = request.visibility,
+                    ownerId = ownerId,
+                    currentValue = value,
+                    reference = reference?.let { text ->
+                        val keys = type.schema.fields.map { it.key }
+                        REFERENCE_KEYS.firstOrNull { it in keys }?.let { it to text }
+                    },
                 )
-                outcomes += RowOutcome(rowNumber, "imported", title, created, warning)
+            }
+
+            try {
+                var valueDropped = false
+                val created = try {
+                    save(currentValue)
+                } catch (e: Exception) {
+                    // A holding saved as private for someone else cannot be read
+                    // back by the person importing it, and today that also stops
+                    // them giving it a first value (known-issues 61). The holding
+                    // still belongs in the registry: save it without the value,
+                    // and say so, rather than lose the row. A refusal of the row
+                    // itself (a bad type, a bad owner) is not retried.
+                    val refusedForAccess = e !is ApiException || e.status == HttpStatus.FORBIDDEN
+                    if (currentValue == null || !refusedForAccess) throw e
+                    valueDropped = true
+                    save(null)
+                }
+                val rowWarning = listOfNotNull(
+                    warning,
+                    "Saved without its value: a private holding for someone else can't be given one by you yet."
+                        .takeIf { valueDropped },
+                ).joinToString(" ").ifEmpty { null }
+                outcomes += RowOutcome(rowNumber, "imported", title, created, rowWarning)
             } catch (e: ApiException) {
                 outcomes += RowOutcome(rowNumber, "failed", title, null, e.message)
             } catch (e: Exception) {
@@ -254,15 +321,20 @@ class ImportService(
         }
 
         if (!request.dryRun) {
-            audit.record(
-                householdId = householdId, actorUserId = userId, action = "import.run",
-                entityType = "household", entityId = householdId,
-                diff = mapOf(
-                    "fileName" to fileName,
-                    "imported" to outcomes.count { it.outcome == "imported" },
-                    "failed" to outcomes.count { it.outcome == "failed" },
-                ),
-            )
+            // In a transaction of its own: the import runs outside one (each row
+            // has its own), and the database only knows who is writing inside
+            // one, so without this the entry was refused and never written.
+            transactions.executeWithoutResult {
+                audit.record(
+                    householdId = householdId, actorUserId = userId, action = "import.run",
+                    entityType = "household", entityId = householdId,
+                    diff = mapOf(
+                        "fileName" to fileName,
+                        "imported" to outcomes.count { it.outcome == "imported" },
+                        "failed" to outcomes.count { it.outcome == "failed" },
+                    ),
+                )
+            }
         }
 
         val imported = outcomes.count { it.outcome == "imported" }
@@ -309,6 +381,9 @@ class ImportService(
         institutionId: UUID?,
         notes: String?,
         visibility: String?,
+        ownerId: UUID? = null,
+        reference: Pair<String, String>? = null,
+        currentValue: BigDecimal? = null,
     ): UUID = investments.create(
         householdId,
         CreateInvestment(
@@ -322,6 +397,11 @@ class ImportService(
             institutionId = institutionId,
             notes = notes,
             visibility = visibility,
+            owners = listOfNotNull(ownerId?.let { OwnerInput(it) }),
+            // Kept where the type keeps it, so the next run of the same file
+            // finds this row by its number instead of adding it again.
+            attributes = reference?.let { mapOf(it.first to it.second) } ?: emptyMap(),
+            initialValuation = currentValue?.let { ValuationInput(value = it, quantity = quantity) },
             // A migration is capture. Twenty FDs without their interest rate
             // should become twenty records that say so, not nothing at all —
             // the completeness report is where a gap belongs, not the door.
@@ -334,13 +414,16 @@ class ImportService(
      * and a click rather than eight dropdowns.
      */
     private fun suggestMapping(headers: List<String>): ColumnMapping {
-        fun find(vararg needles: String): String? = headers.firstOrNull { header ->
+        fun find(vararg needles: String, except: String? = null): String? = headers.firstOrNull { header ->
+            if (header == except) return@firstOrNull false
             val normalised = header.lowercase().replace(Regex("[^a-z0-9]"), "")
             needles.any { normalised == it || normalised.contains(it) }
         }
+        val currentValue = find("currentvalue", "marketvalue", "worthnow", "valuation")
         return ColumnMapping(
             title = find("name", "title", "description", "particulars", "scheme", "instrument"),
-            investedAmount = find("amount", "invested", "value", "principal", "cost"),
+            // "Market value" is what it is worth, not what went in.
+            investedAmount = find("amount", "invested", "value", "principal", "cost", except = currentValue),
             quantity = find("quantity", "qty", "units", "weight", "grams"),
             unit = find("unit"),
             startDate = find("date", "purchasedate", "startdate", "investedon", "opened"),
@@ -349,7 +432,14 @@ class ImportService(
             notes = find("notes", "remarks", "comment"),
             reference = find("folio", "policy", "receipt", "reference", "accountno", "certificate"),
             type = find("type", "category", "assettype"),
+            owner = find("owner", "person", "holder", "investor", "member"),
+            currentValue = currentValue,
         )
+    }
+
+    private companion object {
+        /** Where a type keeps the number a row is recognised by, in order of preference. */
+        val REFERENCE_KEYS = listOf("folio_no", "policy_no", "receipt_no", "certificate_no")
     }
 }
 

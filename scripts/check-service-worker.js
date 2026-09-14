@@ -137,6 +137,8 @@ async function respond(url, options) {
   check("index.html is there", paths.includes("/index.html"), true);
   check("the entry module is there", paths.includes("/app/app.js"), true);
   check("nothing from /api is", paths.some((p) => p.startsWith("/api/")), false);
+  check("what draws the kept handbook offline is there", paths.includes("/app/offline.js") && paths.includes("/app/offline-store.js"), true);
+  check("the vendored libraries are not precached", paths.some((p) => p.startsWith("/app/vendor/")), false);
 
   print("\nOnline");
   check("an API call goes to the network",
@@ -155,6 +157,26 @@ async function respond(url, options) {
   const api = await respond("http://localhost:8080/api/v1/me");
   check("an API call fails cleanly rather than hanging", api.status, 503);
   check("...and says it is an offline error", JSON.parse(api.body).error.code, "offline");
+
+  print("\nVendored libraries");
+  networkUp = true;
+  const shellName = (await caches.keys()).find((name) => name.endsWith("-shell"));
+  await respond("http://localhost:8080/app/vendor/tesseract-7.0.0/lang/eng.traineddata.gz");
+  const vendorName = (await caches.keys()).find((name) => name.startsWith("almira-vendor-"));
+  check("a vendored file is kept in its own cache", Boolean(vendorName), true);
+  check("...not the shell's",
+    (await (await caches.open(shellName)).keys()).some((r) => new URL(r.url).pathname.startsWith("/app/vendor/")), false);
+  check("...and comes from that cache the second time",
+    (await respond("http://localhost:8080/app/vendor/tesseract-7.0.0/lang/eng.traineddata.gz")).from, "cache");
+  // A new worker (a shell change) activates: the shell cache is replaced, the vendor cache stays.
+  store.set("almira-v1-shell", new Map());
+  store.set("almira-vendor-old", new Map());
+  fire("activate", {});
+  await Promise.all(waited);
+  const after = await caches.keys();
+  check("a shell change leaves the vendor cache alone", after.includes(vendorName), true);
+  check("an old shell cache is removed", after.includes("almira-v1-shell"), false);
+  check("an old vendor cache is removed", after.includes("almira-vendor-old"), false);
 
   print("\nPrivacy");
   networkUp = true;

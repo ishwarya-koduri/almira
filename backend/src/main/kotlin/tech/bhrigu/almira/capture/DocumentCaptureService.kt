@@ -2,6 +2,7 @@ package tech.bhrigu.almira.capture
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import tech.bhrigu.almira.common.ApiException
 import tech.bhrigu.almira.document.DocumentService
 import tech.bhrigu.almira.document.DocumentUpload
 import java.util.UUID
@@ -42,7 +43,14 @@ class DocumentCaptureService(
         fileName: String,
         mimeType: String?,
         bytes: ByteArray,
+        deviceText: String? = null,
     ): DocumentCapture {
+        if (deviceText != null && deviceText.length > MAX_DEVICE_TEXT) {
+            throw ApiException.badRequest(
+                "text_too_long", "That's more text than one document holds. Try a single page.",
+            )
+        }
+
         val stored = documents.upload(
             householdId,
             DocumentUpload(
@@ -57,7 +65,15 @@ class DocumentCaptureService(
             ),
         )
 
-        val extracted = extractor.extract(bytes, mimeType, fileName)
+        // The file's own text layer wins when there is one: it is exact, and a
+        // device's reading of a photo of the same page can only be worse.
+        val extracted = extractor.extract(bytes, mimeType, fileName).let { own ->
+            if (own.text.isBlank() && !deviceText.isNullOrBlank()) {
+                ExtractedText(deviceText, "device-ocr", null)
+            } else {
+                own
+            }
+        }
         if (extracted.text.isBlank()) {
             return DocumentCapture(
                 documentId = stored.id,
@@ -71,8 +87,11 @@ class DocumentCaptureService(
 
         // The same parser as quick-add, over the document's text. A certificate
         // reads much like shorthand: an amount, a date, an institution, a type.
-        val parsed = quickAdd.parse(householdId, condense(extracted.text))
+        // Reference numbers are taken out first: "Policy No: 5567123456" left in
+        // reads as an amount of ₹5,56,71,23,456.
         val identifiers = identifiers(extracted.text)
+        val withoutIdentifiers = identifiers.fold(extracted.text) { text, field -> text.replace(field.sourceText, " ") }
+        val parsed = quickAdd.parse(householdId, condense(withoutIdentifiers))
 
         val fields = parsed.fields.filterNot { it.key == "title" } + identifiers
         return DocumentCapture(
@@ -97,17 +116,21 @@ class DocumentCaptureService(
      */
     private fun identifiers(text: String): List<QuickAddParser.Field> = buildList {
         REFERENCE_PATTERNS.forEach { (key, label, pattern) ->
-            pattern.find(text)?.let { match ->
-                val value = match.groupValues.getOrNull(1)?.trim().orEmpty()
-                if (value.length in 4..40) {
-                    add(
-                        QuickAddParser.Field(
-                            key = "attributes.$key", label = label, value = value,
-                            display = value, sourceText = match.value.trim(),
-                            confidence = "medium",
-                        ),
-                    )
-                }
+            // The first match that is a number of some kind, trying every place
+            // the label appears: "Endowment policy\nPolicy No: 5567…" must not
+            // read the second "Policy" as the first one's number.
+            val match = generateSequence(pattern.find(text)) { previous -> pattern.find(text, previous.range.first + 1) }
+                .firstOrNull { it.groupValues.getOrNull(1).orEmpty().any(Char::isDigit) }
+                ?: return@forEach
+            val value = match.groupValues[1].trim()
+            if (value.length in 4..40) {
+                add(
+                    QuickAddParser.Field(
+                        key = "attributes.$key", label = label, value = value,
+                        display = value, sourceText = match.value.trim(),
+                        confidence = "medium",
+                    ),
+                )
             }
         }
     }
@@ -117,6 +140,9 @@ class DocumentCaptureService(
         text.replace(Regex("""\s+"""), " ").trim().take(2000)
 
     private companion object {
+        /** A dense A4 page is about 4,000 characters; five pages is plenty. */
+        const val MAX_DEVICE_TEXT = 20_000
+
         val REFERENCE_PATTERNS: List<Triple<String, String, Regex>> = listOf(
             Triple(
                 "policy_no", "Policy number",

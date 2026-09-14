@@ -55,6 +55,11 @@ if [ "${1:-}" = "test" ]; then
   say "docs/12 against the code that implements it…"
   python3 scripts/check-spec.py | sed 's/^/  /'
 
+  # The public site promises no scripts, no trackers and nothing loaded from
+  # another host. Nothing a browser shows would say if that stopped being true.
+  say "site/ against its own promises…"
+  python3 scripts/check-site.py | sed 's/^/  /'
+
   say "Unit and integration tests…"
   (cd backend && ./gradlew test --console=plain -q)
 

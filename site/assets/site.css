@@ -1,0 +1,232 @@
+/* =============================================================================
+   The public site's styles — docs/02, in the app's own identity.
+   The colour and type values are the app's tokens (static/app/tokens.css),
+   copied rather than linked: the site is served from its own origin and must
+   not depend on the app being up to render. When a token changes there, change
+   it here; scripts/check-site.py compares the two.
+   fonts.css is linked beside this file rather than imported from it, so the two
+   stylesheets download in parallel.
+
+   Roles, strictly:
+     accent  teal, exactly one primary action per page (Sign in)
+     brass   the one figure a page leads with, in light mode
+     gold    decorative rules and rings only, never text in light mode
+     rust    money owed — which a public page never shows, so it is absent
+     muted   captions and notices; faint is never used for text
+   Nothing is set below 13px, and every size is in rem so 200% text reflows.
+   ============================================================================= */
+
+:root {
+  --canvas:         #FBF9F5;
+  --surface:        #FFFFFF;
+  --surface-sunken: #F4F1EA;
+  --ink:            #1C1A17;
+  --ink-muted:      #6B6558;
+  --hairline:       #E7E2D8;
+  --accent:         #0F5A57;
+  --accent-ink:     #FFFFFF;
+  --brass:          #8A6D10;
+  --gold:           #C9A227;
+  --mark-ground:    #123F3A;
+
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-te-serif: "Noto Serif Telugu", "Fraunces", Georgia, serif;
+  --font-te-sans: "Noto Sans Telugu", "Inter", system-ui, sans-serif;
+  --font-hi-serif: "Noto Serif Devanagari", "Fraunces", Georgia, serif;
+  --font-hi-sans: "Noto Sans Devanagari", "Inter", system-ui, sans-serif;
+
+  --text-display: clamp(2.1rem, 1.4rem + 3vw, 3.2rem);
+  --text-h1:      clamp(1.8rem, 1.3rem + 2vw, 2.4rem);
+  --text-h2:      1.6rem;
+  --text-h3:      1.2rem;
+  --text-base:    1.0625rem;
+  --text-sm:      0.9375rem;
+  --text-caption: 0.8125rem;   /* 13px: the floor */
+
+  --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem; --space-4: 1rem;
+  --space-6: 1.5rem;  --space-8: 2rem;   --space-12: 3rem;   --space-16: 4rem;
+
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --reading-max: 44rem;
+  --content-max: 70rem;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas:         #14130F;
+    --surface:        #1D1B16;
+    --surface-sunken: #242019;
+    --ink:            #F2EEE4;
+    --ink-muted:      #B4AD9C;
+    --hairline:       #332F27;
+    --accent:         #3E9E99;
+    --accent-ink:     #0B1C1B;
+    --brass:          #D8B95A;
+    --gold:           #D8B95A;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+:lang(te) body, body:lang(te) { font-family: var(--font-te-sans); line-height: 1.8; }
+:lang(hi) body, body:lang(hi) { font-family: var(--font-hi-sans); line-height: 1.75; }
+
+h1, h2, h3 { margin: 0; font-weight: 500; line-height: 1.2; text-wrap: balance; }
+h1, h2 { font-family: var(--font-display); }
+:lang(te) h1, :lang(te) h2 { font-family: var(--font-te-serif); line-height: 1.45; }
+:lang(hi) h1, :lang(hi) h2 { font-family: var(--font-hi-serif); line-height: 1.4; }
+h1 { font-size: var(--text-h1); letter-spacing: -0.005em; }
+h2 { font-size: var(--text-h2); }
+h3 { font-size: var(--text-h3); font-weight: 600; }
+p  { margin: 0; }
+p + p { margin-top: var(--space-4); }
+
+a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+a:hover { text-decoration-thickness: 2px; }
+
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+.skip {
+  position: absolute; left: var(--space-4); top: -100%;
+  background: var(--surface); color: var(--ink);
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  z-index: 10;
+}
+.skip:focus { top: var(--space-4); }
+
+/* --- Frame ---------------------------------------------------------------- */
+
+.wrap { max-width: var(--content-max); margin: 0 auto; padding-inline: max(1rem, 4vw); }
+.reading { max-width: var(--reading-max); }
+
+.masthead { border-bottom: 1px solid var(--hairline); }
+.masthead .wrap {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-6);
+  padding-block: var(--space-3);
+}
+.brand {
+  display: inline-flex; align-items: center; gap: var(--space-3);
+  min-height: 44px; text-decoration: none;
+  font-family: var(--font-display); font-size: 1.4rem;
+}
+.brand img { width: 2.25rem; height: 2.25rem; border-radius: 8px; }
+
+.nav { display: flex; flex-wrap: wrap; gap: 0 var(--space-4); margin-inline-start: auto; }
+.nav a, .langs a {
+  display: inline-flex; align-items: center; min-height: 44px; min-width: 44px;
+  padding-inline: var(--space-1); text-decoration: none; color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+.nav a:hover, .langs a:hover { color: var(--ink); text-decoration: underline; }
+.nav a[aria-current="page"] { color: var(--ink); text-decoration: underline; text-decoration-color: var(--gold); text-decoration-thickness: 2px; }
+
+.primary {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: var(--space-2) var(--space-6);
+  background: var(--accent); color: var(--accent-ink);
+  border-radius: var(--radius-md); text-decoration: none; font-weight: 600;
+  font-size: var(--text-sm);
+}
+.primary:hover { text-decoration: underline; }
+
+main { padding-block: var(--space-12) var(--space-16); }
+
+.footer { border-top: 1px solid var(--hairline); color: var(--ink-muted); font-size: var(--text-sm); }
+.footer .wrap { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-8); padding-block: var(--space-8); }
+.footer nav { display: flex; flex-wrap: wrap; gap: 0 var(--space-4); }
+.footer nav a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink-muted); }
+.langs { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-3); }
+.langs span { color: var(--ink-muted); }
+.langs a[aria-current="true"] { color: var(--ink); font-weight: 600; }
+
+/* --- Pieces --------------------------------------------------------------- */
+
+.overline {
+  font-size: var(--text-caption); letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-muted); font-weight: 600; margin-bottom: var(--space-3);
+}
+:lang(te) .overline, :lang(hi) .overline { text-transform: none; letter-spacing: 0; }
+
+.hero h1 { font-size: var(--text-display); line-height: 1.1; max-width: 18ch; }
+:lang(te) .hero h1, :lang(hi) .hero h1 { line-height: 1.4; max-width: 22ch; }
+.lede { font-size: 1.2rem; color: var(--ink-muted); margin-top: var(--space-6); max-width: 38rem; }
+
+.rule { border: 0; height: 2px; width: 4rem; background: var(--gold); margin: var(--space-12) 0; }
+
+.section { margin-top: var(--space-16); }
+section > h2 + * { margin-top: var(--space-4); }
+/* The unreviewed-translation notice leads a draft page, above the hero. */
+.notice:first-child { margin: 0 0 var(--space-8); }
+
+.figure {
+  font-family: var(--font-display); color: var(--brass);
+  font-size: var(--text-display); line-height: 1; font-weight: 500;
+}
+
+.locks {
+  display: grid; gap: var(--space-8); margin-top: var(--space-8);
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+.lock { border-top: 1px solid var(--hairline); padding-top: var(--space-6); }
+.lock svg { width: 5rem; height: 5rem; color: var(--ink); display: block; margin-bottom: var(--space-4); }
+.lock h3 { margin-bottom: var(--space-2); }
+.lock p { color: var(--ink-muted); }
+
+.never { list-style: none; padding: 0; margin: var(--space-6) 0 0; }
+.never li {
+  padding-block: var(--space-4); border-top: 1px solid var(--hairline);
+  display: grid; gap: var(--space-1);
+}
+.never li:last-child { border-bottom: 1px solid var(--hairline); }
+.never strong { font-family: var(--font-display); font-weight: 500; font-size: 1.2rem; }
+:lang(te) .never strong { font-family: var(--font-te-serif); }
+:lang(hi) .never strong { font-family: var(--font-hi-serif); }
+.never span { color: var(--ink-muted); }
+
+.plain { padding-inline-start: 1.25rem; margin: var(--space-4) 0 0; }
+.plain li + li { margin-top: var(--space-2); }
+
+/* A notice is muted text with an info mark — never a coloured box. */
+.notice {
+  display: flex; gap: var(--space-3); align-items: flex-start;
+  color: var(--ink-muted); font-size: var(--text-sm); margin-top: var(--space-6);
+}
+.notice svg { flex: none; width: 1.25rem; height: 1.25rem; margin-top: 0.2em; }
+
+.caption { font-size: var(--text-caption); color: var(--ink-muted); }
+
+@media (max-width: 40rem) {
+  .nav { margin-inline-start: 0; width: 100%; order: 3; }
+  main { padding-block: var(--space-8) var(--space-12); }
+  .section { margin-top: var(--space-12); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+@media print {
+  .masthead .nav, .primary, .skip, .langs { display: none; }
+  body { background: #fff; color: #000; }
+}
+
+/* The drawings carry the light-mode gold as an attribute, so they stay right
+   with no stylesheet at all; this swaps in the dark-mode gold. */
+.lock [stroke="#C9A227"] { stroke: var(--gold); }
+.lock [fill="#C9A227"]   { fill: var(--gold); }

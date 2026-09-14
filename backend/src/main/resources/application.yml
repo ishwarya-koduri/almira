@@ -129,6 +129,14 @@ almira:
       timeout: ${ALMIRA_PROVIDER_EMAIL_TIMEOUT:10s}
       max-attempts: ${ALMIRA_PROVIDER_EMAIL_MAX_ATTEMPTS:3}
       retry-backoff: ${ALMIRA_PROVIDER_EMAIL_RETRY_BACKOFF:500ms}
+      # Read only when mode is live (provider/SmtpEmailSender.kt, docs/13 §5).
+      smtp:
+        host: ${ALMIRA_PROVIDER_EMAIL_SMTP_HOST:}
+        port: ${ALMIRA_PROVIDER_EMAIL_SMTP_PORT:587}
+        username: ${ALMIRA_PROVIDER_EMAIL_SMTP_USERNAME:}
+        password: ${ALMIRA_PROVIDER_EMAIL_SMTP_PASSWORD:}
+        from: ${ALMIRA_PROVIDER_EMAIL_SMTP_FROM:}
+        start-tls: ${ALMIRA_PROVIDER_EMAIL_SMTP_START_TLS:true}
     push:
       mode: ${ALMIRA_PROVIDER_PUSH_MODE:sandbox}
       base-url: ${ALMIRA_PROVIDER_PUSH_BASE_URL:}

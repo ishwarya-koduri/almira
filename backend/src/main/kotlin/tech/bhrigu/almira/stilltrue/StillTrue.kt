@@ -51,11 +51,33 @@ object StillTrue {
     /** The furthest a question can be put off. Beyond a year it is not a snooze. */
     const val MAX_SNOOZE_DAYS = 366L
 
-    /** What a notification says. A count, never a title or an amount. */
-    fun digestTitle(count: Int): String =
-        if (count == 1) "Still true? 1 record to check" else "Still true? $count records to check"
+    /**
+     * What a notification says (docs/21 §6, "The nudge"): a question, with the
+     * reason on the same line. Counts only — never a title, an institution or an
+     * amount, because it lands on a lock screen. Deliberately not "Still true?"
+     * on its own: about a parent's policy, that reads like a death notice.
+     *
+     * [keyDates] is how many of the [count] came back because a maturity, renewal
+     * or end date passed, rather than because nobody had looked in a while.
+     */
+    fun digestTitle(count: Int, keyDates: Int = 0): String {
+        val records = if (count == 1) "1 record" else "$count records"
+        return when {
+            keyDates == 0 -> "Is this still right? $records ${if (count == 1) "hasn't" else "haven't"} been confirmed in a while"
+            keyDates == count ->
+                if (count == 1) "Is this still right? A date on 1 record has passed"
+                else "Is this still right? Dates on $count records have passed"
+            else -> "Is this still right? $records to look at, some with dates that have passed"
+        }
+    }
+
+    /** No more than one Still true? reminder a week, per person, across households. */
+    const val DIGEST_MIN_DAYS_APART = 7L
 
     const val DIGEST_TEMPLATE = "still_true.digest"
+
+    /** Mirrors `key_date + 7` in V29's still_true_records. */
+    const val KEY_DATE_GRACE_DAYS = 7L
 }
 
 /**
@@ -196,7 +218,7 @@ class StillTrueService(
             dueOn = rs.getObject("effective_due_on", LocalDate::class.java),
             snoozedUntil = rs.getObject("snoozed_until", LocalDate::class.java),
             isDue = rs.getBoolean("is_due"),
-            reason = if (keyDate != null && dueOn == keyDate.plusDays(KEY_DATE_GRACE_DAYS)) "key_date" else "period",
+            reason = if (keyDate != null && dueOn == keyDate.plusDays(StillTrue.KEY_DATE_GRACE_DAYS)) "key_date" else "period",
         )
     }
 
@@ -207,8 +229,6 @@ class StillTrueService(
             from still_true_items
         """
 
-        /** Mirrors `key_date + 7` in V29's still_true_records. */
-        const val KEY_DATE_GRACE_DAYS = 7L
     }
 }
 

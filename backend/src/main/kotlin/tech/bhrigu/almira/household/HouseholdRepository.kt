@@ -30,6 +30,7 @@ data class MemberRow(
     val isMe: Boolean,
     val role: String?,
     val version: Int,
+    val diedOn: LocalDate? = null,
 )
 
 @Repository
@@ -105,10 +106,11 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
         relationship: String?,
         dateOfBirth: LocalDate?,
         notes: String?,
+        diedOn: LocalDate? = null,
     ): UUID = jdbc.queryForObject(
         """
-        insert into members (household_id, display_name, relationship, date_of_birth, notes)
-        values (:hid, :name, :relationship, :dob, :notes)
+        insert into members (household_id, display_name, relationship, date_of_birth, notes, died_on)
+        values (:hid, :name, :relationship, :dob, :notes, :diedOn)
         returning id
         """.trimIndent(),
         MapSqlParameterSource()
@@ -116,7 +118,8 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
             .addValue("name", displayName)
             .addValue("relationship", relationship)
             .addValue("dob", dateOfBirth)
-            .addValue("notes", notes),
+            .addValue("notes", notes)
+            .addValue("diedOn", diedOn),
         UUID::class.java,
     )!!
 
@@ -126,12 +129,14 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
         relationship: String?,
         dateOfBirth: LocalDate?,
         version: Int,
+        diedOn: LocalDate? = null,
     ): Int = jdbc.update(
         """
         update members set
           display_name  = coalesce(:name, display_name),
           relationship  = coalesce(:relationship, relationship),
-          date_of_birth = coalesce(:dob, date_of_birth)
+          date_of_birth = coalesce(:dob, date_of_birth),
+          died_on       = coalesce(:diedOn, died_on)
         where id = :id and version = :version and deleted_at is null
         """.trimIndent(),
         MapSqlParameterSource()
@@ -139,6 +144,7 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
             .addValue("name", displayName)
             .addValue("relationship", relationship)
             .addValue("dob", dateOfBirth)
+            .addValue("diedOn", diedOn)
             .addValue("version", version),
     )
 
@@ -215,6 +221,7 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
             isMe = false,
             role = rs.getString("role"),
             version = rs.getInt("version"),
+            diedOn = rs.getDate("died_on")?.toLocalDate(),
         )
     }
 }

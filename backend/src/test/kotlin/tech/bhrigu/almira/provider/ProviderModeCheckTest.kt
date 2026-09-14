@@ -125,6 +125,23 @@ class ProviderModeCheckTest {
             .hasMessageContaining("docs/13")
     }
 
+    /** Live email is SMTP (SmtpEmailSender): a host and a from-address, and no API key. */
+    @Test
+    fun `live email starts with a relay and a from-address, and refuses without them`() {
+        run(
+            "almira.providers.email.mode" to "live",
+            "almira.providers.email.smtp.host" to "smtp.example.test",
+            "almira.providers.email.smtp.from" to "reminders@example.test",
+        )
+        assertThatThrownBy { run("almira.providers.email.mode" to "live", "almira.providers.email.api-key" to "k") }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("almira.providers.email.smtp.host and almira.providers.email.smtp.from are")
+            .hasMessageContaining("ALMIRA_PROVIDER_EMAIL_SMTP_HOST")
+        assertThatThrownBy {
+            run("almira.providers.email.mode" to "live", "almira.providers.email.smtp.host" to "smtp.example.test")
+        }.hasMessageContaining("almira.providers.email.smtp.from is not set")
+    }
+
     /**
      * Fail closed on nonsense. `liev` must not quietly mean sandbox and spend a
      * month sending nothing, and must not mean live either.

@@ -41,6 +41,8 @@ class NotificationOutboxTest : ApiTestBase() {
     @Autowired private lateinit var push: SandboxPushSender
     @Autowired private lateinit var calls: ProviderCalls
     @Autowired private lateinit var props: AlmiraProperties
+    @Autowired private lateinit var directory: DeliveryDirectory
+    @Autowired private lateinit var pacing: DeliveryPacing
     @Autowired private lateinit var reminders: ReminderWorker
     @Autowired private lateinit var runtimeDataSource: DataSource
 
@@ -171,7 +173,7 @@ class NotificationOutboxTest : ApiTestBase() {
             .isEqualTo(db.queryForObject("select current_user", String::class.java))
             .isNotEqualTo(JdbcTemplate(runtimeDataSource).queryForObject("select current_user", String::class.java))
 
-        val misWired = NotificationOutbox(runtimeDataSource, channels, calls, props)
+        val misWired = NotificationOutbox(runtimeDataSource, channels, calls, props, directory, pacing)
         outbox.whilePaused {
             queueDirectly()
             val queued = rows().filter { it.channel != "in_app" }
@@ -195,7 +197,7 @@ class NotificationOutboxTest : ApiTestBase() {
     @Test
     fun `a send cut off before it was recorded is never sent twice`() {
         val dying = NotificationOutbox(
-            ownerDataSource, channels, calls, props.copy(outbox = props.outbox.copy(batchSize = 1)),
+            ownerDataSource, channels, calls, props.copy(outbox = props.outbox.copy(batchSize = 1)), directory, pacing,
         ).apply { afterSendBeforeRecord = { throw Crash() } }
 
         outbox.whilePaused {
@@ -239,7 +241,7 @@ class NotificationOutboxTest : ApiTestBase() {
     fun `a worker that stops mid-batch has only started the send it was on`() {
         // The default batch: every queued row is claimed together, and the worker dies after its first send.
         var crashedOn: UUID? = null
-        val dying = NotificationOutbox(ownerDataSource, channels, calls, props).apply {
+        val dying = NotificationOutbox(ownerDataSource, channels, calls, props, directory, pacing).apply {
             afterSendBeforeRecord = { id -> if (crashedOn == null) { crashedOn = id; throw Crash() } }
         }
         assertThat(props.outbox.batchSize).isGreaterThan(2)
@@ -279,7 +281,7 @@ class NotificationOutboxTest : ApiTestBase() {
 
     @Test
     fun `each send in a batch starts its own lease when it starts, not when the batch was claimed`() {
-        val worker = NotificationOutbox(ownerDataSource, channels, calls, props)
+        val worker = NotificationOutbox(ownerDataSource, channels, calls, props, directory, pacing)
         outbox.whilePaused {
             queueDirectly()
             worker.drain()
@@ -319,8 +321,8 @@ class NotificationOutboxTest : ApiTestBase() {
     fun `a worker whose claim ran out and was taken over leaves the row to the worker that took it`() {
         val calledWith = ConcurrentLinkedQueue<Pair<String, String>>()
         val counted = channels.map { Counting(it, calledWith) }
-        val slow = NotificationOutbox(ownerDataSource, counted, calls, props)
-        val takeover = NotificationOutbox(ownerDataSource, counted, calls, props)
+        val slow = NotificationOutbox(ownerDataSource, counted, calls, props, directory, pacing)
+        val takeover = NotificationOutbox(ownerDataSource, counted, calls, props, directory, pacing)
 
         // Handshakes, each with a timeout, so a regression fails instead of hanging the suite.
         val slowReached = LinkedBlockingQueue<UUID>()

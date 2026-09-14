@@ -589,5 +589,65 @@ select pg_temp.as_user('ravi');
 select pg_temp.assert(not pg_temp.sees('i_private'),
   'a veto closes the window immediately, mid-session');
 
+-- ------------------------------------------------- devices and preferences --
+do $$ begin raise notice '--- a person''s phones and notification choices are theirs alone (V60) ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into user_devices (user_id, installation_id, platform, token, environment)
+  values ((select v from t where k='ish'), 'ish-iphone-0001', 'ios', 'apns0123456789abcdef', 'production');
+insert into notification_preferences (user_id, sms_enabled, quiet_from, quiet_until)
+  values ((select v from t where k='ish'), false, '22:00', '07:00');
+select pg_temp.assert((select count(*) from user_devices) = 1, 'a person sees their own device');
+select pg_temp.assert((select count(*) from notification_preferences) = 1, 'a person sees their own preferences');
+
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into user_devices (user_id, installation_id, platform, token)
+      values ((select v from t where k='ravi'), 'planted-0001', 'android', 'fcm0123456789abcdef');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nobody can register a device, and so redirect messages, for someone else');
+end $$;
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from user_devices) = 0,
+  'an ADMIN of the same household sees none of another member''s devices');
+select pg_temp.assert((select count(*) from notification_preferences) = 0,
+  'an ADMIN sees none of another member''s notification choices');
+do $$
+declare n int;
+begin
+  update notification_preferences set sms_enabled = true;
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'an ADMIN cannot switch another member''s channels back on');
+  delete from user_devices;
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'an ADMIN cannot remove another member''s device');
+end $$;
+
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from user_devices) = 0, 'an outsider sees no devices');
+
+select pg_temp.as_user('ish');
+select set_config('app.guest_share_id', :'share_id', false);
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into user_devices (user_id, installation_id, platform, token)
+      values ((select v from t where k='ish'), 'guest-planted-0001', 'android', 'fcm0123456789abcdef');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a guest link cannot register a device for the person who shared it');
+end $$;
+select set_config('app.guest_share_id', '', false);
+
+select pg_temp.assert(app.is_remembrance_day((select v from t where k='hh'), date '2031-04-02'),
+  'Aarav''s birthday is a remembrance day for the household');
+select pg_temp.assert(not app.is_remembrance_day((select v from t where k='hh'), date '2031-04-03'),
+  'the day after is not');
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

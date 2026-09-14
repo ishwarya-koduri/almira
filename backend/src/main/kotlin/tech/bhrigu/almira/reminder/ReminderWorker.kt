@@ -61,7 +61,7 @@ class ReminderWorker(
         log.info("reminder sweep: {} due, {} notifications queued", due.size, queued)
     }
 
-    private data class DueReminder(
+    internal data class DueReminder(
         val id: UUID,
         val householdId: UUID,
         val investmentId: UUID?,
@@ -71,12 +71,13 @@ class ReminderWorker(
         val dueDate: java.time.LocalDate,
         /** The date this reminder fires for: its snooze if it has one. Part of the message's identity. */
         val firesOn: java.time.LocalDate,
+        val amount: java.math.BigDecimal? = null,
     )
 
     private fun findDue(): List<DueReminder> = system.query(
         """
         select r.id, r.household_id, r.investment_id, r.liability_id,
-               r.kind, r.title, r.due_date, coalesce(r.snoozed_until, r.due_date) as fires_on
+               r.kind, r.title, r.due_date, coalesce(r.snoozed_until, r.due_date) as fires_on, r.amount
         from reminders r
         join households h on h.id = r.household_id
         where r.deleted_at is null
@@ -98,6 +99,7 @@ class ReminderWorker(
             title = rs.getString("title"),
             dueDate = rs.getDate("due_date").toLocalDate(),
             firesOn = rs.getDate("fires_on").toLocalDate(),
+            amount = rs.getBigDecimal("amount"),
         )
     }
 
@@ -162,7 +164,7 @@ class ReminderWorker(
                     userId = userId, householdId = reminder.householdId,
                     reminderId = reminder.id, template = "reminder.${reminder.kind}",
                     title = reminder.title,
-                    body = "Due ${reminder.dueDate}",
+                    body = bodyFor(reminder),
                     // One message per reminder, per date it fires for, per person:
                     // a sweep that runs again before the status update commits
                     // (a crash, a second server) queues nothing new.
@@ -170,5 +172,26 @@ class ReminderWorker(
                 ),
             )
         }
+    }
+
+    internal companion object {
+        /**
+         * The words beneath the title: the date in full, and the amount the way the
+         * handbook writes it, with the words underneath — "₹2,40,000", then "Two Lakh
+         * Forty Thousand Rupees". This body is sent by email and kept only while it is
+         * on its way; it is never written to `outbound_messages` or a log.
+         */
+        internal fun bodyFor(reminder: DueReminder): String = buildString {
+            append("Due on ").append(reminder.dueDate.format(DUE_DATE)).append('.')
+            reminder.amount?.takeIf { it.signum() > 0 }?.let {
+                append("\n")
+                append(tech.bhrigu.almira.common.IndianNumbers.rupees(it)).append("\n")
+                append(tech.bhrigu.almira.common.IndianNumbers.words(it)).append(" Rupees")
+            }
+        }
+
+        /** "Thursday, 17 September 2026": a date people read, not an ISO string. */
+        val DUE_DATE: java.time.format.DateTimeFormatter =
+            java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", java.util.Locale.ENGLISH)
     }
 }

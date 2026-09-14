@@ -85,6 +85,7 @@ class HouseholdService(
         relationship: String?,
         dateOfBirth: LocalDate?,
         notes: String?,
+        diedOn: LocalDate? = null,
     ): MemberRow {
         val userId = userContext.require()
         requireAdmin(get(householdId))
@@ -95,8 +96,9 @@ class HouseholdService(
         if (dateOfBirth != null && dateOfBirth.isAfter(LocalDate.now())) {
             throw ApiException.badRequest("dob_future", "That date of birth is in the future.")
         }
+        checkDiedOn(diedOn, dateOfBirth)
 
-        val memberId = repo.addMember(householdId, displayName.trim(), relationship, dateOfBirth, notes)
+        val memberId = repo.addMember(householdId, displayName.trim(), relationship, dateOfBirth, notes, diedOn)
         audit.record(
             householdId = householdId, actorUserId = userId, action = "member.create",
             entityType = "member", entityId = memberId,
@@ -112,6 +114,7 @@ class HouseholdService(
         relationship: String?,
         dateOfBirth: LocalDate?,
         version: Int?,
+        diedOn: LocalDate? = null,
     ): MemberRow {
         val userId = userContext.require()
         val household = get(householdId)
@@ -121,8 +124,9 @@ class HouseholdService(
         // You may always edit your own entry; editing anyone else needs admin.
         if (member.userId != userId) requireAdmin(household)
 
+        checkDiedOn(diedOn, dateOfBirth ?: member.dateOfBirth)
         val updated = repo.updateMember(
-            memberId, displayName, relationship, dateOfBirth, version ?: member.version,
+            memberId, displayName, relationship, dateOfBirth, version ?: member.version, diedOn,
         )
         if (updated == 0) throw staleWrite(member.version)
 
@@ -186,6 +190,17 @@ class HouseholdService(
                 "visibility_invalid",
                 "Choose either private or household.",
             )
+        }
+    }
+
+    /** A date of death is optional; when given it is neither in the future nor before the birth. */
+    private fun checkDiedOn(diedOn: LocalDate?, dateOfBirth: LocalDate?) {
+        if (diedOn == null) return
+        if (diedOn.isAfter(LocalDate.now())) {
+            throw ApiException.badRequest("died_on_future", "That date is in the future.")
+        }
+        if (dateOfBirth != null && diedOn.isBefore(dateOfBirth)) {
+            throw ApiException.badRequest("died_on_before_birth", "That date is before their date of birth.")
         }
     }
 

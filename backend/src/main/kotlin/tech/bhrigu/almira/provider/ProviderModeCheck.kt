@@ -56,13 +56,16 @@ class ProviderModeCheck : EnvironmentPostProcessor {
     /**
      * Which providers have a live implementation at all.
      *
-     * Empty, today, and deliberately a list rather than a `TODO` in a comment:
-     * an adapter written against a contract nobody has seen is a guess, and
-     * docs/13 records which of these have a reachable sandbox and which need
-     * partner onboarding before an adapter can honestly exist. When one is
-     * written, its name goes here and the refusal below stops applying to it.
+     * Deliberately a list rather than a `TODO` in a comment: an adapter written
+     * against a contract nobody has seen is a guess, and docs/13 records which
+     * of these have a reachable sandbox and which need partner onboarding before
+     * an adapter can honestly exist. When one is written, its name goes here and
+     * the refusal below stops applying to it.
+     *
+     * `email` is the first: SMTP is a standard, so the adapter is not a guess
+     * about anyone's API (provider/SmtpEmailSender.kt).
      */
-    private val implemented = emptySet<String>()
+    private val implemented = setOf("email")
 
     override fun postProcessEnvironment(
         environment: ConfigurableEnvironment,
@@ -99,6 +102,21 @@ class ProviderModeCheck : EnvironmentPostProcessor {
                     append("missing implementation, not a missing setting. See ")
                     append("docs/13-providers-and-going-live.md for what $name needs ")
                     append("before one can be written.")
+                }
+
+                // Email's live adapter is SMTP: a host and a from-address are what it cannot
+                // run without. A username is not — a relay on a private network may take none.
+                mode == "live" && name == "email" -> {
+                    val missing = SMTP_REQUIRED.filter { environment.getProperty("almira.providers.email.smtp.$it", "").isBlank() }
+                    if (missing.isNotEmpty()) {
+                        problems += buildString {
+                            append("almira.providers.email.mode is 'live', which sends through an SMTP relay, but ")
+                            append(missing.joinToString(" and ") { "almira.providers.email.smtp.$it" })
+                            append(if (missing.size == 1) " is" else " are")
+                            append(" not set (ALMIRA_PROVIDER_EMAIL_SMTP_HOST, ALMIRA_PROVIDER_EMAIL_SMTP_FROM). ")
+                            append("See docs/13-providers-and-going-live.md §5.")
+                        }
+                    }
                 }
 
                 mode == "live" && credentials.all { it.isBlank() } -> problems += buildString {
@@ -160,6 +178,9 @@ class ProviderModeCheck : EnvironmentPostProcessor {
          * key, or — for SMS in India — the DLT sender and template ids, which
          * are what actually decide whether an operator delivers the message.
          */
+        /** What live email cannot start without. */
+        val SMTP_REQUIRED = listOf("host", "from")
+
         val CREDENTIAL_KEYS = listOf(
             "client-id", "client-secret", "api-key", "sender-id", "template-id",
         )

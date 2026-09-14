@@ -228,11 +228,39 @@ data class AlmiraProperties(
         val maxAttempts: Int = 3,
         /** Doubling from here, with jitter, between attempts. */
         val retryBackoff: Duration = Duration.ofMillis(500),
+        /**
+         * For `email` only: the SMTP relay the live adapter sends through
+         * (provider/SmtpEmailSender.kt). Any provider that offers SMTP — SES,
+         * Postmark, a company relay — so choosing one is configuration, not code.
+         * Ignored by every other provider and by the email sandbox.
+         */
+        val smtp: Smtp = Smtp(),
     ) {
         val isLive: Boolean get() = mode.equals("live", ignoreCase = true)
         val isSandbox: Boolean get() = mode.equals("sandbox", ignoreCase = true)
         val isDisabled: Boolean get() = mode.equals("disabled", ignoreCase = true)
     }
+
+    /**
+     * An SMTP relay. Nothing here is read unless `almira.providers.email.mode` is
+     * `live`, and then [host] and [from] are required at startup
+     * (ProviderModeCheck). The password comes from the environment.
+     */
+    data class Smtp(
+        val host: String = "",
+        /** 587 with STARTTLS is what every current relay documents. */
+        val port: Int = 587,
+        val username: String = "",
+        val password: String = "",
+        /** The verified sending address, e.g. `Almira <reminders@example.in>`. */
+        val from: String = "",
+        /**
+         * Required by default: an SMTP session that falls back to plain text sends
+         * a reminder's amount and institution across the network readable. Only a
+         * relay on the same host, or a test's fake server, turns this off.
+         */
+        val startTls: Boolean = true,
+    )
 
     /** True only when development was chosen, never when nothing was said. */
     val isDevelopment: Boolean get() = environment.equals("development", ignoreCase = true)

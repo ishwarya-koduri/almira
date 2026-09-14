@@ -37,12 +37,20 @@ data class AddMemberBody(
     val relationship: String? = null,
     val dateOfBirth: LocalDate? = null,
     val notes: String? = null,
+    /**
+     * When this person died, if the family chooses to record it. Optional, and
+     * used for one thing only: no Still true? reminder is sent on the anniversary
+     * (docs/21 §6, "Not on a remembrance day").
+     */
+    val diedOn: LocalDate? = null,
 )
 
 data class UpdateMemberBody(
     @field:Size(max = 80) val displayName: String? = null,
     val relationship: String? = null,
     val dateOfBirth: LocalDate? = null,
+    /** See [AddMemberBody.diedOn]. */
+    val diedOn: LocalDate? = null,
     val version: Int? = null,
 )
 
@@ -68,6 +76,8 @@ data class MemberResponse(
     val isMe: Boolean,
     val role: String?,
     val version: Int,
+    /** See [AddMemberBody.diedOn]. Null when not recorded. */
+    val diedOn: LocalDate? = null,
 )
 
 @RestController
@@ -107,7 +117,7 @@ class HouseholdController(private val service: HouseholdService) {
         @PathVariable householdId: UUID,
         @RequestBody @Valid body: AddMemberBody,
     ): MemberResponse = service.addMember(
-        householdId, body.displayName, body.relationship, body.dateOfBirth, body.notes,
+        householdId, body.displayName, body.relationship, body.dateOfBirth, body.notes, body.diedOn,
     ).toResponse()
 
     @PatchMapping("/{householdId}/members/{memberId}")
@@ -116,7 +126,7 @@ class HouseholdController(private val service: HouseholdService) {
         @PathVariable memberId: UUID,
         @RequestBody @Valid body: UpdateMemberBody,
     ): MemberResponse = service.updateMember(
-        householdId, memberId, body.displayName, body.relationship, body.dateOfBirth, body.version,
+        householdId, memberId, body.displayName, body.relationship, body.dateOfBirth, body.version, body.diedOn,
     ).toResponse()
 
     @DeleteMapping("/{householdId}/members/{memberId}")
@@ -133,6 +143,6 @@ class HouseholdController(private val service: HouseholdService) {
     )
 
     private fun MemberRow.toResponse() = MemberResponse(
-        id, displayName, relationship, dateOfBirth, isMinor, isManaged, isMe, role, version,
+        id, displayName, relationship, dateOfBirth, isMinor, isManaged, isMe, role, version, diedOn,
     )
 }

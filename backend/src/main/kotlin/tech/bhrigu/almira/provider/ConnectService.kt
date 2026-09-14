@@ -52,6 +52,14 @@ data class WhatsAppCapture(
  *   · it arrives at the household's **default visibility**, never wider;
  *   · it is marked with where it came from, so nobody later mistakes a fixture,
  *     or a bank's guess, for something a person typed.
+ *
+ * **No provider call inside a transaction** (known-issues 21). A person is
+ * waiting for each of these, so the calls stay in the request — but never while
+ * a database transaction, and so an app-pool connection, is held open around
+ * them. Each method reads what it needs in one short transaction, calls the
+ * provider with none open, and writes what came back in another. Every call is
+ * also bounded as a whole by `almira.providers.connect-budget`
+ * ([ProviderCalls.interactive]), not only per attempt.
  */
 @Service
 class ConnectService(
@@ -68,10 +76,14 @@ class ConnectService(
     private val userContext: RequestUserContext,
     private val mapper: ObjectMapper,
     private val calls: ProviderCalls,
+    private val props: tech.bhrigu.almira.config.AlmiraProperties,
     transactionManager: org.springframework.transaction.PlatformTransactionManager,
 ) {
 
     private val transactions = org.springframework.transaction.support.TransactionTemplate(transactionManager)
+
+    /** Runs [block] in its own short transaction, with the request's identity, and returns what it returned. */
+    private fun <T : Any> inTransaction(block: () -> T): T = checkNotNull(transactions.execute { block() })
 
     @Transactional(readOnly = true)
     fun status(householdId: UUID): List<ProviderStatus> {
@@ -202,31 +214,49 @@ class ConnectService(
     }
 
     /** What an active DigiLocker connection offers, without redeeming anything. */
-    @Transactional
     fun listDocuments(householdId: UUID): List<VaultDocument> {
-        households.get(householdId)
-        requireEnabled(DIGILOCKER, vault.mode)
-        val session = activeSession(householdId, "digilocker", requireActive = true)
+        val session = inTransaction {
+            households.get(householdId)
+            requireEnabled(DIGILOCKER, vault.mode)
+            activeSession(householdId, "digilocker", requireActive = true)
+        }
         return provider(DIGILOCKER, "list") { vault.list(session) }
     }
 
-    @Transactional
+    /**
+     * Lists and fetches with no transaction open, then stores everything that
+     * arrived in one: a fetch that fails part-way stores nothing, as before.
+     */
     fun importDocuments(householdId: UUID, uris: List<String>): ImportedFromProvider {
         val userId = userContext.require()
-        households.get(householdId)
-        requireEnabled(DIGILOCKER, vault.mode)
-        val session = activeSession(householdId, "digilocker")
+        val session = inTransaction {
+            households.get(householdId)
+            requireEnabled(DIGILOCKER, vault.mode)
+            activeSession(householdId, "digilocker")
+        }
         val available = provider(DIGILOCKER, "list") { vault.list(session) }.associateBy { it.uri }
 
-        val titles = mutableListOf<String>()
         var skipped = 0
-        uris.forEach { uri ->
+        val fetched = uris.mapNotNull { uri ->
             val meta = available[uri]
             if (meta == null) {
                 skipped++
-                return@forEach
+                return@mapNotNull null
             }
-            val bytes = provider(DIGILOCKER, "fetch") { vault.fetch(session, uri) }
+            meta to provider(DIGILOCKER, "fetch") { vault.fetch(session, uri) }
+        }
+
+        return inTransaction { storeDocuments(householdId, userId, fetched, skipped) }
+    }
+
+    private fun storeDocuments(
+        householdId: UUID,
+        userId: UUID,
+        fetched: List<Pair<VaultDocument, ByteArray>>,
+        skipped: Int,
+    ): ImportedFromProvider {
+        val titles = mutableListOf<String>()
+        fetched.forEach { (meta, bytes) ->
             documents.upload(
                 householdId,
                 DocumentUpload(
@@ -258,11 +288,12 @@ class ConnectService(
 
     // --- Account Aggregator ----------------------------------------------------
 
-    @Transactional
     fun requestConsent(householdId: UUID): ConsentHandle {
         val userId = userContext.require()
-        households.get(householdId)
-        requireEnabled(AA, aggregator.mode)
+        inTransaction {
+            households.get(householdId)
+            requireEnabled(AA, aggregator.mode)
+        }
         val request = ConsentRequest(
             purpose = "Personal finance management",
             fiTypes = listOf("DEPOSIT", "TERM_DEPOSIT", "MUTUAL_FUNDS", "EQUITIES"),
@@ -274,24 +305,29 @@ class ConnectService(
         val consent = provider(AA, "consent", idempotent = false) {
             aggregator.requestConsent(householdId, request)
         }
-        upsertConnection(householdId, "account_aggregator", aggregator.mode, "pending", consent.handle, userId)
+        inTransaction {
+            upsertConnection(householdId, "account_aggregator", aggregator.mode, "pending", consent.handle, userId)
+        }
         return consent
     }
 
-    @Transactional
     fun consentStatus(householdId: UUID): ConsentHandle {
-        households.get(householdId)
-        requireEnabled(AA, aggregator.mode)
-        val handle = externalRef(householdId, "account_aggregator")
+        val handle = inTransaction {
+            households.get(householdId)
+            requireEnabled(AA, aggregator.mode)
+            externalRef(householdId, "account_aggregator")
+        }
         val status = provider(AA, "consent-status") { aggregator.consentStatus(handle) }
         if (status.status == "ACTIVE") {
-            jdbc.update(
-                """
-                update provider_connections set status = 'active'
-                where household_id = :hid and provider = 'account_aggregator'
-                """.trimIndent(),
-                mapOf("hid" to householdId),
-            )
+            inTransaction {
+                jdbc.update(
+                    """
+                    update provider_connections set status = 'active'
+                    where household_id = :hid and provider = 'account_aggregator'
+                    """.trimIndent(),
+                    mapOf("hid" to householdId),
+                )
+            }
         }
         return status
     }
@@ -302,12 +338,13 @@ class ConnectService(
      * second run recognises what it already imported by the masked account
      * number, so re-consenting does not double the balance sheet.
      */
-    @Transactional
     fun importHoldings(householdId: UUID): ImportedFromProvider {
         val userId = userContext.require()
-        households.get(householdId)
-        requireEnabled(AA, aggregator.mode)
-        val handle = externalRef(householdId, "account_aggregator")
+        val handle = inTransaction {
+            households.get(householdId)
+            requireEnabled(AA, aggregator.mode)
+            externalRef(householdId, "account_aggregator")
+        }
         // A provider failure is its own answer. Only the adapter's own refusal
         // (the consent is not active) means "approve it first" — reading a
         // timeout as that would send someone to re-approve a consent that is
@@ -322,6 +359,10 @@ class ConnectService(
             )
         }
 
+        return inTransaction { storeHoldings(householdId, userId, discovered) }
+    }
+
+    private fun storeHoldings(householdId: UUID, userId: UUID, discovered: List<DiscoveredHolding>): ImportedFromProvider {
         val existing = jdbc.query(
             """
             select attributes ->> 'source_ref' as ref from investments
@@ -518,7 +559,7 @@ class ConnectService(
     /** Through the shared timeout and retry policy, with each failure turned into its own answer. */
     private fun <T> provider(name: String, operation: String, idempotent: Boolean = true, block: () -> T): T =
         try {
-            calls.call(name, operation, idempotent, block)
+            calls.interactive(name, operation, props.providers.connectBudget, idempotent, block)
         } catch (failure: ProviderCallFailed) {
             throw ProviderErrors.forConnect(failure)
         }

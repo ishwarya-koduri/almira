@@ -58,7 +58,8 @@ interface EmailOtpSender {
  *
  * **Who it is for.** The address goes in `recipientHint`, the one place
  * [ChannelSender] has for it. For a one-time code the hint is the complete
- * address; notifications still pass null (docs/known-issues.md 13).
+ * address; for a notification the outbox worker looks the address up
+ * (provider/DeliveryPacing.kt, DeliveryDirectory).
  */
 @Component
 class ChannelEmailOtpSender(

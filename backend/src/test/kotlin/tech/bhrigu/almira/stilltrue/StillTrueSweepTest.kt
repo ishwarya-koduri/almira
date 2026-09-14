@@ -176,7 +176,7 @@ class StillTrueSweepTest : ApiTestBase() {
         sweep.run()
 
         val title = inApp(ownerUserId).single().title
-        assertThat(title).isEqualTo("Still true? 2 records to check")
+        assertThat(title).isEqualTo("Is this still right? 2 records haven't been confirmed in a while")
         assertThat(title).doesNotContain("HDFC", "LIC", "2,50,000", "250000", "Amma")
     }
 
@@ -205,6 +205,8 @@ class StillTrueSweepTest : ApiTestBase() {
             "update record_confirmation_nudges set nudged_at = now() - interval '31 days' where user_id = ?::uuid",
             ownerUserId,
         )
+        // A month has passed, so the last message is a month old too (at most one a week, below).
+        aWeekPasses()
         sweep.run()
         assertThat(inApp(ownerUserId)).hasSize(2)
     }
@@ -227,7 +229,8 @@ class StillTrueSweepTest : ApiTestBase() {
         // The snooze runs out.
         db.update("update record_confirmations set snoozed_until = snoozed_until - 1 where record_id = ?::uuid", snoozed)
         sweep.run()
-        assertThat(inApp(ownerUserId).map { it.title }).containsExactly("Still true? 1 record to check")
+        assertThat(inApp(ownerUserId).map { it.title })
+            .containsExactly("Is this still right? 1 record hasn't been confirmed in a while")
     }
 
     @Test
@@ -280,5 +283,150 @@ class StillTrueSweepTest : ApiTestBase() {
         assertThat(sent.filter { it.channel == "sms" }.map { it.status to it.failure })
             .describedAs("a timed-out text may already have landed; sending it again would be the nag")
             .containsExactly("failed" to "timeout")
+    }
+
+    // --- docs/21 §6: gentle, and not on the wrong day -------------------------
+
+    /** Ages this person's Still true? messages past the one-a-week limit. */
+    private fun aWeekPasses() {
+        db.update(
+            "update outbound_messages set created_at = created_at - interval '8 days' where user_id = ?::uuid and template = ?",
+            ownerUserId, StillTrue.DIGEST_TEMPLATE,
+        )
+    }
+
+    private fun householdToday(): java.time.LocalDate = java.time.LocalDate.parse(
+        db.queryForObject(
+            "select ((now() at time zone time_zone)::date)::text from households where id = ?::uuid",
+            String::class.java, householdId,
+        ),
+    )
+
+    @Test
+    fun `at most one Still true? message a week, however many records fall due`() {
+        dueFd("SBI FD")
+        sweep.run()
+        assertThat(inApp(ownerUserId)).hasSize(1)
+
+        dueFd("ICICI FD, due a day later")
+        sweep.run()
+        assertThat(inApp(ownerUserId))
+            .describedAs("a second record falling due inside the week waits")
+            .hasSize(1)
+
+        aWeekPasses()
+        sweep.run()
+        assertThat(inApp(ownerUserId))
+            .describedAs("and is asked about once the week is up, because it was never marked as asked")
+            .hasSize(2)
+    }
+
+    @Test
+    fun `ask me later holds every Still true? message for a week, and the question is still there after`() {
+        dueFd("SBI FD")
+        val paused = post("/api/v1/me/notification-preferences/still-true/ask-later", owner)
+        assertThat(paused.statusCode.value()).describedAs(paused.body).isEqualTo(200)
+        assertThat(paused.json().path("stillTruePausedUntil").asText()).isNotBlank()
+
+        sweep.run()
+        assertThat(inApp(ownerUserId)).isEmpty()
+        assertThat(get("/api/v1/households/$householdId/still-true", owner).json().path("items"))
+            .describedAs("the records are still in the app, to answer whenever")
+            .hasSize(1)
+
+        db.update(
+            "update notification_preferences set still_true_paused_until = current_date - 1 where user_id = ?::uuid",
+            ownerUserId,
+        )
+        sweep.run()
+        assertThat(inApp(ownerUserId)).hasSize(1)
+    }
+
+    @Test
+    fun `nothing is asked on a family member's birthday`() {
+        val today = householdToday()
+        post(
+            "/api/v1/households/$householdId/members", owner,
+            mapOf("displayName" to "Nanna", "relationship" to "parent", "dateOfBirth" to today.minusYears(71).toString()),
+        )
+        dueFd("Nanna's LIC")
+
+        sweep.run()
+        assertThat(inApp(ownerUserId)).isEmpty()
+
+        db.update(
+            "update members set date_of_birth = ?::date where household_id = ?::uuid and display_name = 'Nanna'",
+            today.minusYears(71).plusDays(1).toString(), householdId,
+        )
+        sweep.run()
+        assertThat(inApp(ownerUserId)).describedAs("the day after, it is asked").hasSize(1)
+    }
+
+    @Test
+    fun `nothing is asked on the anniversary of a death the family recorded`() {
+        val today = householdToday()
+        val added = post(
+            "/api/v1/households/$householdId/members", owner,
+            mapOf("displayName" to "Thatha", "relationship" to "other", "diedOn" to today.minusYears(3).toString()),
+        )
+        assertThat(added.statusCode.value()).describedAs(added.body).isEqualTo(201)
+        assertThat(added.json().path("diedOn").asText()).isEqualTo(today.minusYears(3).toString())
+        dueFd("Thatha's FD")
+
+        sweep.run()
+        assertThat(inApp(ownerUserId)).isEmpty()
+    }
+
+    @Test
+    fun `a date of death in the future, or before the birth, is refused`() {
+        val today = householdToday()
+        val future = post(
+            "/api/v1/households/$householdId/members", owner,
+            mapOf("displayName" to "Someone", "diedOn" to today.plusDays(2).toString()),
+        )
+        assertThat(future.statusCode.value()).isEqualTo(400)
+        assertThat(future.errorCode()).isEqualTo("died_on_future")
+        val beforeBirth = post(
+            "/api/v1/households/$householdId/members", owner,
+            mapOf("displayName" to "Someone", "dateOfBirth" to "1950-01-01", "diedOn" to "1949-12-31"),
+        )
+        assertThat(beforeBirth.errorCode()).isEqualTo("died_on_before_birth")
+    }
+
+    @Test
+    fun `a 29 February birthday is kept on 28 February in a year without one`() {
+        db.update(
+            "insert into members (household_id, display_name, date_of_birth) values (?::uuid, 'Leap', date '2000-02-29')",
+            householdId,
+        )
+        fun remembered(day: String) = db.queryForObject(
+            "select app.is_remembrance_day(?::uuid, ?::date)", Boolean::class.java, householdId, day,
+        )
+        assertThat(remembered("2027-02-28")).isTrue()
+        assertThat(remembered("2028-02-28")).describedAs("2028 has a 29th").isFalse()
+        assertThat(remembered("2028-02-29")).isTrue()
+        assertThat(remembered("2027-03-01")).isFalse()
+    }
+
+    @Test
+    fun `the message asks gently, and gives the reason on the same line`() {
+        val id = capture(
+            owner, householdId, "fd", "Matured FD", BigDecimal(240_000),
+            attributes = mapOf("interest_rate" to 7.1),
+        ).path("id").asText()
+        db.update(
+            """
+            update investments set created_at = now() - interval '2 months', last_verified_at = null,
+                   maturity_date = current_date - 10
+             where id = ?::uuid
+            """.trimIndent(),
+            id,
+        )
+
+        sweep.run()
+
+        val title = inApp(ownerUserId).single().title
+        assertThat(title).isEqualTo("Is this still right? A date on 1 record has passed")
+        assertThat(title).doesNotContain("Matured", "2,40,000", "240000")
     }
 }

@@ -28,13 +28,20 @@ data class OutboxDrainResult(
     val unconfirmed: Int = 0,
     /** Started by a worker that stopped, on a channel whose provider honours keys: sent again, same key. */
     val resent: Int = 0,
-    /** The channel is no longer configured on this server. */
+    /**
+     * Not sent, on purpose: the channel is no longer configured on this server, the
+     * person switched it off, a live channel has no address for them, or it waited
+     * out the daily limit for a week (docs/13 "Pacing").
+     */
     val skipped: Int = 0,
+    /** Held back until a quiet window ends or tomorrow's allowance: still queued, with `not_before`. */
+    val deferred: Int = 0,
 ) {
     operator fun plus(o: OutboxDrainResult) = OutboxDrainResult(
         sent + o.sent, failed + o.failed, unconfirmed + o.unconfirmed, resent + o.resent, skipped + o.skipped,
+        deferred + o.deferred,
     )
-    val touched get() = sent + failed + unconfirmed + skipped
+    val touched get() = sent + failed + unconfirmed + skipped + deferred
 }
 
 /**
@@ -73,6 +80,15 @@ data class OutboxDrainResult(
  *
  * Rows are claimed `for update skip locked`, so two servers never claim the
  * same row, and one in-process lock means a drain here never overlaps another.
+ *
+ * **Who, and when** (docs/13 "Who a message is for" and "Pacing"). As it claims
+ * a row the worker asks [DeliveryPacing] whether it may go now: a channel the
+ * person switched off is skipped, and on a live channel a message that would land
+ * in their quiet hours, or be their second non-essential message of the day,
+ * waits (`not_before`). As it sends, it looks the person up in
+ * [DeliveryDirectory] — their number, their address, their devices — and words
+ * the message with [MessageTemplates], which adds why it came. A live channel
+ * with no address for the person records `skipped`, `no_recipient`.
  */
 @Component
 class NotificationOutbox(
@@ -80,6 +96,8 @@ class NotificationOutbox(
     channels: List<ChannelSender>,
     private val calls: ProviderCalls,
     private val props: AlmiraProperties,
+    private val directory: DeliveryDirectory,
+    private val pacing: DeliveryPacing,
 ) : AutoCloseable {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -130,7 +148,9 @@ class NotificationOutbox(
             var round = finished
             claimed.forEach { round += send(it) }
             total += round
-            if (claimed.isEmpty() && finished.touched == 0) return@withLock total
+            // Deferred rows are not claimable again until their time, so a round that only
+            // deferred has nothing more to find.
+            if (claimed.isEmpty() && finished.touched == finished.deferred) return@withLock total
         }
         total
     }
@@ -154,6 +174,8 @@ class NotificationOutbox(
         val key: String,
         val started: Boolean,
         val body: String?,
+        val timeZone: String?,
+        val createdAt: java.time.Instant,
     )
 
     /**
@@ -164,17 +186,19 @@ class NotificationOutbox(
         val candidates = jdbc.query(
             """
             select o.id, o.household_id, o.user_id, o.channel, o.template, o.title, o.idempotency_key,
-                   o.send_started_at is not null as started, b.body
+                   o.send_started_at is not null as started, b.body, h.time_zone, o.created_at
             from outbound_messages o
             left join outbound_message_bodies b on b.message_id = o.id
+            left join households h on h.id = o.household_id
             where o.status = 'queued'
               and o.idempotency_key is not null
               and (o.claimed_until is null or o.claimed_until < now())
-            order by o.created_at
+              and (o.not_before is null or o.not_before <= :now)
+            order by coalesce(o.not_before, o.created_at)
             limit :batch
             for update of o skip locked
             """.trimIndent(),
-            mapOf("batch" to props.outbox.batchSize),
+            mapOf("batch" to props.outbox.batchSize, "now" to java.sql.Timestamp.from(pacing.now())),
         ) { rs, _ ->
             Candidate(
                 id = rs.getObject("id", UUID::class.java),
@@ -186,14 +210,44 @@ class NotificationOutbox(
                 key = rs.getString("idempotency_key"),
                 started = rs.getBoolean("started"),
                 body = rs.getString("body"),
+                timeZone = rs.getString("time_zone"),
+                createdAt = rs.getTimestamp("created_at").toInstant(),
             )
         }
 
         var finished = OutboxDrainResult()
         val claimed = mutableListOf<Claimed>()
+        val chosenToday = mutableMapOf<UUID, String>()
         candidates.forEach { row ->
             val sender = byChannel[row.channel]
+            // A row already started is past pacing: it was allowed once, and whatever happens
+            // to it now is the idempotency rule's, not the calendar's.
+            val decision = if (sender == null || row.started) {
+                DeliveryPacing.Decision.Send
+            } else {
+                pacing.decide(
+                    DeliveryPacing.Queued(
+                        userId = row.userId, channel = row.channel, template = row.template,
+                        logicalKey = DeliveryPacing.logicalKey(row.key, row.channel),
+                        timeZone = zoneOf(row.timeZone), createdAt = row.createdAt,
+                    ),
+                    sender, chosenToday,
+                )
+            }
             when {
+                decision is DeliveryPacing.Decision.Skip -> {
+                    finishUnsent(row.id, "skipped", decision.reason, addAttempt = false)
+                    finished += OutboxDrainResult(skipped = 1)
+                }
+                decision is DeliveryPacing.Decision.Defer -> {
+                    jdbc.update(
+                        "update outbound_messages set not_before = :until, deferred_for = :reason where id = :id",
+                        MapSqlParameterSource()
+                            .addValue("until", java.sql.Timestamp.from(decision.until))
+                            .addValue("reason", decision.reason).addValue("id", row.id),
+                    )
+                    finished += OutboxDrainResult(deferred = 1)
+                }
                 sender == null -> {
                     finishUnsent(row.id, "skipped", null, addAttempt = false)
                     finished += OutboxDrainResult(skipped = 1)
@@ -268,10 +322,30 @@ class NotificationOutbox(
         )
         if (started != 1) return OutboxDrainResult()
         try {
-            val sent = calls.execute(sender.channel, "notify", idempotent = sender.honoursIdempotencyKey) {
-                sender.send(row.notification, null, row.key)
+            val notification = row.notification
+            val composed = MessageTemplates.compose(
+                notification.template, notification.title, notification.body, sender.channel,
+                directory.locale(notification.userId),
+            )
+            val worded = notification.copy(title = composed.subject, body = composed.text)
+            val recipients = directory.recipients(notification.userId, sender.channel)
+            when {
+                // A sandbox reaches nobody, with or without an address; it is still called, as before.
+                recipients.isEmpty() && sender.mode != ProviderMode.LIVE -> {
+                    val sent = calls.execute(sender.channel, "notify", idempotent = sender.honoursIdempotencyKey) {
+                        sender.send(worded, null, row.key)
+                    }
+                    status = "sent"; provider = sent.value; attempts = sent.attempts
+                }
+                recipients.isEmpty() -> {
+                    status = "skipped"; failure = DeliveryPacing.NO_RECIPIENT; attempts = 0
+                }
+                else -> {
+                    val outcome = sendToEach(sender, worded, row.key, recipients)
+                    status = outcome.status; provider = outcome.provider
+                    failure = outcome.failure; attempts = outcome.attempts
+                }
             }
-            status = "sent"; provider = sent.value; attempts = sent.attempts
         } catch (e: ProviderCallFailed) {
             failure = e.kind.code; attempts = e.attempts
         } catch (e: Exception) {
@@ -292,8 +366,54 @@ class NotificationOutbox(
         )
         if (recorded == 1) dropBody(row.id)
         val resent = if (row.resend) 1 else 0
-        return if (status == "sent") OutboxDrainResult(sent = 1, resent = resent) else OutboxDrainResult(failed = 1, resent = resent)
+        return when (status) {
+            "sent" -> OutboxDrainResult(sent = 1, resent = resent)
+            "skipped" -> OutboxDrainResult(skipped = 1, resent = resent)
+            else -> OutboxDrainResult(failed = 1, resent = resent)
+        }
     }
+
+    private data class Outcome(val status: String, val provider: String, val failure: String?, val attempts: Int)
+
+    /**
+     * One provider call per address. For SMS and email that is one call; for push it
+     * is one per device, and one dead token must not fail the others. The row is
+     * `sent` when any address took it. A push token the platform refused is
+     * forgotten, so the next reminder does not try it again. Each call has its own
+     * key — the row's, plus the installation — so a provider that de-duplicates
+     * does not mistake the second phone for a repeat of the first.
+     */
+    private fun sendToEach(
+        sender: ChannelSender,
+        notification: OutboundNotification,
+        key: String,
+        recipients: List<Recipient>,
+    ): Outcome {
+        var provider = "unknown"
+        var lastFailure: ProviderCallFailed? = null
+        var attempts = 0
+        var anySent = false
+        recipients.forEach { recipient ->
+            val callKey = recipient.installationId?.let { "$key:$it" } ?: key
+            try {
+                val sent = calls.execute(sender.channel, "notify", idempotent = sender.honoursIdempotencyKey) {
+                    sender.send(notification, recipient.address, callKey)
+                }
+                anySent = true; provider = sent.value; attempts = maxOf(attempts, sent.attempts)
+            } catch (e: ProviderCallFailed) {
+                lastFailure = e
+                attempts = maxOf(attempts, e.attempts)
+                if (e.kind == FailureKind.REJECTED && recipient.installationId != null) {
+                    directory.forgetDevice(notification.userId, recipient.installationId)
+                }
+            }
+        }
+        return if (anySent) Outcome("sent", provider, null, attempts)
+        else Outcome("failed", provider, lastFailure?.kind?.code ?: RecordingNotifier.UNCLASSIFIED, attempts)
+    }
+
+    private fun zoneOf(name: String?): java.time.ZoneId =
+        name?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() } ?: DEFAULT_ZONE
 
     private fun finishUnsent(id: UUID, status: String, failure: String?, addAttempt: Boolean) {
         jdbc.update(
@@ -323,8 +443,11 @@ class NotificationOutbox(
      */
     internal fun lease(sender: ChannelSender): Duration {
         val p = props.providers.all().getValue(sender.channel)
+        // Push is one call per device, one after another.
+        val calls = if (sender.channel == "push") DeliveryDirectory.MAX_DEVICES.toLong() else 1L
         return p.timeout.multipliedBy(p.maxAttempts.toLong())
             .plus(ProviderCalls.MAX_BACKOFF.multipliedBy((p.maxAttempts - 1).toLong()))
+            .multipliedBy(calls)
             .plus(LEASE_MARGIN)
     }
 
@@ -343,6 +466,8 @@ class NotificationOutbox(
 
     private companion object {
         const val MAX_ROUNDS = 100
+        /** A message that belongs to no household is paced in India's time. */
+        val DEFAULT_ZONE: java.time.ZoneId = java.time.ZoneId.of("Asia/Kolkata")
         val LEASE_MARGIN: Duration = Duration.ofMinutes(1)
     }
 }

@@ -958,3 +958,31 @@ details.more[open] > summary::before { transform: rotate(90deg); }
   display: flex; gap: var(--space-3); align-items: flex-start; cursor: pointer; min-height: 44px;
 }
 .consent-declaration input { width: 20px; height: 20px; margin-top: 2px; flex: none; }
+/* -----------------------------------------------------------------------------
+   Notifications in Settings (notifications.js). A choice is a whole row, so the
+   tap target is the row and never the 16px box inside it; a note is muted text
+   with an info mark, not a coloured box.
+   ----------------------------------------------------------------------------- */
+/* Scoped away from the recovery sheet's label.row.check-row, which keeps its own layout above. */
+.check-row:not(.row) {
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  min-height: 44px; padding: var(--space-2) 0; cursor: pointer;
+}
+.check-row:not(.row) input[type="checkbox"] {
+  width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--accent);
+}
+.check-row input:disabled { cursor: not-allowed; }
+.check-row .grow { display: flex; flex-direction: column; gap: 2px; }
+.check-label { font-size: var(--text-sm); font-weight: 500; }
+
+.promise { margin: 0; padding-left: 1.2em; display: grid; gap: var(--space-2); }
+.promise li { line-height: 1.5; }
+
+.note { display: flex; gap: var(--space-2); align-items: baseline; }
+/* .info-mark is defined once, with the recovery notices above. */
+
+.quiet-hours {
+  display: grid; grid-template-columns: auto minmax(8rem, 12rem); gap: var(--space-2) var(--space-3);
+  align-items: center; justify-content: start;
+}
+.quiet-hours .input { min-height: 44px; }

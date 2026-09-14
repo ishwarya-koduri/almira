@@ -270,7 +270,19 @@ clears the card. Watched failing against the flat six months.
 The sweep sends each person **one message per run**, not one per record:
 
 - template `still_true.digest`
-- title `Still true? N records to check`
+- title: a question with the reason on the same line —
+  `Is this still right? 2 records haven't been confirmed in a while`,
+  `Is this still right? A date on 1 record has passed` when a maturity, renewal
+  or end date brought them back, and
+  `Is this still right? 3 records to look at, some with dates that have passed`
+  for a mix (`StillTrue.digestTitle`)
+- body: "Open Almira to say yes, still right, or to choose "Ask me later".
+  Nothing changes until you answer." — plus, from `MessageTemplates`, why it came
+  and how to pause (docs/13, "What a message says")
+
+**The wording is gentle on purpose** (X-50). "Still true?" alone, about a
+parent's LIC policy, reads like a death notice. The question asks whether the
+record is right, gives the reason, and offers a way to wait.
 
 **The title is a count. It never carries a record's title, an institution or an
 amount.** A notification lands on a lock screen and in `outbound_messages`, which
@@ -279,9 +291,10 @@ record's title in theirs, and this deliberately does not.
 
 Delivery goes through the existing `Notifier`s, so `RecordingNotifier` writes an
 `outbound_messages` row for `in_app` and one per configured channel (SMS, email,
-push). Every channel is still a sandbox (docs/13), and the channels are not told
-who the recipient is (known-issues 13). Nothing in this feature depends on a
-provider. Going live changes where a row goes, not whether it exists.
+push). The worker looks up who each is for, and paces them — quiet hours and at
+most one non-essential message a day (docs/13, "Pacing"). Only email has a live
+adapter. Nothing in this feature depends on a provider. Going live changes where
+a row goes, not whether it exists.
 
 ### Not nagging
 
@@ -297,6 +310,28 @@ of these is true:
 
 The row is per person on purpose. Nudging one joint owner must not count as
 having nudged the other.
+
+On top of that, per person (V60, `StillTrueSweep.mayAskNow`):
+
+- **At most one a week.** No Still true? message within 7 days of the last one
+  to that person, in any household. The records due meanwhile are not marked as
+  nudged, so they are in the next one.
+- **"Ask me later."** `POST /api/v1/me/notification-preferences/still-true/ask-later`
+  — the button on the Home card — sets `still_true_paused_until` a week ahead.
+  No message until then; the records stay on the card to answer or snooze.
+
+### Not on a remembrance day
+
+No Still true? message is sent to anyone in a household on the **birthday or
+death anniversary** of any of its members, in the household's own date. The
+date of birth has always been on a member; the date someone died is new
+(`members.died_on`, optional, `diedOn` on the member API, refused in the future
+or before the birth), recorded only if the family chooses to. A 29 February
+date is kept on 28 February in other years. `app.is_remembrance_day` answers
+yes or no and nothing else.
+
+The day is skipped, not the question: nothing is marked, and the next day asks
+as it would have.
 
 **Quiet hours.** A household is swept only between 09:00 and 19:59 in its own
 time zone. A question about a will at three in the morning is how a notification
@@ -420,6 +455,9 @@ reason, and passed again once it was restored):
 - The "no owner can answer" check removed: the recorder is still asked after the
   owner has joined with a login.
 
+- The week, "Ask me later", the birthday and the death anniversary (V60): with
+  the check in `StillTrueSweep.run` removed, their four tests failed.
+
 **Tested but not watched failing:**
 
 - Key-date timing (a maturity brings a record back 7 days later, and not again
@@ -433,8 +471,8 @@ reason, and passed again once it was restored):
 
 **Not verified:**
 
-- Real delivery on any channel. All of them are sandboxes, and none knows the
-  recipient (known-issues 13).
+- Real delivery on any channel. Only email has a live adapter, proven against a
+  fake relay (docs/13 §5); the recipient is looked up (known-issues 13, resolved).
 - The sweep's cost at scale. It is one short transaction per writer in each
   household that has anything due. That is fine for a closed alpha. At tens of
   thousands of households, step 3 wants batching by household.

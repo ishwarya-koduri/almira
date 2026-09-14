@@ -176,6 +176,7 @@ export async function familyScreen(host) {
       "aria-label": "Relationship",
     });
     const dob = textInput({ type: "date", "aria-label": "Date of birth" });
+    const diedOn = textInput({ type: "date", "aria-label": t("family.diedOn") });
     const nameField = field({ label: "Name", control: name, required: true });
 
     const save = el("button.btn.btn-primary", { type: "button" }, "Add");
@@ -186,6 +187,7 @@ export async function familyScreen(host) {
         field({ label: "Relationship to you", control: relationship }),
         field({ label: "Date of birth", control: dob,
           help: "Optional. Helps us flag accounts held for a minor." }),
+        field({ label: t("family.diedOn"), control: diedOn, help: t("family.diedOnHelp") }),
       ),
       footer: [save],
     });
@@ -194,6 +196,7 @@ export async function familyScreen(host) {
       displayName: name.value.trim(),
       relationship: relationship.value,
       dateOfBirth: dob.value || null,
+      diedOn: diedOn.value || null,
     });
 
     save.onclick = () => withBusy(save, async () => {

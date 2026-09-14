@@ -36,10 +36,29 @@ export function stillTrueCard(householdId, items) {
 
   const list = el("div.list", {});
   const count = el("span.caption.muted", {}, String(items.length));
+  // "Ask me later" pauses the reminders, not the records: they stay on this card
+  // to answer whenever, and no Still true? message is sent for a week (docs/21 §6).
+  const askLater = el("button.btn", {
+    type: "button",
+    "data-still-true-ask-later": "",
+    onclick: async () => {
+      askLater.disabled = true;
+      try {
+        const prefs = await api.askLaterAboutStillTrue();
+        toast(t("still.askedLater", { date: localDate(prefs.stillTruePausedUntil) }));
+        askLater.remove();
+      } catch (error) {
+        askLater.disabled = false;
+        toast(error.message, { tone: "error" });
+      }
+    },
+  }, t("still.askLater"));
+
   const card = el("div.card", {},
     el("div.section-title", {}, el("h4", {}, t("still.title")), count),
     el("p.caption.muted", { style: { marginTop: 0 } }, t("still.intro")),
     list,
+    el("div.row", { style: { marginTop: "12px" } }, askLater),
   );
 
   const remove = (row) => {

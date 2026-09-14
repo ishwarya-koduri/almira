@@ -139,6 +139,14 @@ almira:
       timeout: ${ALMIRA_PROVIDER_EMAIL_TIMEOUT:10s}
       max-attempts: ${ALMIRA_PROVIDER_EMAIL_MAX_ATTEMPTS:3}
       retry-backoff: ${ALMIRA_PROVIDER_EMAIL_RETRY_BACKOFF:500ms}
+      # Read only when mode is live (provider/SmtpEmailSender.kt, docs/13 §5).
+      smtp:
+        host: ${ALMIRA_PROVIDER_EMAIL_SMTP_HOST:}
+        port: ${ALMIRA_PROVIDER_EMAIL_SMTP_PORT:587}
+        username: ${ALMIRA_PROVIDER_EMAIL_SMTP_USERNAME:}
+        password: ${ALMIRA_PROVIDER_EMAIL_SMTP_PASSWORD:}
+        from: ${ALMIRA_PROVIDER_EMAIL_SMTP_FROM:}
+        start-tls: ${ALMIRA_PROVIDER_EMAIL_SMTP_START_TLS:true}
     push:
       mode: ${ALMIRA_PROVIDER_PUSH_MODE:sandbox}
       base-url: ${ALMIRA_PROVIDER_PUSH_BASE_URL:}
@@ -170,6 +178,9 @@ almira:
       timeout: ${ALMIRA_PROVIDER_WHATSAPP_TIMEOUT:10s}
       max-attempts: ${ALMIRA_PROVIDER_WHATSAPP_MAX_ATTEMPTS:3}
       retry-backoff: ${ALMIRA_PROVIDER_WHATSAPP_RETRY_BACKOFF:500ms}
+    # The most a person waits on one DigiLocker or Account Aggregator call, retries
+    # included. Provider calls run outside any database transaction (known-issues 21).
+    connect-budget: ${ALMIRA_PROVIDER_CONNECT_BUDGET:20s}
 
   # How people sign in: phone, email, or phone,email. phone by default, so a
   # fresh checkout, the suites and the e2e scripts are unchanged. The closed

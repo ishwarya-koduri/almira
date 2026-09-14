@@ -216,4 +216,43 @@ class ProviderCallsTest {
         assertThat(Duration.ofNanos(System.nanoTime() - started))
             .describedAs("its own 200ms, not the provider's 60s").isLessThan(Duration.ofSeconds(2))
     }
+
+    /** known-issues 21: a connect call a person waits on is bounded as a whole, not only per attempt. */
+    @Test
+    fun `an interactive call stops at its budget, however many attempts the provider allows`() {
+        val calls = calls(props(timeout = Duration.ofSeconds(60), maxAttempts = 10, backoff = Duration.ZERO))
+        val started = System.nanoTime()
+        val attempts = AtomicInteger()
+        val failure = runCatching {
+            calls.interactive("digilocker", "list", Duration.ofMillis(400)) {
+                attempts.incrementAndGet()
+                Thread.sleep(5_000)
+            }
+        }.exceptionOrNull() as ProviderCallFailed
+        assertThat(failure.kind).isEqualTo(FailureKind.TIMEOUT)
+        assertThat(Duration.ofNanos(System.nanoTime() - started))
+            .describedAs("the 400ms budget, not 10 × 60s").isLessThan(Duration.ofSeconds(2))
+        assertThat(attempts.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun `inside its budget an interactive call still retries what may be retried`() {
+        val (count, block) = failing(FailureKind.UNAVAILABLE, succeedOn = 3)
+        val value = calls(props(maxAttempts = 3, backoff = Duration.ZERO))
+            .interactive("digilocker", "list", Duration.ofSeconds(5), block = block)
+        assertThat(value).isEqualTo("ok")
+        assertThat(count.get()).isEqualTo(3)
+    }
+
+    @Test
+    fun `no retry starts when its backoff would end past the budget`() {
+        val (count, block) = failing(FailureKind.UNAVAILABLE)
+        val failure = gaveUp {
+            calls(props(maxAttempts = 5, backoff = Duration.ofSeconds(10)))
+                .interactive("digilocker", "list", Duration.ofSeconds(2), block = block)
+        }
+        assertThat(failure.kind).isEqualTo(FailureKind.UNAVAILABLE)
+        assertThat(count.get()).isEqualTo(1)
+        assertThat(sleeper.slept).isEmpty()
+    }
 }

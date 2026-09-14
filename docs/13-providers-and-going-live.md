@@ -16,8 +16,9 @@ the transport.
 > **The go-live checklist is [GO-LIVE.md](../GO-LIVE.md).** It records, per
 > provider, the interface contract in code terms, what the partner and the owner
 > must supply, the ordered steps and smoke test to flip it live, and what is
-> **not watched failing** — which today is every provider, because no live
-> adapter exists. This document is the design those pages build on.
+> **not watched failing** — which today is every provider against its real
+> service. Email is the one with a live adapter (SMTP, §5), proven against a fake
+> relay. This document is the design those pages build on.
 
 > Nothing here is switched on by default. `GET /households/{id}/connect/providers`
 > reports each provider's mode and the exact list below, so whoever deploys this
@@ -35,7 +36,8 @@ Every provider reads one property, with three values:
 - **`sandbox`** — the in-process sandbox implementation. The default for every
   provider but `aa`.
 - **`live`** — the real adapter, which requires its credentials. Refuses to
-  start today, because no live adapter exists.
+  start for every provider but `email`, because no other live adapter exists.
+  Live email needs an SMTP host and a from-address (§5).
 - **`disabled`** — not offered on this server, and a normal state rather than an
   error. The application starts; `connect/providers` reports `mode: DISABLED`
   and `connected: false`; every call to a disabled DigiLocker, Account
@@ -191,7 +193,12 @@ the amount and the institution, and logs are the least protected thing here.
 4. `ALMIRA_PROVIDER_SMS_MODE=live` plus provider credentials and the sender id.
 
 The full checklist — GST before DLT, the release keystore before the template,
-and five gaps in the current code — is [providers/sms.md](providers/sms.md).
+and the gaps in the current code — is [providers/sms.md](providers/sms.md).
+A reminder's text goes to the number on the person's account, looked up when it
+is sent ("Who a message is for", below), and is one line: the title and why it
+came. That line is the shape each DLT template is registered in. **Real SMS
+delivery is not built** and stays sandbox: DLT registration is a business
+registration, not code.
 
 ### The one-time-code template has a fifth requirement
 
@@ -228,24 +235,56 @@ offer the code, and the message needs nothing special.
 
 **Interfaces** `ChannelSender` (`email`, `push`) · **Sandboxes** `SandboxEmailSender`, `SandboxPushSender`
 
-**Email to go live**: a sending domain with SPF, DKIM and DMARC published; a
-provider account (SES, Postmark, Resend); a verified from-address;
-`ALMIRA_PROVIDER_EMAIL_MODE=live`.
+**Email to go live**: the live adapter exists — `SmtpEmailSender`, for any relay
+that speaks SMTP with STARTTLS (SES, Postmark, Resend and a company server all
+do). What it needs is a sending domain with SPF, DKIM and DMARC published, a
+relay account, a verified from-address, and:
+
+```
+ALMIRA_PROVIDER_EMAIL_MODE=live
+ALMIRA_PROVIDER_EMAIL_SMTP_HOST=…        # required
+ALMIRA_PROVIDER_EMAIL_SMTP_FROM=…        # required, e.g. Almira <reminders@your-domain>
+ALMIRA_PROVIDER_EMAIL_SMTP_PORT=587
+ALMIRA_PROVIDER_EMAIL_SMTP_USERNAME=…
+ALMIRA_PROVIDER_EMAIL_SMTP_PASSWORD=…
+ALMIRA_PROVIDER_EMAIL_SMTP_START_TLS=true
+```
+
+- `live` without a host or a from-address refuses to start, naming what is
+  missing (`ProviderModeCheck`). A username is optional: a relay on a private
+  network may take none.
+- STARTTLS is **required**, not merely offered, unless turned off — a relay
+  that will not negotiate TLS is refused rather than sent a reminder's amount
+  in plain text. Only a relay on the same host should need `false`.
+- **At-most-once.** SMTP has no send-side de-duplication, so the adapter
+  declares `honoursIdempotencyKey = false`: a timeout is recorded, not retried.
+  The idempotency key, hashed, is the Message-ID.
+- Failures map to the four kinds: our credentials or our from-address refused →
+  `insufficient_balance` (ours to fix); this recipient refused → `rejected`; no
+  answer → `timeout`; could not connect, or a temporary 4xx → `unavailable`.
+- Nothing is logged but the port and whether STARTTLS is on: never the
+  recipient, the subject or the body.
+- A subject is built from a title a household member typed, so every control
+  character in it becomes a space: a line break cannot add a header or a
+  recipient.
+- `LiveEmailDeliveryApiTest` runs the real application with `email: live`
+  against `FakeSmtpServer` on loopback. Not watched against a real relay: TLS,
+  authentication, greylisting, and bounces (which arrive later, by email, and
+  which nothing reads).
 
 ### Sign-in codes by email — the closed alpha
 
 The owner's route for the alpha: one-time codes by email, to allowlisted
 testers, with email as the **only** sign-in so nobody ends up with two accounts.
 It is built on this channel and on the failure contract below, with no email
-provider chosen. What it still needs is what email needs: a live email adapter
-(none exists, and `mode: live` refuses to start until one does), the checklist
-above, and a deployment that passes the variables below through to the
-application.
+provider chosen. What it still needs is what email needs: the relay and domain
+above, and a deployment that passes the variables through to the application
+(`deploy/docker-compose.prod.yml` does not list the SMTP ones yet).
 
 ```
 ALMIRA_SIGN_IN_CHANNELS=email
 ALMIRA_ALPHA_EMAIL_ALLOWLIST=asha@example.com,ravi.k+alpha@example.com
-ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
+ALMIRA_PROVIDER_EMAIL_MODE=live        # plus the SMTP settings above
 ```
 
 - **Switch.** `almira.auth.sign-in-channels` is `phone`, `email` or both;
@@ -258,8 +297,8 @@ ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
   `ChannelSender` the mode selected, with the address as `recipientHint` and
   the code only in the body. It can deliver when the channel is `live`, or when
   it is the sandbox **in development** — the same rule as the log SMS sender.
-  Anywhere else (today: every non-development server, since no live email
-  adapter exists) the request is `503 otp_unavailable` before a code exists.
+  Anywhere else (a non-development server still on the sandbox) the request is
+  `503 otp_unavailable` before a code exists.
   Nothing is written to `outbound_messages`: a sign-in code is not a
   notification, and a table of codes sent is a table worth stealing.
 - **Same hardening as phone**, in `OtpService`, under keys of its own
@@ -387,16 +426,20 @@ ALMIRA_PROVIDER_EMAIL_MODE=live        # once a live email adapter exists
 ### Push
 
 **Push to go live**: an FCM project and service-account JSON; an APNs key for
-iOS; and — the piece that does not exist yet — **device token registration**,
-which needs the native app. Until then push has nowhere to go, which is why it
-is last. The APNs and FCM requirements, and the shape device-token
-registration would need, are in [providers/push.md](providers/push.md).
+iOS; and **the apps registering their device tokens**. The server side of that
+exists since V60 — `user_devices`, `PUT /api/v1/me/devices/{installationId}`,
+a send to every device a person has, and pruning of a token the platform
+refuses ("Who a message is for", below) — but neither native app asks for
+notification permission or calls the endpoint yet. Until one does, push has
+nowhere to go, which is why it is last. The APNs and FCM requirements are in
+[providers/push.md](providers/push.md).
 
 ---
 
 ## What "the stand-in" means now
 
-Notifications remain a stand-in, but not an unverifiable one. Every outbound
+Notifications remain a stand-in on every channel but live email, but not an
+unverifiable one. Every outbound
 message is recorded in `outbound_messages` — channel, template, title, status
 (`queued` until the background worker has sent it), which way it failed and
 after how many attempts, never a body — so the in-app
@@ -417,8 +460,8 @@ waiting for it?** (Owner's decision, 2026-09.)
 | | Interactive | Background |
 |---|---|---|
 | **What** | One-time codes by SMS and email — sign-in and step-up. DigiLocker and Account Aggregator connect calls. A WhatsApp capture's reply. | Every notification on `sms`, `email` and `push`: reminders, still-true nudges, emergency-access notices. |
-| **Where it runs** | In the request. | `NotificationOutbox`, a worker on the owner connection, after the request or sweep has committed a `queued` row. |
-| **Attempts** | One-time codes: **exactly one**, under `almira.otp.send-timeout` (5 s), whatever the provider's `max-attempts`. Connect calls: the provider's policy, as described below. | The provider's policy: `timeout`, `max-attempts`, `retry-backoff`. |
+| **Where it runs** | In the request — with **no database transaction open** around the call. | `NotificationOutbox`, a worker on the owner connection, after the request or sweep has committed a `queued` row. |
+| **Attempts** | One-time codes: **exactly one**, under `almira.otp.send-timeout` (5 s), whatever the provider's `max-attempts`. Connect calls: the provider's policy, all of it inside `almira.providers.connect-budget` (20 s). | The provider's policy: `timeout`, `max-attempts`, `retry-backoff`. |
 | **Retry** | The person's resend button. | The worker, within `max-attempts`; see the idempotency rules below. |
 
 ### One-time codes are interactive
@@ -443,12 +486,27 @@ the cooldown (resend at once, `resendAfterSeconds: 0`), and keeps both hourly
 counts (repeated timeouts still reach the caps). A resend replaces the
 challenge, so a code that arrives late after it no longer works.
 
-Connect calls stay in the request and under the provider's policy: their
-retries are few, both non-repeatable operations already refuse to retry a
-timeout, and the person is waiting for the answer either way. A WhatsApp reply
-also stays in the request, because whether it went is part of the capture's
-answer (`replyFailure`); a live Meta webhook's own response deadline is a reason
-to revisit that before WhatsApp goes live (known-issues 21).
+Connect calls stay in the request, because the person is waiting for the
+answer, but two things changed (known-issues 21):
+
+- **No transaction is open while a provider is called.** `ConnectService` reads
+  what it needs in one short transaction, calls the provider with none open, and
+  writes what came back in another. A hanging DigiLocker used to hold an
+  app-pool connection for the whole retry budget; ten people waiting on an outage
+  would have been the whole pool. An import still stores everything or nothing:
+  every fetch happens first, then one transaction stores them.
+- **The call as a whole has a budget.** `ProviderCalls.interactive` gives each
+  attempt the provider's `timeout` or what is left of
+  `almira.providers.connect-budget` (`ALMIRA_PROVIDER_CONNECT_BUDGET`, default
+  `20s`), whichever is less, and starts no retry whose backoff would end past it.
+  DigiLocker's defaults (15 s × 3) used to mean about 46 seconds of spinner.
+
+`ConnectCallsOutsideTransactionsApiTest` samples the app pool while DigiLocker
+and the aggregator hang, and was watched failing with `@Transactional` put back.
+
+A WhatsApp reply also stays in the request, because whether it went is part of
+the capture's answer (`replyFailure`); a live Meta webhook's own response
+deadline is a reason to revisit that before WhatsApp goes live (known-issues 21).
 
 ### Notifications are background work
 
@@ -467,6 +525,99 @@ The worker uses the owner data source by explicit qualifier: on the runtime
 pool, row-level security shows a user-less worker no rows, and it would do
 nothing, successfully, forever. `NotificationOutboxTest` pins the pool and role,
 and shows a worker built on the runtime pool finding nothing.
+
+### Who a message is for
+
+Resolved when the worker sends, not when the row is written, so a number
+changed in between is the number used (`DeliveryDirectory`, on the owner
+connection for the same reason as the worker — known-issues 13, resolved):
+
+| Channel | Address |
+|---|---|
+| `sms` | the account's phone number |
+| `email` | the account's email address |
+| `push` | every row in `user_devices` for the person, newest first, at most 10 |
+
+- Push is **one provider call per device**, each with the row's key plus the
+  installation id, so a provider that de-duplicates does not mistake the second
+  phone for a repeat of the first. The row is `sent` when any device took it. A
+  device the platform answers `rejected` for is deleted.
+- A **live** channel with no address for the person records `skipped`,
+  `failure = no_recipient` — "Not sent — we don't have somewhere to send this for
+  you. It's here instead." A sandbox is still called without one: it reaches
+  nobody either way.
+- An account that is not `active`, or is deleted, has no address.
+
+Devices are registered by the apps: `PUT /api/v1/me/devices/{installationId}`
+with `{platform, token, environment, appVersion}` — `ios` needs `environment`,
+because an APNs development token is refused by the production gateway —
+idempotent by installation, audited as `device.registered`; `GET` lists them
+without the token; `DELETE` on sign-out. Row-level security keeps each person to
+their own rows, an admin included, and a guest link can do none of it (V60,
+`db/tests/rls_privacy_test.sql`).
+
+### What a message says
+
+`MessageTemplates` words every message at send time, around the title and body
+its producer supplied:
+
+- **every message says why it came**, in one sentence — "You're getting this
+  because you own or hold this record in Almira, and its date is coming up." —
+  and an email ends with the quiet promise and where to change what you get;
+- **push** carries the title and the short reason as its text, never the body:
+  a push payload passes through Apple or Google and sits on a lock screen;
+- **SMS** is one line, the title and the short reason — the DLT template shape;
+- a reminder's body gives the date in words and the amount the way the handbook
+  writes it, with the words beneath: "₹2,40,000", "Two Lakh Forty Thousand
+  Rupees".
+
+**Languages.** English is reviewed. Telugu and Hindi are written, beside the
+English, and marked `needsReview`; a draft is **never sent** — a person whose
+locale is `te-IN` gets English until a native speaker signs the draft off and
+it joins `MessageTemplates.REVIEWED`. The titles producers supply are English,
+as the server's other sentences are (Doc 14).
+
+### Pacing
+
+The promise Settings makes ("Our quiet promise"): **at most one reminder a day,
+none in your quiet hours, never a sales message, and every reminder says why it
+came.** `DeliveryPacing` keeps it as the worker claims each row:
+
+1. **Essential messages go.** Emergency-access notices (`emergency.*`) and
+   notices about the person's own account (`lifecycle.*`) are not reminders:
+   they are not held by quiet hours, not counted against the day, and not
+   stopped by a switched-off channel.
+2. **A switched-off channel is skipped** — `skipped`, `turned_off` — in every
+   mode. Preferences: `GET`/`PUT /api/v1/me/notification-preferences`
+   (`smsEnabled`, `emailEnabled`, `pushEnabled`, `quietFrom`, `quietUntil` as
+   `HH:mm`), audited as `notifications.preferences_changed`. No row means every
+   channel on and quiet hours 21:00–08:00.
+3. **Quiet hours** are the person's, in the household's time zone (India's for a
+   message that belongs to no household); a window may cross midnight. A message
+   that would land inside one waits: `not_before` is set to the end of the
+   window and `deferred_for = quiet_hours`, and nothing claims it until then.
+4. **One non-essential message a day.** If a different logical message already
+   started out to the person today, on any channel, this one waits for tomorrow
+   at the end of their quiet hours (`deferred_for = daily_limit`). One logical
+   message on three channels is one message. A message held back like that for
+   more than a week is out of date: it is `skipped`, `daily_limit`, and stays in
+   the in-app list.
+
+Pacing applies to **live** channels. A sandbox reaches nobody's phone, and
+pacing it would only make development and the suites depend on the time of day;
+`NotificationDeliveryApiTest` turns it on for the sandbox with a fixed clock to
+prove each rule, and `LiveEmailDeliveryApiTest` shows a live email held by a
+quiet hour. A switched-off channel is honoured in every mode. With the quiet-hours,
+daily-limit and switched-off checks removed, six of those tests failed.
+
+What is not promised: two servers deciding at the same moment could each let
+a different message through as the day's first. Like the sweeps (Doc 21 §7),
+this assumes one scheduling instance; a second needs the claim to take a
+per-person lock.
+
+The Still true? sweep has rules of its own on top of these — at most one a
+week, "Ask me later", and never on a family birthday or death anniversary
+(Doc 21 §6).
 
 ### Idempotency keys, and what they guarantee
 
@@ -719,6 +870,17 @@ names plus `otp`.
   written, notifications recorded in-app only.
 - `ProviderModeCheckTest` — `disabled` accepted, `off` refused by name, the four
   copies of the default modes in agreement, an unknown OTP sender refused.
+- `NotificationDeliveryApiTest` — the number and every device a message goes
+  to, a dead token forgotten, device and preference endpoints (validation,
+  another person's device 404, audit), a switched-off channel, quiet hours, one
+  message a day, a message held a week.
+- `LiveEmailDeliveryApiTest` — the live SMTP adapter against a fake relay:
+  delivery with the reason and the promise, no address, a quiet hour, a refused
+  recipient, a refused from-address, an unreachable relay.
+- `MessageTemplatesTest` — every template, channel and language says why; push
+  and SMS never carry the body; drafts are never used.
+- `ConnectCallsOutsideTransactionsApiTest` — no app-pool connection held while a
+  connect provider hangs, and the budget ends the wait.
 
 ---
 

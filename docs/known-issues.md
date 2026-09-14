@@ -350,26 +350,23 @@ development sign-in codes, which go to the log, not through SMS.
 
 ## 13. Notification channels are never told who the recipient is
 
-**Where** `provider/Delivery.kt`, `RecordingNotifier.deliver`, which calls every
-`ChannelSender` as `send(notification, null)`.
+**Resolved** (2026-09-14, "Notification delivery"). Kept as a stub so the number
+still means something where it is cited.
 
-**What** No lookup from a user to a phone number, an email address or a device
-token exists. A live SMS, email or push sender would authenticate and have
-nowhere to send. For push there is also nothing to look up: no client registers
-a device token and there is no table or endpoint for one.
-
-**Which is right** A per-channel recipient lookup — for push, zero or more
-tokens per user — designed in [providers/push.md](providers/push.md).
-
-**When to fix** Before the first notification channel goes live. Delivery
-itself is already off the request thread (the notification outbox, Doc 13); the
-worker passes `recipientHint = null` for the same reason.
-
-**Risk if left** None while every channel is a sandbox. Since V50 it also
-means the account notices — "New sign-in on …", a changed phone number, a
-factor added or removed — reach only the in-app list for real: they are queued
-on every channel like any notification, and a live channel could not deliver
-them either.
+The outbox worker looks the person up when it sends (`DeliveryDirectory`, owner
+connection): the account's phone number for `sms`, its email address for
+`email`, and every registered device for `push`, one call per device. Devices
+have a table (`user_devices`, V60, own rows only under RLS) and endpoints
+(`PUT`/`GET`/`DELETE /api/v1/me/devices/{installationId}`); a token the platform
+rejects is deleted. A live channel with no address records `skipped`,
+`no_recipient`. Proven by `NotificationDeliveryApiTest` (the number reaches the
+SMS sandbox, both devices reach push, a rejected device is forgotten),
+`LiveEmailDeliveryApiTest` (the address reaches a fake SMTP relay; no address is
+recorded) and the RLS suite. Neither native app registers a device yet — that is
+entry 35. Since V50 the account notices — "New sign-in on …", a changed
+phone number, a factor added or removed — are queued on every channel; they are
+essential (`MessageTemplates`), so pacing and quiet hours never hold them, and
+they now reach a live channel the same way.
 
 ---
 
@@ -645,7 +642,7 @@ infra session's.
 
 ---
 
-## 21. Interactive provider calls still hold the request, and background delivery is only as idempotent as the provider
+## 21. A WhatsApp reply is sent inside its webhook, and background delivery is only as idempotent as the provider
 
 **Status** Partly fixed by the owner's "interactive vs background" decision
 (docs/13, "Interactive and background"). What this entry used to describe:
@@ -664,16 +661,16 @@ infra session's.
   policy. No request or sweep waits on a notification provider.
   `NotificationOutboxTest`.
 
-**What is still open**
+- **Connect calls — fixed** (2026-09-14). DigiLocker and Account Aggregator
+  calls still run in the request, because a person is waiting for the answer,
+  but never inside a transaction: `ConnectService` reads, calls with none open,
+  then writes. The whole call, retries included, is bounded by
+  `almira.providers.connect-budget` (20 s) through `ProviderCalls.interactive`.
+  `ConnectCallsOutsideTransactionsApiTest` samples the app pool during a hang
+  (watched failing with `@Transactional` put back). What remains is inherent: the
+  person's own request waits up to the budget.
 
-- **Connect calls hold the request, and a database connection.** DigiLocker
-  and Account Aggregator calls are interactive by the owner's rule (a person is
-  waiting for the answer) and stay in `ConnectService`, inside `@Transactional`
-  methods. At DigiLocker's defaults (`timeout: 15s`, `max-attempts: 3`) an
-  outage holds the request and an app-pool connection for about 46 seconds.
-  **Which is right**: call the provider before opening the transaction (or
-  between two), and give connect calls an interactive budget of their own, as
-  one-time codes now have. **When**: before DigiLocker goes live.
+**What is still open**
 - **A WhatsApp reply is sent inside the inbound webhook.** Its outcome is part
   of the capture's answer (`replyFailure`), so it was not moved. Meta expects a
   webhook to answer quickly and redelivers when it does not, which would
@@ -688,7 +685,8 @@ infra session's.
   the SMS defaults — brings duplicate texts back. On `false` (push) delivery is
   at-most-once: the one send a worker had stamped as started when it died
   loses that message rather than risk a second (the rest of its batch is sent
-  normally), and the in-app row is the only copy.
+  normally), and the in-app row is the only copy. Live email over SMTP
+  (`SmtpEmailSender`) declares `false` too: SMTP cannot drop a repeat.
 - **Logical keys cover reminders, still-true digests and emergency-access
   notices** (`reminder:<id>:<firesOn>:<user>`, a digest key for the exact due
   state, `emergency.named:<contactId>`, `emergency.requested:<requestId>`,
@@ -698,9 +696,9 @@ infra session's.
   the same emergency contact again — even with a changed wait — does not notify
   the trusted member a second time; deleting and re-adding the contact does.
 
-**Risk if left** None while every provider is a sandbox. Live: a slow
-DigiLocker starving the app pool, WhatsApp webhooks captured twice, and — only
-if an adapter misdeclares its provider — duplicate notifications.
+**Risk if left** None while WhatsApp is a sandbox. Live: WhatsApp webhooks
+captured twice, and — only if an adapter misdeclares its provider — duplicate
+notifications.
 
 ---
 
@@ -1088,3 +1086,75 @@ and a decision on what evidence a nominee must bring.
 before 13 May 2027.
 
 **Risk if left** A request sits unanswered past its promised date.
+
+---
+
+## 35. Only email can reach a person yet, and what is left for the rest
+
+**Where** `provider/` (the channels), the native apps, `MessageTemplates.kt`,
+`deploy/docker-compose.prod.yml`.
+
+**What** The delivery path is built end to end — recipients, devices,
+preferences, quiet hours, one message a day, words that say why (docs/13) — and
+one live adapter exists, SMTP email. The rest is not code this repository can
+finish on its own:
+
+- **SMS and WhatsApp stay sandbox.** A real Indian SMS needs DLT registration
+  of the entity, header and every template, which needs GST registration first
+  (docs/providers/sms.md); WhatsApp needs a Meta-verified business and approved
+  templates. Both are business registrations. The SMS line a template must match
+  is fixed now (`MessageTemplates`, one line: title and short reason).
+- **Push has no device.** The server stores tokens and sends to each, but
+  neither native app asks for notification permission or calls
+  `PUT /api/v1/me/devices/{installationId}` (docs/providers/push.md step 1).
+- **Telugu and Hindi message wording are drafts** (`MessageTemplates.TELUGU`,
+  `HINDI`, `needsReview = true`) and are never sent: a te/hi user gets English
+  until a native speaker reviews them and adds the language to `REVIEWED`. The
+  new web strings (`notify.*`, `still.askLater`, `still.askedLater`,
+  `family.diedOn*`) are English only and fall back in te/hi.
+- **The production compose file does not pass `ALMIRA_PROVIDER_EMAIL_SMTP_*`**
+  through to the application. It belongs to the deploy session; until it does,
+  `email: live` in `.env` alone refuses to start for want of a host.
+- **Bounces are not read.** A relay accepts a message and the bounce arrives
+  later by email; nothing marks the address bad, so a dead address keeps being
+  sent to (and each is recorded `sent`).
+- **`no_recipient` is visible.** On a server with live email, a person who
+  signed in by phone sees each reminder's email row in `/me/messages` as "Not
+  sent — we don't have somewhere to send this for you". Honest, and possibly
+  noisy; the web list may want to fold these.
+- **Pacing assumes one scheduling instance**, as the sweeps do (docs/21 §7): two
+  workers deciding in the same moment could each let a different message
+  through as a person's first of the day.
+
+**When to fix** Each when its provider is chosen; the compose file before
+turning email live; the drafts before inviting a Telugu- or Hindi-first tester.
+
+**Risk if left** None for correctness or privacy. The cost is that a reminder
+reaches a phone only by email.
+
+---
+
+## 36. Testcontainers cannot reach this machine's Docker (Engine API 1.55)
+
+**Where** `backend/src/test/.../support/TestInfra.kt`; Testcontainers 1.21.3.
+
+**What** Found while building notification delivery. With Docker Desktop's
+engine at API 1.55 (minimum 1.40), every Testcontainers strategy fails with
+`BadRequestException (Status 400)` and "Could not find a valid Docker
+environment", so `./gradlew test` with no `ALMIRA_TEST_*` variables starts no
+database. `DOCKER_API_VERSION=1.44` did not help. The suites ran against an
+external pair instead, exactly as `TestInfra` documents: a `postgres:16-alpine`
+with `testcontainers-init.sql` applied (database `almira_test`) and a
+`redis:7-alpine`, via `ALMIRA_TEST_DB_URL`, `ALMIRA_TEST_REDIS_HOST` and
+`ALMIRA_TEST_REDIS_PORT`.
+
+**See also** entry 28, "Testcontainers cannot reach Docker Engine 29 without an
+API version", which records the workaround (`-Dapi.version=1.44`).
+
+**Which is right** A Testcontainers version whose docker-java negotiates the API
+version (1.21.x pins an old default), or an `api.version` in
+`~/.testcontainers.properties` on machines with a new engine. Not verified which.
+
+**When to fix** The next dependency update. **Risk if left** Local friction
+only; CI uses service containers.
+

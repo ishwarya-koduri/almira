@@ -42,7 +42,11 @@ data class StillTrueSweepResult(
  *
  * **Not nagging.** A record is nudged once per question: again only after it is
  * confirmed or snoozed and falls due again, or after thirty days ignored. One
- * message per person per run, carrying a count, never a title or an amount.
+ * message per person per run, carrying a count, never a title or an amount —
+ * and no more than one a week per person, none while they have said "ask me
+ * later", and none on the birthday or death anniversary of anyone recorded in
+ * the household (docs/21 §6). A person skipped for any of those is not marked
+ * as nudged, so the question is still there the next time it may be asked.
  *
  * **Failures.** The nudge is marked, then handed to the notifiers after the
  * transaction commits. Handing over is only queueing: the in-app row and one
@@ -75,7 +79,9 @@ class StillTrueSweep(
 
         var people = 0
         var records = 0
+        val remembering = households.filter { isRemembranceDay(it) }.toSet()
         writersIn(households).forEach { (userId, householdId) ->
+            if (householdId in remembering || !mayAskNow(userId, householdId)) return@forEach
             val nudged = markForPerson(userId, householdId)
             if (nudged.isNotEmpty()) {
                 people++
@@ -106,6 +112,43 @@ class StillTrueSweep(
         mapOf("fromHour" to DAY_STARTS_AT, "untilHour" to DAY_ENDS_BEFORE - 1),
     ) { rs, _ -> rs.getObject("household_id", UUID::class.java) }
 
+    /**
+     * A birthday or a death anniversary of anyone in the household, today in its
+     * own time zone. A question about a record — often a parent's — is not asked
+     * on that day. `app.is_remembrance_day` answers yes or no and nothing else.
+     */
+    private fun isRemembranceDay(householdId: UUID): Boolean = jdbc.queryForObject(
+        """
+        select app.is_remembrance_day(h.id, (now() at time zone h.time_zone)::date)
+        from households h where h.id = :hid
+        """.trimIndent(),
+        mapOf("hid" to householdId),
+        Boolean::class.java,
+    ) == true
+
+    /**
+     * Not while they have asked us to wait ("Ask me later", V60), and not within a
+     * week of the last Still true? message to them in any household.
+     */
+    private fun mayAskNow(userId: UUID, householdId: UUID): Boolean = jdbc.queryForObject(
+        """
+        select not exists (
+                 select 1 from notification_preferences p
+                 join households h on h.id = :hid
+                 where p.user_id = :uid
+                   and p.still_true_paused_until > (now() at time zone h.time_zone)::date)
+           and not exists (
+                 select 1 from outbound_messages o
+                 where o.user_id = :uid and o.channel = 'in_app' and o.template = :template
+                   and o.created_at > now() - make_interval(days => :days))
+        """.trimIndent(),
+        mapOf(
+            "uid" to userId, "hid" to householdId,
+            "template" to StillTrue.DIGEST_TEMPLATE, "days" to StillTrue.DIGEST_MIN_DAYS_APART.toInt(),
+        ),
+        Boolean::class.java,
+    ) == true
+
     /** Only people who could act on the answer: active, and allowed to write. */
     private fun writersIn(households: List<UUID>): List<Pair<UUID, UUID>> = jdbc.query(
         """
@@ -129,7 +172,8 @@ class StillTrueSweep(
         ) { _, _ -> }
         val due = jdbc.query(
             """
-            select record_type, record_id, effective_due_on::text as due_on, nudged_at::text as nudged_at
+            select record_type, record_id, effective_due_on::text as due_on, nudged_at::text as nudged_at,
+                   effective_due_on = key_date + ${StillTrue.KEY_DATE_GRACE_DAYS} as by_key_date
             from still_true_items
             where household_id = :hid and nudge_eligible
             """.trimIndent(),
@@ -138,6 +182,7 @@ class StillTrueSweep(
             Due(
                 rs.getString("record_type"), rs.getObject("record_id", UUID::class.java),
                 rs.getString("due_on"), rs.getString("nudged_at"),
+                byKeyDate = rs.getBoolean("by_key_date"),
             )
         }
         due.forEach { (type, id) ->
@@ -157,8 +202,9 @@ class StillTrueSweep(
         val notification = OutboundNotification(
             userId = userId, householdId = householdId, reminderId = null,
             template = StillTrue.DIGEST_TEMPLATE,
-            title = StillTrue.digestTitle(records.size),
-            body = "Open Almira to confirm them or ask again later.",
+            title = StillTrue.digestTitle(records.size, records.count { it.byKeyDate }),
+            body = "Open Almira to say yes, still right, or to choose \"Ask me later\". " +
+                "Nothing changes until you answer.",
             idempotencyKey = digestKey(userId, householdId, records),
         )
         notifiers.forEach { notifier ->
@@ -170,7 +216,14 @@ class StillTrueSweep(
     }
 
     /** A record this person is about to be asked about, and the state that made it a question. */
-    private data class Due(val type: String, val id: UUID, val dueOn: String?, val lastNudgedAt: String?)
+    private data class Due(
+        val type: String,
+        val id: UUID,
+        val dueOn: String?,
+        val lastNudgedAt: String?,
+        /** Came back because a maturity, renewal or end date passed, not because of the period. */
+        val byKeyDate: Boolean = false,
+    )
 
     /**
      * Names the question, not the run: the records, each with the due date and the

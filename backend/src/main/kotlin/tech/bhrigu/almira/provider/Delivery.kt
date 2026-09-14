@@ -49,9 +49,12 @@ interface ChannelSender {
      * balance — which decides whether it is retried and what is recorded. It is
      * always called through [ProviderCalls], never directly.
      *
-     * `recipientHint` is who it is for, when the caller knows. A one-time code
-     * by email passes the complete address (auth/EmailOtpSender.kt); notifications
-     * still pass null (docs/known-issues.md 13). Never log it whole.
+     * `recipientHint` is who it is for: the phone number, the email address or
+     * the push token, looked up by the outbox worker ([DeliveryDirectory]) for a
+     * notification, and the complete address for a one-time code by email
+     * (auth/EmailOtpSender.kt). A live adapter is never called without one; a
+     * sandbox may be, for a person with no address on that channel. Never log it
+     * whole.
      *
      * `idempotencyKey` is the same for every attempt at one logical message on
      * this channel, across retries, restarts and workers. A live adapter MUST
@@ -71,17 +74,29 @@ interface ChannelSender {
  */
 class SandboxDeliveries(private val honoursKeys: Boolean) {
     private val delivered = ConcurrentHashMap<String, AtomicInteger>()
+    private val endings = ConcurrentHashMap<String, String>()
 
     /** Runs [send] unless this key was already delivered and keys are honoured. */
-    fun deliver(key: String, send: () -> Unit): Boolean {
+    fun deliver(key: String, recipientHint: String? = null, send: () -> Unit): Boolean {
         if (honoursKeys && (delivered[key]?.get() ?: 0) > 0) return false
         send()
-        if (delivered.size > MAX_REMEMBERED) delivered.clear()
+        if (delivered.size > MAX_REMEMBERED) {
+            delivered.clear()
+            endings.clear()
+        }
         delivered.computeIfAbsent(key) { AtomicInteger() }.incrementAndGet()
+        endings[key] = recipientHint?.takeLast(4) ?: ""
         return true
     }
 
     fun times(key: String): Int = delivered[key]?.get() ?: 0
+
+    /**
+     * The last four characters of who a key was delivered to, "" for nobody, null
+     * if never delivered — enough for a test to see the right person was looked
+     * up, and never the whole number or address.
+     */
+    fun recipientEnding(key: String): String? = endings[key]
 
     private companion object {
         /** A sandbox is not a database; forgetting old keys bounds its memory. */
@@ -100,11 +115,11 @@ class SandboxSmsSender(private val faults: SandboxFaults) : ChannelSender {
     val deliveries = SandboxDeliveries(honoursIdempotencyKey)
 
     override fun send(notification: OutboundNotification, recipientHint: String?, idempotencyKey: String): String {
-        val fresh = deliveries.deliver(idempotencyKey) {
+        val fresh = deliveries.deliver(idempotencyKey, recipientHint) {
             faults.apply(channel)
             // No body, ever: an SMS body carries the amount and the institution, and
             // logs are the least protected thing here (docs/05 §5).
-            log.info("sandbox SMS: template={} to=…{}", notification.template, recipientHint ?: "?")
+            log.info("sandbox SMS: template={} to=…{}", notification.template, recipientHint?.takeLast(4) ?: "?")
         }
         if (!fresh) log.info("sandbox SMS: key already delivered, not sent again: {}", idempotencyKey)
         return "sandbox-sms"
@@ -122,7 +137,7 @@ class SandboxEmailSender(private val faults: SandboxFaults) : ChannelSender {
     val deliveries = SandboxDeliveries(honoursIdempotencyKey)
 
     override fun send(notification: OutboundNotification, recipientHint: String?, idempotencyKey: String): String {
-        val fresh = deliveries.deliver(idempotencyKey) {
+        val fresh = deliveries.deliver(idempotencyKey, recipientHint) {
             faults.apply(channel)
             log.info("sandbox email: template={} subject={}", notification.template, notification.title)
         }
@@ -146,7 +161,7 @@ class SandboxPushSender(private val faults: SandboxFaults) : ChannelSender {
     val deliveries = SandboxDeliveries(honoursIdempotencyKey)
 
     override fun send(notification: OutboundNotification, recipientHint: String?, idempotencyKey: String): String {
-        deliveries.deliver(idempotencyKey) {
+        deliveries.deliver(idempotencyKey, recipientHint) {
             faults.apply(channel)
             log.info("sandbox push: template={}", notification.template)
         }

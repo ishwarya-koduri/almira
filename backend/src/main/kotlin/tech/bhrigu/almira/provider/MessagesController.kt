@@ -18,7 +18,10 @@ data class OutboundMessageResponse(
     val title: String?,
     /** `sent`, `failed`, `queued` or `skipped`. */
     val status: String,
-    /** When failed: `timeout`, `unavailable`, `rejected`, `insufficient_balance` or `error`. */
+    /**
+     * When failed: `timeout`, `unavailable`, `rejected`, `insufficient_balance` or `error`.
+     * When skipped on purpose: `turned_off`, `no_recipient` or `daily_limit` (docs/13 "Pacing").
+     */
     val failure: String?,
     val attempts: Int,
     /** Plain words for [failure], ready to show. Null when nothing went wrong. */
@@ -63,7 +66,11 @@ class OutboundMessages(
             status = status,
             failure = failure,
             attempts = rs.getInt("attempts"),
-            failureMessage = if (status == "failed") messageFor(failure) else null,
+            failureMessage = when {
+                status == "failed" -> messageFor(failure)
+                status == "skipped" && failure != null -> messageFor(failure)
+                else -> null
+            },
             createdAt = rs.getTimestamp("created_at").toInstant(),
         )
     }
@@ -75,6 +82,9 @@ class OutboundMessages(
             "unavailable" -> "Not sent — the service wasn't reachable. Nothing for you to do."
             "rejected" -> "Not delivered — it was refused for this address or number. Check your contact details."
             "insufficient_balance" -> "Not sent — a problem on our side, not with your details. We've been alerted."
+            "turned_off" -> "Not sent — you turned this off in Settings. It's here instead."
+            "no_recipient" -> "Not sent — we don't have somewhere to send this for you. It's here instead."
+            "daily_limit" -> "Not sent — you'd already had a message that day, and we keep to one. It's here instead."
             else -> "Not sent — something went wrong on our side."
         }
     }

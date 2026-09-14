@@ -235,6 +235,14 @@ abstract class ApiTestBase {
             registry.add("almira.otp.max-verify-failures-per-ip-per-hour") { 100_000 }
             registry.add("almira.otp.max-per-hour") { 1_000 }
             registry.add("almira.jwt.secret") { "test-only-secret-that-is-long-enough-for-hmac256-signing" }
+            // Spring keeps every context a suite has started, and each has its own
+            // notification outbox worker polling the one shared database. An idle
+            // context's worker would claim the running test's queued rows and send
+            // them under ITS configuration — a sandbox email for a live-email test,
+            // pacing with the real clock for a test that fixed one. Tests drain
+            // explicitly (and a queueing request still wakes its own worker), so the
+            // poll is pushed out of the way rather than raced.
+            registry.add("almira.outbox.poll-interval") { "PT1H" }
             // Retries really happen in the full-stack provider failure tests, and
             // the default half-second backoff would make each one sit through
             // it. The backoff itself is asserted in provider/ProviderCallsTest.

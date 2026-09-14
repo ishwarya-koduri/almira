@@ -59,6 +59,12 @@ dependencies {
         // switch the HTTP client every provider adapter is built on.
         exclude(group = "org.apache.httpcomponents.client5", module = "httpclient5")
     }
+    // Live email over SMTP (provider/SmtpEmailSender.kt). Spring's own mail
+    // support over Jakarta Mail, the version pinned by the Spring Boot BOM above,
+    // so any relay a deployment chooses — SES, Postmark, a company server — is
+    // configuration rather than a vendor SDK. Nothing connects unless
+    // almira.providers.email.mode is live.
+    implementation("org.springframework.boot:spring-boot-starter-mail")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")

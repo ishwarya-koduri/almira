@@ -125,9 +125,12 @@ Found reading the code in this stage.
 3. **One template id for many templates.** `…_SMS_TEMPLATE_ID` is a single
    value. DLT registers each message text separately: the one-time code and
    every reminder `template` need their own id.
-4. **No recipient for reminders.** `RecordingNotifier` calls
-   `send(notification, null)`; there is no lookup from `userId` to a phone
-   number. Sign-in is unaffected (`OtpSender` is given the phone).
+4. ~~No recipient for reminders.~~ Closed (V60, known-issues 13): the outbox
+   worker looks up the person's number and passes it as `recipientHint`; a live
+   sender with no number for the person records `skipped`, `no_recipient`. The
+   text it is handed is one line — the title and why it came
+   (`MessageTemplates`), which is the shape to register with DLT. Quiet hours and
+   the one-a-day limit apply to it once it is live (Doc 13, "Pacing").
 5. **The provider's idempotency support is unknown** until one is chosen. It
    decides whether SMS reminders are at-least-once or at-most-once (above).
    Delivery itself is no longer synchronous: the notification outbox sends it.
@@ -216,7 +219,7 @@ register for users.
 | Silent operator drops being noticed | No delivery reports in the contract; cannot be detected today at all |
 | The release app hash and autofill on a release build | No release keystore exists yet (MOVE.md) |
 | Startup refusing a bad `almira.otp.provider` with a sentence | Not implemented; it crashes obscurely (gap 1, verified) |
-| Reminder SMS to the right person | No recipient lookup (gap 4) |
+| Reminder SMS to the right person | The lookup exists and passes the number to the sandbox (`NotificationDeliveryApiTest`); no live sender |
 
 What `SandboxFaults` *does* prove, and is not to be confused with the above:
 given each failure kind, `OtpService` answers correctly and keeps or returns

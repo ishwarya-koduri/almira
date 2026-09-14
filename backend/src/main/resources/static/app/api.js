@@ -266,6 +266,11 @@ export const api = {
     api.post(`/api/v1/households/${hid}/still-true/${type}/${id}/confirm`),
   snoozeStillTrue: (hid, type, id, until) =>
     api.post(`/api/v1/households/${hid}/still-true/${type}/${id}/snooze`, { until }),
+  askLaterAboutStillTrue: () => api.post("/api/v1/me/notification-preferences/still-true/ask-later"),
+
+  // --- notifications (docs/13 "Pacing") -----------------------------------------
+  notificationPreferences: () => api.get("/api/v1/me/notification-preferences"),
+  updateNotificationPreferences: (body) => api.put("/api/v1/me/notification-preferences", body),
 
   // --- nominees -------------------------------------------------------------
   // PUT, not PATCH: the nominee list is replaced as a unit.

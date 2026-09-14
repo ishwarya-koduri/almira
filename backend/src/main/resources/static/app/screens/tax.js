@@ -12,7 +12,7 @@
    ============================================================================= */
 
 import { api } from "../api.js";
-import { el, mount, select, skeletonRows, segmented } from "../ui.js";
+import { el, mount, select, skeletonRows, segmented, notice } from "../ui.js";
 import { state } from "../state.js";
 
 /** 1 April to 31 March. In September 2026 the current year is 2026-27. */
@@ -48,7 +48,8 @@ export async function taxScreen(host, { fy = null, member = null } = {}) {
       ),
     ),
 
-    el("div.banner", {}, pack.disclaimer),
+    // A quiet footnote with an information mark, not a warning box (X-52).
+    notice(pack.disclaimer),
 
     el("div.stack-2", {},
       el("span.overline", {}, "Deductions"),

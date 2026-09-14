@@ -1,10 +1,11 @@
 /* The list. Searchable, filterable, and honest about what it does not know. */
 
 import { api } from "../api.js";
-import { el, mount, categoryDot, skeletonRows, empty, rupees, formatDate, textInput } from "../ui.js";
+import { el, mount, categoryIcon, chipRow, skeletonRows, empty, money, formatDate, textInput, icon } from "../ui.js";
 import { state } from "../state.js";
 import { openCapture } from "./capture.js";
 import { openDetail } from "./detail.js";
+import { t } from "../i18n.js";
 
 let filters = { q: "", category: null };
 
@@ -33,7 +34,8 @@ export async function investmentsScreen(host) {
     timer = setTimeout(load, 250);
   });
 
-  const categoryChips = el("div.row.wrap", { style: { gap: "8px" } },
+  // One row that scrolls sideways, not fourteen chips wrapping into two (D-09).
+  const categoryChips = chipRow("Filter by kind",
     el("button.chip", {
       type: "button", "aria-pressed": filters.category === null,
       onclick: () => { filters.category = null; drawChips(); load(); },
@@ -44,7 +46,7 @@ export async function investmentsScreen(host) {
         filters.category = filters.category === category.categoryCode ? null : category.categoryCode;
         drawChips(); load();
       },
-    }, categoryDot(category.categoryCode, category.color), category.categoryLabel)),
+    }, categoryIcon(category.categoryCode, category.color), category.categoryLabel)),
   );
 
   function drawChips() {
@@ -57,7 +59,7 @@ export async function investmentsScreen(host) {
   mount(host, el("div.stack", {},
     el("div.row-between.wrap", {},
       el("h1", {}, "Investments"),
-      el("button.btn.btn-primary", { type: "button", onclick: () => openCapture(load) }, "＋ Add"),
+      el("button.btn.btn-primary", { type: "button", onclick: () => openCapture(load) }, icon("plus"), "Add"),
     ),
     search,
     categoryChips,
@@ -74,7 +76,7 @@ function renderRows(rows) {
       body: filters.q || filters.category
         ? "No holdings match that. Try clearing the filters."
         : "Add your first holding — it takes about twenty seconds.",
-      action: el("button.btn.btn-primary", { onclick: () => openCapture() }, "＋ Add something"),
+      action: el("button.btn.btn-primary", { onclick: () => openCapture() }, icon("plus"), "Add something"),
     }));
   }
 
@@ -82,7 +84,7 @@ function renderRows(rows) {
     el("div.list", {}, ...rows.map((row) => el("button.list-row", {
       type: "button", onclick: () => openDetail(row.id),
     },
-      categoryDot(row.categoryCode, row.color),
+      categoryIcon(row.categoryCode, row.color),
       el("div.grow", { style: { minWidth: 0 } },
         el("div.title", {}, row.title),
         el("div.meta", {}, [
@@ -91,9 +93,13 @@ function renderRows(rows) {
           row.owners.map((o) => o.name).filter(Boolean).join(" & "),
         ].filter(Boolean).join(" · ")),
       ),
+      // D-11: ₹42 L in a phone's list, the full figure where there is room.
+      // X-71: no amount is an invitation, not a dash.
       el("div.amount", {},
-        el("b", {}, row.valueFormatted || "—"),
-        el("div.meta", {}, valueNote(row)),
+        row.valueFormatted
+          ? el("b", {}, money(row.valueFormatted, row.value))
+          : el("span.link-quiet", {}, t("block.addAmount")),
+        row.valueFormatted && el("div.meta", {}, valueNote(row)),
       ),
       visibilityPill(row.visibility),
     ))),

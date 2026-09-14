@@ -11,7 +11,7 @@
    ============================================================================= */
 
 import { api } from "../api.js";
-import { el, mount, sheet, field, textInput, moneyInput, select, skeletonRows, empty, withBusy, toast, formatDate } from "../ui.js";
+import { el, mount, sheet, field, textInput, moneyInput, select, skeletonRows, empty, withBusy, toast, formatDate, ring, icon } from "../ui.js";
 import { state } from "../state.js";
 
 export async function goalsScreen(host) {
@@ -31,7 +31,7 @@ export async function goalsScreen(host) {
   mount(host, el("div.stack", {},
     el("div.row-between.wrap", {},
       el("h2", {}, "Goals"),
-      el("button.btn.btn-primary.btn-sm", { type: "button", onclick: () => newGoal(host) }, "＋ New goal"),
+      el("button.btn.btn-primary.btn-sm", { type: "button", onclick: () => newGoal(host) }, icon("plus"), "New goal"),
     ),
     ...goals.map((goal) => goalCard(goal, host)),
     el("p.caption.muted", {}, goals[0].disclaimer),
@@ -52,7 +52,8 @@ function goalCard(goal, host) {
           goal.targetDate ? ` · by ${formatDate(goal.targetDate)}` : "",
         ),
       ),
-      ring(percent),
+      // Teal, like every meter: gold is the hero's hairline and nothing else (D-01).
+      ring(Math.round(Number(percent) || 0), { label: `${Math.round(Number(percent) || 0)}% funded` }),
     ),
 
     goal.progress.note && el("p.caption.muted", {}, goal.progress.note),
@@ -80,17 +81,6 @@ function goalCard(goal, host) {
   );
 }
 
-/** A ring, drawn in one element rather than an SVG — it is a progress bar bent round. */
-function ring(percent) {
-  const clamped = Math.max(0, Math.min(100, percent));
-  return el("div.ring", {
-    role: "img",
-    "aria-label": `${clamped}% funded`,
-    style: {
-      background: `conic-gradient(var(--gold) ${clamped * 3.6}deg, var(--hairline) 0deg)`,
-    },
-  }, el("span.ring-label", {}, `${Math.round(clamped)}%`));
-}
 
 function newGoal(host) {
   const name = textInput({ placeholder: "Aarav's degree", "aria-label": "Goal name" });

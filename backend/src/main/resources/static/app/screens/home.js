@@ -5,11 +5,12 @@
    that quietly ignores a home loan is worse than no figure at all. */
 
 import { api } from "../api.js";
-import { el, mount, segmented, categoryDot, skeletonRows, empty, rupees, relativeDays } from "../ui.js";
+import {
+  el, mount, segmented, categoryIcon, skeletonRows, empty, money, when, notice, withoutZeroRows,
+} from "../ui.js";
 import { state, update } from "../state.js";
 import { openCapture } from "./capture.js";
 import { openDetail } from "./detail.js";
-import { navigate } from "../app.js";
 import { t } from "../i18n.js";
 import { loadStillTrue, stillTrueCard } from "../still-true.js";
 
@@ -43,35 +44,47 @@ export async function homeScreen(host) {
       }),
     ),
 
-    // The hero. Gold appears exactly once per screen, and this is it.
+    // The hero: brass for the figure, gold only for the hairline under it.
     //
     // The headline is TRUE net worth. Assets and liabilities sit beside it as
     // sub-figures rather than being hidden: a single number people are asked to
-    // trust should show its own arithmetic.
-    el("div.hero", {},
-      el("div.row-between.wrap", { style: { alignItems: "flex-start", gap: "24px" } },
-        el("div", {},
-          el("div.overline", {}, t("home.netWorth")),
-          el("div.hero-amount", {}, data.netWorthFormatted),
-          el("div.hero-words", {}, data.netWorthInWords),
+    // trust should show its own arithmetic. On a phone that arithmetic waits
+    // behind a tap, so what is due next is still on the first screen (X-55).
+    hero(data),
+
+    // Next due, then To review, before any breakdown: what needs doing comes
+    // before what there is.
+    upcoming.length > 0 && el("div.card", {},
+      el("div.section-title", {}, el("h4", {}, "Coming up"), el("span.caption", {}, "Next 90 days")),
+      el("div.list", {}, ...upcoming.map((item) =>
+        el("button.list-row", {
+          type: "button",
+          // An EMI points at a liability, not a holding, so only maturities open
+          // a holding's detail sheet.
+          onclick: () => { if (item.kind === "maturity") openDetail(item.investmentId); },
+          style: item.kind === "emi" ? { cursor: "default" } : null,
+        },
+          el(`span.pill${item.kind === "emi" ? ".pill-caution" : ""}`, {},
+            item.kind === "maturity" ? "Matures" : "EMI due"),
+          el("div.grow", {},
+            el("div.title", {}, item.title),
+            el("div.meta", {}, when(item.date)),
+          ),
+          el("div.amount", {}, el("b", {}, money(null, item.value))),
+        ))),
+    ),
+
+    stillTrueCard(state.household.id, stillTrue),
+
+    data.attention.length > 0 && el("div.card", {},
+      el("div.section-title", {}, el("h4", {}, t("home.attention"))),
+      el("div.list", {}, ...data.attention.map((item) => el("a.list-row", { href: "#/investments" },
+        el("div.grow", {},
+          el("div.title", {}, item.label),
+          el("div.meta", {}, `${item.count} ${item.count === 1 ? "holding" : "holdings"}`),
         ),
-        el("div.hero-side", {},
-          el("div.hero-side-row", {},
-            el("span.muted", {}, t("home.assets")), el("b", {}, data.totalAssetsFormatted)),
-          el("div.hero-side-row", {},
-            el("span.muted", {}, t("home.owed")),
-            el("b", { style: { color: "var(--caution)" } },
-              Number(data.totalLiabilities) > 0 ? `− ${data.totalLiabilitiesFormatted}` : "—")),
-          el("div", { style: { height: "1px", background: "var(--hairline)", margin: "4px 0" } }),
-          el("div.hero-side-row", {},
-            el("span.muted", {}, "Holdings"), el("b", {}, String(data.holdingCount))),
-          el("div.hero-side-row", {},
-            el("span.muted", {}, "Loans"), el("b", {}, String(data.liabilityCount))),
-          data.valueConfidence.unknown > 0 && el("div.hero-side-row", {},
-            el("span.muted", {}, "No value yet"), el("b", {}, String(data.valueConfidence.unknown))),
-        ),
-      ),
-      el("p.caption.faint", { style: { marginTop: "20px", marginBottom: 0 } }, data.disclaimer),
+        el("span.link-quiet", {}, t("block.review")),
+      ))),
     ),
 
     data.holdingCount === 0
@@ -93,48 +106,52 @@ export async function homeScreen(host) {
         el("div.section-title", {}, el("h4", {}, "Owned against owed")),
         el("div.alloc", {},
           barRow("Assets", data.totalAssets, data.totalAssetsFormatted,
-                 data.totalAssets, "var(--positive)"),
+                 data.totalAssets, "var(--accent)"),
           barRow("Owed", data.totalLiabilities, data.totalLiabilitiesFormatted,
                  data.totalAssets, "var(--caution)"),
         ),
-        el("p.caption.muted", { style: { marginTop: "16px", marginBottom: 0 } },
+        el("p.caption", { style: { marginTop: "16px", marginBottom: 0 } },
           `What's left is yours: ${data.netWorthFormatted}.`),
       ),
     ),
-
-    upcoming.length > 0 && el("div.card", {},
-      el("div.section-title", {}, el("h4", {}, "Coming up"), el("span.caption.muted", {}, "Next 90 days")),
-      el("div.list", {}, ...upcoming.map((item) =>
-        el("button.list-row", {
-          type: "button",
-          // An EMI points at a liability, not a holding, so only maturities open
-          // a holding's detail sheet.
-          onclick: () => { if (item.kind === "maturity") openDetail(item.investmentId); },
-          style: item.kind === "emi" ? { cursor: "default" } : null,
-        },
-          el(`span.pill${item.kind === "emi" ? ".pill-caution" : ""}`, {},
-            item.kind === "maturity" ? "Matures" : "EMI due"),
-          el("div.grow", {},
-            el("div.title", {}, item.title),
-            el("div.meta", {}, relativeDays(item.date)),
-          ),
-          el("div.amount", {}, el("b", {}, rupees(item.value))),
-        ))),
-    ),
-
-    stillTrueCard(state.household.id, stillTrue),
-
-    data.attention.length > 0 && el("div.stack-3", {},
-      el("h4", {}, t("home.attention")),
-      ...data.attention.map((item) => el("div.banner", {},
-        el("div.grow", {},
-          el("b", {}, item.label),
-          el("div.caption", {}, `${item.count} ${item.count === 1 ? "holding" : "holdings"}`),
-        ),
-        el("button.btn.btn-sm", { type: "button", onclick: () => navigate("investments") }, "Review"),
-      )),
-    ),
   ));
+}
+
+function hero(data) {
+  const node = el("div.hero", {},
+    el("div.row-between.wrap", { style: { alignItems: "flex-start", gap: "24px" } },
+      el("div", { style: { minWidth: 0 } },
+        el("div.overline", {}, t("home.netWorth")),
+        el("div.hero-amount", {}, data.netWorthFormatted),
+        el("div.hero-words", {}, data.netWorthInWords),
+      ),
+      el("div.hero-side", { id: "hero-breakdown" },
+        el("div.hero-side-row", {},
+          el("span.muted", {}, t("home.assets")), el("b", {}, data.totalAssetsFormatted)),
+        // X-71: nothing owed is no row, rather than a lone dash.
+        Number(data.totalLiabilities) > 0 && el("div.hero-side-row", {},
+          el("span.muted", {}, t("home.owed")),
+          el("b.owed", {}, `− ${data.totalLiabilitiesFormatted}`)),
+        el("div.hero-rule", { "aria-hidden": "true" }),
+        el("div.hero-side-row", {},
+          el("span.muted", {}, "Holdings"), el("b", {}, String(data.holdingCount))),
+        data.liabilityCount > 0 && el("div.hero-side-row", {},
+          el("span.muted", {}, "Loans"), el("b", {}, String(data.liabilityCount))),
+        data.valueConfidence.unknown > 0 && el("div.hero-side-row", {},
+          el("span.muted", {}, "No value yet"), el("b", {}, String(data.valueConfidence.unknown))),
+      ),
+    ),
+  );
+  const toggle = el("button.btn.btn-ghost.btn-sm.hero-toggle", {
+    type: "button", "aria-expanded": "false", "aria-controls": "hero-breakdown",
+    onclick: () => {
+      const open = node.dataset.open !== "true";
+      node.dataset.open = String(open);
+      toggle.setAttribute("aria-expanded", String(open));
+    },
+  }, t("block.breakdown"));
+  node.append(toggle, el("div", { style: { marginTop: "16px" } }, notice(data.disclaimer)));
+  return node;
 }
 
 function barRow(label, value, formatted, scale, colour) {
@@ -151,12 +168,16 @@ function barRow(label, value, formatted, scale, colour) {
 }
 
 function breakdownCard(title, rows, useCategoryColour) {
+  // X-71: "Insurance ₹0 · 0%" is noise, not information.
+  const shown = withoutZeroRows(rows);
   return el("div.card", {},
     el("div.section-title", {}, el("h4", {}, title)),
-    rows.length === 0
-      ? el("p.caption.muted", {}, "Nothing to show yet.")
-      : el("div.alloc", {}, ...rows.slice(0, 8).map((row) => el("div.alloc-row", {},
-          categoryDot(useCategoryColour ? row.key : null, row.color || "var(--accent)"),
+    shown.length === 0
+      ? el("p.caption", {}, "Nothing to show yet.")
+      : el("div.alloc", {}, ...shown.slice(0, 8).map((row) => el("div.alloc-row", {},
+          useCategoryColour
+            ? categoryIcon(row.key, row.color)
+            : el("span.dot", { style: { background: row.color || "var(--accent)" }, "aria-hidden": "true" }),
           el("div", {},
             el("div.alloc-label", {}, row.label),
             el("div.alloc-bar", {},
@@ -169,7 +190,7 @@ function breakdownCard(title, rows, useCategoryColour) {
           ),
           el("div.alloc-value", {},
             el("div", {}, row.valueFormatted),
-            el("div.caption.faint", {}, `${row.percentage}%`),
+            el("div.caption", {}, `${row.percentage}%`),
           ),
         ))),
   );

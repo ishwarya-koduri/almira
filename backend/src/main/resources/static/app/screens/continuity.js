@@ -109,7 +109,8 @@ function printButton() {
    ----------------------------------------------------------------------------- */
 
 function mismatchCard(mismatches) {
-  return el("div.card.stack-2", { style: { borderColor: "var(--caution)" } },
+  // Urgent, but not a debt: a heavier edge rather than rust (D-01).
+  return el("div.card.card-emphasis.stack-2", {},
     el("h3", {}, t("estate.mismatch.title")),
     ...mismatches.map((mismatch) => el("div.stack-2", {},
       el("b", {}, mismatch.title),

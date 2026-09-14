@@ -39,6 +39,7 @@ const SHELL_FILES = [
   "/app/i18n.js",
   "/app/screens/auth.js",
   "/app/auth-outcome.js",
+  "/app/sign-in-security.js",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/favicon.svg",

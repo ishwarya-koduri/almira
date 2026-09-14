@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.springframework.test.annotation.DirtiesContext
 import org.springframework.test.context.TestPropertySource
 import java.io.ByteArrayOutputStream
 import java.math.BigInteger
@@ -30,6 +31,10 @@ import java.util.Base64
         "almira.webauthn.origins=http://localhost:8080",
     ],
 )
+// Closed after the class: its own properties make it a server of its own, and one
+// more cached server holding pools took the shared test database past
+// max_connections for the provider suites after it.
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PasskeyApiTest : SignInApiTestBase() {
 
     /** One authenticator: a key pair and a credential id, and a counter it keeps. */

@@ -54,9 +54,14 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
 
     class CountingStorage(private val real: DocumentStorage) : DocumentStorage by real {
         val puts = CopyOnWriteArrayList<String>()
+        val deletes = CopyOnWriteArrayList<String>()
         override fun put(key: String, ciphertext: ByteArray) {
             puts += key
             real.put(key, ciphertext)
+        }
+        override fun delete(key: String) {
+            deletes += key
+            real.delete(key)
         }
     }
 
@@ -70,6 +75,8 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
 
     class CountingVault(private val real: DocumentVaultProvider) : DocumentVaultProvider by real {
         val calls = CopyOnWriteArrayList<String>()
+        /** When set, fetches after this many fail, as a timeout partway through an import would. */
+        @Volatile var fetchesBeforeFailing: Int? = null
         override fun exchange(householdId: UUID, code: String): ProviderSession {
             calls += "exchange"
             return real.exchange(householdId, code)
@@ -80,6 +87,7 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
         }
         override fun fetch(session: ProviderSession, uri: String): ByteArray {
             calls += "fetch"
+            fetchesBeforeFailing?.let { if (calls.count { it == "fetch" } > it) throw IllegalStateException("DigiLocker went away") }
             return real.fetch(session, uri)
         }
     }
@@ -232,6 +240,37 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
         assertThat(refused.status()).isEqualTo(HttpStatus.FORBIDDEN)
         assertThat(vault.calls).describedAs("DigiLocker calls made for a refused import").isEmpty()
         assertThat(storage.puts.filter { it.startsWith("$householdId/") }).isEmpty()
+    }
+
+    /**
+     * Not a refusal but the same class: storage is outside the transaction, and
+     * its clean-up used to run only when the insert itself failed. Here the
+     * first document is fully stored and indexed, the second fetch fails, the
+     * import rolls back — and the first file must not outlive its row.
+     */
+    @Test
+    fun `an import that fails partway leaves no file without a row`() {
+        post(connect("digilocker/start"), owner)
+        val offered = post(connect("digilocker/complete"), owner, mapOf("code" to "sandbox-code")).json()
+        vault.fetchesBeforeFailing = 1
+        try {
+            val failed = post(
+                connect("digilocker/import"), owner,
+                mapOf("uris" to offered.take(2).map { it.path("uri").asText() }),
+            )
+            assertThat(failed.status().is2xxSuccessful).isFalse()
+        } finally {
+            vault.fetchesBeforeFailing = null
+        }
+
+        val stored = storage.puts.filter { it.startsWith("$householdId/") }
+        assertThat(stored).describedAs("the first document was stored before the second fetch failed").isNotEmpty()
+        val indexed = db.queryForList(
+            "select storage_key from documents where household_id = ?::uuid", String::class.java, householdId,
+        ).toSet()
+        assertThat(stored.filter { it !in indexed && it !in storage.deletes })
+            .describedAs("files left in storage with no documents row")
+            .isEmpty()
     }
 
     @Test

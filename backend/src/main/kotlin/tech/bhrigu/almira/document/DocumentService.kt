@@ -3,6 +3,8 @@ package tech.bhrigu.almira.document
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.auth.StepUpService
 import tech.bhrigu.almira.common.ApiException
@@ -97,6 +99,12 @@ class DocumentService(
         // Encrypted BEFORE it reaches storage, so the backend never holds
         // anything readable — a misconfigured bucket leaks ciphertext.
         storage.put(storageKey, cipher.encryptBytes(householdId, contentField, input.bytes))
+        // Object storage does not join the transaction, so the file is removed
+        // whenever the transaction does not commit — not only when the insert
+        // below throws. A caller's later failure (the next document of an
+        // import, a capture's parse) or the commit itself used to roll the row
+        // back and leave the file with nothing pointing at it.
+        deleteUnlessCommitted(storageKey)
 
         try {
             repo.insert(
@@ -123,6 +131,19 @@ class DocumentService(
         )
         return repo.find(householdId, id)
             ?: throw ApiException.forbidden("Saved, but it's private to what it's attached to.")
+    }
+
+    private fun deleteUnlessCommitted(storageKey: String) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCompletion(status: Int) {
+                    if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                        runCatching { storage.delete(storageKey) }
+                    }
+                }
+            },
+        )
     }
 
     @Transactional(readOnly = true)

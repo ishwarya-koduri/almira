@@ -282,8 +282,12 @@ class NotificationDeliveryApiTest : ApiTestBase() {
         at(LocalTime.of(10, 0))
         tell()
         outbox.drain()
-        val stale = tell()
-        db.update("update outbound_messages set created_at = now() - interval '8 days' where idempotency_key like ?", "$stale:%")
+        // Queued and aged while the worker is held, so the wake after queueing cannot decide it first.
+        val stale = outbox.whilePaused {
+            tell().also {
+                db.update("update outbound_messages set created_at = now() - interval '8 days' where idempotency_key like ?", "$it:%")
+            }
+        }
         outbox.drain()
         assertThat(row(stale, "sms")).extracting("status", "failure").containsExactly("skipped", "daily_limit")
         assertThat(row(stale, "in_app").status).isEqualTo("sent")

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en-IN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <title>Security — Almira</title>
+  <meta name="description" content="How Almira protects a family’s record, and what it does not protect against.">
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="masthead">
+    <div class="wrap">
+      <a class="brand" href="index.html"><img src="assets/mark.svg" alt="" width="36" height="36">Almira</a>
+      <nav class="nav" aria-label="Site">
+        <a href="index.html">Home</a>
+        <a href="security.html" aria-current="page">Security</a>
+        <a href="never.html">What we never do</a>
+        <a href="pricing.html">Pricing</a>
+      </nav>
+      <a class="primary" href="/sign-in">Sign in</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="wrap">
+      <section class="hero" aria-labelledby="hero-title">
+        <p class="overline">Security</p>
+        <h1 id="hero-title">How your family’s record is protected, and where the limits are.</h1>
+        <p class="lede">Written for someone deciding whether to trust us, in plain words. Where the protection stops, this page says so.</p>
+      </section>
+
+      <hr class="rule">
+      <section class="reading" aria-labelledby="idea">
+        <h2 id="idea">The one idea</h2>
+        <p>Two questions are kept apart: what you may <em>do</em> in a family, and what you may <em>see</em>. Your role decides the first. Each record decides the second.</p>
+        <p>No role can read another member’s private records. Not an editor, not an admin, not the person who created the family. Joining a family on Almira is not giving up your privacy inside it.</p>
+      </section>
+      <section class="section reading" aria-labelledby="where">
+        <h2 id="where">Where that rule lives</h2>
+        <p>In the database itself. Every read of family data passes the same check inside PostgreSQL, and the application connects as an account that cannot switch that check off.</p>
+        <p>The application checks again before it answers, so a mistake in one place does not leak a record.</p>
+        <p>If you ask for a record you may not see, the answer is “not found”, never “not allowed”. “Not allowed” would tell you the record exists.</p>
+      </section>
+      <section class="section reading" aria-labelledby="enc">
+        <h2 id="enc">Encryption</h2>
+        <ul class="plain">
+          <li><strong>On the way to us:</strong> always over HTTPS.</li>
+          <li><strong>Stored by us:</strong> account numbers, policy numbers and your documents are encrypted with a key for your family, which is itself locked by a key kept outside the database. A copy of the database alone opens none of them. By default only the last four digits of a number are kept at all.</li>
+          <li><strong>Sealed by you:</strong> any field can be sealed with a passphrase that never reaches us. We store something we cannot open. If the passphrase is lost, we cannot get it back for you.</li>
+        </ul>
+      </section>
+      <section class="section reading" aria-labelledby="what-we-read">
+        <h2 id="what-we-read">What we can read</h2>
+        <p>Most of what you record is stored so that our server can read it. That is how totals, reports and search work, and it is shown only to the people you share it with. What you seal, we cannot read.</p>
+      </section>
+      <section class="section reading" aria-labelledby="signin">
+        <h2 id="signin">Signing in</h2>
+        <ul class="plain">
+          <li>A one-time code, not a password, so there is no password to leak or reuse.</li>
+          <li>A code works once, for five minutes, and stops after five wrong tries.</li>
+          <li>Seeing a full account number or opening a document asks you to confirm it is you again, so a borrowed, unlocked phone is not enough.</li>
+        </ul>
+      </section>
+      <section class="section reading" aria-labelledby="outside">
+        <h2 id="outside">When someone outside the family sees something</h2>
+        <ul class="plain">
+          <li><strong>A link you share</strong>, for example a tax pack for your CA for a week, shows only what you chose and could see yourself, and can be withdrawn.</li>
+          <li><strong>Emergency access</strong> for a person you name opens only after a waiting period you choose. You are told, and signing in stops it.</li>
+          <li><strong>An advisor</strong> sees only what has been shared with them, and cannot change anything.</li>
+        </ul>
+      </section>
+      <section class="section reading" aria-labelledby="log">
+        <h2 id="log">A record of who did what</h2>
+        <p>Changes, sign-ins, shared links and every look at a sensitive detail are written to an activity log. The application can add to that log but cannot edit or delete it.</p>
+      </section>
+      <section class="section reading" aria-labelledby="limits">
+        <h2 id="limits">What this does not protect against</h2>
+        <ul class="plain">
+          <li>A phone or computer that is already compromised. Malware sees what you see, including a passphrase as you type it.</li>
+          <li>For the web version, a server that decided to misbehave could send a page that reads what you type before it is sealed. A signed phone app narrows this; it does not remove it.</li>
+          <li>That a field is sealed, when, roughly how long it is, and which record it belongs to are visible to us.</li>
+          <li>Someone with access to our live systems could read what is not sealed. The answer to that is people and process: few hands, keys held apart, and a log.</li>
+          <li>Keeping the service up. Backups are an operational promise, not something the code guarantees.</li>
+        </ul>
+      </section>
+      <section class="section reading" aria-labelledby="tested">
+        <h2 id="tested">Independent testing</h2>
+        <p>No external penetration test has been done yet. When one is, its date and a plain summary of what was found and what was fixed will be here, including anything not yet fixed.</p>
+      </section>
+      <section class="section reading" aria-labelledby="wrong">
+        <h2 id="wrong">If something goes wrong</h2>
+        <p>If your information is exposed, we will tell you directly and without delay: what happened, what it means for you, what we have done, and what you can do. The same notice goes on the <a href="status.html">status page</a>.</p>
+        <p class="notice">
+          <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="8"/><path d="M10 9 V14" stroke-linecap="round"/><circle cx="10" cy="6" r="1" fill="currentColor" stroke="none"/></svg>
+          <span>The address for reporting a security problem to us will be published here before Almira opens to the public.</span>
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <nav aria-label="More">
+        <a href="security.html">Security</a>
+        <a href="never.html">What we never do</a>
+        <a href="pricing.html">Pricing</a>
+        <a href="measure.html">What we measure</a>
+        <a href="status.html">Status</a>
+      </nav>
+      <div class="langs" role="group" aria-label="Language">
+        <span>Language:</span>
+        <a href="index.html" hreflang="en-IN" lang="en-IN" aria-current="true">English</a>
+        <a href="te/index.html" hreflang="te" lang="te">తెలుగు</a>
+        <a href="hi/index.html" hreflang="hi" lang="hi">हिन्दी</a>
+      </div>
+      <p class="caption">This site sets no cookies, runs no scripts and loads nothing from any other website.</p>
+    </div>
+  </footer>
+</body>
+</html>

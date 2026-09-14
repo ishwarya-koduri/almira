@@ -169,7 +169,8 @@ disbelieving:
 | No external penetration test has been performed | To be scheduled against a deployed environment |
 | The zero-knowledge scheme has had no third-party cryptographic review | Doc 12 is written so one is possible |
 | Browser-delivered E2E depends on the server serving honest code | Mitigated only by a native client with a signed binary |
-| Backups, DR, key rotation cadence and incident response are undocumented | Operational, and out of scope for a codebase that has not been deployed |
+| Key rotation cadence is undocumented; DR is only the manual backup and restore in Doc 17 §6 | Operational, and out of scope for a codebase that has not been deployed |
+| Incident and breach response is written ([Doc 26](26-incident-response.md)) but has no named owners, no counsel review and no rehearsal | Known-issues 25 |
 | No formal DPDP or SOC 2 programme | Design aligns; the programme is separate work |
 
 [‹ Index](README.md)

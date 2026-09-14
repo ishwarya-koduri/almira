@@ -534,4 +534,86 @@ Named rather than implied:
 - **An external penetration test.** Still to schedule, against a deployed
   environment ([Doc 15 §11](15-security-whitepaper.md)).
 
+## 9 · The public website
+
+`site/` is the website people read before they decide to trust Almira: a home
+page, security, what we never do, and placeholders for pricing, what we measure
+and status, with Telugu and Hindi home pages as unreviewed drafts. **It has not
+been deployed.** Nothing below has been run against a real host.
+
+It is plain files. There is no build step, no script on any page, and nothing
+fetched from another host: the fonts are committed under `site/assets/fonts`
+with their licences, and every page carries a Content-Security-Policy meta that
+would block anything else. `python3 scripts/check-site.py` (also run by
+`scripts/dev.sh test`) fails if that stops being true — a script, an embed, an
+off-origin URL, a broken link, a colour that has drifted from the app's tokens,
+text below 13px, or font bytes that are not the ones `fonts/SOURCE` records.
+
+### Where it goes
+
+Serve it from its own hostname, separate from the app's. The app's origin holds
+sessions and a service worker; a marketing page has no reason to share either,
+and a separate origin means a mistake on one cannot script the other.
+
+Say the site is `example.in` and the app `app.example.in` (neither is decided —
+[Doc 13](13-providers-and-going-live.md) needs the domain for email sign-in
+anyway). With Caddy, which is one of the terminators §1 names:
+
+```caddy
+example.in {
+	root * /srv/almira/site
+	file_server
+
+	# Every page's "Sign in" links here; this is the only place that knows
+	# where the app lives. A 302, so changing the app's host later is one edit.
+	redir /sign-in https://app.example.in/ 302
+
+	header {
+		# The meta tag in each page cannot set frame-ancestors; the header can.
+		Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+	@fonts path /assets/fonts/*
+	header @fonts Cache-Control "public, max-age=604800"
+
+	# The site promises it measures nothing. Access logs with addresses in them
+	# are a measurement; keep them off, or short-lived and addressless.
+	log {
+		output discard
+	}
+}
+```
+
+`includeSubDomains` on the apex covers the app's host too, which is already
+HTTPS-only (§4 of Doc 15), so it costs nothing — but check that no other
+subdomain still serves plain HTTP before you turn it on.
+
+Copy the directory with `rsync -a --delete site/ host:/srv/almira/site/`. Any
+static host that can set response headers and a redirect will do the same job;
+one that injects its own analytics or a cookie banner will not, because the
+footer on every page says there is none.
+
+### Before it goes up
+
+- **The Telugu and Hindi pages** say on the page that they are unreviewed, and
+  ask not to be indexed. Leave both until a native speaker has read them; then
+  remove the notice and the `robots` meta together (the check insists on both
+  while the notice is there).
+- **Placeholders** — pricing, what we measure, status, the security contact
+  address and the pen-test summary are honest placeholders, not finished
+  pages. Known-issues 25 lists what each is waiting on.
+- **When the mark changes**, `brand/render-icons.py` rewrites the app's
+  `static/icons/favicon.svg` but not `site/assets/mark.svg`; copy it across. The
+  check fails until you do.
+- **When a colour token changes** in `static/app/tokens.css`, change it in
+  `site/assets/site.css`. The check fails until you do.
+- **Status is written by hand.** During an incident it is updated as
+  [Doc 26](26-incident-response.md) describes, by editing `site/status.html` and
+  copying the directory again. Keep the host's credentials where the on-call
+  person can reach them without the app being up.
+
 [‹ Index](README.md)

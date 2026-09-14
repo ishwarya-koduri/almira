@@ -1,0 +1,29 @@
+Where every file in this directory came from, fetched 2026-09-14.
+
+The woff2 files are the official Google Fonts builds, served by fonts.gstatic.com
+in answer to the Google Fonts CSS API request below (a desktop Chrome user agent,
+which is what makes it answer with woff2). They are the variable fonts, clipped
+to the weight range 400-600, one file per script subset. Nothing was modified.
+
+  https://fonts.googleapis.com/css2?family=Fraunces:wght@400..600&family=Inter:wght@400..600&family=Noto+Serif+Telugu:wght@400..600&family=Noto+Sans+Telugu:wght@400..600&family=Noto+Serif+Devanagari:wght@400..600&family=Noto+Sans+Devanagari:wght@400..600&display=swap
+
+  Fraunces-latin.woff2                 fraunces/v38            subset: latin
+  Fraunces-latin-ext.woff2             fraunces/v38            subset: latin-ext (carries the rupee sign's range)
+  Inter-latin.woff2                    inter/v20               subset: latin
+  Inter-latin-ext.woff2                inter/v20               subset: latin-ext
+  NotoSansTelugu-telugu.woff2          notosanstelugu/v30      subset: telugu
+  NotoSerifTelugu-telugu.woff2         notoseriftelugu/v29     subset: telugu
+  NotoSansDevanagari-devanagari.woff2  notosansdevanagari/v30  subset: devanagari
+  NotoSerifDevanagari-devanagari.woff2 notoserifdevanagari/v34 subset: devanagari
+
+The licences are the OFL.txt files from the google/fonts repository, main branch:
+
+  https://raw.githubusercontent.com/google/fonts/main/ofl/<family>/OFL.txt
+
+All six families are under the SIL Open Font License 1.1, which permits
+bundling and self-hosting. The licence text must travel with the fonts, which is
+why it is here and not only linked.
+
+SHA256SUMS covers every font and licence file; scripts/check-site.py verifies it.
+To refresh: repeat the request above, replace the files, regenerate SHA256SUMS
+(shasum -a 256 *.woff2 *.txt > SHA256SUMS) and update the versions in this file.

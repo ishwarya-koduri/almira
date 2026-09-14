@@ -15,32 +15,20 @@ Status: **open** unless a later line says otherwise.
 
 ## 1. Field order differs between the app and the web client
 
-**Where** `app/shared/.../capture/FormModel.kt` (`toFormFields`) and
-`backend/src/main/resources/static/app/screens/capture.js` (`captureForm`).
+**Resolved** (2026-09-14, "Plans and support"). Kept as a stub so the number
+still means something where it is cited.
 
-**What** Both clients generate the capture form from the type's `field_schema`,
-so they always agree on *which* fields exist, what they are called, which are
-required and what they accept. They order them differently:
-
-- **App** — merges the re-labelled columns and the type's attributes into one
-  list and sorts the whole thing by `sort`.
-- **Web** — renders every re-labelled column first, then every attribute, so
-  `sort` only orders within each of those two groups.
-
-**Which is right** The app. The numbers in the schema plainly intend an
-interleave: a Fixed Deposit's `interest_rate` is sort 30, between `Principal`
-at 20 and `Opened on` at 40, and Principal → rate → dates is the order someone
-reads off an FD receipt. The web pushes the rate below both dates.
-
-**Why it is still here** The fix is a change to frozen-adjacent web code, and
-it is worth making deliberately rather than as a side effect of an app stage.
-This is an intended, known divergence until then.
-
-**When to fix** The next time we open `capture.js` for its own reasons. Sort the
-merged list the way `toFormFields` does; there is no API change and no data
-change.
-
-**Risk if left** Cosmetic only. Nothing that reaches the server can differ.
+`captureForm` in `static/app/screens/capture.js` now merges the re-labelled
+columns and the type's attributes into one list and orders it by `sort`, the
+way the native `toFormFields` always did: a Fixed Deposit reads Principal (20)
+→ interest rate (30) → Opened on (40), as on the receipt. A missing `sort`
+counts as 100 on both sides, and on equal numbers columns come first in the
+schema's own order, as Kotlin's stable `sortedBy` over `columns + attributes`
+does. Which fields exist, their labels and what they accept were never
+different. The one leftover is a comment: `FormModel.kt` still describes the
+web as ordering by group, and is for the next pass over `app/` to reword. Not
+covered by an automated test — the web client has none for screens (docs/20
+§9); checked by reading the two orderings side by side against the FD schema.
 
 ---
 

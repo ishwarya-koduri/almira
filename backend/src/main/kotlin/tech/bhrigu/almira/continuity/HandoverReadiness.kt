@@ -94,6 +94,11 @@ data class HandoverReadiness(
     val caveats: List<String>,
     /** Absent when no counted record has a sealed location. Not scored (docs/22 §4.1). */
     val sealedAccess: SealedAccessSummary? = null,
+    /**
+     * Since about a month ago (docs/22 §6). Absent until there is a day at least
+     * four weeks back to compare with. Beside the score, never part of it.
+     */
+    val movement: ReadinessMovement? = null,
 )
 
 /** Which of the three record checks apply to a kind of holding (docs/22 §3). */
@@ -537,9 +542,18 @@ class HandoverReadinessService(
 
 @RestController
 @RequestMapping("/api/v1/households/{householdId}/continuity")
-class HandoverReadinessController(private val service: HandoverReadinessService) {
+class HandoverReadinessController(
+    private val service: HandoverReadinessService,
+    private val history: ReadinessHistoryService,
+) {
 
-    /** One number for the handover, and every gap in it named (docs/22). */
+    /**
+     * One number for the handover, every gap in it named (docs/22), and how far
+     * it has moved since last month. Reading it keeps today's counts (V80).
+     */
     @GetMapping("/readiness")
-    fun readiness(@PathVariable householdId: UUID): HandoverReadiness = service.readiness(householdId)
+    fun readiness(@PathVariable householdId: UUID): HandoverReadiness {
+        val readiness = service.readiness(householdId)
+        return readiness.copy(movement = history.record(householdId, readiness))
+    }
 }

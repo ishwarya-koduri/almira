@@ -69,7 +69,26 @@ data class AlmiraProperties(
         /** Where the filesystem provider writes. Encrypted bytes only. */
         val root: String = "./var/documents",
         val maxFileBytes: Long = 20L * 1024 * 1024,
-    )
+        val s3: S3 = S3(),
+    ) {
+        /**
+         * S3 or an S3-compatible store (R2, MinIO, an Indian-region provider).
+         * Read only when `provider` is `s3`. Blank keys mean the SDK's default
+         * credential chain (an instance role), never an anonymous client.
+         */
+        data class S3(
+            val bucket: String = "",
+            val region: String = "",
+            /** Blank for AWS itself; the URL of anything S3-compatible. */
+            val endpoint: String = "",
+            val accessKeyId: String = "",
+            val secretAccessKey: String = "",
+            /** `bucket.host` (false) or `host/bucket` (true). Most compatible stores want true. */
+            val pathStyle: Boolean = false,
+            /** Prepended to every key, so one bucket can hold more than one install. */
+            val prefix: String = "documents/",
+        )
+    }
 
     data class Otp(
         /** `log` prints the code to the application log — local development only. */

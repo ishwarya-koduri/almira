@@ -9,4 +9,5 @@
 # had already passed and been watched failing. See docs/19.
 org.springframework.boot.env.EnvironmentPostProcessor=\
 tech.bhrigu.almira.provider.ProviderModeCheck,\
-tech.bhrigu.almira.ops.LogFormatSelector
+tech.bhrigu.almira.ops.LogFormatSelector,\
+tech.bhrigu.almira.document.StorageProviderCheck

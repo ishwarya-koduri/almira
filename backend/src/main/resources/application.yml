@@ -80,6 +80,16 @@ almira:
     provider: ${ALMIRA_STORAGE_PROVIDER:filesystem}
     root: ${ALMIRA_STORAGE_ROOT:./var/documents}
     max-file-bytes: 20971520
+    # Only read when provider is s3. Documents are encrypted before they reach
+    # either provider, so the bucket holds ciphertext. See docs/17 §6.
+    s3:
+      bucket: ${ALMIRA_S3_BUCKET:}
+      region: ${ALMIRA_S3_REGION:}
+      endpoint: ${ALMIRA_S3_ENDPOINT:}
+      access-key-id: ${ALMIRA_S3_ACCESS_KEY_ID:}
+      secret-access-key: ${ALMIRA_S3_SECRET_ACCESS_KEY:}
+      path-style: ${ALMIRA_S3_PATH_STYLE:false}
+      prefix: ${ALMIRA_S3_PREFIX:documents/}
   notifications:
     provider: ${ALMIRA_NOTIFY_PROVIDER:log}
   # Notifications are queued by the request or sweep that causes them and sent

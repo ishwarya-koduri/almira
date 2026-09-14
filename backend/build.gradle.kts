@@ -50,6 +50,13 @@ dependencies {
     // have one, without needing an OCR service account (see DocumentTextExtractor).
     implementation("org.apache.pdfbox:pdfbox:3.0.4")
 
+    // Object storage for documents, used only when almira.storage.provider=s3
+    // (the filesystem stays the default). The S3 module alone, pinned; the
+    // async Netty client is excluded because only the synchronous client is used.
+    implementation("software.amazon.awssdk:s3:2.54.17") {
+        exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+    }
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:junit-jupiter:1.20.6")
@@ -143,6 +150,7 @@ tasks.withType<Test> {
         "ALMIRA_TEST_DB_URL", "ALMIRA_TEST_DB_OWNER_USER", "ALMIRA_TEST_DB_OWNER_PASSWORD",
         "ALMIRA_TEST_DB_APP_USER", "ALMIRA_TEST_DB_APP_PASSWORD",
         "ALMIRA_TEST_REDIS_HOST", "ALMIRA_TEST_REDIS_PORT", "ALMIRA_TEST_CHECKSUMS_DB_URL",
+        "ALMIRA_TEST_S3_ENDPOINT",
     ).forEach { name -> System.getenv(name)?.let { environment(name, it) } }
 
     if (System.getenv("DOCKER_HOST") == null) {

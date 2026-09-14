@@ -251,8 +251,12 @@ class OtpService(
         // answer must not differ by address.
         if (!available(channel)) throw unavailable(channel)
         enforceCooldown(channel, address, purpose)
-        enforceHourlyLimit(rateKey(channel, address), cfg.maxPerHour, channel.subject)
+        // The network's cap before the address's count: a request its network
+        // is refused must not use up one of that person's hourly sends. The
+        // other way round, a network over its cap could lock any number or
+        // address out for an hour without a single message being sent.
         ip?.let { enforceHourlyLimit("otp:rate:ip:$it", cfg.maxPerIpPerHour, "network") }
+        enforceHourlyLimit(rateKey(channel, address), cfg.maxPerHour, channel.subject)
 
         val code = (1..cfg.length).map { random.nextInt(10) }.joinToString("")
         val requestId = UUID.randomUUID().toString()

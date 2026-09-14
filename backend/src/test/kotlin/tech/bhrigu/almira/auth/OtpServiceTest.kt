@@ -327,6 +327,32 @@ class OtpServiceTest {
         assertThat(sender.sent).hasSize(4)
     }
 
+    /**
+     * The network cap guards the number's allowance: a request the network is
+     * refused must not reach the number's counter. Before, the number was
+     * counted first, so five refused requests from a network over its cap
+     * locked any number out for an hour with nothing sent and no cooldown.
+     */
+    @Test
+    fun `a request its network is refused does not use up the number's allowance`() {
+        val sender = RecordingSender()
+        val service = OtpService(
+            redis, sender,
+            props(otp = AlmiraProperties.Otp(resendCooldown = Duration.ZERO, maxPerHour = 3, maxPerIpPerHour = 1)),
+        )
+        val noisy = ip()
+        service.request(phone(), noisy) // the network's one request
+        val victim = phone()
+        repeat(5) {
+            assertThat(refusal { service.request(victim, noisy) }.message).contains("this network")
+        }
+        assertThat(redis.opsForValue().get("otp:rate:phone:$victim"))
+            .describedAs("the victim's hourly count after only refused requests")
+            .isNull()
+        repeat(3) { service.request(victim, ip()) }
+        assertThat(sender.sent.count { it.first == victim }).isEqualTo(3)
+    }
+
     @Test
     fun `one network cannot keep guessing across many numbers`() {
         val sender = RecordingSender()

@@ -29,7 +29,13 @@ pretending otherwise would produce half-translated screens that look broken.
 | ✅ | Home — the headline, its labels, the empty state |
 | ✅ | Settings — the language card itself, extra-private mode, shared links, connected services, exchange rates |
 | ✅ | For my family — the whole screen, including the estate, contacts and emergency-access sections |
-| ✅ | Dates, in the reader's language |
+| ✅ | Dates, in the reader's language — "in 4 days" too |
+| ⛔ | Settings → Preferences (appearance, text size, data saver), the section row inside a destination, "See the breakdown", "Add amount", "Light mode for your data" — English only, falling back from `te` and `hi` |
+
+Telugu and Devanagari are set in Noto Sans and Noto Serif, served from the app
+itself, with a taller line height than Latin; the Latin faces have neither
+script (Doc 25 §3). The destination names — Home, Holdings, Family plan,
+Reports, You — are translated.
 
 ## What is not, yet
 

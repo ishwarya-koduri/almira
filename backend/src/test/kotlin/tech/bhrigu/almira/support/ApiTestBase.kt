@@ -244,6 +244,11 @@ abstract class ApiTestBase {
             registry.add("almira.otp.max-per-ip-per-hour") { 100_000 }
             registry.add("almira.otp.max-verify-failures-per-ip-per-hour") { 100_000 }
             registry.add("almira.otp.max-per-hour") { 1_000 }
+            // Every cached context would otherwise poll the one test database and
+            // race the outbox tests' own workers; tests call drain() themselves.
+            // A class that needs the real background path sets
+            // almira.test.outbox-background=true with @TestPropertySource.
+            registry.add("almira.outbox.background") { "\${almira.test.outbox-background:false}" }
             // Retries really happen in the full-stack provider failure tests, and
             // the default half-second backoff would make each one sit through
             // it. The backoff itself is asserted in provider/ProviderCallsTest.

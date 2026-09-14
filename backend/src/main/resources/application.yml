@@ -84,6 +84,8 @@ almira:
   outbox:
     poll-interval: ${ALMIRA_OUTBOX_POLL_INTERVAL:PT2S}
     batch-size: 50
+    # Always true in a real server; the test suite turns it off (AlmiraProperties.Outbox.background).
+    background: true
   db:
     url: ${ALMIRA_DB_URL:jdbc:postgresql://localhost:55432/almira}
     owner-user: ${ALMIRA_DB_OWNER_USER:almira}

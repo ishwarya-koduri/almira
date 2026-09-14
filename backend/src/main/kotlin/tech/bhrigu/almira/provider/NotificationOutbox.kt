@@ -127,11 +127,13 @@ class NotificationOutbox(
         fixedDelayString = "\${almira.outbox.poll-interval:PT2S}",
     )
     fun scheduled() {
+        if (!props.outbox.background) return
         runCatching { drain() }.onFailure { log.warn("notification outbox drain failed: {}", it.javaClass.simpleName) }
     }
 
     /** Asks for a drain soon, on the worker's own thread. Many wakes while one is pending are one drain. */
     fun wake() {
+        if (!props.outbox.background) return
         if (!wakePending.compareAndSet(false, true)) return
         runCatching {
             waker.execute {

@@ -118,6 +118,16 @@ data class AlmiraProperties(
         val pollInterval: Duration = Duration.ofSeconds(2),
         /** Rows claimed per transaction. */
         val batchSize: Int = 50,
+        /**
+         * Whether this process drains on its own — the poll and the wake after
+         * each commit. Always on in a real server. The test suite turns it off:
+         * one JVM holds many cached application contexts against one database,
+         * and every one of them polling made each outbox test race workers it
+         * could not see (a row "sent" while the test had its worker paused).
+         * Tests drive [tech.bhrigu.almira.provider.NotificationOutbox.drain]
+         * themselves; OutboxBackgroundDrainTest keeps the background path proven.
+         */
+        val background: Boolean = true,
     )
 
     /**

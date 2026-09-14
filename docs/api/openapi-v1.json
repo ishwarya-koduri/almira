@@ -8388,6 +8388,9 @@
       },
       "WhatsAppCapture": {
         "properties": {
+          "duplicate": {
+            "type": "boolean"
+          },
           "fields": {
             "items": {
               "additionalProperties": {},
@@ -8406,6 +8409,7 @@
           }
         },
         "required": [
+          "duplicate",
           "fields",
           "reply",
           "understood"

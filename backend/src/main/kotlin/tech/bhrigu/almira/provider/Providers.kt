@@ -118,6 +118,8 @@ data class InboundMessage(
     val text: String,
     val receivedAt: Instant,
     val mediaId: String? = null,
+    /** The provider's id for this message, the same on every redelivery. */
+    val messageId: String? = null,
 )
 
 interface WhatsAppGateway {

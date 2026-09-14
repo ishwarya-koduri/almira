@@ -37,6 +37,12 @@ data class WhatsAppCapture(
      * still succeeded — see [ConnectService.captureFromWhatsApp].
      */
     val replyFailure: String? = null,
+    /**
+     * True when this message id was already received: nothing was parsed and no
+     * reply was sent again, and [reply] is empty. Answered 200 so the provider
+     * stops redelivering (known-issues 21).
+     */
+    val duplicate: Boolean = false,
 )
 
 /**
@@ -78,6 +84,7 @@ class ConnectService(
     private val calls: ProviderCalls,
     private val props: tech.bhrigu.almira.config.AlmiraProperties,
     private val cipher: tech.bhrigu.almira.crypto.EnvelopeCipher,
+    private val deliveries: WhatsAppDeliveries,
     transactionManager: org.springframework.transaction.PlatformTransactionManager,
 ) {
 
@@ -545,6 +552,9 @@ class ConnectService(
         }
         val message = whatsApp.parse(body)
             ?: return WhatsAppCapture(false, "We couldn't read that message.")
+        if (!deliveries.firstDelivery(householdId, message.messageId)) {
+            return WhatsAppCapture(understood = false, reply = "", duplicate = true)
+        }
 
         val parsed = quickAdd.parse(householdId, message.text)
         // A title is what is left when nothing was recognised, so a parse that

@@ -648,12 +648,26 @@ infra session's.
   (watched failing with `@Transactional` put back). What remains is inherent: the
   person's own request waits up to the budget.
 
+- **A redelivered WhatsApp message — fixed** (2026-09-14, "Plans and support").
+  The sandbox parser reads Meta's message id, and `WhatsAppDeliveries`
+  remembers the first delivery of each id per household for seven days in
+  Redis (a hash of it, after the signature check). A redelivery answers 200
+  with `duplicate: true` (additive) and neither parses nor replies again. A
+  payload without an id is new every time, as before; if Redis is unreachable
+  the message is treated as new and a WARN logged. `ProviderFailureApiTest`
+  ("a redelivered WhatsApp message is answered once…"): with the reply
+  rejecting, the first delivery reports `provider_rejected` and the second
+  does not try.
+
 **What is still open**
-- **A WhatsApp reply is sent inside the inbound webhook.** Its outcome is part
-  of the capture's answer (`replyFailure`), so it was not moved. Meta expects a
-  webhook to answer quickly and redelivers when it does not, which would
-  capture the same message twice. **When**: before WhatsApp goes live — queue
-  the reply and de-duplicate inbound messages by their id.
+- **A WhatsApp reply is still sent inside the inbound webhook.** Its outcome is
+  part of the capture's answer (`replyFailure`), so it was not moved. A slow
+  reply can still make Meta redeliver, but the redelivery no longer captures
+  or replies twice (above). Two consequences remain: the webhook waits up to the
+  reply's timeout, and a message whose handling failed after its id was
+  remembered is not retried by a redelivery. **When**: before WhatsApp goes
+  live — queue the reply through the notification outbox and mark the id only
+  once the capture is answered.
 - **The idempotency guarantee rests on the provider.** On a channel whose
   adapter declares `honoursIdempotencyKey = true` (the `sms` and `email`
   sandboxes), a timeout and a send cut off by a crash are sent again with the

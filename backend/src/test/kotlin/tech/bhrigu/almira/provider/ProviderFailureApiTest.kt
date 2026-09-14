@@ -308,4 +308,52 @@ class ProviderFailureApiTest : ApiTestBase() {
         }
         assertThat(seen.filterNotNull()).hasSize(4).doesNotHaveDuplicates()
     }
+
+    /**
+     * Known-issues 21: Meta redelivers a webhook it thinks went unanswered, with
+     * the same message id. The second delivery is answered 200 and does nothing —
+     * no parse, no second reply — which the rejecting sandbox makes visible: the
+     * first reply fails, and the redelivery does not even try.
+     */
+    @Test
+    fun `a redelivered WhatsApp message is answered once and not replied to again`() {
+        fun webhook(id: String?) = mapOf(
+            "entry" to listOf(mapOf("changes" to listOf(mapOf("value" to mapOf(
+                "messages" to listOf(
+                    buildMap {
+                        id?.let { put("id", it) }
+                        put("from", "919876543210")
+                        put("text", mapOf("body" to "1L gold at ICICI"))
+                    },
+                ),
+            ))))),
+        )
+        faults.always("whatsapp", SandboxFault.REJECTED)
+        val id = "wamid.${java.util.UUID.randomUUID()}"
+
+        val first = post(connect("whatsapp/inbound"), owner, webhook(id))
+        assertThat(first.status()).isEqualTo(HttpStatus.OK)
+        assertThat(first.json().path("understood").asBoolean()).isTrue()
+        assertThat(first.json().path("duplicate").asBoolean()).isFalse()
+        assertThat(first.json().path("replyFailure").asText()).isEqualTo("provider_rejected")
+
+        val again = post(connect("whatsapp/inbound"), owner, webhook(id))
+        assertThat(again.status()).isEqualTo(HttpStatus.OK)
+        assertThat(again.json().path("duplicate").asBoolean()).isTrue()
+        assertThat(again.json().path("reply").asText()).isEmpty()
+        assertThat(again.json().path("replyFailure").let { it.isNull || it.isMissingNode })
+            .describedAs("a redelivery must not attempt the reply again").isTrue()
+
+        // Another household's message with the same id is its own message.
+        val otherOwner = signIn()
+        val other = createHousehold(otherOwner, "Strangers", "household", "Outsider").path("id").asText()
+        val elsewhere = post("/api/v1/households/$other/connect/whatsapp/inbound", otherOwner, webhook(id))
+        assertThat(elsewhere.json().path("duplicate").asBoolean()).isFalse()
+
+        // A payload with no id is new every time, as before.
+        faults.clear()
+        repeat(2) {
+            assertThat(post(connect("whatsapp/inbound"), owner, webhook(null)).json().path("duplicate").asBoolean()).isFalse()
+        }
+    }
 }

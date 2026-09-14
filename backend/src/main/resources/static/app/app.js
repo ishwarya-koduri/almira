@@ -3,7 +3,8 @@
    ============================================================================= */
 
 import { api, auth, ApiError } from "./api.js";
-import { el, mount, toast, segmented, sheet } from "./ui.js";
+import { el, mount, toast, icon, notice } from "./ui.js";
+import { apply as applyPrefs, savingData } from "./prefs.js";
 import { state, update } from "./state.js";
 import { authScreen } from "./screens/auth.js";
 import { onboardingScreen } from "./screens/onboarding.js";
@@ -22,7 +23,9 @@ import { openCapture } from "./screens/capture.js";
 import { whereScreen } from "./where.js";
 
 // Labels are resolved at render time rather than here, so switching language
-// redraws the navigation without a reload.
+// redraws the navigation without a reload. Every route that ever existed is
+// still here and still answers at its own address; what changed is how they
+// are grouped for someone finding their way (X-37).
 const routes = {
   home: { label: "nav.home", render: homeScreen },
   investments: { label: "nav.investments", render: investmentsScreen },
@@ -31,11 +34,29 @@ const routes = {
   goals: { label: "nav.goals", render: goalsScreen },
   tax: { label: "nav.tax", render: taxScreen },
   reports: { label: "nav.reports", render: reportsScreen },
-  continuity: { label: "nav.continuity", render: continuityScreen },
+  // Inside Family plan this is its overview; "For my family" beside "Family"
+  // was the look-alike pair that made people guess.
+  continuity: { label: "nav.overview", render: continuityScreen },
   where: { label: "nav.where", render: whereScreen },
-  family: { label: "nav.family", render: familyScreen },
+  family: { label: "nav.people", render: familyScreen },
   settings: { label: "nav.settings", render: settingsScreen },
 };
+
+/**
+ * Five destinations, the same on a phone's tabs and a tablet's or desktop's
+ * rail. Each opens its first route; the others are one tap away in the row of
+ * sections at the top of the screen. The destination's own name also works as
+ * an address (#/holdings), so a link can point at a place, not a screen.
+ */
+export const DESTINATIONS = [
+  { name: "home", label: "nav.home", icon: "home", routes: ["home"] },
+  { name: "holdings", label: "nav.holdings", icon: "holdings", routes: ["investments", "liabilities", "accounts"] },
+  // Almira's clearest edge, so a main tab of its own with an almirah for an
+  // icon, and never a "More" away (X-34).
+  { name: "plan", label: "nav.plan", icon: "almirah", routes: ["continuity", "where", "goals"] },
+  { name: "reports", label: "nav.reports", icon: "reports", routes: ["reports", "tax"] },
+  { name: "you", label: "nav.you", icon: "you", routes: ["settings", "family"] },
+];
 
 const root = document.getElementById("root");
 
@@ -46,120 +67,70 @@ export function navigate(name) {
 
 function currentRoute() {
   const name = location.hash.replace(/^#\//, "") || "home";
-  return routes[name] ? name : "home";
+  if (routes[name]) return name;
+  const destination = DESTINATIONS.find((d) => d.name === name);
+  return destination ? destination.routes[0] : "home";
 }
 
+const destinationOf = (route) =>
+  DESTINATIONS.find((d) => d.routes.includes(route)) || DESTINATIONS[0];
+
 /* -----------------------------------------------------------------------------
-   Chrome
+   Chrome (D-02, X-02, X-37)
+
+   One navigation element. Under 600px CSS lays it out as bottom tabs with the
+   + raised above them; from 600px it is a rail of icons with labels and the +
+   at its top; from 1100px the rail is wide enough to set labels beside the
+   icons. It used to be ten tabs across the top, which pushed Add off the edge
+   of an 800px screen and made the page scroll sideways.
    ----------------------------------------------------------------------------- */
 
-function topbar(active) {
-  return el("header.topbar", {},
-    el("div.brand", {},
-      // The mark, not a letter in a rounded square. It was an "A" for as long
-      // as there was no logo; there is one now, and it is the same file every
-      // icon in the repository is rendered from.
-      el("img.brand-mark", {
-        src: "/icons/favicon.svg",
-        alt: "",
-        width: 22,
-        height: 22,
-        "aria-hidden": "true",
-      }),
-      t("app.name"),
-    ),
-    // The full rail, for screens wide enough to hold ten destinations. On a
-    // phone CSS hides it and [tabbar] takes over; both are rendered so that
-    // rotating or resizing never needs a redraw.
-    el("nav.segmented.only-wide", { "aria-label": "Sections" },
-      ...Object.entries(routes).map(([name, route]) =>
-        el("button", {
-          type: "button",
-          "aria-pressed": name === active,
-          "aria-current": name === active ? "page" : null,
-          onclick: () => navigate(name),
-        }, t(route.label))),
-    ),
-    el("button.btn.btn-primary.btn-sm.only-wide", {
-      type: "button",
-      onclick: () => openCapture(),
-      title: "Add something",
-    }, t("app.add")),
+function topbar() {
+  // Only a phone shows this: the rail carries the name everywhere else.
+  return el("header.topbar", {}, brand());
+}
+
+function brand() {
+  return el("a.brand", { href: "#/home" },
+    // The mark, not a letter in a rounded square — the same file every icon
+    // in the repository is rendered from.
+    el("img.brand-mark", { src: "/icons/favicon.svg", alt: "", width: 24, height: 24 }),
+    el("span.brand-name", {}, t("app.name")),
   );
 }
 
-/* -----------------------------------------------------------------------------
-   The phone's navigation.
-
-   Ten destinations in one horizontal strip is a desktop idea, and on a 375px
-   screen it simply ran off the edge with no way to reach what was past it. So
-   the phone gets the three places people actually live in, the thing this whole
-   product exists to make easy in the middle where a thumb already rests, and
-   everything else one tap away behind More.
-
-   Both navigations are always in the DOM and CSS chooses; there is no width
-   listener and no redraw on rotate.
-   ----------------------------------------------------------------------------- */
-
-const PHONE_TABS = ["home", "investments", "liabilities"];
-const PHONE_MORE = ["accounts", "goals", "tax", "reports", "continuity", "where", "family", "settings"];
-
-// Drawn rather than borrowed: a 20px stroke set costs nothing, matches the
-// hairline weight the rest of the interface uses, and takes its colour from
-// the tab, so there is no icon font and no request.
-const ICONS = {
-  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/>',
-  investments: '<path d="M3 17.5 9 11l4 4 7.5-8"/><path d="M15.5 3H21v5.5"/>',
-  liabilities: '<path d="M12 3v12"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M4 20h16"/>',
-  more: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
-};
-
-const icon = (name) => el("span.tab-icon", {
-  "aria-hidden": "true",
-  html: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
-              stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`,
-});
-
-function tabbar(active) {
-  const tab = (name) => el("button.tab", {
-    type: "button",
-    "aria-pressed": name === active,
-    "aria-current": name === active ? "page" : null,
-    onclick: () => navigate(name),
-  }, icon(name), el("span.tab-label", {}, t(routes[name].label)));
-
-  return el("nav.tabbar", { "aria-label": "Sections" },
-    tab(PHONE_TABS[0]),
-    tab(PHONE_TABS[1]),
-    // Capture is the hero (docs/03 §3), so on a phone it is not a link in a
-    // bar — it is the one raised control, in the easiest place to reach.
-    el("button.tab-add", {
+function navigation(active) {
+  const current = destinationOf(active);
+  return el("nav.nav", { "aria-label": t("nav.sections") },
+    brand(),
+    // Capture is the hero (docs/03 §3): one teal +, in the same place on
+    // every screen.
+    el("button.nav-add", {
       type: "button",
-      "aria-label": "Add something",
+      "aria-label": t("app.addSomething"),
+      title: t("app.addSomething"),
       onclick: () => openCapture(),
-    }, el("span", { "aria-hidden": "true" }, "＋")),
-    tab(PHONE_TABS[2]),
-    el("button.tab", {
-      type: "button",
-      "aria-pressed": PHONE_MORE.includes(active),
-      "aria-haspopup": "dialog",
-      onclick: () => openMore(active),
-    }, icon("more"), el("span.tab-label", {}, t("nav.more"))),
+    }, icon("plus"), el("span.nav-add-label", { "aria-hidden": "true" }, t("app.add").replace(/^＋\s*/, ""))),
+    ...DESTINATIONS.map((destination) => el("a.tab", {
+      href: `#/${destination.routes[0]}`,
+      "aria-current": destination === current ? "page" : null,
+    },
+      icon(destination.icon, "tab-icon"),
+      el("span.tab-label", {}, t(destination.label)),
+    )),
   );
 }
 
-function openMore(active) {
-  const modal = sheet({
-    title: t("nav.more"),
-    body: el("div.more-grid", {},
-      ...PHONE_MORE.map((name) => el("button.more-item", {
-        type: "button",
-        "aria-current": name === active ? "page" : null,
-        onclick: () => { modal.close(); navigate(name); },
-      }, t(routes[name].label))),
-    ),
-  });
-  return modal;
+/** The sections inside a destination that has more than one. */
+function sections(active) {
+  const destination = destinationOf(active);
+  if (destination.routes.length < 2) return null;
+  return el("nav.subnav", { "aria-label": t("nav.inSection", { section: t(destination.label) }) },
+    ...destination.routes.map((name) => el("a", {
+      href: `#/${name}`,
+      "aria-current": name === active ? "page" : null,
+    }, t(routes[name].label))),
+  );
 }
 
 async function render() {
@@ -184,8 +155,14 @@ async function render() {
   }
 
   const name = currentRoute();
-  const view = el("main", {});
-  mount(root, el("div.app", {}, topbar(name), view, tabbar(name)));
+  const view = el("div#view", {});
+  const main = el("main", {},
+    // X-72: say once, quietly, that the page is saving data and why a chart
+    // might wait for a tap.
+    savingData() && notice(t("data.lightMode"), { role: "note" }),
+    sections(name),
+    view);
+  mount(root, el("div.app", {}, topbar(), main, navigation(name)));
   try {
     await routes[name].render(view);
   } catch (error) {
@@ -228,6 +205,10 @@ export function redraw() { render(); }
    ----------------------------------------------------------------------------- */
 
 window.addEventListener("hashchange", render);
+
+// Theme, text size and data saver, before anything draws. index.html has
+// already done the same from storage; this also catches Save-Data.
+applyPrefs();
 
 // The document says which language it is in, for screen readers and for the
 // browser's own text handling.

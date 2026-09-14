@@ -9,7 +9,7 @@
    ============================================================================= */
 
 import { api, downloadAuthenticated } from "../api.js";
-import { el, mount, skeletonRows, withBusy, toast } from "../ui.js";
+import { el, mount, skeletonRows, withBusy, toast, notice } from "../ui.js";
 import { state } from "../state.js";
 import { openDetail } from "./detail.js";
 import { completenessPercent } from "../completeness.js";
@@ -34,11 +34,12 @@ function completenessCard(report, host) {
   return el("div.card.stack-2", {},
     el("div.row-between.wrap", { style: { alignItems: "baseline" } },
       el("h3", {}, "How complete this is"),
-      percent && el("div.hero-amount", { style: { fontSize: "var(--text-h2)" } }, percent),
+      // A score is progress, not the household's worth: ink, never brass (D-01).
+      percent && el("div.score", {}, percent),
     ),
     el("p.muted", {}, report.scoreLabel),
     !percent && report.scoreExplanation && el("p", { "data-no-score": "true" }, report.scoreExplanation),
-    report.nextStep && el("div.banner", {}, report.nextStep),
+    report.nextStep && el("p", { style: { fontWeight: 500 } }, report.nextStep),
 
     ...report.checks.map((check) => el("div.row-between.wrap", {},
       el("div", {},
@@ -51,7 +52,7 @@ function completenessCard(report, host) {
       }, "Fix the first"),
     )),
 
-    el("p.caption.muted", {}, report.note),
+    notice(report.note),
   );
 }
 
@@ -95,7 +96,7 @@ function insightsCard(insights) {
       ...insights.observations.map((line) => el("p.caption.muted", {}, line)),
     ),
 
-    el("p.caption.muted", {}, insights.disclaimer),
+    notice(insights.disclaimer),
   );
 }
 

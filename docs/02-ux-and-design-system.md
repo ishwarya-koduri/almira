@@ -4,6 +4,8 @@
 
 > The brief: *so beautiful you can't imagine it — few colors, trust-building, soft and pleasing, with the right fonts, sizes, spacing, and the best interactive controls.* This doc is the single source of truth for how Almira looks, feels, and responds.
 
+> **Values live in [Doc 25 · Design tokens](25-design-tokens.md).** This doc keeps the reasoning. Where a number here and a number there disagree, Doc 25 and `static/app/tokens.css` are right: the colour roles, the 13px type floor, the Clear theme, the motion ceiling and the five-destination layout were revised there after measuring the built client.
+
 ## 1. North Star — "a private study, not a trading floor"
 Almira should feel like a **quiet, well-made private study**: warm paper, considered typography, generous air, nothing shouting. Money apps earn trust through **restraint and clarity**, not dashboards full of color. Every screen answers one question calmly. The emotional target: *calm, cared-for, in control.* Three adjectives govern every decision — **calm, trustworthy, precise.**
 
@@ -25,13 +27,14 @@ The whole palette is **neutrals + one accent + two semantic hues + a rare gold +
 | `surface-sunken` | `#F4F1EA` | insets, table stripes |
 | `ink` | `#1C1A17` | primary text |
 | `ink-muted` | `#6B6558` | secondary text |
-| `ink-faint` | `#9A9384` | captions, placeholders |
+| `ink-faint` | `#9A9384` | dividers and disabled chrome — **never text** (2.9:1); captions are `ink-muted` |
 | `hairline` | `#E7E2D8` | 1px borders, dividers |
-| `accent` | `#0F5A57` | primary actions, focus, links (deep teal) |
+| `accent` | `#0F5A57` | the one primary action, focus, links, meters (deep teal) |
 | `accent-soft` | `#DCEBE9` | accent tint (selected rows, focus halo) |
 | `positive` | `#1B7A43` | gains, success (used only semantically) |
-| `caution` | `#B4520A` | warnings, dues, debt emphasis |
-| `gold` | `#C9A227` | reserved for the net-worth hero only |
+| `caution` | `#B4520A` | money owed and dues — nothing else |
+| `brass` | `#8A6D10` | the net-worth figure (4.9:1) |
+| `gold` | `#C9A227` | decoration only: the rule under the figure (2.4:1, never text) |
 
 ### 2.2 Core tokens — Dark
 | Token | Hex |
@@ -51,7 +54,9 @@ Gold `#C9A227` · Deposits `#4E7C59` · Mutual Funds `#3E6B99` · Equity `#6A5A9
 ### 2.4 Rules
 - Any single screen shows **at most one accent action** and a small number of category dots. Debt uses `caution`-family so owe-vs-own separates at a glance.
 - Gains/losses use `positive`/`caution` text, never red/green fills.
-- Gold appears **once** per screen at most (the hero number).
+- Brass appears **once** per screen at most (the hero number); gold only as its hairline. A score or a ring is progress, and is teal.
+- Disclaimers and calm notes are muted text with an ⓘ mark, never a coloured box.
+- A third theme, **Clear**, holds 7:1 for low vision (Doc 25 §1).
 
 ## 3. Typography
 A two-family pairing: a **humanist serif** for numbers, headlines, and moments of warmth; a **clean grotesk** for UI and dense text. Numbers use **tabular figures** and Indian grouping (₹1,76,875), with the amount-in-words treatment beneath the hero.
@@ -74,18 +79,18 @@ A two-family pairing: a **humanist serif** for numbers, headlines, and moments o
 | Caption | 0.78 (≈12.5px) | 1.4 | 500 | Sans | +1% |
 | Overline | 0.72 (≈11.5px) | 1.3 | 600 | Sans | +6%, UPPERCASE |
 
-Body never below 14px. Long numbers and tables use mono/tabular so columns align. Max reading width ≈ 68 characters.
+Superseded: the built scale is 13 · 15 · 16 · 19 · 23 · 28 · 40px with **nothing under 13px**, body 16px on a phone, and an in-app Larger text setting (Doc 25 §3). Long numbers and tables use mono/tabular so columns align. Max reading width ≈ 68 characters.
 
 ## 4. Spacing, layout & shape
 - **Base unit 4px.** Spacing scale: `4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 96`. Use tokens (`space-2 = 8px`) not raw numbers.
 - **Rhythm:** 24px between cards, 16px card padding (mobile) / 24px (desktop), 32–48px between major sections.
-- **Grid:** mobile 4-col / 16px gutter / 20px margins; tablet 8-col; desktop 12-col, content max-width ~1120px, comfortable 720px for reading-heavy screens.
+- **Grid:** 4 / 8 / 12 columns at the 600px and 1100px breakpoints, 16px gutters, 1200px max width, 720px for reading-heavy screens; bottom tabs on a phone, a labelled rail from 600px (Doc 25 §5).
 - **Radius:** `sm 8` (inputs, chips), `md 12` (buttons), `lg 16` (cards, sheets), `xl 24` (hero), `full` (avatars, toggles).
 - **Elevation:** prefer **hairline borders over shadows** for calm. Two soft shadows only: `e1` (cards) `0 1px 2px rgba(28,26,23,.05), 0 1px 3px rgba(28,26,23,.04)`; `e2` (sheets/menus) `0 8px 30px rgba(28,26,23,.10)`. No hard drop shadows.
 - **Icons:** one line-icon set (Lucide/Phosphor), 1.5px stroke, 20/24px; category icons share the set.
 
 ## 5. Motion
-Physical and brief. Durations `fast 120ms`, `base 200ms`, `slow 320ms`; easing `standard cubic-bezier(.2,.0,.0,1)`, springy for sheets. Patterns: sheets slide up with a soft spring; menus fade+scale from origin (150ms); the **net-worth hero counts up** on first paint; toggles/checkboxes animate the mark; list items stagger 20ms on first load; skeleton shimmer for loading. **Respect `prefers-reduced-motion`** — cross-fade only.
+Physical and brief — and, as built, only to confirm something, always under 200ms (`fast 120ms`, `base 160ms`, `slow 190ms`; Doc 25 §4), so the count-up and stagger below are not built. Originally: durations `fast 120ms`, `base 200ms`, `slow 320ms`; easing `standard cubic-bezier(.2,.0,.0,1)`, springy for sheets. Patterns: sheets slide up with a soft spring; menus fade+scale from origin (150ms); the **net-worth hero counts up** on first paint; toggles/checkboxes animate the mark; list items stagger 20ms on first load; skeleton shimmer for loading. **Respect `prefers-reduced-motion`** — cross-fade only.
 
 ## 6. The interactive component library
 Every control below is specified with **anatomy, states (default / hover / focus / active / disabled / error / selected), interaction, motion, and accessibility.** States share tokens: focus = 2px `accent` ring + `accent-soft` halo; disabled = 40% opacity, no pointer; error = `caution` border + helper text; selected = `accent-soft` fill + `accent` mark.

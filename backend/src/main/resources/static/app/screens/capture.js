@@ -15,7 +15,7 @@
 import { api } from "../api.js";
 import {
   el, mount, sheet, field, textInput, moneyInput, select, categoryDot,
-  withBusy, toast, rupees,
+  withBusy, toast, rupees, icon,
 } from "../ui.js";
 import { state, myMember, findType } from "../state.js";
 import { t } from "../i18n.js";
@@ -42,7 +42,10 @@ function chooseHowToAdd(onSaved) {
     autocomplete: "off",
   });
   const chipHost = el("div.stack-2", {});
-  const parseButton = el("button.btn.btn-primary", { type: "button" }, "Read it");
+  // Never wraps (X-70): on a phone the label becomes an arrow, and the name
+  // stays for a screen reader.
+  const parseButton = el("button.btn.btn-primary.btn-collapse", { type: "button", "aria-label": "Read it" },
+    el("span.btn-label", { "aria-hidden": "true" }, "Read it"), icon("arrow", "icon.btn-icon"));
   let parsed = null;
 
   const showParse = (result) => {

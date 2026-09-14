@@ -18,7 +18,7 @@
 
 // Bump this when the shell changes. Old caches are removed on activate, so the
 // version is the only bookkeeping.
-const VERSION = "almira-v24";
+const VERSION = "almira-v25";
 const SHELL = `${VERSION}-shell`;
 
 /**
@@ -35,6 +35,8 @@ const SHELL_FILES = [
   "/app/app.js",
   "/app/api.js",
   "/app/ui.js",
+  "/app/format.js",
+  "/app/prefs.js",
   "/app/state.js",
   "/app/i18n.js",
   "/app/screens/auth.js",
@@ -83,7 +85,8 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  // Another origin's problem: fonts, and anything else. Left to the browser.
+  // Another origin's problem, left to the browser. The fonts are served from
+  // here now (P-36), so they are ordinary static assets below.
   if (url.origin !== self.location.origin) return;
 
   if (isApi(url)) {

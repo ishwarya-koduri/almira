@@ -9,13 +9,12 @@
   <title>Almira</title>
   <meta name="description" content="Everything your family owns and owes, in one calm, private place.">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Fraunces for numbers and headlines, Inter for the interface (docs/02 §3).
-       Both have real fallbacks in tokens.css, so the app is legible before the
-       fonts arrive and stays legible if they never do. -->
-  <link rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap">
+  <!-- Fraunces for numbers and titles, Inter for the interface, Noto for
+       Telugu and Devanagari (docs/25 §3). Served from here, never from a font
+       CDN: a privacy-first app should not tell anyone else who opened it
+       (P-36). tokens.css declares them, with a system fallback behind each.
+       Inter's Latin file is the one every screen needs, so it starts early. -->
+  <link rel="preload" href="/app/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
 
   <!-- Installable: the manifest, the icons iOS and Android each want, and the
        two meta tags that make Safari open it as an app rather than a tab.
@@ -52,11 +51,18 @@
   </div>
 
   <script>
-    // Applied before the module loads so a dark-mode user never sees a flash of
-    // the light canvas.
+    // Applied before the module loads so a dark-mode or larger-text reader
+    // never sees a flash of the default. prefs.js owns these keys and does the
+    // same again once it loads; this copy only has to be right, not complete.
     try {
+      const root = document.documentElement;
       const theme = localStorage.getItem("almira.theme");
-      if (theme && theme !== "system") document.documentElement.setAttribute("data-theme", theme);
+      if (["light", "dark", "clear"].includes(theme)) root.setAttribute("data-theme", theme);
+      const text = localStorage.getItem("almira.text");
+      if (["larger", "largest"].includes(text)) root.setAttribute("data-text", text);
+      const data = localStorage.getItem("almira.data");
+      const saver = navigator.connection && navigator.connection.saveData;
+      if (data === "on" || (data !== "off" && saver)) root.setAttribute("data-save-data", "on");
     } catch (_) {}
   </script>
   <script type="module" src="/app/app.js"></script>

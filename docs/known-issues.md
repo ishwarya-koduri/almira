@@ -767,3 +767,39 @@ or on `infra/deploy-and-pentest`; `deploy/restore/digest-check.sql` and
 migrated by the full application recorded versions 25, 27, 28, … 35 in that
 order, all successful, with 31 `ciphertext digests` between 30 and 32.
 `outOfOrder` is still not enabled anywhere.
+
+---
+
+## 24. The design revision reached the web client, not the native app, and not every screen
+
+**Where** `app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/theme/`;
+the web screens `screens/goals.js`, `screens/continuity.js`,
+`screens/investments.js`, `screens/auth.js`.
+
+**What** Doc 25 is the token reference and `static/app/tokens.css` follows it.
+Three things do not yet:
+
+1. **The native theme** still has the earlier palette and scale: the hero is
+   `gold` (2.42:1 on white), `cautionSoft` is `#FBEFE4`, there is no `brass`,
+   no Clear palette, no Noto faces, no 13sp floor, no Larger text and no
+   five-destination navigation. Doc 25 §9 is the exact list.
+2. **One teal action per screen** is held by the shell — the + is the one teal
+   fill it owns — but a few screens still draw their own primary button beside
+   it: "Add" on Investments, "New goal" on Goals, "Print" on Family plan. Each
+   is a real action; which of them stays teal is a per-screen call for whoever
+   next owns that screen.
+3. **`.faint` in `screens/auth.js`** (two captions). `base.css` now draws
+   `.faint` as muted ink, so they are legible; the class name is only
+   misleading.
+
+**Why it is still here** The native `app/` tree and the sign-in screen are
+being changed in parallel work, and a token change in the middle of that is a
+merge conflict with no product gain. The screen buttons need a decision, not a
+find-and-replace.
+
+**When to fix** The native theme: in the next change to `AlmiraColors.kt`, with
+Doc 25 §9 open. The rest: the next time someone is in that screen.
+
+**Risk if left** On a phone app build, the net-worth figure fails contrast and
+captions are small — exactly the problems the web client no longer has. On the
+web, a second teal button competes with the +; nothing is unreadable.

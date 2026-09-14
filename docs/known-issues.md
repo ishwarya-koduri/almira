@@ -1279,29 +1279,17 @@ below 20 concurrent requests.
 
 ## 43. A guest link has no page to open
 
-**Where** `ShareService.create` returns `url = <base>/share/<token>`;
-`backend/src/main/resources/static` has no route for `/share/…`, and
-`SecurityConfig` permits only `/api/v1/share/**` without a token.
+**Resolved** (2026-09-14, continuity-ux). Kept as a stub so the number still
+means something where it is cited.
 
-**What** Opening the link a sharer is given answers `401` JSON ("Please sign in
-to continue."), not a page. The data behind it is served correctly at
-`/api/v1/share/<token>`, and a tax-pack link's PDF at
-`/api/v1/share/<token>/tax-pack.pdf` opens in any browser — so "Share with my
-CA" on the tax screen hands out the PDF link and not the page link. The
-settings screen's generic "Share something" still shows the page link.
-
-**Which is right** A guest page: unauthenticated, static, reading
-`/api/v1/share/<token>` and rendering the slice read-only, with no service-worker
-caching of the payload.
-
-**Why it is still here** Found while building the CA pack (ws/tax); a new
-unauthenticated surface deserves its own change and review, not a side effect.
-
-**When to fix** Before any guest link other than a tax pack is sent to a real
-person.
-
-**Risk if left** A sharer sends a link that does not open, and resends
-something less careful by email.
+`/share/<token>` (and a heir-mode helper's `/help/<token>`) now forwards to
+`static/guest.html` (`sharing/GuestPage.kt`), permitted without a token in
+`SecurityConfig`. The page holds no data, sends no Referer, stores nothing, and
+reads the slice from `/api/v1/share/<token>` (or `…/tasks`) — a handbook, a tax
+pack with its PDF and CSV links, or a list of records — read-only. The tax
+screen's "Share with my CA" may now hand out the page link as well as the PDF
+link; that choice was left to the tax screen. `ContinuityKitApiTest` asserts the
+page answers `200`.
 
 ---
 
@@ -1310,7 +1298,10 @@ something less careful by email.
 **Where** `backend/.../tax/TaxPackPdf.kt` (`Fonts.safe`).
 
 **What** The PDF embeds Fraunces and Inter, which carry Latin and the rupee
-sign but no Indic scripts. A holding or person named in Telugu or Hindi prints
+sign but no Indic scripts. The same applies to the emergency kit and the
+envelope edition's cover (`continuity/Printed.kt`, `PrintFonts`), and the
+handbook pages behind it are still the standard PDF faces, which replace
+anything outside WinAnsi. A holding or person named in Telugu or Hindi prints
 with those characters replaced by `?`, the same trade the holdings PDF export
 makes — better than a pack that fails to save.
 
@@ -1349,4 +1340,87 @@ decision is made.
 
 **Risk if left** A recorded sale that the department knows about but the
 household forgot is not caught before filing.
+
+---
+
+## 46. An open emergency window reveals continuity records across the household, not only the subject's
+
+**Where** `app.emergency_reveals` (V20, V25) and the `investments_read`,
+`liabilities_read` and `estate_documents_read` policies that call it.
+
+**What** Found while building heir mode. `emergency_reveals(household_id,
+is_in_continuity)` is true for *any* continuity-marked record in the household
+while the caller holds an open window on *anyone* there. A window on Amma
+therefore also shows Nanna's private holdings that he marked for the family,
+though nobody asked about Nanna and Nanna was not told. The V40 and V55 helpers
+(`has_open_emergency_window`, `emergency_open_on_user`) were already narrowed to
+one subject; this one never was. Heir mode's own tasks are built only from the
+subject's records (`HeirModeService.sources`), and the emergency preview says
+"marked for the family plan" in counts, but the ordinary endpoints and the
+handbook show the wider set.
+
+**Which is right** The reveal should require the record to belong to the
+subject: an ownership (or holder, or `estate_documents.member_id`) match on the
+subject of an open request, the way `emergency_open_on_user` matches the subject.
+
+**Why it is still here** It changes what three read policies return, which is
+a privacy-model change with its own review, and every emergency and memorial
+test depends on it.
+
+**When to fix** Before emergency access is used in a household with more than
+one adult who marks private records for the family.
+
+**Risk if left** A trusted contact sees another member's private continuity
+records during a window that member was not told about.
+
+---
+
+## 47. Heir mode: what a helper cannot do, and what has no native screen
+
+**Where** `continuity/HeirMode.kt`, `static/app/screens/heir.js`,
+`static/app/guest.js`; `app/` has none of it.
+
+**What**
+- A helper's page is read-only. Only the person holding the window marks a task
+  done; a helper tells them. A write from an unauthenticated guest session would
+  be the first of its kind (V21), and deserves its own design.
+- Almira does not send a helper their link. It is shown once, with the device's
+  share sheet or a copy button, because nothing here can message someone who is
+  not a member.
+- The situation ("has died" or "can't manage") is chosen once; the API accepts a
+  change, and the screen does not offer one yet.
+- The heir screen hides the app's notices by being a separate shell. Reminders
+  and "Still true?" messages that the delivery sweep sends to the *heir* are not
+  paused while a plan is open; the sweep already skips birthdays and death
+  anniversaries of anyone in the household (V60).
+- None of heir mode, guided flows, the lost-money sweep, the timeline or the
+  printed pages has a native screen (see entry 27 for the lifecycle flows).
+
+**Which is right** A helper page that can say "done" through a narrow definer
+function; a quiet period for the heir's own reminders while a plan is open; the
+native screens from Doc 03 §8.
+
+**When to fix** After the first real use of heir mode says which of these hurt.
+
+**Risk if left** A little more coordination by phone between relatives.
+
+---
+
+## 48. The continuity screens added with heir mode are English in Telugu and Hindi
+
+**Where** `static/app/i18n.js`: every `guided.*`, `heir.*`, `lostMoney.*`,
+`guest.*`, `kit.*`, `envelope.*`, `print.*`, `steps.*`, `estate.q.*`,
+`estate.kind.*` key, and the `emergency.*` keys added with the timeline.
+
+**What** They exist in English only and fall back to English, as `t()` does.
+The server's task words, portal descriptions, timeline sentences and printed
+pages are English too, like every server sentence (docs/14).
+
+**Which is right** Reviewed Telugu and Hindi, by a speaker — these are the words
+someone reads in the week after a death.
+
+**When to fix** With the next translation pass.
+
+**Risk if left** A Telugu or Hindi reader meets English on the screens where
+plain words matter most.
 

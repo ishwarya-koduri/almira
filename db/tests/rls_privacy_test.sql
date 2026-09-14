@@ -1416,5 +1416,68 @@ begin
 end $$;
 select set_config('app.guest_share_id', '', false);
 
+-- ------------------------------------------- the first session (V85) ----
+-- Readiness answers and first-session progress are one person's own rows. An
+-- admin is still only a person: role grants capability, never sight.
+do $$ begin raise notice '--- readiness answers and first-session progress are your own ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into readiness_check_answers (user_id, answers)
+  values ((select v from t where k='ish'), '{"will": "no"}');
+insert into first_session_progress (user_id, household_id, setting_up_for, someone_member_id)
+  values ((select v from t where k='ish'), (select v from t where k='hh'), 'someone', (select v from t where k='m_aarav'));
+select pg_temp.assert((select count(*) from readiness_check_answers) = 1, 'you see your own readiness answers');
+select pg_temp.assert((select count(*) from first_session_progress) = 1, 'and your own first-session row');
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from readiness_check_answers) = 0,
+  'an admin cannot read another person''s readiness answers');
+select pg_temp.assert((select count(*) from first_session_progress) = 0,
+  'nor their first-session row');
+
+do $$
+declare blocked boolean := false; n int;
+begin
+  begin
+    insert into readiness_check_answers (user_id, answers)
+      values ((select v from t where k='ish'), '{"will": "yes"}');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor answer the check for them');
+
+  update readiness_check_answers set answers = '{"will": "yes"}';
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor change their answers');
+
+  update first_session_progress set skipped_shelves = '{will}';
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor skip a shelf for them');
+end $$;
+
+select pg_temp.as_user('out');
+do $$
+declare blocked boolean := false; own_household uuid;
+begin
+  begin
+    insert into first_session_progress (user_id, household_id)
+      values ((select v from t where k='out'), (select v from t where k='hh'));
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'an outsider cannot start a first session in a household they are not in');
+
+  -- In their own household, naming a member of someone else's is refused.
+  select m.household_id into own_household from members m
+    where m.user_id = (select v from t where k='out') limit 1;
+  perform pg_temp.assert(own_household is not null, 'the outsider has a household of their own');
+  blocked := false;
+  begin
+    insert into first_session_progress (user_id, household_id, setting_up_for, someone_member_id)
+      values ((select v from t where k='out'), own_household, 'someone', (select v from t where k='m_aarav'));
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor set up for a member of another household');
+end $$;
+select pg_temp.as_user('ish');
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

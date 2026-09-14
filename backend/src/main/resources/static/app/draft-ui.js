@@ -128,12 +128,15 @@ export function isOffline(error) {
   return error instanceof TypeError;
 }
 
-/** Queues a capture made offline. False when it could not be kept (the form then stays open). */
-export function queueCapture(householdId, body) {
+/**
+ * Queues a capture made offline. False when it could not be kept (the form then
+ * stays open). `formKey` is the form's draft, which a refused save goes back to.
+ */
+export function queueCapture(householdId, body, formKey) {
   // A client id makes a resend after a lost response a no-op on the server
   // ("already_exists"), not a second copy.
   const withId = { ...body, id: body.id || crypto.randomUUID() };
-  return myDrafts().queue("capture", householdId, withId, body.title);
+  return myDrafts().queue("capture", householdId, withId, body.title, formKey);
 }
 
 let flushing = null;
@@ -155,8 +158,10 @@ export function flushQueued(afterSent) {
   }).then(async ({ sent, refused }) => {
     if (sent.length) toast(t("draft.sent", { count: sent.length }));
     // Refused by the server (a value it will not take, or a household this
-    // person has since left): say which, so it can be added again by hand.
-    refused.forEach((item) => toast(t("draft.refused", { name: item.label }), { tone: "error" }));
+    // person has since left): say which. What could be kept is back as the
+    // form's draft, so it is finished from the resume card, not typed again.
+    refused.forEach((item) => toast(
+      t(item.returnedAsDraft ? "draft.refusedKept" : "draft.refused", { name: item.label }), { tone: "error" }));
     if (sent.length && afterSent) await afterSent();
   }).finally(() => { flushing = null; });
   return flushing;

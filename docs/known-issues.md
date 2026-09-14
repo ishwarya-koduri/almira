@@ -1955,3 +1955,32 @@ delete after the purge stay queued and the next sweep deletes them").
 found: nothing recorded their keys, and finding them means listing the bucket
 against `documents`. The upload rollback in `DocumentService` and the removal of
 new copies when a departure's second step fails remain best-effort.
+
+---
+
+## 67. A queued offline save the server refused was deleted, so what was typed was lost
+
+**Resolved** (2026-09-15). Kept so the number means something where it is cited.
+
+**Where** `app/drafts.js` (`queue`, `flush`), `app/draft-ui.js` (`queueCapture`,
+`flushQueued`), `app/screens/capture.js` (`submit`); X-83.
+
+**What changed** A capture saved without a network is queued and its form draft
+discarded, so the queued item was the only copy of what was typed. When the
+network came back and the server refused it (a 400 for a value it will not take,
+a 404 for a household since left, or any other answer that is not "offline" or
+`already_exists`), `flush` removed it from the outbox and the person got only a
+toast asking them to add it again. Now a queued capture records its form
+(`capture:<type code>`), and a refused one is written back as that form's draft
+through the same rules as any draft (identifiers and sealed fields are still
+never kept) before it leaves the outbox. A field typed into that form since is
+not overwritten. The toast says the record is back as a draft on Home, and the
+resume card reopens it. Proven by `scripts/check-drafts.js` ("a refused save
+comes back as the draft of its form").
+
+**What is still open** Saves queued before this change carry no form and still
+get the old "add it again" toast. `flushQueued` still treats a 5xx as a refusal
+rather than "try again later" (`api.js isUnreachable` counts 5xx as unreachable;
+`draft-ui.js isOffline` does not); such a save is now kept as a draft instead of
+being lost, but it is not resent on its own. Custom field definitions and the
+scoped member list are not part of a draft and are chosen again.

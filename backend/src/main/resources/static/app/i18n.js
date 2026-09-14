@@ -1235,6 +1235,7 @@ const messages = {
     "draft.queuedOne": "No connection. “{name}” is saved on this phone and will be sent when you're back online.",
     "draft.sent": "Back online. Sent what was waiting: {count}.",
     "draft.refused": "“{name}” couldn't be saved. Please add it again.",
+    "draft.refusedKept": "“{name}” couldn't be saved. What you typed is back as a draft on Home, so you can fix it and save again.",
 
     "glossary.whatIs": "What does “{term}” mean?",
     "glossary.nominee.term": "Nominee",

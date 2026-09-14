@@ -72,6 +72,51 @@ export function createDrafts({ storage, userId, now = () => Date.now() }) {
   const outboxKey = `${OUTBOX}${userId}`;
   const all = () => (enabled ? read(storage, draftsKey, {}) : {});
 
+  function saveField(formKey, fieldKey, value, meta = {}, { keepExisting = false } = {}) {
+    if (!enabled || !isDraftable(fieldKey)) return false;
+    const drafts = all();
+    const draft = drafts[formKey] || { fields: {}, meta: {} };
+    // A refused save put back must not overwrite what was typed since.
+    if (keepExisting && draft.fields[fieldKey] !== undefined) return true;
+    const text = value === null || value === undefined ? "" : String(value);
+    if (text === "") delete draft.fields[fieldKey];
+    else draft.fields[fieldKey] = text.slice(0, MAX_VALUE);
+    draft.meta = { ...draft.meta, ...safeMeta(meta) };
+    draft.savedAt = now();
+    if (Object.keys(draft.fields).length === 0) delete drafts[formKey];
+    else drafts[formKey] = draft;
+    // The oldest go first once there are too many to be a to-do list.
+    const keys = Object.keys(drafts).sort((a, b) => drafts[b].savedAt - drafts[a].savedAt);
+    keys.slice(MAX_DRAFTS).forEach((key) => delete drafts[key]);
+    return write(storage, draftsKey, drafts);
+  }
+
+  /**
+   * A queued capture the server refused goes back to the person as the draft
+   * of its form, through the same rules as any draft. False when it carries no
+   * form (queued before forms were recorded) or nothing in it could be kept.
+   */
+  function returnAsDraft(item) {
+    const formKey = typeof item.formKey === "string" ? item.formKey : null;
+    if (!enabled || item.kind !== "capture" || !formKey) return false;
+    const body = item.body || {};
+    const meta = { typeCode: formKey.replace(/^capture:/, ""), title: body.title, householdId: item.householdId };
+    const fields = [["title", body.title]];
+    for (const [key, value] of Object.entries(body)) {
+      if (QUEUE_KEYS.has(key) || key === "title" || key === "visibility") continue;
+      if (value !== null && typeof value === "object") continue;
+      fields.push([key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`), value]);
+    }
+    for (const [key, value] of Object.entries(body.attributes || {})) fields.push([`attr:${key}`, value]);
+    if (body.owners?.[0]?.memberId) fields.push(["owner", body.owners[0].memberId]);
+    let kept = false;
+    for (const [key, value] of fields) {
+      if (value === null || value === undefined || value === "") continue;
+      if (saveField(formKey, key, value, meta, { keepExisting: true })) kept = true;
+    }
+    return kept;
+  }
+
   return {
     enabled,
 
@@ -81,20 +126,7 @@ export function createDrafts({ storage, userId, now = () => Date.now() }) {
      * "Saved on this phone" tick only for what is really saved.
      */
     save(formKey, fieldKey, value, meta = {}) {
-      if (!enabled || !isDraftable(fieldKey)) return false;
-      const drafts = all();
-      const draft = drafts[formKey] || { fields: {}, meta: {} };
-      const text = value === null || value === undefined ? "" : String(value);
-      if (text === "") delete draft.fields[fieldKey];
-      else draft.fields[fieldKey] = text.slice(0, MAX_VALUE);
-      draft.meta = { ...draft.meta, ...safeMeta(meta) };
-      draft.savedAt = now();
-      if (Object.keys(draft.fields).length === 0) delete drafts[formKey];
-      else drafts[formKey] = draft;
-      // The oldest go first once there are too many to be a to-do list.
-      const keys = Object.keys(drafts).sort((a, b) => drafts[b].savedAt - drafts[a].savedAt);
-      keys.slice(MAX_DRAFTS).forEach((key) => delete drafts[key]);
-      return write(storage, draftsKey, drafts);
+      return saveField(formKey, fieldKey, value, meta);
     },
 
     get(formKey) { return all()[formKey] || null; },
@@ -120,14 +152,16 @@ export function createDrafts({ storage, userId, now = () => Date.now() }) {
      * Queues a save to send later. The body is checked the same way a draft is:
      * a body carrying a field a draft may not hold is refused, not queued.
      */
-    queue(kind, householdId, body, label) {
+    queue(kind, householdId, body, label, formKey) {
       if (!enabled) return false;
       const unsafe = Object.keys(body || {}).filter((key) => !isDraftable(key) && !QUEUE_KEYS.has(key));
       const unsafeAttributes = Object.keys(body?.attributes || {}).filter((key) => !isDraftable(key));
       if (unsafe.length || unsafeAttributes.length) return false;
       const queued = read(storage, outboxKey, []);
       if (queued.length >= MAX_QUEUED) return false;
-      queued.push({ kind, householdId, body, label: String(label || "").slice(0, 120), queuedAt: now() });
+      const item = { kind, householdId, body, label: String(label || "").slice(0, 120), queuedAt: now() };
+      if (typeof formKey === "string") item.formKey = formKey.slice(0, 60);
+      queued.push(item);
       return write(storage, outboxKey, queued);
     },
 
@@ -136,8 +170,9 @@ export function createDrafts({ storage, userId, now = () => Date.now() }) {
     /**
      * Sends what is queued, oldest first. `send(item)` resolves "sent" or
      * "refused" (the server answered and said no: it goes back to the person
-     * as a draft), or throws when there is still no network (it stays queued,
-     * and so does everything after it).
+     * as the draft of its form; `returnedAsDraft` on the refused item says
+     * whether anything could be put back), or throws when there is still no
+     * network (it stays queued, and so does everything after it).
      */
     async flush(send) {
       if (!enabled) return { sent: [], refused: [] };
@@ -148,8 +183,9 @@ export function createDrafts({ storage, userId, now = () => Date.now() }) {
         const item = queued[0];
         let outcome;
         try { outcome = await send(item); } catch { break; }
+        if (outcome === "refused") refused.push({ ...item, returnedAsDraft: returnAsDraft(item) });
+        else sent.push(item);
         queued.shift();
-        (outcome === "refused" ? refused : sent).push(item);
         write(storage, outboxKey, queued);
       }
       return { sent, refused };

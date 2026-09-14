@@ -92,6 +92,22 @@ const online = await ish.flush(async () => outcomes.shift());
 expect("back online: sent and refused are told apart", [online.sent.map((i) => i.label), online.refused.map((i) => i.label)], [["SBI FD"], ["Second"]]);
 expect("and the queue is empty", ish.pending(), []);
 
+/* --- a refused save comes back as the draft of its form -------------------- */
+
+const rd = { id: "0002", typeId: "t", title: "Post office RD", investedAmount: 5000, maturityDate: "2030-01-01",
+  visibility: "private", owners: [{ memberId: "m1", sharePct: 100 }], attributes: { interest_rate: "6.7" } };
+ish.queue("capture", "h1", rd, "Post office RD", "capture:rd");
+ish.save("capture:rd", "invested_amount", "6000", { typeCode: "rd", householdId: "h1" });
+const refusedOnce = await ish.flush(async () => "refused");
+expect("a refused save says it was put back", refusedOnce.refused.map((i) => i.returnedAsDraft), [true]);
+expect("what was typed is back in the form's draft, and what was typed since wins",
+  ish.get("capture:rd")?.fields,
+  { invested_amount: "6000", title: "Post office RD", maturity_date: "2030-01-01", "attr:interest_rate": "6.7", owner: "m1" });
+expect("the draft names its type and household for the resume card",
+  [ish.get("capture:rd")?.meta?.typeCode, ish.get("capture:rd")?.meta?.householdId], ["rd", "h1"]);
+expect("and it is no longer queued", ish.pending(), []);
+ish.discard("capture:rd");
+
 /* --- sign-out --------------------------------------------------------------- */
 
 ish.save("capture:fd", "title", "Kept until sign-out");

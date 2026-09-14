@@ -614,7 +614,7 @@ export function captureForm(type, onSaved, prefill = null) {
           created = await api.capture(state.household.id, body);
         } catch (error) {
           // No network: kept on this phone and sent when it is back (X-83).
-          if (!isOffline(error) || !queueCapture(state.household.id, body)) throw error;
+          if (!isOffline(error) || !queueCapture(state.household.id, body, `capture:${type.code}`)) throw error;
           saved = true;
           draft.discard();
           modal.close();

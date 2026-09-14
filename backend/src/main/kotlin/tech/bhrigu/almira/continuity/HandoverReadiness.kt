@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.e2e.SealedAccessService
 import tech.bhrigu.almira.e2e.WhereAndWho
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.security.RequestUserContext
@@ -49,6 +50,31 @@ data class LeftOutRecord(
     val title: String,
 )
 
+/** One person whose sealed locations are counted, and whether anyone but them could open those. */
+data class SealedBy(
+    val memberId: UUID?,
+    val name: String?,
+    val isMe: Boolean,
+    /** Counted records whose "where the original is" this person sealed. */
+    val locations: Int,
+    val hasRecoveryKey: Boolean,
+    val hasRecoveryShares: Boolean,
+)
+
+/**
+ * "Someone can actually open it" (docs/22 §4.1). Information beside the score,
+ * never part of it: a sealed location counts as recorded whether or not anyone
+ * else could read it, exactly as before, and this says how many could be.
+ */
+data class SealedAccessSummary(
+    /** Counted records with a sealed location — the `location` check's done count. */
+    val sealedLocations: Int,
+    /** Of those, sealed by someone with a recovery sheet or recovery shares. */
+    val openableWithRecovery: Int,
+    val sealedBy: List<SealedBy>,
+    val explanation: String,
+)
+
 data class HandoverReadiness(
     /**
      * 0–100, rounded down, or null when the data cannot earn a number (docs/22 §1).
@@ -66,6 +92,8 @@ data class HandoverReadiness(
     val checks: List<ReadinessCheck>,
     val gaps: List<ReadinessGap>,
     val caveats: List<String>,
+    /** Absent when no counted record has a sealed location. Not scored (docs/22 §4.1). */
+    val sealedAccess: SealedAccessSummary? = null,
 )
 
 /** Which of the three record checks apply to a kind of holding (docs/22 §3). */
@@ -200,6 +228,7 @@ class HandoverReadinessService(
     private val jdbc: NamedParameterJdbcTemplate,
     private val households: HouseholdService,
     private val userContext: RequestUserContext,
+    private val sealedAccess: SealedAccessService,
 ) {
 
     @Transactional(readOnly = true)
@@ -221,6 +250,7 @@ class HandoverReadinessService(
                 hasNominee = rs.getBoolean("has_nominee"),
                 hasDocument = rs.getBoolean("has_document"),
                 hasSealedLocation = rs.getBoolean("has_sealed_location"),
+                locationSealedBy = rs.getObject("location_sealed_by", UUID::class.java),
             )
         }
         val instruments = jdbc.query(ESTATE_DOCUMENTS, params) { rs, _ ->
@@ -233,6 +263,7 @@ class HandoverReadinessService(
                 hasNominee = false,
                 hasDocument = rs.getBoolean("has_document"),
                 hasSealedLocation = rs.getBoolean("has_sealed_location"),
+                locationSealedBy = rs.getObject("location_sealed_by", UUID::class.java),
             )
         }
 
@@ -303,6 +334,7 @@ class HandoverReadinessService(
         }
 
         return HandoverReadiness(
+            sealedAccess = sealedAccessSummary(householdId, counted.filter { it.applies.location && it.hasSealedLocation }),
             score = score,
             scoreExplanation = explanation,
             complete = score != null && gaps.isEmpty() && leftOut == 0,
@@ -313,6 +345,52 @@ class HandoverReadinessService(
             gaps = gaps,
             caveats = caveats,
         )
+    }
+
+    /**
+     * Who sealed each counted location, and whether they made a recovery copy
+     * the caller can see. Everything here is presence: nothing is opened.
+     */
+    private fun sealedAccessSummary(householdId: UUID, sealed: List<Row>): SealedAccessSummary? {
+        if (sealed.isEmpty()) return null
+        val recovery = sealedAccess.presence(householdId)
+        val members = jdbc.query(
+            """
+            select id, user_id, display_name, user_id = app.current_user_id() as me from members
+            where household_id = :hid and user_id is not null and deleted_at is null
+            """.trimIndent(),
+            mapOf("hid" to householdId),
+        ) { rs, _ ->
+            rs.getObject("user_id", UUID::class.java) to Triple(
+                rs.getObject("id", UUID::class.java), rs.getString("display_name"), rs.getBoolean("me"),
+            )
+        }.toMap()
+        val me = userContext.require()
+
+        val byPerson = sealed.groupBy { it.locationSealedBy }
+            .map { (userId, rows) ->
+                val member = userId?.let(members::get)
+                val copies = userId?.let(recovery::get)
+                SealedBy(
+                    memberId = member?.first,
+                    name = member?.second,
+                    isMe = userId == me,
+                    locations = rows.size,
+                    hasRecoveryKey = copies?.hasKey == true,
+                    hasRecoveryShares = copies?.hasShares == true,
+                )
+            }
+            .sortedWith(compareBy({ !it.isMe }, { it.name?.lowercase() ?: "" }))
+        val openable = byPerson.filter { it.hasRecoveryKey || it.hasRecoveryShares }.sumOf { it.locations }
+        val explanation = when (openable) {
+            sealed.size -> "Every sealed location here can be opened by someone other than the person who sealed " +
+                "it, with a recovery sheet or two recovery shares."
+            0 -> "Nobody but the person who sealed them can open these locations. A recovery sheet or recovery " +
+                "shares would let your family open them. This does not change the score."
+            else -> "$openable of ${sealed.size} sealed locations can be opened by someone other than the person " +
+                "who sealed them. This does not change the score."
+        }
+        return SealedAccessSummary(sealed.size, openable, byPerson, explanation)
     }
 
     private data class Trusted(val counts: Pair<Int, Int>, val gap: ReadinessGap?)
@@ -368,6 +446,7 @@ class HandoverReadinessService(
         val hasNominee: Boolean,
         val hasDocument: Boolean,
         val hasSealedLocation: Boolean,
+        val locationSealedBy: UUID? = null,
     ) {
         fun gap(check: String, reason: String, fix: String) =
             ReadinessGap(check, reason, recordType, recordId, title, fix)
@@ -384,7 +463,10 @@ class HandoverReadinessService(
                            where dl.entity_type = 'investment' and dl.entity_id = i.id) as has_document,
                    exists (select 1 from sealed_values sv
                            where sv.household_id = i.household_id and sv.record_type = 'investment'
-                             and sv.record_id = i.id and sv.field_key = :fieldKey) as has_sealed_location
+                             and sv.record_id = i.id and sv.field_key = :fieldKey) as has_sealed_location,
+                   (select sv.sealed_by from sealed_values sv
+                     where sv.household_id = i.household_id and sv.record_type = 'investment'
+                       and sv.record_id = i.id and sv.field_key = :fieldKey) as location_sealed_by
             from investments i
             join investment_types t on t.id = i.type_id
             join asset_categories c on c.id = t.category_id
@@ -405,7 +487,10 @@ class HandoverReadinessService(
                               where dl.entity_type = 'estate' and dl.entity_id = e.id) as has_document,
                    exists (select 1 from sealed_values sv
                            where sv.household_id = e.household_id and sv.record_type = 'estate_document'
-                             and sv.record_id = e.id and sv.field_key = :fieldKey) as has_sealed_location
+                             and sv.record_id = e.id and sv.field_key = :fieldKey) as has_sealed_location,
+                   (select sv.sealed_by from sealed_values sv
+                     where sv.household_id = e.household_id and sv.record_type = 'estate_document'
+                       and sv.record_id = e.id and sv.field_key = :fieldKey) as location_sealed_by
             from estate_documents e
             where e.household_id = :hid
               and e.deleted_at is null

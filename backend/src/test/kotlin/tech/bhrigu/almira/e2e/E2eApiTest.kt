@@ -271,7 +271,7 @@ class E2eApiTest : ApiTestBase() {
         val stored = db.queryForList(
             "select * from e2e_keys where household_id = ?::uuid", householdId,
         ).single()
-        assertThat(stored.values.map { it.toString() })
+        assertThat(stored.values.map { it?.toString().orEmpty() })
             .describedAs("nothing that resembles the passphrase")
             .noneMatch { it.contains("correct horse") }
         assertThat(stored["iterations"] as Int).isGreaterThanOrEqualTo(100_000)

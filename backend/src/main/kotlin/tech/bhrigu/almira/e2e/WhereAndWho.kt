@@ -30,6 +30,8 @@ data class WhereAndWhoValue(
     val keyVersion: Int,
     val updatedAt: Instant,
     val sealedByMe: Boolean,
+    /** Who sealed it and who could open it — "Sealed by Amma · Ravi keeps the recovery sheet" (docs/12 §10.5). */
+    val access: SealedLine? = null,
 )
 
 data class WhereAndWhoRecord(
@@ -62,8 +64,8 @@ object WhereAndWho {
             "Nothing is searched on the server, and nothing is searched while locked.",
         "Only the person who sealed a value can open it. Someone who can see the record " +
             "sees that a location exists, not what it says.",
-        "Your family can't read these after you're gone unless they have the passphrase. " +
-            "Decide now how they will get it.",
+        "Your family can't read these after you're gone unless they have your passphrase, " +
+            "your recovery sheet, or two of your recovery shares. Decide now which they will have.",
     )
 }
 
@@ -88,6 +90,7 @@ class WhereAndWhoService(
     private val jdbc: NamedParameterJdbcTemplate,
     private val households: HouseholdService,
     private val userContext: RequestUserContext,
+    private val sealedAccess: SealedAccessService,
 ) {
 
     @Transactional(readOnly = true)
@@ -98,6 +101,7 @@ class WhereAndWhoService(
         // The sealed value's household must match the record's: the AAD binds
         // the household, so a value filed under another household could never
         // open here and would only be noise.
+        val recovery = sealedAccess.presence(householdId)
         val records = jdbc.query(
             """
             with records as (
@@ -119,15 +123,21 @@ class WhereAndWhoService(
             select r.record_type, r.id, r.title,
                    loc.ciphertext as loc_ciphertext, loc.key_version as loc_key_version,
                    loc.updated_at as loc_updated_at, loc.sealed_by = :uid as loc_mine,
+                   loc.sealed_by as loc_sealed_by, locm.id as loc_member_id, locm.display_name as loc_name,
                    kh.ciphertext as kh_ciphertext, kh.key_version as kh_key_version,
-                   kh.updated_at as kh_updated_at, kh.sealed_by = :uid as kh_mine
+                   kh.updated_at as kh_updated_at, kh.sealed_by = :uid as kh_mine,
+                   kh.sealed_by as kh_sealed_by, khm.id as kh_member_id, khm.display_name as kh_name
             from records r
             left join sealed_values loc
               on loc.record_type = r.record_type and loc.record_id = r.id
              and loc.household_id = r.household_id and loc.field_key = :location
+            left join members locm
+              on locm.household_id = r.household_id and locm.user_id = loc.sealed_by and locm.deleted_at is null
             left join sealed_values kh
               on kh.record_type = r.record_type and kh.record_id = r.id
              and kh.household_id = r.household_id and kh.field_key = :holder
+            left join members khm
+              on khm.household_id = r.household_id and khm.user_id = kh.sealed_by and khm.deleted_at is null
             where (cast(:type as text) is null or r.record_type = cast(:type as text))
               and (cast(:rid as uuid) is null or r.id = cast(:rid as uuid))
             order by r.record_type, lower(r.title), r.id
@@ -142,20 +152,33 @@ class WhereAndWhoService(
                 recordType = rs.getString("record_type"),
                 recordId = rs.getObject("id", UUID::class.java),
                 title = rs.getString("title"),
-                originalLocation = slot(rs, "loc"),
-                keyHolder = slot(rs, "kh"),
+                originalLocation = slot(rs, "loc", WhereAndWho.ORIGINAL_LOCATION, recovery),
+                keyHolder = slot(rs, "kh", WhereAndWho.KEY_HOLDER, recovery),
             )
         }
         return WhereAndWhoIndex(records = records)
     }
 
-    private fun slot(rs: ResultSet, prefix: String): WhereAndWhoValue? {
+    private fun slot(
+        rs: ResultSet,
+        prefix: String,
+        fieldKey: String,
+        recovery: Map<UUID, RecoveryPresence>,
+    ): WhereAndWhoValue? {
         val ciphertext = rs.getString("${prefix}_ciphertext") ?: return null
+        val mine = rs.getBoolean("${prefix}_mine")
         return WhereAndWhoValue(
             ciphertext = ciphertext,
             keyVersion = rs.getInt("${prefix}_key_version"),
             updatedAt = rs.getTimestamp("${prefix}_updated_at").toInstant(),
-            sealedByMe = rs.getBoolean("${prefix}_mine"),
+            sealedByMe = mine,
+            access = sealedAccess.line(
+                fieldKey,
+                rs.getObject("${prefix}_member_id", UUID::class.java),
+                rs.getString("${prefix}_name"),
+                mine,
+                recovery[rs.getObject("${prefix}_sealed_by", UUID::class.java)],
+            ),
         )
     }
 }

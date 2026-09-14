@@ -25,6 +25,14 @@ data class E2eKeyEnvelope(
     val verifier: String,
     val keyVersion: Int = 1,
     val updatedAt: Instant? = null,
+    /**
+     * HMAC-SHA256(contentKey, "almira content key id v1"), first 16 bytes,
+     * base64url (docs/12 §10.1). Optional, and says nothing about the key; it is
+     * how the server tells a rotation (same key, new passphrase) from a
+     * replacement (a different key) without being able to open either. Required
+     * while recovery copies exist, so none of them is silently orphaned.
+     */
+    val contentKeyId: String? = null,
 )
 
 data class SealedField(
@@ -77,16 +85,20 @@ class SealedFieldService(
         requireBase64("wrappedKey", envelope.wrappedKey, minBytes = 28)
         requireBase64("verifier", envelope.verifier, minBytes = 16)
 
+        envelope.contentKeyId?.let(Envelopes::requireKeyId)
+
         val existing = findKey(householdId, userId)
+        requireCopiesStayValid(householdId, userId, envelope.contentKeyId)
         jdbc.update(
             """
             insert into e2e_keys (household_id, user_id, kdf, kdf_salt, iterations,
-                                  wrap_algorithm, wrapped_key, verifier, key_version)
-            values (:hid, :uid, :kdf, :salt, :iterations, :wrapAlg, :wrapped, :verifier, :version)
+                                  wrap_algorithm, wrapped_key, verifier, key_version, content_key_id)
+            values (:hid, :uid, :kdf, :salt, :iterations, :wrapAlg, :wrapped, :verifier, :version, :kid)
             on conflict (household_id, user_id) do update set
               kdf = excluded.kdf, kdf_salt = excluded.kdf_salt, iterations = excluded.iterations,
               wrap_algorithm = excluded.wrap_algorithm, wrapped_key = excluded.wrapped_key,
-              verifier = excluded.verifier, key_version = excluded.key_version
+              verifier = excluded.verifier, key_version = excluded.key_version,
+              content_key_id = excluded.content_key_id
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("hid", householdId).addValue("uid", userId)
@@ -94,7 +106,10 @@ class SealedFieldService(
                 .addValue("iterations", envelope.iterations)
                 .addValue("wrapAlg", envelope.wrapAlgorithm)
                 .addValue("wrapped", envelope.wrappedKey).addValue("verifier", envelope.verifier)
-                .addValue("version", envelope.keyVersion),
+                .addValue("version", envelope.keyVersion)
+                // A write that does not say which key it wraps leaves the id
+                // unknown rather than stale: the old id may no longer be true.
+                .addValue("kid", envelope.contentKeyId),
         )
 
         audit.record(
@@ -104,6 +119,42 @@ class SealedFieldService(
             diff = mapOf("keyVersion" to envelope.keyVersion),
         )
         return findKey(householdId, userId)!!
+    }
+
+    /**
+     * A passphrase write while recovery copies exist must say which content key
+     * it wraps, and it must be the one the copies wrap (docs/12 §6, §10.4).
+     *
+     * A rotation rewraps the same key, so it passes and every copy still opens.
+     * Anything else — a client that set up a new key, or one that does not say —
+     * would leave a recovery sheet in a drawer that opens nothing, found out on
+     * the worst day. Refused with a sentence, and nothing is written.
+     *
+     * The key row is locked first. [RecoveryService.put] takes the same lock
+     * before it reads the id it copies, so a copy can never be made from the
+     * old key in the moment between this check and the write.
+     */
+    private fun requireCopiesStayValid(householdId: UUID, userId: UUID, contentKeyId: String?) {
+        jdbc.query(
+            "select 1 from e2e_keys where household_id = :hid and user_id = :uid for update",
+            mapOf("hid" to householdId, "uid" to userId),
+        ) { _, _ -> Unit }
+        val copied = jdbc.query(
+            """
+            select distinct content_key_id from e2e_recovery_wraps
+            where household_id = :hid and user_id = :uid
+            """.trimIndent(),
+            mapOf("hid" to householdId, "uid" to userId),
+        ) { rs, _ -> rs.getString("content_key_id") }
+        if (copied.isEmpty()) return
+        if (contentKeyId == null || copied.any { it != contentKeyId }) {
+            throw ApiException.conflict(
+                "recovery_copies_would_break",
+                "You have a recovery sheet or recovery shares for this key. Changing to a different " +
+                    "key would stop them opening anything, so nothing was changed. Change your passphrase " +
+                    "from Settings, which keeps the same key, or remove the recovery copies first.",
+            )
+        }
     }
 
     @Transactional(readOnly = true)
@@ -127,6 +178,7 @@ class SealedFieldService(
             verifier = rs.getString("verifier"),
             keyVersion = rs.getInt("key_version"),
             updatedAt = rs.getTimestamp("updated_at").toInstant(),
+            contentKeyId = rs.getString("content_key_id"),
         )
     }.firstOrNull()
 

@@ -280,7 +280,7 @@ class E2eApiTest : ApiTestBase() {
         assertThat(status.path("enabled").asBoolean()).isTrue()
         assertThat(status.path("caveats").map { it.asText() })
             .describedAs("the trade-offs are stated, not buried")
-            .anyMatch { it.contains("no recovery") || it.contains("There is no recovery") }
+            .anyMatch { it.contains("cannot recover your passphrase") && it.contains("recovery sheet") }
     }
 
     /**

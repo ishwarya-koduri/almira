@@ -401,8 +401,8 @@ class NotificationOutboxTest : ApiTestBase() {
     fun `a worker that sent and was taken over before recording leaves the outcome the takeover recorded`() {
         val calledWith = ConcurrentLinkedQueue<Pair<String, String>>()
         val counted = channels.map { Counting(it, calledWith) }
-        val late = NotificationOutbox(ownerDataSource, counted, calls, props)
-        val takeover = NotificationOutbox(ownerDataSource, counted, calls, props)
+        val late = NotificationOutbox(ownerDataSource, counted, calls, props, directory, pacing)
+        val takeover = NotificationOutbox(ownerDataSource, counted, calls, props, directory, pacing)
 
         val lateSent = LinkedBlockingQueue<UUID>()
         val lateGo = LinkedBlockingQueue<Unit>()
@@ -496,7 +496,7 @@ class NotificationOutboxTest : ApiTestBase() {
     @Test
     fun `a queued message whose body a restore did not bring back is failed once, never sent, and named by id only`() {
         val calledWith = ConcurrentLinkedQueue<Pair<String, String>>()
-        val worker = NotificationOutbox(ownerDataSource, channels.map { Counting(it, calledWith) }, calls, props)
+        val worker = NotificationOutbox(ownerDataSource, channels.map { Counting(it, calledWith) }, calls, props, directory, pacing)
         val body = "Nothing changes today."
         val title = "You've been named as an emergency contact"
 
@@ -544,7 +544,7 @@ class NotificationOutboxTest : ApiTestBase() {
 
     @Test
     fun `a worker that stops straight after recording a send leaves no body behind`() {
-        val dying = NotificationOutbox(ownerDataSource, channels, calls, props).apply {
+        val dying = NotificationOutbox(ownerDataSource, channels, calls, props, directory, pacing).apply {
             afterRecord = { throw Crash() }
         }
         outbox.whilePaused {

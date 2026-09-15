@@ -775,8 +775,10 @@ came.** `DeliveryPacing` keeps it as the worker claims each row:
 0. **Nothing is queued without consent** (V125). `app.enqueue_outbound_message`
    writes a row for a non-essential message only when the person's latest
    `messages` consent is `given` and names that channel; with no consent at all
-   — everyone who was never asked — only the in-app row is written. Consent is
-   opt-in and asked for in the app (Doc 23 "Asked when it helps").
+   — everyone who was never asked — only the in-app row is written. A yes from
+   before V125 names no channels and counts for nothing (V142): the person is
+   asked again. Consent is opt-in and asked for in the app, about the holding or
+   the Still true? digest in front of the person (Doc 23 "Asked when it helps").
    **A stop made while it waited holds.** Before pacing, the worker asks again
    what queueing asked: a person since marked as passed away (`skipped`,
    `notifications_stopped`, except the warnings V103 lets through), or a

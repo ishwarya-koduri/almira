@@ -179,7 +179,7 @@ class AccessSummaryService(
             ),
             ProcessingPurpose(
                 "account_notices", "legitimate_use",
-                "Telling you, by email, text or push whatever you chose about reminders, about a new sign-in, a changed phone number or sign-in method, a request for emergency access you can stop, and your account being closed or taken over.",
+                "Telling you, by email, text or push whatever you chose about reminders, about a new sign-in, a changed phone number or sign-in method, a request for emergency access you can stop, being named someone's emergency contact or the person to carry a household on, leaving a household or a memorial you gave being taken back, and your account being closed or taken over.",
             ),
             ProcessingPurpose(
                 "security", "legitimate_use",

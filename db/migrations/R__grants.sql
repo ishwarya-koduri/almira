@@ -68,6 +68,10 @@ begin
   if to_regclass('public.messages_consent_asks') is not null then
     execute 'revoke delete, truncate on messages_consent_asks from almira_app';
   end if;
+  -- The same for a "not now" beside one holding or the digest (V141).
+  if to_regclass('public.messages_consent_ask_contexts') is not null then
+    execute 'revoke delete, truncate on messages_consent_ask_contexts from almira_app';
+  end if;
 
   -- Plans and support codes (V101, V102). A household's plan is set only by an
   -- operator as the schema owner, so the runtime role may read it and nothing

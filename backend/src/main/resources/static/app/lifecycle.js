@@ -233,13 +233,42 @@ export function openClosure(redrawScreen) {
 export async function loadFamilyLifecycle() {
   const hid = state.household.id;
   const safe = (promise, fallback) => promise.catch(() => fallback);
-  const [departures, successor, comingOfAge, requests] = await Promise.all([
+  const [departures, successor, comingOfAge, requests, dormancy] = await Promise.all([
     safe(api.get(`/api/v1/households/${hid}/departures`), []),
     safe(api.get(`/api/v1/households/${hid}/successor`), { named: false }),
     safe(api.get(`/api/v1/households/${hid}/coming-of-age`), []),
     safe(api.emergencyRequests(hid), []),
+    state.household.dormant
+      ? safe(api.get(`/api/v1/households/${hid}/dormancy`), { dormant: true })
+      : Promise.resolve({ dormant: false }),
   ]);
-  return { departures, successor, comingOfAge, requests };
+  return { departures, successor, comingOfAge, requests, dormancy };
+}
+
+/**
+ * Nobody runs the household at the moment: its last owner has gone while
+ * records remain (docs/05 §12.7). Everything can still be seen; an adult
+ * member takes it on, with a step-up, and only then does anything that needs an
+ * owner or admin work again.
+ */
+export function dormancyCard(context) {
+  const d = context.dormancy;
+  if (!d || !d.dormant) return null;
+  const hid = state.household.id;
+  const take = el("button.btn.btn-primary", { type: "button" }, t("lifecycle.takeItOn"));
+  take.onclick = () => withBusy(take, async () => {
+    try {
+      await withStepUp(() => api.post(`/api/v1/households/${hid}/dormancy/accept`));
+      toast(t("lifecycle.tookItOn", { household: state.household.name }));
+      await reload();
+    } catch (error) { toast(error.message, { tone: "error" }); }
+  });
+  return el("div.card.stack-3", { role: "status" },
+    el("h4", {}, t("lifecycle.dormantTitle", { household: state.household.name })),
+    el("p.lifecycle-text", {}, t("lifecycle.dormantBody", { name: d.ownerName || t("lifecycle.theOwner") })),
+    d.explanation && el("p.lifecycle-text.muted", {}, d.explanation),
+    d.canAccept && el("div.row.wrap", {}, take),
+  );
 }
 
 /** Shown to someone whose account here carries the memorial label. */
@@ -441,7 +470,7 @@ async function openLeave(pending) {
 export function successorCard(context, members) {
   const hid = state.household.id;
   const s = context.successor;
-  const isOwner = state.household.myRole === "owner" && !state.household.readOnly;
+  const isOwner = state.household.myRole === "owner" && !state.household.readOnly && !state.household.dormant;
 
   if (s.named && s.youAreTheSuccessor) {
     const claim = el("button.btn.btn-primary", { type: "button" }, t("lifecycle.carryOn"));

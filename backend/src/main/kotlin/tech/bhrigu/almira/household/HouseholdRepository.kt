@@ -19,6 +19,8 @@ data class HouseholdRow(
     val version: Int,
     /** The caller is memorialised here: they can see, and change nothing (docs/05 §12). */
     val readOnly: Boolean = false,
+    /** Nobody runs the household at the moment: its last owner has gone (docs/05 §12.7, V120). */
+    val dormant: Boolean = false,
 )
 
 data class MemberRow(
@@ -200,6 +202,7 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
         const val HOUSEHOLD_SELECT = """
             select h.id, h.name, h.base_currency, h.default_visibility, h.version,
                    hm.role as my_role, app.is_memorialised_in(h.id) as read_only,
+                   app.household_is_dormant(h.id) as dormant,
                    (select m.id from members m
                      where m.household_id = h.id and m.user_id = :userId
                        and m.deleted_at is null limit 1) as my_member_id,
@@ -235,6 +238,7 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
             memberCount = rs.getInt("member_count"),
             version = rs.getInt("version"),
             readOnly = rs.getBoolean("read_only"),
+            dormant = rs.getBoolean("dormant"),
         )
     }
 

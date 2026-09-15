@@ -260,7 +260,21 @@ class HouseholdService(
     /** As [requireWriter], for what only an owner or admin may do. */
     @Transactional(readOnly = true)
     fun requireAdministrator(householdId: UUID) {
-        if (!repo.canAdminister(householdId)) throw ApiException.forbidden()
+        if (!repo.canAdminister(householdId)) {
+            repo.find(householdId, userContext.require())
+                ?.takeIf { it.dormant && it.myRole in setOf("owner", "admin") }
+                ?.let { throw dormant(it) }
+            throw ApiException.forbidden()
+        }
+    }
+
+    /**
+     * For a service that checks an owner or admin role itself: a dormant
+     * household has nobody who may act as one (V120), and says so in words
+     * rather than as a policy's bare refusal.
+     */
+    fun refuseWhileDormant(household: HouseholdRow) {
+        if (household.dormant) throw dormant(household)
     }
 
     /**
@@ -271,6 +285,7 @@ class HouseholdService(
         if (household.myRole !in setOf("owner", "admin")) {
             throw ApiException.forbidden("Only the household owner or an admin can do that.")
         }
+        refuseWhileDormant(household)
     }
 
     private fun requireVisibility(value: String) {
@@ -291,6 +306,17 @@ class HouseholdService(
         if (dateOfBirth != null && diedOn.isBefore(dateOfBirth)) {
             throw ApiException.badRequest("died_on_before_birth", "That date is before their date of birth.")
         }
+    }
+
+    companion object {
+        const val DORMANT_CODE = "household_dormant"
+
+        fun dormant(household: HouseholdRow) = ApiException(
+            org.springframework.http.HttpStatus.FORBIDDEN, DORMANT_CODE,
+            "Nobody runs ${household.name} at the moment, so this has to wait until someone takes it on. " +
+                "An adult in the household can, on the Family screen. You can still see everything, open " +
+                "the handbook and download everything.",
+        )
     }
 
     private fun staleWrite(currentVersion: Int) = ApiException.conflict(

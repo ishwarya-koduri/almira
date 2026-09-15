@@ -1927,47 +1927,42 @@ authenticator, a recovery code, an already elevated stolen session).
 
 ## 65. A household can be left with no owner when its successor or admin is gone by purge time
 
-**Where** `lifecycle/AccountPurge.kt` (`purge`, `handOver`),
-`lifecycle/DepartureCompletion.kt` (`carryOut`), `lifecycle/LifecycleRecords.kt`
-(`otherPeopleWithLogin`, `nextOwner`), `lifecycle/LifecycleWrites.kt`
-(`longestStanding`).
+**Resolved** (2026-09-15). Kept so the number means something where it is cited.
 
-**What** `owner_needs_successor` is checked only when a sole owner asks to close
-their account or leave (`AccountClosureService.closurePreview`,
-`Departures.blockers`). Nothing checks it again when the thirty days are up, and
-nothing during those days looks at a pending closure or departure: the named
-successor or the only admin can still leave, be asked to leave, or be marked as
-passed away. At purge, `otherPeopleWithLogin` counts every other active
-membership, advisors and memorialised people included, so the household is not
-erased; `nextOwner` finds nobody and `longestStanding` also skips advisors and
-memorialised people, so no one is made owner. The purge completes and the
-household carries on — children's and other members' records included — with
-nobody able to invite, remove, or handle departures. It happens only when every
-remaining login is an advisor or memorialised; an ordinary member with a login
-is picked by `longestStanding`. No data crosses a household boundary.
+**Where** `lifecycle/AccountPurge.kt` (`purge`), `lifecycle/DepartureCompletion.kt`
+(`complete`), `lifecycle/Dormancy.kt`, `lifecycle/Memorials.kt`, and
+`household_dormancies`, `app.going_leaves_household_ownerless`,
+`app.accept_household_ownership` (V120).
 
-**Why not fixed** Each way out is a product decision, and each is irreversible
-or breaks a promise:
-- *Erase the household* (treat advisors and memorialised people as nobody, as the
-  no-login branch does). This destroys a memorialised person's records that heir
-  mode exists to keep, because someone else closed their account — and the
-  closure preview had told the owner the household would stay.
-- *Postpone the purge* until a successor is named. This breaks the thirty-day
-  erasure promised in docs/05 §8 and on the closure screen, and the person who
-  asked may never come back to choose.
-- *Hand it to an advisor*, or leave it ownerless for a support repair. The first
-  gives a household to someone outside the family; the second needs a runbook
-  and a way to find such households (today the purge neither logs nor audits it).
-- *Refuse* marking passed away, leaving, or removal of the last successor/admin
-  while the owner's closure is pending. A death cannot be refused, so this closes
-  only part of the gap.
+**What changed** The owner decided (2026-09-15): never purge the last owner
+while the household holds records; move it to dormant, tell the remaining
+members, and require an explicit transfer before any purge. Before anything is
+carried out, the purge and the departure sweep now ask whether the person is the
+last owner able to act (another owner who is memorialised does not count) of a
+household that still has other members and holds records. If so, that household
+is made dormant and left exactly as it was — the membership, what the person
+holds there, and for a closure the account itself — and the closure or departure
+stays pending. A departure is stopped before step one, so no household of the
+leaver's own is made and no document bytes are copied. The rest of a closure is
+carried out (households nobody else signs in to are erased; the person leaves
+the others). A memorial on the last owner makes the household dormant too, by a
+trigger. While dormant, `can_administer_household` and `is_household_owner`
+answer false for everyone, so nothing that needs an owner or admin can be done;
+the API says `household_dormant` in words; reads, member writes, the handbook
+and Download everything are unchanged. It ends when an adult member with a login
+(admin, editor or viewer; not an advisor, a restricted member, a minor,
+someone memorialised, or someone closing their account or leaving) accepts it
+with a step-up — a week after a memorial, at once otherwise — or when the owner
+comes back (Keep my account, cancelling the departure, or "I'm here"). Only
+then does the next sweep carry out the rest. The remaining members are told in
+the app and through the outbox (`lifecycle.household.*`, essential). A household
+with nobody eligible stays dormant and is never erased for that. Proven by
+`DormantHouseholdApiTest` and the "dormant household" block of
+`db/tests/rls_privacy_test.sql`.
 
-**When to fix** When the owner decides which of the above applies; the same
-answer should go into `DepartureCompletion.carryOut`, which has the same shape.
-
-**Risk if left** Rare (needs that sequence within thirty days), but a household
-nobody can run, with family records still in it, fixed only by hand in the
-database.
+**What is still open** See "A dormant household with nobody who may take it on
+waits for good" and "The last owner of a household with records must be taken on
+explicitly, even with a successor named".
 
 ---
 
@@ -2262,3 +2257,90 @@ does not also use the web. The rest when the screens involved are next opened.
 **Risk if left** Nothing is sent without consent. The risk is the opposite one:
 people who would want reminders outside the app are not asked at the moment
 they would say yes.
+
+---
+
+## 73. A dormant household with nobody who may take it on waits for good
+
+**Where** `app.accept_household_ownership`, `app.going_leaves_household_ownerless`
+(V120), `lifecycle/AccountPurge.kt`, `lifecycle/DepartureCompletion.kt`.
+
+**What** When the only people left besides the departed owner are advisors,
+restricted members, minors or people memorialised, nobody can take the household
+on, so it stays dormant: nothing needing an owner or admin can be done, and the
+departed owner's closure or departure stays pending — their account is not
+erased — for as long as that lasts. This is the owner's rule ("never silently
+purged"), and it is deliberate. A member who turns eighteen becomes eligible on
+the day (`app.is_minor`), and a memorialised member who says "I'm here" does too;
+nothing else changes it.
+
+**Why not fixed** What should happen next is a decision: an operator repair
+(making someone owner by hand, with a record), inviting a new adult (which needs
+an admin, and there is none), or telling the departed owner that their erasure
+is waiting on it. There is no runbook and no operator tool, and nothing lists
+such households other than `select * from household_dormancies where ended_at is
+null`.
+
+**Risk if left** Rare. The family's records are safe and readable; the cost is a
+household nobody can manage and an erasure that does not complete.
+
+---
+
+## 74. The last owner of a household with records must be taken on explicitly, even with a successor named
+
+**Where** `lifecycle/AccountPurge.kt`, `lifecycle/DepartureCompletion.kt`,
+`lifecycle/AccountClosure.kt` (`closurePreview`), V120.
+
+**What** The owner's decision was read literally: *require an explicit transfer
+before any purge*. So a named successor or an admin is no longer made owner by
+the sweep in a household with records; they are told and must accept (step-up).
+Two consequences to confirm: (1) the automatic handover remains only where the
+household holds no records; (2) while a memorial-caused dormancy waits its week,
+a remaining admin can do nothing that needs an admin (invite, remove, rename),
+where before the memorial they could. The request-time blocker
+(`owner_needs_successor`) is unchanged.
+
+**Why not fixed** It is the owner's call whether a named successor's earlier
+consent-by-naming should count as the transfer, and whether an existing admin
+should keep admin capabilities during the memorial week.
+
+**Risk if left** Friction, not loss: one more step for the successor, and a
+week without admin actions after a memorial.
+
+---
+
+## 75. A memorial's date is whatever its row says, so the runtime role could shorten a succession claim's week
+
+**Where** `member_memorials_insert` policy (V40), `app.claim_household_succession` (V41).
+
+**What** Found while adding dormancy. The insert policy does not constrain
+`marked_at`, and the claim function counts its week from `marked_at`. The API
+never sets the column (it takes the default), so no request can do this; SQL run
+as the runtime role could insert a memorial dated eight days ago and claim at
+once. The dormancy's own week (V120) is counted from when the row is written, so
+it is not affected.
+
+**Why not fixed** Outside this workstream's migration of V41's function; a fix
+(a check that `marked_at` is within a minute of `now()` on insert, or counting
+from `created_at`) would also change test fixtures that backdate memorials.
+
+**Risk if left** Needs SQL access as the runtime role and an admin or open
+emergency window in that household.
+
+---
+
+## 76. Dormant households have a web card and no native screen, and their words are English on the server
+
+**Where** `app/lifecycle.js` (`dormancyCard`), `app/screens/family.js`,
+`lifecycle/Dormancy.kt`, `app/` (native).
+
+**What** The web Family screen shows a dormant household and a "Take on the
+household" button. The native app has neither; a member there sees
+`household_dormant` refusals in words but cannot take the household on. The
+card's Telugu and Hindi are machine drafts; the explanation and the notices are
+English sentences from the server, as the other lifecycle ones are.
+
+**Why not fixed** The native lifecycle screens are another session's work.
+
+**Risk if left** A native-only family must use the web to take a dormant
+household on.

@@ -2241,5 +2241,191 @@ begin
 end $$;
 select pg_temp.as_user('ish');
 
+-- -------------------------------------------------------- dormant households --
+-- V120. A household whose last owner goes while it holds records is dormant:
+-- nobody administers it, sight is unchanged, nobody writes the state but the
+-- database itself, and nobody takes it on who should not. A household of its
+-- own, so the lifecycle state of Koduri above is not disturbed.
+do $$ begin raise notice '--- a dormant household: no one runs it, no one sees more, and no one takes it who should not ---'; end $$;
+
+insert into users (phone, full_name) values ('+919000000021', 'Lakshmi') returning id \gset dh_owner_
+insert into users (phone, full_name) values ('+919000000022', 'Kiran')   returning id \gset dh_admin_
+insert into users (phone, full_name) values ('+919000000023', 'Chintu')  returning id \gset dh_teen_
+insert into users (phone, full_name) values ('+919000000024', 'The CA')  returning id \gset dh_adv_
+
+select set_config('app.user_id', :'dh_owner_id', false);
+select household_id, member_id from app.bootstrap_household('Dormant', 'private', 'Lakshmi') \gset dh_
+insert into members (household_id, user_id, display_name) values (:'dh_household_id', :'dh_admin_id', 'Kiran')
+  returning id \gset dh_adminm_
+insert into members (household_id, user_id, display_name, date_of_birth)
+  values (:'dh_household_id', :'dh_teen_id', 'Chintu', current_date - interval '15 years');
+insert into members (household_id, user_id, display_name) values (:'dh_household_id', :'dh_adv_id', 'The CA');
+insert into household_memberships (household_id, user_id, role, status) values
+  (:'dh_household_id', :'dh_admin_id', 'admin', 'active'),
+  (:'dh_household_id', :'dh_teen_id', 'viewer', 'active'),
+  (:'dh_household_id', :'dh_adv_id', 'advisor', 'active');
+select pg_temp.mk(:'dh_household_id', 'fd', 'Lakshmi''s FD (private)', 700000, 'private', :'dh_member_id') as id \gset dh_fd_
+insert into t values ('dh', :'dh_household_id'), ('dh_owner', :'dh_owner_id'), ('dh_admin', :'dh_admin_id'),
+  ('dh_teen', :'dh_teen_id'), ('dh_adv', :'dh_adv_id'), ('dh_fd', :'dh_fd_id'), ('dh_m_owner', :'dh_member_id');
+
+select pg_temp.assert(app.household_holds_records_for_its_owner((select v from t where k='dh')),
+  'the owner can ask whether her own household holds records (for the closure preview)');
+select pg_temp.as_user('dh_admin');
+select pg_temp.assert(not app.household_holds_records_for_its_owner((select v from t where k='dh')),
+  'an admin cannot ask it');
+select pg_temp.as_user('out');
+select pg_temp.assert(not app.household_holds_records_for_its_owner((select v from t where k='dh')),
+  'nor can anyone outside');
+
+select pg_temp.as_user('dh_admin');
+do $$
+declare blocked boolean;
+begin
+  blocked := false;
+  begin
+    insert into household_dormancies (household_id, reason, owner_user_id, memorial_id)
+      values ((select v from t where k='dh'), 'owner_passed_away', (select v from t where k='dh_owner'), gen_random_uuid());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nobody makes a household dormant by writing the row');
+
+  blocked := false;
+  begin
+    perform app.open_household_dormancy((select v from t where k='dh'), (select v from t where k='dh_owner'),
+                                        'owner_leaving', null, gen_random_uuid(), null, null);
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor through the sweep''s function');
+
+  blocked := false;
+  begin
+    perform app.going_leaves_household_ownerless((select v from t where k='dh'), (select v from t where k='dh_owner'));
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the rule about a named person is not the runtime role''s to ask');
+
+  blocked := false;
+  begin
+    perform app.household_holds_records((select v from t where k='hh'));
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor whether any household holds records');
+
+  blocked := false;
+  begin
+    perform app.accept_household_ownership((select v from t where k='dh'));
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a household that is not dormant cannot be taken on');
+end $$;
+select pg_temp.assert(app.can_administer_household((select v from t where k='dh')),
+  'before: the admin administers');
+
+-- The admin marks the owner as passed away: the trigger makes it dormant.
+insert into member_memorials (household_id, member_id, user_id, marked_by, basis)
+  values ((select v from t where k='dh'), (select v from t where k='dh_m_owner'),
+          (select v from t where k='dh_owner'), app.current_user_id(), 'admin');
+
+select pg_temp.assert((select count(*) from household_dormancies
+                        where household_id = (select v from t where k='dh') and ended_at is null
+                          and reason = 'owner_passed_away' and accept_from > now() + interval '6 days') = 1,
+  'a memorial on the last owner makes the household dormant, for a week before anyone may take it on');
+select pg_temp.assert(app.household_is_dormant((select v from t where k='dh')),
+  'the household can see it is dormant');
+select pg_temp.assert(not app.can_administer_household((select v from t where k='dh'))
+                      and app.can_write_household((select v from t where k='dh')),
+  'while dormant the admin administers nothing, and can still write what is theirs');
+select pg_temp.assert(not pg_temp.sees('dh_fd'),
+  'and dormancy opens none of the owner''s private records');
+
+do $$
+declare blocked boolean; n int;
+begin
+  blocked := false;
+  begin
+    update household_memberships set role = 'owner'
+     where household_id = (select v from t where k='dh') and user_id = app.current_user_id();
+    get diagnostics n = row_count;
+    blocked := n = 0;
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the admin cannot make themselves owner around the accept function');
+
+  blocked := false;
+  begin
+    update household_dormancies set ended_at = now(), ended_reason = 'transferred';
+    get diagnostics n = row_count;
+    blocked := n = 0;
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor end the dormancy by writing it');
+
+  blocked := false;
+  begin
+    delete from household_dormancies;
+    get diagnostics n = row_count;
+    blocked := n = 0;
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor delete it');
+
+  blocked := false;
+  begin
+    perform app.accept_household_ownership((select v from t where k='dh'));
+  exception when others then blocked := sqlerrm = 'dormancy_not_yet';
+  end;
+  perform pg_temp.assert(blocked, 'nor take it on in the week a memorial can still be corrected');
+end $$;
+
+select pg_temp.as_user('dh_teen');
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    perform app.accept_household_ownership((select v from t where k='dh'));
+  exception when others then blocked := sqlerrm = 'ownership_not_eligible';
+  end;
+  perform pg_temp.assert(blocked, 'a minor cannot take a household on');
+end $$;
+
+select pg_temp.as_user('dh_adv');
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    perform app.accept_household_ownership((select v from t where k='dh'));
+  exception when others then blocked := sqlerrm = 'ownership_not_eligible';
+  end;
+  perform pg_temp.assert(blocked, 'nor can an advisor');
+end $$;
+select pg_temp.assert(not pg_temp.sees('dh_fd'), 'the advisor sees none of the owner''s private records either');
+
+select pg_temp.as_user('out');
+select pg_temp.assert((select count(*) from household_dormancies where household_id = (select v from t where k='dh')) = 0
+                      and not app.household_is_dormant((select v from t where k='dh')),
+  'outside the household nobody learns that it is dormant');
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    perform app.accept_household_ownership((select v from t where k='dh'));
+  exception when others then blocked := sqlerrm = 'dormancy_not_found';
+  end;
+  perform pg_temp.assert(blocked, 'and nobody outside can take it on, or learn there is anything to take');
+end $$;
+
+-- "I'm here": the owner comes back, and the dormancy ends with the memorial.
+select pg_temp.as_user('dh_owner');
+update member_memorials set reversed_at = now(), reversed_by = app.current_user_id()
+ where household_id = (select v from t where k='dh') and reversed_at is null;
+select pg_temp.as_user('dh_admin');
+select pg_temp.assert((select ended_reason from household_dormancies
+                        where household_id = (select v from t where k='dh')) = 'owner_returned'
+                      and not app.household_is_dormant((select v from t where k='dh'))
+                      and app.can_administer_household((select v from t where k='dh')),
+  'taking the label away ends the dormancy, and the admin administers again');
+
+select pg_temp.as_user('ish');
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

@@ -52,6 +52,7 @@ class MemorialService(
     private val audit: AuditService,
     private val notifiers: List<Notifier>,
     private val userContext: RequestUserContext,
+    private val dormancy: DormancyNotices,
 ) {
 
     @Transactional
@@ -66,8 +67,9 @@ class MemorialService(
         if (member.memorialisedAt != null) return member
 
         val basis = when {
-            household.myRole in setOf("owner", "admin") && !household.readOnly -> "admin"
+            household.myRole in setOf("owner", "admin") && !household.readOnly && !household.dormant -> "admin"
             openWindowOn(householdId, memberId) -> "trusted_contact"
+            household.myRole in setOf("owner", "admin") && household.dormant -> throw HouseholdService.dormant(household)
             else -> throw ApiException.forbidden(
                 "Only a household admin, or ${member.displayName}'s trusted contact once emergency " +
                     "access has opened, can do this.",
@@ -111,6 +113,15 @@ class MemorialService(
             // two are different claims, and the log keeps which was made.
             diff = mapOf("basis" to basis, "hadLogin" to (member.userId != null)),
         )
+        // The last owner able to act: V120's trigger has made the household dormant.
+        jdbc.query(
+            """
+            select d.id from household_dormancies d
+              join member_memorials mm on mm.id = d.memorial_id
+             where mm.member_id = :mid and mm.reversed_at is null and d.ended_at is null
+            """.trimIndent(),
+            mapOf("mid" to memberId),
+        ) { rs, _ -> rs.getObject("id", UUID::class.java) }.forEach { dormancy.opened(it, jdbc) }
         return findMember(householdId, memberId)
     }
 
@@ -123,6 +134,10 @@ class MemorialService(
         if (member.userId != userId) {
             throw ApiException.forbidden("Only the person it names can take this label away.")
         }
+        val dormant = jdbc.query(
+            "select id from member_memorials where member_id = :mid and reversed_at is null",
+            mapOf("mid" to memberId),
+        ) { rs, _ -> rs.getObject("id", UUID::class.java) }.flatMap { dormancy.causedBy(memorialId = it) }
         val markedBy = jdbc.query(
             """
             update member_memorials set reversed_at = now(), reversed_by = :uid
@@ -137,6 +152,7 @@ class MemorialService(
             householdId = householdId, actorUserId = userId, action = "member.memorial.reverse",
             entityType = "member", entityId = memberId,
         )
+        dormancy.returned(dormant)
         markedBy.filterNotNull().distinct().forEach { marker ->
             notifiers.forEach { notifier ->
                 runCatching {

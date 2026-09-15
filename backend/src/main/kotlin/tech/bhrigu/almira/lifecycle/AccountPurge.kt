@@ -19,6 +19,12 @@ data class PurgeResult(
     val householdsLeft: Int,
     val recordsErased: Int,
     val sharesPassedOn: Int,
+    /**
+     * Households where the person is the last owner and records remain: made
+     * dormant, and not carried out (docs/05 §12.7). While any is held the
+     * account itself is not erased and the closure stays pending.
+     */
+    val householdsHeld: Int = 0,
 )
 
 /**
@@ -55,18 +61,32 @@ data class PurgeResult(
  * The storage keys are written to `pending_storage_deletions` in that
  * transaction, so bytes storage fails to delete are tried again on every sweep
  * until they are gone (V109).
+ *
+ * **What waits.** Before anything is carried out, each household is asked
+ * whether this person is its last owner while other people and records remain
+ * in it (`app.going_leaves_household_ownerless`, V120). Such a household is made
+ * dormant and left exactly as it is: the membership, what the person holds
+ * there, and the account itself, which a membership hangs from. The rest of the
+ * closure is carried out — households nobody else signs in to are erased, and
+ * the person leaves the others (their membership marked `left`, so the next run
+ * does not do it twice) — and the closure stays pending. Sessions are not
+ * revoked, since the person may yet choose Keep my account. Once someone takes
+ * the household on, the next sweep finishes the purge as above.
  */
 @Component
 class AccountPurge(
     @Qualifier("ownerDataSource") ownerDataSource: DataSource,
     private val storage: DocumentStorage,
     private val revocations: SessionRevocationCache,
+    // Null only where a test builds this by hand to fail storage: nothing is told then.
+    private val notices: DormancyNotices? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val jdbc = NamedParameterJdbcTemplate(ownerDataSource)
     private val transactions = TransactionTemplate(DataSourceTransactionManager(ownerDataSource))
     private val records = LifecycleRecords(jdbc)
     private val writes = LifecycleWrites(jdbc)
+    private val dormancy = DormancyRecords(jdbc)
     val pendingDeletions = PendingStorageDeletions(jdbc, storage)
 
     fun due(asOf: Instant): List<UUID> = jdbc.query(
@@ -81,6 +101,7 @@ class AccountPurge(
     fun purge(closureId: UUID, asOf: Instant): PurgeResult? {
         var sessions: List<UUID> = emptyList()
         var storageKeys: List<String> = emptyList()
+        var opened: List<UUID> = emptyList()
         val result = transactions.execute {
             val userId = jdbc.query(
                 """
@@ -107,7 +128,15 @@ class AccountPurge(
                 mapOf("uid" to userId),
             ) { rs, _ -> rs.getObject("household_id", UUID::class.java) to rs.getString("role") }
 
-            memberships.forEach { (householdId, role) ->
+            // The guard, before anything is carried out (docs/known-issues.md, "A guard
+            // runs before the action it guards"): a household this person is the last
+            // owner of, with other people and records in it, is not purged — it waits.
+            val held = memberships
+                .filter { (householdId, role) -> role == "owner" && dormancy.leavesOwnerless(householdId, userId) }
+                .map { it.first }.toSet()
+            opened = held.mapNotNull { dormancy.open(it, userId, "owner_closing_account", closureId, null) }
+
+            memberships.filter { it.first !in held }.forEach { (householdId, role) ->
                 if (records.otherPeopleWithLogin(householdId, userId) == 0) {
                     keys += jdbc.query(
                         "select storage_key from documents where household_id = :hid",
@@ -143,7 +172,29 @@ class AccountPurge(
                     householdId, "member.erased", "household", householdId,
                     mapOf("recordsErased" to sole.size + documents.size),
                 )
+                if (held.isNotEmpty()) {
+                    // The account outlives this run, so the membership it still has here
+                    // is ended by hand rather than by deleting the user.
+                    jdbc.update(
+                        "update household_memberships set status = 'left' where household_id = :hid and user_id = :uid",
+                        mapOf("hid" to householdId, "uid" to userId),
+                    )
+                }
                 leftHouseholds++
+            }
+
+            if (held.isNotEmpty()) {
+                writes.systemAudit(
+                    null, "account.purge.held", "account_closure", closureId,
+                    mapOf(
+                        "householdsHeld" to held.size, "householdsErased" to erasedHouseholds,
+                        "householdsLeft" to leftHouseholds, "recordsErased" to erasedRecords, "sharesPassedOn" to passed,
+                    ),
+                )
+                pendingDeletions.queue(keys)
+                storageKeys = keys
+                sessions = emptyList()
+                return@execute PurgeResult(closureId, erasedHouseholds, leftHouseholds, erasedRecords, passed, held.size)
             }
 
             // Rows about them in households they had already left, and the
@@ -185,13 +236,18 @@ class AccountPurge(
             PurgeResult(closureId, erasedHouseholds, leftHouseholds, erasedRecords, passed)
         } ?: return null
 
+        opened.forEach { id ->
+            runCatching { notices?.opened(id, jdbc) }
+                .onFailure { log.warn("could not tell a dormant household: {}", it.javaClass.simpleName) }
+        }
         sessions.forEach { runCatching { revocations.revoke(it) } }
         // A key storage refuses stays queued, for the next sweep.
         runCatching { pendingDeletions.deleteQueued(storageKeys) }
             .onFailure { log.warn("could not delete stored documents after purge: {}", it.javaClass.simpleName) }
         log.info(
-            "account purge {}: {} household(s) erased, {} left, {} record(s) erased, {} share(s) passed on",
-            closureId, result.householdsErased, result.householdsLeft, result.recordsErased, result.sharesPassedOn,
+            "account purge {}: {} household(s) erased, {} left, {} held dormant, {} record(s) erased, {} share(s) passed on",
+            closureId, result.householdsErased, result.householdsLeft, result.householdsHeld, result.recordsErased,
+            result.sharesPassedOn,
         )
         return result
     }

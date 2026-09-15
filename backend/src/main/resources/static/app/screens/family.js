@@ -16,7 +16,7 @@ import { roleKey } from "../glance.js";
 import { state } from "../state.js";
 import { reload } from "../app.js";
 import {
-  loadFamilyLifecycle, memorialNotice, memberLifecycle, leaveCard, successorCard, welcomeCard,
+  loadFamilyLifecycle, memorialNotice, memberLifecycle, leaveCard, successorCard, welcomeCard, dormancyCard,
 } from "../lifecycle.js";
 import { t, localDate } from "../i18n.js";
 import { confirmItsYou } from "../step-up.js";
@@ -31,7 +31,9 @@ function isMinorOn(dateOfBirth, today = new Date()) {
 
 export async function familyScreen(host) {
   const members = state.members;
-  const canManage = ["owner", "admin"].includes(state.household.myRole) && !state.household.readOnly;
+  // A dormant household has nobody who may manage it until someone takes it on (docs/05 §12.7).
+  const canManage = ["owner", "admin"].includes(state.household.myRole) && !state.household.readOnly
+    && !state.household.dormant;
   // Leaving, a successor, a memorial, coming of age (docs/05 §12), and the
   // parental consents a child's records rest on. Each part fails on its own
   // and the roster draws regardless.
@@ -44,6 +46,7 @@ export async function familyScreen(host) {
 
   mount(host, el("div.stack", {},
     state.household.readOnly && me && memorialNotice(me),
+    dormancyCard(lifecycle),
     el("div.row-between.wrap", {},
       el("div", {},
         el("h1", {}, state.household.name),

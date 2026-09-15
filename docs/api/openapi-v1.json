@@ -2609,6 +2609,38 @@
         ],
         "type": "object"
       },
+      "DormancyView": {
+        "properties": {
+          "acceptFrom": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "canAccept": {
+            "type": "boolean"
+          },
+          "dormant": {
+            "type": "boolean"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "canAccept",
+          "dormant"
+        ],
+        "type": "object"
+      },
       "DownloadTicket": {
         "properties": {
           "expiresInSeconds": {
@@ -4491,6 +4523,9 @@
           "defaultVisibility": {
             "type": "string"
           },
+          "dormant": {
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -4520,6 +4555,7 @@
         "required": [
           "baseCurrency",
           "defaultVisibility",
+          "dormant",
           "id",
           "memberCount",
           "myRole",
@@ -13300,6 +13336,68 @@
         },
         "tags": [
           "document-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/dormancy": {
+      "get": {
+        "operationId": "householdDormancy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DormancyView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "dormancy-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/dormancy/accept": {
+      "post": {
+        "operationId": "takeOnDormantHousehold",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DormancyView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "dormancy-controller"
         ]
       }
     },

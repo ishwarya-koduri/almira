@@ -54,6 +54,13 @@ data class DepartureResult(
  * Sealed values on moved records are dropped from the old household; the
  * person's download has them, and the preview says how many.
  *
+ * **What waits.** An owner leaving a household that would be left with no owner
+ * able to act, other people and records in it (`app.going_leaves_household_ownerless`,
+ * V120), is not carried out at all: the household is made dormant, the
+ * departure stays pending, and nothing is prepared — no household of their own
+ * is made and no bytes are copied, because that check comes before step one.
+ * Once someone takes the household on, the next sweep carries it out.
+ *
  * **Visibility.** Moved records arrive private. They were shared with people who
  * are not in the new household, and "shared with the household" should never
  * quietly come to mean different people.
@@ -68,6 +75,7 @@ class DepartureCompletion(
     private val storage: DocumentStorage,
     private val notifiers: List<Notifier>,
     private val userContext: RequestUserContext,
+    private val notices: DormancyNotices,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val owner = NamedParameterJdbcTemplate(ownerDataSource)
@@ -77,6 +85,7 @@ class DepartureCompletion(
     private val records = LifecycleRecords(owner)
     private val writes = LifecycleWrites(owner)
     private val pendingDeletions = PendingStorageDeletions(owner, storage)
+    private val dormancy = DormancyRecords(owner)
 
     private data class Due(
         val id: UUID, val householdId: UUID, val memberId: UUID, val userId: UUID,
@@ -96,6 +105,20 @@ class DepartureCompletion(
         val departure = load(departureId, asOf) ?: return null
         val taking = departure.privateRecords == "take"
 
+        // The guard, before step one makes a household or copies a byte: the last
+        // owner of a household with people and records in it does not leave it
+        // ownerless. It waits, dormant, for someone to take it on.
+        if (dormancy.leavesOwnerless(departure.householdId, departure.userId)) {
+            val opened = ownerTransactions.execute {
+                dormancy.open(departure.householdId, departure.userId, "owner_leaving", null, departure.id)
+            }
+            opened?.let { id ->
+                runCatching { notices.opened(id, owner) }
+                    .onFailure { log.warn("could not tell a dormant household: {}", it.javaClass.simpleName) }
+            }
+            return null
+        }
+
         // Step one, as the person: their household, and what has to be re-encrypted.
         val prepared = if (taking) prepare(departure) else null
         val newKeys = prepared?.documents?.values?.map { it.second } ?: emptyList()
@@ -111,6 +134,8 @@ class DepartureCompletion(
                     mapOf("id" to departureId),
                 ) { rs, _ -> rs.getObject("id", UUID::class.java) }.isNotEmpty()
                 if (!locked) return@execute null
+                // Asked again under the lock: another owner may have gone in the meantime.
+                if (dormancy.leavesOwnerless(departure.householdId, departure.userId)) return@execute null
                 carryOut(departure, prepared).also {
                     oldKeys = it.second
                     pendingDeletions.queue(oldKeys)

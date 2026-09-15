@@ -460,7 +460,7 @@ def check_privacy_notice() -> None:
 # A read of a field called `score`: property access, index by name, or a
 # destructuring that names it.
 SCORE_READ_JS = re.compile(
-    r"\.score\b(?!\w)|\[\s*[\"'`]score[\"'`]\s*\]|(?:const|let|var|\()\s*\{[^}]*\bscore\b[^}]*\}")
+    r"\.score\b(?![\w\"'`])|\[\s*[\"'`]score[\"'`]\s*\]|(?:const|let|var|\()\s*\{[^}]*\bscore\b[^}]*\}")
 SCORE_READ_KT = re.compile(r"\.score\b|[\"]score[\"]|\bscore\s*=|\$\{?score\b")
 
 WEB_APP = "backend/src/main/resources/static/app"
@@ -506,11 +506,18 @@ def check_scores_are_earned() -> None:
 
     readiness = code_only(read(f"{WEB_APP}/readiness.js"))
     tested = 'const hasScore = typeof readiness.score === "number";'
-    shown = "${readiness.score}%"
+    shown = "${readiness.score}"
+    with_score = "hasScore\n    ?"
+    without_score = ': el("p", { "data-no-score": "true" }'
+    reads = [m.start() for m in re.finditer(r"readiness\.score\b", readiness)]
+    # The card draws the number twice (the ring's label and its centre); every
+    # read but the test itself sits in the branch that runs when there is one.
     want("web: the readiness card shows a number only when score is not null",
-         tested in readiness and shown in readiness
-         and readiness.count("readiness.score") == 2
-         and readiness.index(tested) < readiness.index("hasScore\n    ?") < readiness.index(shown))
+         tested in readiness and shown in readiness and with_score in readiness and without_score in readiness
+         and len(reads) >= 2
+         and readiness.index(tested) < readiness.index(with_score) < readiness.index(shown)
+         and all(readiness.index(with_score) < at < readiness.index(without_score)
+                 for at in reads if at != readiness.index(tested) + len("const hasScore = typeof ")))
 
     for path in sorted((ROOT / WEB_APP).rglob("*.js")):
         relative = str(path.relative_to(ROOT))

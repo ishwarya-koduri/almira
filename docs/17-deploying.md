@@ -408,7 +408,20 @@ remember the flags:
 count of every table *as it is in the dump*, the migration version, and the
 server's checksum setting. It takes the database first and the documents second,
 because documents are only ever added or soft-deleted, so every document row in
-the dump has its file in a tarball taken just after.
+the dump has its file in a tarball taken just after. It checks everything it
+needs — the database answering, the documents volume existing, the bodies table
+being where it expects — **before** it writes the dump, so a refused backup
+leaves nothing behind.
+
+**Queued message bodies are deliberately not in the backup.** The dump has the
+`outbound_message_bodies` table but none of its rows (`pg_dump
+--exclude-table-data`), so a backup taken while a one-time code or reminder was
+waiting to go holds no rendered message in plaintext; the manifest lists it under
+`excluded_table_data`. Because that exclusion matches by name and is silent when
+it matches nothing, `backup.sh` refuses if a bodies table exists under any other
+name. On the restored server a message that was still queued is recorded failed,
+once, as `body_not_restored` and is not sent ([Doc 13](13-providers-and-going-live.md),
+"After a restore").
 
 **The key-encryption key is deliberately not in the backup.** Account numbers
 and documents are unreadable without it, so a backup that carried it would be a

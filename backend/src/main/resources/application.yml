@@ -249,15 +249,10 @@ almira:
   # alpha runs email alone, with an allowlist — two channels on at once let one
   # person make two accounts. Email needs the allowlist: an empty one with email
   # enabled refuses to start. Addresses off the list get the same answer as
-  # addresses on it and no email (docs/13 §5, docs/api/README.md).
+  # addresses on it; their queued email is dropped by the worker, unsent (docs/13 §5).
   auth:
     sign-in-channels: ${ALMIRA_SIGN_IN_CHANNELS:phone}
     email-allowlist: ${ALMIRA_ALPHA_EMAIL_ALLOWLIST:}
-    # Where an unlisted address's sign-in email goes instead: an address that
-    # accepts and discards (a provider's mailbox simulator). Required when the
-    # email provider is live; unset elsewhere, a placeholder the sandbox never
-    # delivers to (docs/13 §5).
-    email-decoy-sink: ${ALMIRA_ALPHA_EMAIL_DECOY_SINK:}
 
   # Passkeys. Off until both are set, because a passkey is bound to its domain
   # for good: set the domain people will use (ALMIRA_WEBAUTHN_RP_ID=almira.example.in)

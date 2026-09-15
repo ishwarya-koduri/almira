@@ -125,7 +125,7 @@ data class OtpDeliveryResponse(
     val requestId: String,
     /** `sending`, `sent`, `delayed` or `failed`. */
     val status: String,
-    /** When failed: `otp_provider_unavailable` or `otp_service_unavailable` (`otp_delivery_failed` is never sent: docs/13 §5, Signal 1). */
+    /** Sign-in no longer sets it: the status says `sending`, then `sent`, for every address (docs/13 §5). Kept for the frozen contract. */
     val failure: String?,
     /** When delayed or failed: a sentence for a person, in English. */
     val message: String?,
@@ -214,12 +214,12 @@ class AuthController(
     ): OtpChallengeResponse = auth.requestEmailOtp(body.email, clientIp(request)).toResponse()
 
     /**
-     * How the email for a sign-in request went: `sending`, `sent`, `delayed` or
-     * `failed` with the reason. The code step polls it, so a failed send is
-     * said on screen instead of looking like a code that never came. An address
-     * off the allowlist has a status too, settling as a listed address's would
-     * with the provider as it is now. A provider's refusal of one address is
-     * not reported, because only a listed address could ever have one (docs/13 §5).
+     * The delivery status of a sign-in email: `sending`, then `sent` at the same
+     * moment after the request for every address, whatever the outbox worker
+     * does with the email. It cannot say more: only a listed address is ever
+     * sent anything, so only a listed address could ever show a failure
+     * (docs/13 §5). `delayed` and `failed` stay in the contract and are no
+     * longer produced here.
      */
     @GetMapping("/auth/otp/email/delivery/{requestId}")
     fun emailDelivery(@PathVariable requestId: String): OtpDeliveryResponse =

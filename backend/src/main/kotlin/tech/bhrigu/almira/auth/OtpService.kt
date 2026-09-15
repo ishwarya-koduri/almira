@@ -7,7 +7,6 @@ import org.springframework.data.redis.core.script.DefaultRedisScript
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import tech.bhrigu.almira.common.ApiException
-import tech.bhrigu.almira.common.EmailAddress
 import tech.bhrigu.almira.config.AlmiraProperties
 import tech.bhrigu.almira.provider.FailureKind
 import tech.bhrigu.almira.provider.ProviderCallFailed
@@ -17,8 +16,6 @@ import java.security.SecureRandom
 import java.time.Duration
 import java.util.HexFormat
 import java.util.UUID
-import java.util.concurrent.Executor
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -49,34 +46,31 @@ data class OtpChallenge(
  * indistinguishable, for the tester, from a code that never arrived (owner's
  * decision, 2026-09: a failed email send must not be silent).
  *
- * So email sign-in answers at once, sends afterwards, and reports how the send
- * went through a delivery status the code step polls
- * ([OtpService.emailDelivery]) — and an address off the list gets a status too,
- * from a real call to the provider at the same moment, addressed to the decoy
- * sink. What the status cannot say without telling strangers who is listed —
- * that the provider refused one address — it does not say (docs/13 §5).
+ * So email sign-in answers at once and queues the email, for every address
+ * alike, and the outbox worker decides whether it goes ([SignInEmailOutbox]):
+ * a listed address is sent its code, an unlisted one is dropped with no
+ * provider call. The delivery status the code step polls
+ * ([OtpService.emailDelivery]) cannot follow the worker without telling
+ * strangers who is listed, since only a listed address can ever fail; so it
+ * follows the clock, the same for everyone (docs/13 §5).
  */
 enum class OtpDelivery {
     /** Send now, and answer with the outcome — see [OtpService.request]. */
     REPORTED,
 
     /**
-     * Answer at once; send afterwards; report the outcome through the delivery
-     * status. The answer cannot depend on the send, so it is the same whether
-     * or not it would fail, and it takes the same time as [DECOY]. The send is
-     * one attempt under the one-time-code timeout, classified and alarmed by
-     * ProviderCalls. See [OtpService.settleInBackground].
+     * Answer at once and queue the email ([SignInCodeOutbox]); the worker sends
+     * it if the address is on the allowlist when it gets there. Nothing on the
+     * request path waits for, or talks to, a provider. See [OtpService.queue].
      */
     DEFERRED,
 
     /**
-     * Everything [DEFERRED] does — every counter, the cooldown, a stored
-     * challenge with its own request id and lifetime, one provider call under
-     * the same timeout, a delivery status settled from that call at the same
-     * moment — except that the email goes to the decoy sink
-     * (`almira.auth.email-decoy-sink`), never to the address, and the stored
-     * value is random, so no code of any length matches it. For an address that
-     * is not allowed to sign in.
+     * Everything [DEFERRED] does, statement for statement — every counter, the
+     * cooldown, a stored challenge with its own request id and lifetime, the
+     * same queued message and the same delivery status — except that the
+     * stored value is random, so no code of any length matches it. For an
+     * address that is not allowed to sign in; the worker drops its message.
      */
     DECOY,
 }
@@ -86,7 +80,7 @@ data class OtpDeliveryStatus(
     val requestId: String,
     /** `sending`, `sent`, `delayed` or `failed`. */
     val status: String,
-    /** When failed: `otp_provider_unavailable` or `otp_service_unavailable` (`otp_delivery_failed` is never sent: docs/13 §5, Signal 1). */
+    /** Never set for sign-in since the outbox (docs/13 §5); kept for the frozen contract and clients that read it. */
     val failure: String?,
     /** For a person, in English; clients show their own words for [failure]. */
     val message: String?,
@@ -144,14 +138,15 @@ class OtpService(
      */
     private val calls: ProviderCalls = ProviderCalls(props),
     private val emailSender: EmailOtpSender = EmailOtpSender.NONE,
-    /** Where [OtpDelivery.DEFERRED] sends and decoys run. A seam so a test can run them inline. */
-    private val background: Executor = Executors.newVirtualThreadPerTaskExecutor(),
+    /** Where [OtpDelivery.DEFERRED] and [OtpDelivery.DECOY] queue their email. */
+    private val outbox: SignInCodeOutbox = SignInCodeOutbox.NONE,
     /**
-     * How long after the request every deferred outcome is applied, whatever
-     * the send took: the one-time-code timeout and a margin. A seam so tests
-     * that are not about timing need not sit through it.
+     * How long after the request the delivery status says `sent`: the
+     * one-time-code timeout and a margin, as it was when the status followed a
+     * real send. A seam so tests that are not about timing need not sit through it.
      */
     private val settleDelay: Duration = props.otp.sendTimeout.plus(SETTLE_MARGIN),
+    private val clock: java.time.Clock = java.time.Clock.systemUTC(),
 ) {
     @Autowired
     constructor(
@@ -160,18 +155,16 @@ class OtpService(
         props: AlmiraProperties,
         calls: ProviderCalls,
         emailSender: EmailOtpSender,
-    ) : this(
-        redis, sender, props, calls, emailSender, Executors.newVirtualThreadPerTaskExecutor(),
-        props.otp.sendTimeout.plus(SETTLE_MARGIN),
-    )
+        outbox: SignInCodeOutbox,
+    ) : this(redis, sender, props, calls, emailSender, outbox, props.otp.sendTimeout.plus(SETTLE_MARGIN))
 
     private val log = LoggerFactory.getLogger(javaClass)
     private val cfg = props.otp
     private val development = props.isDevelopment
     private val random = SecureRandom()
 
-    /** SignInChannels refuses a live provider without one; see [AlmiraProperties.Auth.emailDecoySink]. */
-    private val decoySink: String = props.auth.emailDecoySink.trim().ifEmpty { DEFAULT_EMAIL_DECOY_SINK }
+    /** A queued email's code, derived again by the worker that sends it. */
+    private val queuedCodes = QueuedEmailCodes(props)
 
     /**
      * The stored value used to be an unsalted SHA-256 of the code. A six-digit
@@ -246,9 +239,9 @@ class OtpService(
     ): OtpChallenge {
         // First, before a counter moves or a code exists. A sender that cannot
         // deliver would otherwise leave a live code with nobody to receive it —
-        // and, for the log sender, a code in a production log. Checked for a
-        // decoy too: whether the server can send email is not a secret, and the
-        // answer must not differ by address.
+        // and, for the log sender, a code in a production log. Checked for an
+        // unlisted address too: whether the server can send email is not a
+        // secret, and the answer must not differ by address.
         if (!available(channel)) throw unavailable(channel)
         enforceCooldown(channel, address, purpose)
         // The network's cap before the address's count: a request its network
@@ -258,12 +251,17 @@ class OtpService(
         ip?.let { enforceHourlyLimit("otp:rate:ip:$it", cfg.maxPerIpPerHour, "network") }
         enforceHourlyLimit(rateKey(channel, address), cfg.maxPerHour, channel.subject)
 
-        val code = (1..cfg.length).map { random.nextInt(10) }.joinToString("")
         val requestId = UUID.randomUUID().toString()
-        // Computed for a decoy as well and then thrown away, so the two do the
-        // same work in the same order.
+        val queued = delivery != OtpDelivery.REPORTED
+        // A queued email's code is derived, so the queue need not hold it
+        // (QueuedEmailCodes); a reported send's is random and goes nowhere else.
+        val code = if (queued) queuedCodes.code(purpose, address, requestId, cfg.length)
+        else (1..cfg.length).map { random.nextInt(10) }.joinToString("")
+        // Both computed for every address and one thrown away, so a listed and an
+        // unlisted address do the same work in the same order.
         val hash = mac(channel, purpose, address, code)
-        val stored = if (delivery == OtpDelivery.DECOY) unmatchable() else hash
+        val noMatch = unmatchable()
+        val stored = if (delivery == OtpDelivery.DECOY) noMatch else hash
 
         val key = challengeKey(channel, address, purpose)
         // The challenge this one replaces, if any, is set aside rather than
@@ -298,14 +296,7 @@ class OtpService(
                 }
                 throw sendFailed(channel, failure.kind, requestId)
             }
-            OtpDelivery.DEFERRED, OtpDelivery.DECOY -> {
-                val status = deliveryKey(requestId)
-                redis.opsForHash<String, String>().putAll(status, mapOf("state" to SENDING))
-                redis.expire(status, cfg.ttl)
-                settleInBackground(
-                    channel, address, purpose, requestId, previous, code, real = delivery == OtpDelivery.DEFERRED,
-                )
-            }
+            OtpDelivery.DEFERRED, OtpDelivery.DECOY -> queue(channel, address, purpose, requestId, previous)
         }
 
         return OtpChallenge(
@@ -320,128 +311,57 @@ class OtpService(
     }
 
     /**
-     * The send, after the answer has gone — for a decoy, the same send to the
-     * decoy sink.
+     * The email, for a listed address and an unlisted one alike: the same
+     * statements in the same order, and nothing that waits for or talks to a
+     * provider. The outbox worker decides later whether it is sent
+     * ([SignInEmailOutbox]); nothing it decides comes back here.
      *
-     * Both run the same code on the same executor and make the same provider
-     * call (one attempt, the one-time-code timeout, the ProviderCalls WARN and
-     * account ERROR); only the recipient differs. So a decoy fails, times out
-     * or succeeds with the provider as it is at that moment, not as it was the
-     * last time someone listed signed in — which is what let a prober tell
-     * listed from unlisted for as long as a provider change went unnoticed.
-     * Everything after the call — what happens to the challenge, the cooldown
-     * and the count, and the status the code step reads — is shared.
+     *  - **The delivery status** records when it will say `sent`: [settleDelay]
+     *    after the request, whatever happens to the email. It cannot follow the
+     *    send. Only a listed address is ever sent anything, so only a listed
+     *    address could ever show `failed` or `delayed`, and an answer that did
+     *    would tell anyone with a list of guesses which of them are listed
+     *    (docs/13 §5). A tester whose email did not come has the code step's
+     *    "Didn't arrive in two minutes? Contact us"; the operator has the ERROR
+     *    and WARN lines the worker and ProviderCalls write.
+     *  - **The challenge this one replaced** is gone for good at once, as it was
+     *    once a send was recorded sent: no outcome will ever come back to put it
+     *    back, and a stranger could probe one that did.
+     *  - **The cooldown and both hourly counts** stand, whatever the worker
+     *    finds, for the same reason.
      *
-     * What each outcome does, the same as a reported send (docs/13):
-     *
-     *  - **Sent**: status `sent`.
-     *  - **Timeout**: it may still arrive, so the challenge stands. The cooldown
-     *    is lifted. Status `delayed`.
-     *  - **Unavailable, insufficient balance**: nothing was delivered. The
-     *    challenge is removed and the one it replaced put back
-     *    ([notSentFallBack]), the cooldown lifted and the per-address count
-     *    given back; the per-network count is kept. Status `failed`.
-     *  - **Rejected** — the provider refused this one address: applied as
-     *    **sent**, and an ERROR for the operator. A rejection is a fact about an
-     *    address, and a decoy's address is the sink, so no decoy can ever show
-     *    one. Reporting it — or lifting the cooldown, giving back the count or
-     *    removing the challenge, each of which a stranger can probe — would
-     *    tell anyone with a list of guesses which of them is a listed address
-     *    that cannot receive mail. That the tester is not told on screen is the
-     *    cost, and it cannot be avoided: they and a prober typing their address
-     *    send the same request (docs/13 §5, Signal 1).
-     *
-     * Every outcome is applied at the same moment, [settleDelay] after the code
-     * was asked for, however long the call took, so how long a provider takes
-     * for one recipient or another says nothing.
-     *
-     * No database here: this runs on its own thread, with no request identity.
+     * If the message cannot be queued at all (the database refused it), the
+     * request fails as a reported send that certainly did not go out does —
+     * challenge fallen back, cooldown lifted, the address's count given back —
+     * which depends on the database, never on the address.
      */
-    private fun settleInBackground(
-        channel: OtpChannel,
-        address: String,
-        purpose: String,
-        requestId: String,
-        previous: String?,
-        code: String,
-        real: Boolean,
-    ) {
-        val asked = System.nanoTime()
-        background.execute {
-            val outcome: FailureKind? = try {
-                timedSend(channel, if (real) address else decoySink, code)
-                null
-            } catch (failure: ProviderCallFailed) {
-                log.warn(
-                    "one-time code by {} not confirmed sent: {} after {} attempt(s)",
-                    channel.key, failure.kind.code, failure.attempts,
-                )
-                failure.kind
-            } catch (failure: Exception) {
-                log.warn("one-time code by {} failed: {}", channel.key, failure.javaClass.simpleName)
-                FailureKind.UNAVAILABLE
-            }
-            if (outcome == FailureKind.REJECTED) {
-                if (real) {
-                    log.error(
-                        "SIGN-IN EMAIL REFUSED: the email provider refused the address {}, which is on the " +
-                            "allowlist. The tester is shown the code as sent, because saying otherwise would " +
-                            "tell strangers who is listed (docs/13 §5). Check the address with the tester.",
-                        EmailAddress.mask(address),
-                    )
-                } else {
-                    log.error(
-                        "SIGN-IN EMAIL REFUSED: the email provider refused the decoy sink " +
-                            "(almira.auth.email-decoy-sink). Set it to an address that accepts and discards mail.",
-                    )
-                }
-            }
-            runCatching {
-                waitUntilSettleTime(asked)
-                settle(channel, address, purpose, requestId, previous, outcome.takeIf { it != FailureKind.REJECTED })
-            }.onFailure { log.warn("could not settle a one-time code by {}: {}", channel.key, it.javaClass.simpleName) }
+    private fun queue(channel: OtpChannel, address: String, purpose: String, requestId: String, previous: String?) {
+        val status = deliveryKey(requestId)
+        redis.opsForHash<String, String>().putAll(
+            status,
+            mapOf("state" to SENDING, "settleAt" to clock.instant().plus(settleDelay).toEpochMilli().toString()),
+        )
+        redis.expire(status, cfg.ttl)
+        try {
+            outbox.enqueue(address, purpose, requestId, cfg.length)
+        } catch (failure: Exception) {
+            notSentFallBack(channel, address, purpose, requestId, previous)
+            redis.delete(cooldownKey(channel, address, purpose))
+            redis.execute(GIVE_BACK, listOf(rateKey(channel, address)))
+            redis.delete(status)
+            log.warn("could not queue a one-time code by {}: {}", channel.key, failure.javaClass.simpleName)
+            throw ApiException.serviceUnavailable(
+                "otp_service_unavailable",
+                "Sign-in codes can't be sent right now. This is a problem on our side, not with " +
+                    "your address. Please try again in a few minutes.",
+            )
         }
+        redis.delete(setAsideKey(requestId))
     }
 
     /** One attempt through ProviderCalls, under the one-time-code timeout. */
     private fun timedSend(channel: OtpChannel, address: String, code: String) {
         calls.callOnce(channel.provider, "otp", cfg.sendTimeout) { send(channel, address, code) }
-    }
-
-    /** Sleeps until [settleDelay] after [asked]; at once if that has passed (an overloaded server, for either kind). */
-    private fun waitUntilSettleTime(asked: Long) {
-        val wait = settleDelay.toNanos() - (System.nanoTime() - asked)
-        if (wait > 0) Thread.sleep(wait / 1_000_000, (wait % 1_000_000).toInt())
-    }
-
-    private fun settle(
-        channel: OtpChannel,
-        address: String,
-        purpose: String,
-        requestId: String,
-        previous: String?,
-        outcome: FailureKind?,
-    ) {
-        val fields = when (outcome) {
-            null -> {
-                redis.delete(setAsideKey(requestId))
-                mapOf("state" to SENT)
-            }
-            FailureKind.TIMEOUT -> {
-                redis.delete(setAsideKey(requestId))
-                redis.delete(cooldownKey(channel, address, purpose))
-                mapOf("state" to DELAYED)
-            }
-            else -> {
-                notSentFallBack(channel, address, purpose, requestId, previous)
-                redis.delete(cooldownKey(channel, address, purpose))
-                redis.execute(GIVE_BACK, listOf(rateKey(channel, address)))
-                mapOf("state" to FAILED, "failure" to outcome.code)
-            }
-        }
-        val status = deliveryKey(requestId)
-        redis.opsForHash<String, String>().putAll(status, fields)
-        redis.expire(status, cfg.ttl)
     }
 
     /**
@@ -483,9 +403,15 @@ class OtpService(
     }
 
     /**
-     * How a deferred email send went, by request id — the only key, because the
-     * request id is unguessable and known only to whoever asked. An id that was
-     * never issued, or whose challenge lifetime has passed, is 404 whoever asks.
+     * The delivery status of an email sign-in request, by request id — the only
+     * key, because the request id is unguessable and known only to whoever
+     * asked. An id that was never issued, or whose challenge lifetime has
+     * passed, is 404 whoever asks.
+     *
+     * `sending` until the moment [queue] recorded, then `sent`, for every
+     * address: the same answer at the same moment whether the worker sent the
+     * email, dropped it or has not reached it yet. `delayed` and `failed` are
+     * still read, for a status written before the outbox, and no longer written.
      */
     fun emailDelivery(requestId: String): OtpDeliveryStatus {
         val known = runCatching { UUID.fromString(requestId).toString() == requestId }.getOrDefault(false)
@@ -506,6 +432,8 @@ class OtpService(
                 OtpDeliveryStatus(requestId, DELAYED, null, it.message, 0L)
             }
             state == SENT -> OtpDeliveryStatus(requestId, SENT, null, null, null)
+            (stored["settleAt"]?.toLongOrNull() ?: Long.MAX_VALUE) <= clock.millis() ->
+                OtpDeliveryStatus(requestId, SENT, null, null, null)
             else -> OtpDeliveryStatus(requestId, SENDING, null, null, null)
         }
     }
@@ -524,7 +452,7 @@ class OtpService(
     fun verify(phone: String, code: String, requestId: String?, purpose: String = LOGIN, ip: String? = null) =
         verifyCode(OtpChannel.PHONE, phone, code, requestId, purpose, ip)
 
-    /** The email equivalent of [verify]. A decoy challenge answers exactly as a real one with a wrong code. */
+    /** The email equivalent of [verify]. An unlisted address's challenge answers exactly as a real one with a wrong code. */
     fun verifyByEmail(email: String, code: String, requestId: String?, purpose: String, ip: String? = null) =
         verifyCode(OtpChannel.EMAIL, email, code, requestId, purpose, ip)
 
@@ -758,16 +686,9 @@ class OtpService(
         const val FAILED = "failed"
 
         /**
-         * The decoy sink when none is configured. Only reachable where the
-         * email channel is the sandbox, which delivers nothing: SignInChannels
-         * refuses a live provider without a sink. `.invalid` is reserved
-         * (RFC 2606), so no real mailbox can ever be it.
-         */
-        const val DEFAULT_EMAIL_DECOY_SINK = "decoy-sink@almira.invalid"
-
-        /**
-         * Past the one-time-code timeout, before a deferred outcome is applied:
-         * room for ProviderCalls to give up on a call and hand the failure back.
+         * Past the one-time-code timeout, before the delivery status says sent.
+         * It once gave ProviderCalls room to hand a failure back; it now keeps
+         * the code step's "sending" as long as it was.
          */
         val SETTLE_MARGIN: Duration = Duration.ofSeconds(1)
 

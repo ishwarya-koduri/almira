@@ -28,8 +28,9 @@ import java.util.concurrent.CopyOnWriteArrayList
  *
  * The central claim is that nobody outside can tell an allowlisted address from
  * any other: the same status, the same fields, the same headers, the same
- * refusals in the same order, and an answer that does not wait for an email to
- * be sent — while the listed address really is sent a code and the other is not.
+ * refusals in the same order, and an answer that neither waits for nor calls the
+ * email provider — while the outbox worker really sends the listed address a
+ * code and drops the other's message unsent.
  */
 @DisplayName("Sign-in by email for the closed alpha")
 @Import(EmailSignInApiTest.Recording::class)
@@ -41,6 +42,8 @@ class EmailSignInApiTest : ApiTestBase() {
      * one address at a time, as a provider refuses a suppressed mailbox.
      */
     class ControllableEmailSender : EmailOtpSender {
+        /** The worker, which the suite does not run on its own (almira.outbox.background). */
+        @Volatile var outbox: SignInEmailOutbox? = null
         val sent = CopyOnWriteArrayList<Pair<String, String>>()
         val faults = SandboxFaults()
         val refuses: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
@@ -53,8 +56,9 @@ class EmailSignInApiTest : ApiTestBase() {
             faults.apply("email")
         }
 
-        /** Waits for the [nth] code (1-based) to [email]: the send happens after the answer. */
+        /** Waits for the [nth] code (1-based) to [email]: the send happens after the answer, when the worker runs. */
         fun codeFor(email: String, nth: Int = 1): String {
+            outbox?.drain()
             val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
             while (System.nanoTime() < deadline) {
                 val codes = sent.filter { it.first == email }
@@ -73,12 +77,20 @@ class EmailSignInApiTest : ApiTestBase() {
 
     @Autowired private lateinit var sender: ControllableEmailSender
     @Autowired private lateinit var redis: org.springframework.data.redis.core.StringRedisTemplate
+    @Autowired private lateinit var outbox: SignInEmailOutbox
 
     @AfterEach
     fun reset() {
-        sender.delay = Duration.ZERO
         sender.faults.clear()
         sender.refuses.clear()
+        sender.delay = Duration.ZERO
+        // Nothing of this test is left queued for another class's worker to decide.
+        outbox.drain()
+    }
+
+    @org.junit.jupiter.api.BeforeEach
+    fun connect() {
+        sender.outbox = outbox
     }
 
     private fun requestCode(email: String) = post("/api/v1/auth/otp/email/request", body = mapOf("email" to email))
@@ -176,14 +188,21 @@ class EmailSignInApiTest : ApiTestBase() {
         assertThat(sender.sent.map { it.first }).doesNotContain(outsider)
     }
 
+    /**
+     * The owner's decision (2026-09-15): nothing on the request path talks to
+     * the provider, for any address. A provider taking 900 ms, or failing,
+     * cannot show in the answer, because the answer never reaches it: the email
+     * is queued and sent later by the worker, which here runs when the test says.
+     */
     @Test
-    fun `the answer does not wait for the email, so it takes no longer for an address on the list`() {
-        // Under the one-second send timeout set below, so the send completes.
+    fun `the answer never waits for or calls the provider, so it takes no longer for an address on the list`() {
         sender.delay = Duration.ofMillis(900)
         val insider = listed[2]
         val outsider = "slow-outsider-$run@example.test"
         // Warm both paths so the first request's class loading is not measured.
         requestCode("warm-$run@example.test")
+        outbox.drain()
+        val before = sender.sent.size
 
         fun timed(email: String): Pair<ResponseEntity<String>, Long> {
             val start = System.nanoTime()
@@ -193,12 +212,20 @@ class EmailSignInApiTest : ApiTestBase() {
         val (insiderResponse, insiderMillis) = timed(insider)
         val (outsiderResponse, outsiderMillis) = timed(outsider)
         assertThat(shape(insiderResponse)).isEqualTo(shape(outsiderResponse))
+        assertThat(sender.sent.size).describedAs("provider calls made on the request path").isEqualTo(before)
         assertThat(insiderMillis)
             .describedAs("an allowlisted request answered in ${insiderMillis}ms against a 900ms send " +
-                "(the outsider took ${outsiderMillis}ms); waiting for the send would reveal the list")
+                "(the outsider took ${outsiderMillis}ms)")
             .isLessThan(750)
-        sender.codeFor(insider)
+        assertThat(queued()).describedAs("both queued, the same way").isEqualTo(2)
+        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(sent = 1, dropped = 1))
+        assertThat(sender.sent.map { it.first }.drop(before)).containsExactly(insider)
     }
+
+    private fun queued() = db.queryForObject(
+        "select count(*) from sign_in_code_emails e join sign_in_code_email_bodies b on b.message_id = e.id where e.status = 'queued'",
+        Int::class.java,
+    )!!
 
     private fun delivery(requestId: String) = get("/api/v1/auth/otp/email/delivery/$requestId")
 
@@ -221,54 +248,24 @@ class EmailSignInApiTest : ApiTestBase() {
         throw AssertionError("the delivery status for $requestId never settled")
     }
 
-    @Test
-    fun `a listed tester is told when their code could not be sent, for each way the provider can fail`() {
-        val expected = listOf(
-            SandboxFault.UNAVAILABLE to "otp_provider_unavailable",
-            SandboxFault.INSUFFICIENT_BALANCE to "otp_service_unavailable",
-            SandboxFault.TIMEOUT to null,
-        )
-        for ((i, pair) in expected.withIndex()) {
-            val (fault, failure) = pair
-            sender.faults.always("email", fault)
-            val address = "told.$i.$run@example.test".also { extraListed(it) }
-            val request = requestCode(address)
-            assertThat(request.statusCode.value()).describedAs(fault.name).isEqualTo(200)
-            val (status, _) = settled(request)
-            val body = status.json()
-            if (failure == null) {
-                assertThat(body.path("status").asText()).describedAs(fault.name).isEqualTo("delayed")
-            } else {
-                assertThat(body.path("status").asText()).describedAs(fault.name).isEqualTo("failed")
-                assertThat(body.path("failure").asText()).describedAs(fault.name).isEqualTo(failure)
-                assertThat(body.path("message").asText()).describedAs(fault.name).startsWith("We couldn't send the code.")
-            }
-            assertThat(body.path("resendAfterSeconds").asLong(-1)).describedAs(fault.name).isEqualTo(0L)
-            assertThat(status.body).describedAs(fault.name).doesNotContain(address, sender.codeFor(address))
-            // Resend really is open: asking again is not refused as too soon.
-            assertThat(requestCode(address).statusCode.value()).describedAs(fault.name).isEqualTo(200)
-            sender.faults.clear()
-        }
-    }
-
-    /** Every deferred outcome is applied this long after the request: the send timeout below plus the margin. */
+    /** The status says sent this long after the request: the send timeout below plus the margin. */
     private val settleAt = SEND_TIMEOUT.plus(OtpService.SETTLE_MARGIN).toMillis()
-
-    private fun askAndSettle(email: String): Triple<ResponseEntity<String>, ResponseEntity<String>, Long> {
-        val askedAt = System.nanoTime()
-        val request = requestCode(email)
-        val (status, millis) = settled(request, askedAt)
-        return Triple(request, status, millis)
-    }
 
     /** A wrong code against what [email]'s request left, as a stranger would probe it. */
     private fun wrongCodeProbe(email: String) = verifyCode(email, "000000")
 
+    /**
+     * Whatever the worker does with the email — sends it, has it refused, finds
+     * the provider down, out of credit or timing out, drops it, or has not got
+     * to it yet — a listed and an unlisted address see the same answer, the
+     * same status settling to `sent` at the same moment, the same resend
+     * refusal and the same wrong-code answer. The status cannot follow the
+     * worker: only a listed address could ever fail.
+     */
     @Test
-    fun `listed and unlisted addresses see the same outcome, answer and timing, with the provider healthy, failing or refusing`() {
-        // Slow enough that the send cannot hide inside the first poll.
-        sender.delay = Duration.ofMillis(600)
-        for ((i, state) in listOf("healthy", "UNAVAILABLE", "INSUFFICIENT_BALANCE", "TIMEOUT", "refusing the listed address").withIndex()) {
+    fun `listed and unlisted addresses see the same answer, status, timing, resend and wrong code, whatever the worker did`() {
+        val states = listOf("not yet decided", "healthy", "UNAVAILABLE", "INSUFFICIENT_BALANCE", "TIMEOUT", "refusing the listed address")
+        for ((i, state) in states.withIndex()) {
             sender.faults.clear()
             sender.refuses.clear()
             val insider = "same.$i.$run@example.test".also { extraListed(it) }
@@ -276,29 +273,28 @@ class EmailSignInApiTest : ApiTestBase() {
             SandboxFault.entries.firstOrNull { it.name == state }?.let { sender.faults.always("email", it) }
             if (state.startsWith("refusing")) sender.refuses += insider
 
-            // The unlisted address first: nothing a listed send leaves behind may be what it reports.
-            val (outsiderRequest, outsiderStatus, outsiderMillis) = askAndSettle(outsider)
-            val (insiderRequest, insiderStatus, insiderMillis) = askAndSettle(insider)
+            val outsiderAsked = System.nanoTime()
+            val outsiderRequest = requestCode(outsider)
+            val insiderAsked = System.nanoTime()
+            val insiderRequest = requestCode(insider)
+            if (state != "not yet decided") outbox.drain()
+            val (outsiderStatus, outsiderMillis) = settled(outsiderRequest, outsiderAsked)
+            val (insiderStatus, insiderMillis) = settled(insiderRequest, insiderAsked)
+
             assertThat(shape(insiderRequest)).describedAs(state).isEqualTo(shape(outsiderRequest))
             assertThat(shape(insiderStatus)).describedAs(state).isEqualTo(shape(outsiderStatus))
-            val failing = state == "UNAVAILABLE" || state == "INSUFFICIENT_BALANCE"
-            assertThat(insiderStatus.json().path("status").asText()).describedAs(state)
-                .isEqualTo(if (failing) "failed" else if (state == "TIMEOUT") "delayed" else "sent")
-            // Both settle at the one moment every outcome is applied, whatever the send took.
+            assertThat(insiderStatus.json().path("status").asText()).describedAs(state).isEqualTo("sent")
             assertThat(listOf(insiderMillis, outsiderMillis)).describedAs("$state: settled after ms")
                 .allSatisfy { assertThat(it).isBetween(settleAt - 20, settleAt + 900) }
 
-            // And what each leaves behind answers the same: resend refused for
-            // both while the code stands, open for both once it could not go;
-            // a wrong code judged the same way.
             val again = listOf(insider, outsider).map(::requestCode)
+            assertThat(again[0].statusCode.value()).describedAs(state).isEqualTo(429)
             assertThat(shape(again[0])).describedAs("$state: asking again").isEqualTo(shape(again[1]))
-            assertThat(again[0].statusCode.value()).describedAs(state).isEqualTo(if (state == "healthy" || state.startsWith("refusing")) 429 else 200)
-            // Once those have settled too, so the probe meets what they finally left.
-            if (again[0].statusCode.value() == 200) again.forEach { settled(it) }
             assertThat(shape(wrongCodeProbe(insider))).describedAs("$state: a wrong code").isEqualTo(shape(wrongCodeProbe(outsider)))
+            outbox.drain()
         }
         assertThat(sender.sent.map { it.first }).noneMatch { it.startsWith("same-outsider") }
+        assertThat(sender.sent.count { it.first.startsWith("same.") }).describedAs("one attempt per listed request").isEqualTo(6)
     }
 
     /**
@@ -315,8 +311,11 @@ class EmailSignInApiTest : ApiTestBase() {
         repeat(3) { round ->
             val label = "probe ${round + 1}"
             redis.delete(listOf("otp:email:cooldown:login:$insider", "otp:email:cooldown:login:$outsider"))
-            val (outsiderRequest, outsiderStatus, outsiderMillis) = askAndSettle(outsider)
-            val (insiderRequest, insiderStatus, insiderMillis) = askAndSettle(insider)
+            val (outsiderAsked, outsiderRequest) = System.nanoTime() to requestCode(outsider)
+            val (insiderAsked, insiderRequest) = System.nanoTime() to requestCode(insider)
+            outbox.drain()
+            val (outsiderStatus, outsiderMillis) = settled(outsiderRequest, outsiderAsked)
+            val (insiderStatus, insiderMillis) = settled(insiderRequest, insiderAsked)
             assertThat(shape(insiderRequest)).describedAs(label).isEqualTo(shape(outsiderRequest))
             assertThat(shape(insiderStatus)).describedAs(label).isEqualTo(shape(outsiderStatus))
             assertThat(insiderStatus.json().path("status").asText()).describedAs(label).isEqualTo("sent")
@@ -329,29 +328,8 @@ class EmailSignInApiTest : ApiTestBase() {
         }
         assertThat(sender.sent.count { it.first == insider }).describedAs("the listed address really was tried each time").isEqualTo(3)
         assertThat(sender.sent.map { it.first }).doesNotContain(outsider)
-    }
-
-    /**
-     * Signal 2 (docs/13 §5), over HTTP: the provider changes state and
-     * strangers probe several unlisted addresses before anyone listed signs in.
-     * Each probe must already report the provider as it now is, the same as the
-     * listed address that comes after them.
-     */
-    @Test
-    fun `after the provider changes, unlisted probes report the change before any listed address is asked for`() {
-        val states = listOf(SandboxFault.UNAVAILABLE, null, SandboxFault.INSUFFICIENT_BALANCE, SandboxFault.TIMEOUT, null)
-        for ((step, fault) in states.withIndex()) {
-            sender.faults.clear()
-            fault?.let { sender.faults.always("email", it) }
-            val label = "step $step: ${fault ?: "healthy"}"
-            val probes = (0..2).map { askAndSettle("probe.$step.$it.$run@example.test").second }
-            val insider = listed[8 + step % 2]
-            redis.delete("otp:email:cooldown:login:$insider")
-            val (_, insiderStatus, _) = askAndSettle(insider)
-            assertThat(probes.map(::shape)).describedAs(label).allSatisfy { assertThat(it).isEqualTo(shape(insiderStatus)) }
-            assertThat(insiderStatus.json().path("status").asText()).describedAs(label)
-                .isEqualTo(if (fault == null) "sent" else if (fault == SandboxFault.TIMEOUT) "delayed" else "failed")
-        }
+        assertThat(db.queryForList("select status, failure from sign_in_code_emails where status = 'failed' and failure = 'rejected'"))
+            .describedAs("the operator's record of the refusals").hasSizeGreaterThanOrEqualTo(3)
     }
 
     @Test
@@ -430,12 +408,12 @@ class EmailSignInApiTest : ApiTestBase() {
     companion object {
         private val run = System.nanoTime()
         private val listed = (0..9).map { "alpha.tester+$it.$run@example.test" }
-        private val extra = (0..3).map { "told.$it.$run@example.test" } + (0..4).map { "same.$it.$run@example.test" }
+        private val extra = (0..5).map { "same.$it.$run@example.test" }
 
         /** Only a check that a test uses an address the allowlist below really has. */
         fun extraListed(address: String) = check(address in extra) { "$address is not on the test allowlist" }
 
-        /** Short, so every deferred outcome here is applied two seconds after its request rather than six. */
+        /** Short, so every status here says sent two seconds after its request rather than six. */
         private val SEND_TIMEOUT: Duration = Duration.ofSeconds(1)
 
         /** RFC 9110 §7.6.1: per-connection, set by the server whoever asks. */

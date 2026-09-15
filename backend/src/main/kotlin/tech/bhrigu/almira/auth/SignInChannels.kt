@@ -38,10 +38,6 @@ enum class OtpChannel(val key: String, val provider: String) {
  *    tester out at startup because of a provider switch (docs/13, "The switch").
  *    Phone has no such rule: phone codes go through `almira.otp.provider`,
  *    not the `sms` provider (known-issues 12).
- *  - Email enabled with a `live` email provider and no decoy sink refuses, and
- *    a sink that is not an address or is on the allowlist refuses. Decoys send
- *    to the sink so that an unlisted address's answer follows the provider as
- *    it is at that moment (docs/13 §5); with no sink, a decoy could only guess.
  *
  * The startup line says how many addresses are listed and never which.
  */
@@ -86,27 +82,6 @@ class SignInChannels(props: AlmiraProperties) {
                     "code could ever be emailed. Set the email provider to sandbox or live, or take email " +
                     "out of almira.auth.sign-in-channels. Taking email out signs every email-only account " +
                     "out when this server starts (docs/13 §5)."
-            }
-
-            val sink = props.auth.emailDecoySink.trim()
-            require(OtpChannel.EMAIL !in enabled || sink.isNotEmpty() ||
-                props.providers.email.mode.trim().lowercase() != "live") {
-                "Email sign-in is enabled with a live email provider, but almira.auth.email-decoy-sink " +
-                    "(ALMIRA_ALPHA_EMAIL_DECOY_SINK) is empty. An address off the allowlist has its email " +
-                    "sent there instead, so that its answer fails or succeeds with the provider as a listed " +
-                    "address's does; without it the answer would tell anyone who is in the alpha. Set it to " +
-                    "an address that accepts and discards mail, such as the provider's mailbox simulator (docs/13 §5)."
-            }
-            if (OtpChannel.EMAIL in enabled && sink.isNotEmpty()) {
-                val canonical = EmailAddress.canonicalOrNull(sink)
-                require(canonical != null) {
-                    "almira.auth.email-decoy-sink (ALMIRA_ALPHA_EMAIL_DECOY_SINK) is not an email address."
-                }
-                require(canonical !in allowlist) {
-                    "almira.auth.email-decoy-sink (ALMIRA_ALPHA_EMAIL_DECOY_SINK) is also on the email " +
-                        "allowlist. The sink is sent an email for every unlisted address anyone asks a code " +
-                        "for, so it must be a mailbox that discards them, not a tester's."
-                }
             }
             return Checked(enabled, allowlist)
         }

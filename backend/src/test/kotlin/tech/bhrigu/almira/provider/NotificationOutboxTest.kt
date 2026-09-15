@@ -600,8 +600,16 @@ class NotificationOutboxTest : ApiTestBase() {
         val sql = java.nio.file.Files.walk(root.resolve("db")).use { paths ->
             paths.filter { java.nio.file.Files.isRegularFile(it) }.toList()
         }.associateWith { code(it) }.filterValues { it.isNotEmpty() }
-        assertThat(sql.keys.map { it.fileName.toString() }).containsExactly("V32__notification_outbox.sql")
-        assertThat(sql.values.single().map { it.trim() }).describedAs("the schema creates it, locks it, and the enqueue function writes it; nothing selects from it")
+        // V32 creates it; each later migration that names it redefines the enqueue function
+        // (V40, V103, V107, V108) or adds the address column beside the body (V108).
+        assertThat(sql.keys.map { it.fileName.toString() }).containsExactlyInAnyOrder(
+            "V32__notification_outbox.sql",
+            "V40__closing_an_account_and_passing_away.sql",
+            "V103__warnings_a_memorial_does_not_stop.sql",
+            "V107__definer_helpers_answer_only_their_callers.sql",
+            "V108__phone_change_notice_reaches_the_old_number.sql",
+        )
+        assertThat(sql.values.flatten().map { it.trim() }).describedAs("the schema creates it, locks it, and the enqueue function writes it; nothing selects from it")
             .allSatisfy { assertThat(it).doesNotContainIgnoringCase("select").doesNotContainIgnoringCase("join") }
     }
 

@@ -2233,6 +2233,11 @@ begin
                          and app.message_is_essential('lifecycle.household.running_again')
                          and app.message_is_essential('lifecycle.household.ownership_accepted'),
     'a household left with nobody running it, or running again, is essential (V143)');
+  -- V144: V137's repair notices survive V140/V143, and the successor asked first is told regardless.
+  perform pg_temp.assert(app.message_is_essential('lifecycle.household.asked_first')
+                         and app.message_is_essential('lifecycle.household.repair_requested')
+                         and app.message_is_essential('lifecycle.household.repair_done'),
+    'asked first to take a household on, and an operator repair of it, are essential (V144)');
   perform pg_temp.assert(not app.message_is_essential('lifecycle.departure.completed')
                          and not app.message_is_essential('lifecycle.departure.started')
                          and not app.message_is_essential('lifecycle.coming_of_age.welcomed'),

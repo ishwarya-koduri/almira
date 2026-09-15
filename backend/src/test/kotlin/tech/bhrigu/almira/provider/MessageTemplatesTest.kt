@@ -79,6 +79,9 @@ class MessageTemplatesTest {
             // V143: the dormancy notices change your access too.
             "lifecycle.household.dormant", "lifecycle.household.dormant.you", "lifecycle.household.running_again",
             "lifecycle.household.ownership_accepted",
+            // V144: asked first to take it on, and an operator repair of your household.
+            "lifecycle.household.asked_first", "lifecycle.household.repair_requested",
+            "lifecycle.household.repair_done",
         ).forEach {
             assertThat(MessageTemplates.isEssential(it)).describedAs(it).isTrue()
             assertThat(MessageTemplates.kindOf(it)).describedAs(it).isEqualTo(MessageTemplates.Kind.YOUR_PLACE)

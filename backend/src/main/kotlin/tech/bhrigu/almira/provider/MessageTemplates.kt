@@ -92,17 +92,20 @@ object MessageTemplates {
         "lifecycle.household.dormant.you",
         "lifecycle.household.running_again",
         "lifecycle.household.ownership_accepted",
+        // The named successor alone may take the household on until a date (V135, V144).
+        "lifecycle.household.asked_first",
         // An operator is asked to make someone owner of your household, and did
-        // (V137, scripts/dormancy-repair.sh).
+        // (V137, scripts/dormancy-repair.sh; kept on the database's list by V144).
         "lifecycle.household.repair_requested",
         "lifecycle.household.repair_done",
     )
 
-    /** Essential, and about the person's place in a household rather than their account (V140, V143). */
+    /** Essential, and about the person's place in a household rather than their account (V140, V143, V144). */
     private val YOUR_PLACE_TEMPLATES = setOf(
         "lifecycle.departure.completed.you", "lifecycle.memorial.reversed", "lifecycle.successor.named",
         "lifecycle.household.dormant", "lifecycle.household.dormant.you", "lifecycle.household.running_again",
-        "lifecycle.household.ownership_accepted",
+        "lifecycle.household.ownership_accepted", "lifecycle.household.asked_first",
+        "lifecycle.household.repair_requested", "lifecycle.household.repair_done",
     )
 
     fun isEssential(template: String): Boolean = template in ESSENTIAL_TEMPLATES

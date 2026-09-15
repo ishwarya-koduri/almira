@@ -249,7 +249,8 @@ kind is the owner's test (V140), asked of the person the notice is sent to:
 | Your household has nobody running it: nobody can invite or remove people, and an adult may take it on (V143) | `lifecycle.household.dormant` |
 | Your closure or leaving waits because nobody else runs the household (V143) | `lifecycle.household.dormant.you` |
 | Someone took on your household, or its owner came back and it runs as before (V143) | `lifecycle.household.ownership_accepted`, `lifecycle.household.running_again` |
-| Almira has been asked to make someone the owner of your household, and later that it did | `lifecycle.household.repair_requested`, `lifecycle.household.repair_done` |
+| You're asked first to take on a household, and only you can until a date (V144) | `lifecycle.household.asked_first` |
+| Almira has been asked to make someone the owner of your household, and later that it did (V137, V144) | `lifecycle.household.repair_requested`, `lifecycle.household.repair_done` |
 
 A sign-in code by SMS is sent at sign-in, not as a notification, and is not
 under consent either. Everything else sent outside the app is: reminders, the

@@ -72,11 +72,13 @@ Then point your TLS terminator at `127.0.0.1:8080` and run the smoke test:
 It signs two people into one household and asserts they see **different** net
 worth. That single property is what the whole product rests on: if it holds
 through a real deployment — proxy, pool, runtime role and all — then privacy is
-enforced end to end. It writes data, and prints the SQL to remove it afterwards.
+enforced end to end. It writes data, and prints the SQL to remove it afterwards
+— but only after `/health` has passed: if the service, the database,
+`rlsEnforced` or the role fails, it stops before signing anybody in.
 
 ## 3 · What refuses to start, and why
 
-Three checks fire before the first request, all for the same reason: a
+These checks fire before the first request, all for the same reason: a
 deployment that runs with a development placeholder looks entirely healthy, and
 nothing about it appears wrong.
 
@@ -537,6 +539,16 @@ Since 2026-09-15 it refuses **before Flyway migrates**. It used to wait for the
 migrations so that it could read the table, which meant a restored copy started
 with the wrong key had every pending migration applied to it and then refused.
 A database with no key table yet (a fresh install) has nothing to check.
+
+### The scripts' own refusals are tested
+
+`scripts/tests/` runs `backup.sh`, `restore.sh`, `restore-row.sh`,
+`bootstrap-prod-db.sh`, `freeze-api-spec.sh` and `smoke-prod.sh` for real —
+against throwaway Postgres containers and volumes it removes afterwards, or with
+a stub `curl` — and proves that each refusal comes **before** the thing it
+refuses: no dump written, no `pg_restore` run, no live row overwritten, no
+frozen spec emptied, nobody signed in. `./scripts/tests/run-all.sh` runs them
+all; `SCRIPT_TEST_PREFIX` names the containers.
 
 ### A drill with nothing but Docker
 

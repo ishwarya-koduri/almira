@@ -80,14 +80,13 @@ class AuthService(
      * finance app. So an address that is not allowed walks exactly the same
      * path as one that is: same validation, same cooldown, same per-address and
      * per-network counts, a stored challenge with a request id and a lifetime,
-     * the same response. The only differences are invisible from outside: no
-     * email is sent, and the stored value matches no code (OtpDelivery.DECOY).
-     * For the same reason the send happens after the answer
-     * (OtpDelivery.DEFERRED), and how it went is read from [emailDelivery] —
-     * where a decoy reports a real call to the provider made at the same
-     * moment to the decoy sink, so a failing provider fails for both, and a
-     * provider's refusal of one address is shown to nobody (docs/13 §5
-     * classifies every signal).
+     * the same response, the same queued email. The only differences are
+     * invisible from outside: the stored value matches no code
+     * (OtpDelivery.DECOY), and the outbox worker drops that address's email
+     * without calling the provider (SignInEmailOutbox). For the same reason
+     * nothing on this path talks to a provider for any address, and
+     * [emailDelivery] says `sent` at the same moment for every request, however
+     * the worker decides (docs/13 §5 classifies every signal).
      *
      * Checked after normalisation, so `ASHA@Example.com ` is the listed address.
      */
@@ -106,7 +105,7 @@ class AuthService(
 
     /**
      * Creates the account on first success, with the email as its only
-     * identifier. A decoy challenge cannot reach here: it matches no code.
+     * identifier. An unlisted address's challenge cannot reach here: it matches no code.
      */
     @Transactional
     fun verifyEmailOtp(

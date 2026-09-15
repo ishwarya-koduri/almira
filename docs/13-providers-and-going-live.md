@@ -285,15 +285,14 @@ above, and a deployment that passes the variables through to the application
 ALMIRA_SIGN_IN_CHANNELS=email
 ALMIRA_ALPHA_EMAIL_ALLOWLIST=asha@example.com,ravi.k+alpha@example.com
 ALMIRA_PROVIDER_EMAIL_MODE=live        # plus the SMTP settings above
-ALMIRA_ALPHA_EMAIL_DECOY_SINK=...      # required with live: an address that discards mail
+ALMIRA_SUPPORT_CHANNEL=whatsapp        # and ALMIRA_SUPPORT_ADDRESS: "Contact us" on the code step
 ```
 
 - **Switch.** `almira.auth.sign-in-channels` is `phone`, `email` or both;
   `phone` when unset, so development and every suite are unchanged. A value it
   does not understand, an empty list, a malformed allowlist entry, email
-  with an empty allowlist, email with `almira.providers.email.mode=disabled`,
-  email on a `live` provider without a decoy sink, and a sink that is not an
-  address or is on the allowlist all refuse to start (`SignInChannels`). The startup
+  with an empty allowlist, and email with `almira.providers.email.mode=disabled`
+  all refuse to start (`SignInChannels`). The startup
   log says how many addresses are listed, never which.
 - **Sender.** `ChannelEmailOtpSender` hands the code to whichever email
   `ChannelSender` the mode selected, with the address as `recipientHint` and
@@ -302,56 +301,74 @@ ALMIRA_ALPHA_EMAIL_DECOY_SINK=...      # required with live: an address that dis
   Anywhere else (a non-development server still on the sandbox) the request is
   `503 otp_unavailable` before a code exists.
   Nothing is written to `outbound_messages`: a sign-in code is not a
-  notification, and a table of codes sent is a table worth stealing.
+  notification, and a table of codes sent is a table worth stealing. Sign-in
+  emails have a queue of their own (below), and it holds no code.
 - **Same hardening as phone**, in `OtpService`, under keys of its own
   (`otp:email:…`, `otp:rate:email:…`) and its own HMAC key
   (`almira/otp-code/email/v1`), so nothing stored for an address verifies for a
   number. The per-address cap is `max-per-hour`; the per-network request cap and
   the per-network wrong-code cap are **shared** with phone, so alternating
   channels does not double them.
-- **No enumeration.** An address off the allowlist gets a *decoy*: the same
-  cooldown, counts, stored challenge, request id, lifetime and response, with a
-  random stored value no code matches and no email to that address. For that
-  to hold, an allowlisted address's email is sent **after** the response
-  (`OtpDelivery.DEFERRED`) — otherwise the answer would take a provider round
-  trip longer. The send is still one interactive attempt through
-  `ProviderCalls` (`almira.otp.send-timeout`, no retry, the
-  `PROVIDER ACCOUNT PROBLEM` ERROR line — see "Interactive and background"
-  below).
-- **A failed send is not silent** (owner's decision, 2026-09: *the tester sees
-  "we couldn't send the code" — silence is indistinguishable from a code that
-  never arrived*). The code step polls
-  `GET /api/v1/auth/otp/email/delivery/{requestId}`: `sending`, then `sent`,
-  `delayed` (resend open now) or `failed` with the reason
-  (`otp_provider_unavailable`, `otp_service_unavailable`; resend open now).
-  The web client says it in English, Telugu and Hindi; the native app in
-  English, as the rest of it. Only `sent` is shown as sent: a status still
-  `sending` after 30 polls, or one that cannot be read, is shown as delayed
-  with resend open. A failure does to the challenge, cooldown and counts
-  exactly what a reported send does ("What a failed send does to a one-time
-  code", below): nobody is locked out, or charged a request, by our failure.
-  **One exception, by the owner's enumeration rule below:** the provider
-  refusing one address (`otp_delivery_failed`) is not reported on this path —
-  Signal 1.
+- **No enumeration, and no probe costs anything** (owner's decision,
+  2026-09-15: *always enqueue to the outbox on the request path, whatever the
+  address, and let the worker drop unlisted ones*). An address off the
+  allowlist walks the request path statement for statement as a listed one
+  does: the same cooldown, counts, stored challenge, request id, lifetime and
+  response, and **the same queued message** — one call to
+  `app.enqueue_sign_in_code_email` with the address, purpose, request id and
+  code length. The only difference is inside Redis: an unlisted address's
+  challenge holds a random value no code matches. **Nothing on the request
+  path talks to a provider, for any address.**
 
-  **How a decoy stays indistinguishable.** A decoy runs the same code on the
-  same executor as a real send and makes the **same provider call**, under the
-  same timeout, addressed to the *decoy sink* instead of the address
-  (`ALMIRA_ALPHA_EMAIL_DECOY_SINK`: an address that accepts and discards
-  mail, such as the provider's mailbox simulator; required once the email
-  provider is `live`, refused if it is on the allowlist; in the sandbox a
-  placeholder `decoy-sink@almira.invalid` that nothing delivers to). So a decoy
-  fails, times out or succeeds with the provider as it is at that moment. Every
-  outcome, real or decoy, is applied at one moment — `almira.otp.send-timeout`
-  plus one second after the request (six seconds by default) — however long
-  its call took. `EmailSignInApiTest` holds a listed and an unlisted address to
-  the same request, settled status (status, fields, headers), settling time,
-  resend answer and wrong-code answer with the provider healthy, unavailable,
-  out of credit, timing out and refusing the listed address; probes the refusal
-  three times over; and changes the provider's state five times with unlisted
-  probes before any listed address. `EmailOtpTest` does the same against Redis
-  directly, in both orders, and times seven latencies including a refusal and a
-  timeout.
+  **The worker decides** (`SignInEmailOutbox`, V110). Woken after each enqueue
+  and polling every `almira.outbox.poll-interval`, on the owner connection, it
+  takes each queued message and first asks the allowlist **as it is now**. Not
+  listed (or email sign-in switched off since): the message is recorded
+  `dropped` and its body deleted in the same statement, and no provider is
+  called — so a tester removed while their message waited, across a restart,
+  is dropped too. Listed: `send_started_at` is committed, the code is derived,
+  and one attempt goes through `ProviderCalls.callOnce` under
+  `almira.otp.send-timeout`; the outcome (`sent`, or `failed` with the kind) is
+  recorded and the body deleted in one statement. A send a stopped worker had
+  started is recorded `unconfirmed` and never sent again; a message queued past
+  the code's lifetime is `expired`. Finished records keep status and failure
+  only, no address, for 30 days.
+
+  **The queue holds no code.** The code of a queued email is an HMAC, under a
+  key of its own derived from the JWT secret, of purpose, address and request
+  id, reduced to the code's length (`QueuedEmailCodes`). The request path
+  derives it to store the challenge's hash; the worker derives it again to
+  send. A dump or a replica of the queue is therefore addresses and request
+  ids, not codes that work, and a row pointed at another address derives
+  another code. Both tables have row-level security with no policy and nothing
+  granted to the runtime role (`db/tests/rls_privacy_test.sql`).
+
+  **What the worker decides changes nothing a client can reach.** The
+  delivery status (`GET /api/v1/auth/otp/email/delivery/{requestId}`) says
+  `sending` until `almira.otp.send-timeout` plus one second after the request
+  — the moment is written with the request — and `sent` from then on, for every
+  request. The challenge the request replaced is gone at once; the cooldown
+  and both hourly counts stand. None of these follows the send, because only
+  a listed address is ever sent anything and so only a listed address could
+  ever fail: any failure shown, cooldown lifted, count given back or earlier
+  code restored would name a listed address to anyone who typed it.
+
+- **A failed send is logged, not shown** (supersedes the 2026-09 decision that
+  *the tester sees "we couldn't send the code"*). The tester of an address
+  whose email did not come sees `sent`, the standing spam-folder line, and —
+  on every code step, for every address — **"Didn't arrive in two minutes?
+  Contact us"**, linked to the deployment's support channel
+  (`almira.support.*`, read before sign-in from `GET /api/v1/auth/otp/contact`;
+  the same words without a link when none is set). The operator has the
+  lines: `ERROR SIGN-IN EMAIL REFUSED` with the masked address when the
+  provider refuses a listed address, ProviderCalls' `WARN PROVIDER CALL FAILED` and
+  `ERROR PROVIDER ACCOUNT PROBLEM` for an outage or an account problem, and
+  the `failed` records. The web client says the line in English, Telugu and
+  Hindi (drafts); the native app does not have it yet (known-issues, *The
+  native sign-in code step has no "Didn't arrive in two minutes? Contact us"
+  line*). Step-up by email still
+  reports every failure in its response: the caller is signed in and already
+  owns the address.
 
   **The enumeration rule** (owner, 2026-09): *acceptable* — a signal that only
   confirms membership to someone who already knows the exact address;
@@ -362,94 +379,80 @@ ALMIRA_ALPHA_EMAIL_DECOY_SINK=...      # required with live: an address that dis
   though each query needs an exact string. A signal is acceptable only if it
   cannot be used to test candidates at scale — it needs something only the
   address's holder has, or fires once and the prober cannot make it fire again.
+  And (2026-09-15): *a narrow, documented leak among five known testers is
+  acceptable; a stranger spending money by typing addresses is not.*
 
-  **Every signal, classified** (2026-09-14):
+  **Every signal, classified** (2026-09-14, revisited 2026-09-15 for the outbox):
 
-  1. **The provider refusing a listed address — not acceptable; closed.**
-     A suppression list or a mailbox the provider knows is dead refuses one
-     address and accepts the next. Only a listed address is ever sent to, so
-     only a listed address could be refused, and the refusal showed four ways:
-     the status (`failed` / `otp_delivery_failed`), the cooldown (lifted, so a
-     resend was answered instead of `429`), the per-address count (given back),
-     and the challenge (removed, so a wrong code answered `otp_expired` rather
-     than `otp_invalid`, and the earlier request id came back). Each is an
-     answer per submitted address, repeatable against a candidate list at
-     every probe — it discovers every listed address the provider will not
-     deliver to. **What was done:** on the sign-in path a refusal is applied as
-     a sent code in every respect a stranger can probe — status `sent`, cooldown
-     kept, count kept, challenge kept (its code reached nobody), nothing put
-     back — and logged at ERROR, `SIGN-IN EMAIL REFUSED`, with the masked
-     address, for the operator. **The conflict with the earlier decision, plainly:**
-     a tester whose address the provider refuses is no longer told "we couldn't
-     send the code" on screen. That cannot be kept without the leak. The tester
-     and a prober typing the tester's address send identical requests, and the
-     tester of a refused address holds nothing a prober lacks — the one thing
-     only they have is the mailbox, which is exactly what is not receiving. So
-     anything the server shows the tester about that refusal it shows everyone
-     who types the address, and an unlisted address can never show it back,
-     because nothing is sent to it (mirroring would mean emailing strangers).
-     The smallest remaining gap is therefore not a leak but that silence, for
-     this one failure: the tester sees `sent`, the web client's standing line
-     ("If it hasn't arrived in a minute, look in your spam folder") and the
-     change-address button, and the operator has the ERROR line to reach them.
-     Step-up by email still reports a refusal: the caller is signed in and
-     already owns the address. If the owner prefers the notice to the
-     protection, the change is one line (`OtpService.settleInBackground`), and
-     this signal returns to *not acceptable*.
-  2. **A change in the provider's state — not acceptable; closed.** Decoys used
-     to replay the last real send (`otp:email:provider-weather`), so after the
-     provider went down, came back, ran out of credit or began timing out,
-     every probe of an unlisted address reported the old state until a listed
-     address was next sent a code. Inside that window each probe was a clean
-     listed/unlisted bit: it ruled out unlisted candidates as far as the
-     prober's per-network allowance paid, and confirmed one listed address per
-     transition. That tests candidates at scale; that a transition cannot be
-     caused matters little, since outages are public. **What was done:** the
-     replay is gone. A decoy makes its own provider call to the decoy sink, so
-     its outcome is the provider's state at that moment, as a real send's is.
-     The weather key is no longer written or read.
-  3. **Latency on a tick boundary — not acceptable; closed.** Outcomes were
-     applied on the whole second after the call, and a decoy's call was a
-     replay of an earlier send's latency, so a send straddling a second settled
-     a tick apart from a decoy. Statistical and slow (5 requests an hour per
-     address), but still an answer per submitted address that can be asked
-     again, so under the strict rule not acceptable. **What was done:** every
-     outcome is applied at the same moment after the request, so how long any
-     call took is not visible at all.
-  4. **A fresh Redis, or a day with no real send — not acceptable; closed.**
-     Decoys assumed a healthy provider answering in 300 ms until a real send
-     was seen, which is Signal 2 with the window open from the start. **What
-     was done:** gone with the replay; a decoy has nothing to assume.
-  5. **A probe of a listed address rewrote what the next decoy reported — not
-     acceptable; closed.** Not in the earlier list. Because a real send wrote
-     the weather and decoys read it, a prober could ask for candidate X and
-     then for an address of their own: if the second answer's settling time or
-     outcome followed X's send rather than the one before, X was listed. It
-     needed no provider transition, only a provider whose latency varied, and
-     could be repeated for every candidate. **What was done:** as Signal 2 —
-     nothing a real send does is read by any other request.
+  1. **The provider refusing a listed address — closed by construction.** It
+     is recorded and logged by the worker and reaches nothing a client can
+     read. The cost is the one stated above: the tester is not told.
+  2. **A change in the provider's state** (down, out of credit, timing out) —
+     **closed by construction.** No request's answer, status, cooldown or
+     count depends on a provider call, so there is no state to follow and no
+     window after a change.
+  3. **Latency** of the request and of the status transition — **measured**
+     (below): the request path is the same statements for both, and the
+     status moment is fixed at the request.
+  4. **A fresh Redis, or a day with no real send — closed**: nothing assumes or
+     replays a provider outcome.
+  5. **A probe of a listed address changing what the next request reports —
+     closed**: nothing a send does is read by any request.
   6. **What else was checked, and is the same for both** (acceptable, because
      none differs): the request's status, body, headers and response time; the
      `429` cooldown and its `Retry-After`; the per-address and per-network
-     `429`s and their counters (a decoy counts as a request); the `400`
-     `email_invalid`; the `503` `otp_unavailable` (checked before the address
-     matters); the delivery status's `404` for an unknown or expired id; a wrong
-     code's `otp_invalid` and attempts remaining, `otp_locked`, `otp_stale`,
-     `otp_expired`; the restore of an earlier code after an outright provider
-     failure (a decoy's challenge is restored the same way); and the
-     development echo (development only). The **right code** does sign a
-     listed address in and never an unlisted one: that needs the code from the
-     mailbox, information only the holder has — *acceptable* by the rule.
-  7. **Introduced by the fix, for the live adapter to hold — not yet
-     verifiable.** A decoy's call goes to one sink address. If the provider
-     throttled or suppressed *that recipient* separately (a per-recipient rate
-     limit hit by many probes), decoys could fail while listed sends did not —
-     and a prober could try to cause it. So the live adapter must classify
-     anything about one recipient as `rejected` (applied as sent, above), never
-     as `unavailable`, and the sink must be one the provider does not throttle
-     per recipient (a mailbox simulator). Each decoy is also a billed send,
-     bounded by the per-network request cap (20 an hour). Neither can be tested
-     until a live email adapter exists; add both to its watched-failing list.
+     `429`s and their counters (an unlisted request counts as a request); the
+     `400` `email_invalid`; the `503` `otp_unavailable` (checked before the
+     address matters); a `503 otp_service_unavailable` when the queue cannot
+     be written, which depends on the database, not the address; the delivery
+     status's `404` for an unknown or expired id; a wrong code's `otp_invalid`
+     and attempts remaining, `otp_locked`, `otp_stale`, `otp_expired`; and the
+     development echo (development only, and only with the sandbox). The
+     **right code** does sign a listed address in and never an unlisted one:
+     that needs the code from the mailbox, information only the holder has —
+     *acceptable* by the rule.
+  7. **The decoy sink's conditions — gone with the sink.** No unlisted request
+     reaches the provider, so there is no sink to throttle or suppress and no
+     billed send per probe. A stranger typing addresses costs a database row
+     each, bounded by the per-network cap (20 an hour), and deleted body and
+     all when the worker gets to it.
+
+  **Measured** (2026-09-15, `scripts/measure-sign-in-timing.py`). Method: a throwaway
+  `postgres:16-alpine` and `redis:7-alpine` (named `ws-decoy-outbox-*`,
+  removed afterwards), the packaged jar on a free loopback port with the email
+  provider `live` against an SMTP sink in the script (so no development echo
+  and nothing leaves the machine), five listed and five unlisted addresses,
+  `almira.otp.send-timeout=200ms` (so the status says sent 1.2 s after the
+  request). **A** — 1,000 pairs of requests (100 warm-up pairs discarded), one
+  listed and one unlisted per pair, the order inside the pair alternating so
+  drift lands on both, on one keep-alive connection with the cooldown and caps
+  lifted. **B** — 500 pairs, each request followed by delivery-status polls
+  every 100 ms, then every 5 ms from 150 ms before the settle moment, until
+  `sent`. **C** — on a restart with the packaged cooldown and caps, a fresh
+  listed and unlisted address through the request, the cooldown `429`, a stale
+  id, five wrong codes to the lock, a code after the lock, its status, an
+  unknown id and the contact endpoint. The laptop was shared with other builds
+  during the run, which widens the tails for both groups alike. Result
+  (listed / unlisted, ms):
+
+  | Measure | n | Median | p95 | p99 | Mann-Whitney | KS |
+  |---|---|---|---|---|---|---|
+  | Request latency | 1000 / 1000 | 5.79 / 5.84 | 8.92 / 8.68 | 11.75 / 12.52 | z −1.34, p 0.18 | D 0.043, p 0.31 |
+  | First poll seeing `sent` | 500 / 500 | 1205.19 / 1205.23 | 1214.11 / 1212.60 | 1229.46 / 1238.23 | z −0.49, p 0.63 | D 0.056, p 0.40 |
+  | Last poll seeing `sending` | 500 / 500 | 1196.95 / 1197.33 | 1203.08 / 1202.99 | 1216.59 / 1226.95 | z −1.41, p 0.16 | D 0.060, p 0.32 |
+  | Polls until `sent` | 500 / 500 | 24 / 24 | 30 / 30 | 31 / 31 | p 0.54 | D 0.032, p 0.96 |
+
+  No test reaches p < 0.05; the medians differ by 0.05 ms on the request and
+  0.04 ms at the transition, in opposite directions. Every other field was
+  identical in every sample: status (all `200`), body length (116 bytes),
+  body with the request id taken out, header names and values but `Date`; the
+  two status shapes (`sending`, `sent`); and every step of C. The worker sent
+  1,600 emails to listed addresses and none to unlisted ones, recorded 1,600
+  `dropped`, and left no body. The RLS suite passed against the same database.
+  No residual difference was found, so nothing was added. Re-run with
+  `python3 scripts/measure-sign-in-timing.py` (exit 0 when no timing test is
+  below p 0.01 and no field differs).
+
 - **Taking a tester off the list ends their access** (owner's decision,
   2026-09). The list is configuration, so removal is a restart with the
   address gone. `AlphaAllowlistAccess` then enforces it three times: at startup,
@@ -1071,10 +1074,12 @@ refused as "too many attempts". The per-network count is never given back: that 
 that stops one network hammering the endpoint, and it holds whether or not our
 provider works. `OtpServiceTest` has a test for each row.
 
-Email **sign-in** follows the same table, applied after the response and
-reported through `GET /auth/otp/email/delivery/{requestId}` rather than in it
-(§5), except that a rejection is applied as sent (§5, Signal 1); and a decoy
-follows it too, from its own call to the decoy sink.
+Email **sign-in** does not follow this table. Its email is queued for every
+address and sent, or dropped, by the outbox worker (§5), and nothing the send
+does comes back to the challenge, the cooldown or the counts: only a listed
+address could ever fail, so anything a failure changed would name it. A queue
+that cannot be written fails the request as an outright failure does, for any
+address alike.
 
 The existing 503 `otp_unavailable` is a different thing again: no sender is
 configured at all, and nothing is generated.
@@ -1102,13 +1107,20 @@ names plus `otp`.
   send per request under every fault with the provider allowing five; the code's
   timeout, not the provider's, cutting off a hang; resend at once after a timeout
   and the late code refused.
-- `EmailOtpTest` — the same for email, plus its own HMAC key, the decoy that no
-  code of the million can complete, a send that happens after the answer, and
-  a decoy that matches a real send under every provider state, a refusal and a
-  change of state, applied at one moment.
+- `EmailOtpTest` — email's own HMAC key, the unlisted challenge that no code of
+  the million can complete, the derived code, a request path that calls no
+  provider in any provider state and leaves the same keys for both, the status
+  that follows the clock, a queue that cannot be written, and a reported
+  (step-up) send's failures.
+- `SignInEmailOutboxTest` — the worker: a listed address sent once, an
+  unlisted one dropped with no provider call (watched failing with the check
+  moved after the send), a tester removed while queued, refusals and outages
+  recorded and logged, a started send never repeated, an expired message not
+  sent, bodies gone with the record, and the runtime role locked out.
 - `EmailSignInApiTest`, `SignInChannelSwitchApiTest` — the allowlist cannot be
-  seen from outside, under a healthy, failing, refusing and changing provider,
-  probed repeatedly; a switched-off channel refuses; step-up by email.
+  seen from outside whatever the worker did (sent, refused, outage, timeout,
+  not yet decided), probed repeatedly; a switched-off channel refuses; step-up
+  by email.
 - `ProviderDisabledStartupTest` — the real application starts with each provider
   `disabled` alone, all six together, and with nothing set (`aa` disabled).
 - `ProviderDisabledApiTest` — all six disabled, over HTTP: status `DISABLED` and

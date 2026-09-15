@@ -373,6 +373,8 @@ export const api = {
   welcomeSeen:   (hid)            => api.post(`/api/v1/households/${hid}/welcome/seen`),
   checklists:    (hid)            => api.get(`/api/v1/households/${hid}/guidance/checklists`),
   supportContact: ()              => api.get("/api/v1/support/contact"),
+  // The same channel before anyone is signed in, for the sign-in code step.
+  signInContact: ()               => api.get("/api/v1/auth/otp/contact"),
 
   // --- goals ----------------------------------------------------------------
   goals:         (hid)            => api.get(`/api/v1/households/${hid}/goals`),

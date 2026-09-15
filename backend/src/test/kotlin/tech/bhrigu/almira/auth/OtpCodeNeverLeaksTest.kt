@@ -39,9 +39,10 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * SMS sender is. The development echo is a separate, deliberate channel with
  * its own gate, tested in OtpServiceTest.
  *
- * Email is walked the same way in its own test, through the real email sender
- * and the sandbox email channel (which logs), for an allowlisted address and a
- * decoy, and outbound_messages is searched as well.
+ * Email is walked the same way in its own test, through the real outbox
+ * worker, the real email sender and the sandbox email channel (which logs), for
+ * an allowlisted address and one that is not — whose message the worker drops —
+ * and outbound_messages and the sign-in email outbox are searched as well.
  *
  * Codes are eight digits in this test so that a chance appearance of the same
  * digits in a log line is a one-in-a-hundred-million event rather than a flake.
@@ -74,6 +75,8 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
     }
 
     @Autowired private lateinit var sender: OtpServiceTest.RecordingSender
+    @Autowired private lateinit var outbox: SignInEmailOutbox
+    @Autowired private lateinit var props: tech.bhrigu.almira.config.AlmiraProperties
 
     /** Thread-safe: Tomcat's request threads log into it concurrently. */
     private class Capture(private val testThread: String) : AppenderBase<ILoggingEvent>() {
@@ -223,24 +226,33 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
 
     /**
      * The same journey by email, for an allowlisted address and one that is
-     * not: request, resend refused, a decoy, wrong, malformed bodies carrying
-     * the real code, right, reused — then step-up by email for the account that
-     * creates. The code goes through the real email sender and the sandbox email
-     * channel, which logs, and is additionally looked for in outbound_messages,
-     * the table a notification would be recorded in.
+     * not: request, resend refused, an unlisted request, wrong, malformed
+     * bodies carrying the real code, right, reused — then step-up by email for
+     * the account that creates. The code goes through the real outbox worker,
+     * email sender and sandbox email channel, which logs, and is additionally
+     * looked for in outbound_messages, the table a notification would be
+     * recorded in, and in the sign-in email outbox. The unlisted address's
+     * message is dropped by the worker: the code it would have carried (derived
+     * from its request, as the worker would) is looked for everywhere too, and
+     * its body is gone once the drop is recorded.
      */
     @Test
-    fun `no email code appears in any log event, response body, response header or outbound message`() {
+    fun `no email code appears in any log event, response body, response header, outbound message or queued sign-in email`() {
         val responses = mutableListOf<ResponseEntity<String>>()
         fun keep(r: ResponseEntity<String>) = r.also { responses += it }
         val outsider = "not.listed.${System.nanoTime()}@example.test"
+        var outsiderCode = ""
+        // Whatever another class left queued is decided now, not in the middle of this walk.
+        outbox.drain()
 
         val capture = captured {
             keep(post("/api/v1/auth/otp/email/request", body = mapOf("email" to "  ${listed.uppercase()} ")))
             val code = awaitEmailCode(1)
             assertThat(code).hasSize(8)
             keep(post("/api/v1/auth/otp/email/request", body = mapOf("email" to listed)))
-            keep(post("/api/v1/auth/otp/email/request", body = mapOf("email" to outsider)))
+            val unlisted = keep(post("/api/v1/auth/otp/email/request", body = mapOf("email" to outsider))).json()
+            outsiderCode = QueuedEmailCodes(props).code(OtpService.LOGIN, outsider, unlisted.path("requestId").asText(), 8)
+            assertThat(outbox.drain().dropped).describedAs("the unlisted address's message, dropped").isGreaterThanOrEqualTo(1)
             keep(post("/api/v1/auth/otp/email/verify", body = mapOf("email" to listed, "code" to wrongFor(code))))
             malformedBodiesCarrying(code, listed, "email").forEach { keep(postRaw("/api/v1/auth/otp/email/verify", it)) }
             val login = keep(post("/api/v1/auth/otp/email/verify", body = mapOf("email" to listed, "code" to code)))
@@ -265,14 +277,15 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
             keep(post("/api/v1/auth/step-up/verify", token, mapOf("code" to stepUp)))
         }
 
-        // The decoy's code, sent to the decoy sink, is looked for as well.
-        val codes = emailCodes.map { it.second }
-        assertThat(emailCodes.map { it.first }).containsExactly(listed, OtpService.DEFAULT_EMAIL_DECOY_SINK, listed)
+        // The code the dropped message would have carried is looked for as well.
+        val codes = emailCodes.map { it.second } + outsiderCode
+        assertThat(outsiderCode).hasSize(8)
+        assertThat(emailCodes.map { it.first }).describedAs("nothing is sent for the unlisted address").containsExactly(listed, listed)
         // The harness really walked the paths that log: the sandbox channel spoke
-        // for all three codes, the unreadable bodies reached ApiErrorHandler's
+        // for both codes sent, the unreadable bodies reached ApiErrorHandler's
         // refusal line (INFO; it was the catch-all's ERROR before 2026-09-13),
         // the validation failures reached the resolver.
-        assertThat(capture.texts.count { "sandbox email: template=otp_email" in it }).isEqualTo(3)
+        assertThat(capture.texts.count { "sandbox email: template=otp_email" in it }).isEqualTo(2)
         assertThat(capture.texts.count { it.startsWith("INFO | tech.bhrigu.almira.common.ApiErrorHandler") && "HttpMessageNotReadableException" in it })
             .isEqualTo(9)
         assertThat(capture.texts.filter { it.startsWith("ERROR") }).describedAs("ERROR log events").isEmpty()
@@ -295,14 +308,22 @@ class OtpCodeNeverLeaksTest : ApiTestBase() {
                 .describedAs("outbound_messages rows containing a real email code").isZero()
             assertThat(db.queryForObject("select count(*) from outbound_message_bodies b where b::text like ?", Long::class.java, "%$c%"))
                 .describedAs("queued message bodies containing a real email code").isZero()
+            assertThat(db.queryForObject("select count(*) from sign_in_code_emails e where e::text like ?", Long::class.java, "%$c%"))
+                .describedAs("sign-in email records containing a real email code").isZero()
         }
+        // Nothing queued holds a code at any point, and once decided nothing holds the address either.
+        assertThat(db.queryForObject("select count(*) from sign_in_code_email_bodies", Long::class.java))
+            .describedAs("sign-in email bodies left after the worker decided").isZero()
+        assertThat(db.queryForObject("select count(*) from sign_in_code_emails where status = 'dropped' and failure is null", Long::class.java))
+            .isGreaterThanOrEqualTo(1)
         assertThat(db.queryForObject("select count(*) from outbound_messages where template = 'otp_email'", Long::class.java))
             .describedAs("a sign-in code is not a notification and is not recorded as one").isZero()
     }
 
     private fun awaitEmailCode(nth: Int): String {
+        // The worker does not run on its own in the suite (almira.outbox.background).
+        outbox.drain()
         val deadline = System.nanoTime() + java.time.Duration.ofSeconds(10).toNanos()
-        // To the listed address: a decoy's code goes to the decoy sink in between.
         fun toListed() = emailCodes.filter { it.first == listed }
         while (toListed().size < nth && System.nanoTime() < deadline) Thread.sleep(10)
         check(toListed().size >= nth) { "email code #$nth was never sent" }

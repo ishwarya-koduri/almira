@@ -827,6 +827,8 @@ const messages = {
     "auth.email.missing": "Enter your email address",
     "auth.email.check": "Check your email",
     "auth.email.spam": "If it hasn't arrived in a minute, look in your spam folder.",
+    "auth.email.notArrived": "Didn't arrive in two minutes?",
+    "auth.email.contactUs": "Contact us",
     "auth.usePhone": "Use my phone number instead",
     "auth.useEmail": "Use my email address instead",
     "auth.sendCode": "Send code",

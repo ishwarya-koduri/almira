@@ -10281,6 +10281,26 @@
         ]
       }
     },
+    "/api/v1/auth/otp/contact": {
+      "get": {
+        "operationId": "signInContact",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportContactResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "support-contact-controller"
+        ]
+      }
+    },
     "/api/v1/auth/otp/email/delivery/{requestId}": {
       "get": {
         "operationId": "emailDelivery",

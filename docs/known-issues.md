@@ -417,6 +417,11 @@ through the same code, from their own provider call to the decoy sink
 (`ALMIRA_ALPHA_EMAIL_DECOY_SINK`), so a failing provider fails for both at the
 same moment (`EmailSignInApiTest`, `EmailOtpTest`).
 
+**Superseded** (2026-09-15, "Sign-in emails go through an outbox, and an
+unlisted address's is dropped there"): the decoy sink is gone, and with it the
+visible failure. Every request is queued; the status says `sent` for everyone;
+a tester whose code does not come has "Didn't arrive in two minutes? Contact us".
+
 **The residual signals, classified** (2026-09-14, "Allowlist enumeration"). The
 owner's rule: a signal that only confirms an address someone already has is
 acceptable; one that lets someone discover addresses from a guessed list is
@@ -734,8 +739,10 @@ set-aside challenge depends on how the new send went:
 
 Throttling is unchanged: the cooldown, both hourly counts and what a failure
 gives back are exactly as before, and a failed request cannot reset or add
-guesses. Decoys go through the same scripts, so a decoy's failed resend falls
-back the way a real one does. Same for phone and email, sign-in and step-up.
+guesses. Same for phone, and for email step-up. Email sign-in no longer falls
+back: its email is queued and nothing the send does comes back to the challenge
+(entry "Sign-in emails go through an outbox, and an unlisted address's is
+dropped there"), so a resend replaces the earlier code at once.
 Proven by four tests in `OtpServiceTest` and three in `EmailOtpTest` (the
 `known-issues 22` sections), each watched failing, and by the attempt-cap tests
 below.
@@ -2072,6 +2079,7 @@ a process already serving.
 | restore-row.sh backup copy intact (sweep rules, digest); live row exists | the UPDATE over the live row | before the UPDATE, in the same transaction | `7700220` |
 | freeze-api-spec.sh fetched spec is complete | emptying the frozen file | into a temporary file, renamed over it only when valid | `713b64e` |
 | smoke-prod.sh deployment checks (up, database, rlsEnforced, not owner) | requesting codes, signing in, creating a household | stops before the first write | `6f6847d` |
+| A sign-in email's address is on the allowlist | a provider call (to the decoy sink) for every unlisted address | `SignInEmailOutbox` asks the list before stamping the send, deriving a code or calling a provider | `03c9508` |
 
 The scripts' tests are in `scripts/tests/` and run the real scripts against
 throwaway containers and volumes, or with a stub `curl`; each was watched failing
@@ -2129,3 +2137,86 @@ proves the dump has the table, none of its rows and no body text.
 whatever was queued when they were taken; they age out with the retention
 period. Documents in S3 are still not in a backup at all (entry 41, an owner's
 decision).
+
+---
+
+## 70. Sign-in emails go through an outbox, and an unlisted address's is dropped there
+
+**Resolved** (2026-09-15, "Decoy outbox"). Owner's decision: *don't ship the
+decoy sink; equalise timing without paying for probes; always enqueue on the
+request path, whatever the address, and let the worker drop unlisted ones. A
+narrow, documented leak among five known testers is acceptable; a stranger
+spending money by typing addresses is not.*
+
+What was there: an unlisted address got a decoy challenge and a live provider
+send to `ALMIRA_ALPHA_EMAIL_DECOY_SINK`, so its delivery status followed the
+provider as a listed address's did. Every probe was a billed send, and the
+server refused to start on a live provider without the sink.
+
+What there is now (docs/13 §5):
+
+- The setting, its startup refusal, `DEFAULT_EMAIL_DECOY_SINK`, the decoy's
+  provider call, the `.env.production.example` block and the compose
+  pass-through are removed (`SignInChannelsTest` fails if any comes back).
+- Every email sign-in request, listed or not, does the same work and queues one
+  row through `app.enqueue_sign_in_code_email` (V110). Nothing on the request
+  path calls a provider (`EmailOtpTest`).
+- The worker (`SignInEmailOutbox`) asks the allowlist when it reaches the row:
+  listed, one send; not listed, `dropped` with no provider call, body deleted
+  in the statement that records it (`SignInEmailOutboxTest`, watched failing
+  with the check moved after the send: both the unlisted and the removed-tester
+  tests saw a provider call).
+- The queue holds no code: the worker derives it (`QueuedEmailCodes`).
+- The delivery status says `sending`, then `sent` at a moment fixed with the
+  request, for everyone. The "We couldn't send the code" notice no longer
+  appears for sign-in; failures are logged and recorded for the operator.
+- Every code step shows "Didn't arrive in two minutes? Contact us" (web: en,
+  te and hi drafts), linked from the unauthenticated `GET /auth/otp/contact`.
+- `OtpCodeNeverLeaksTest` also looks for the code a dropped message would have
+  carried, in logs, responses, headers and both queue tables.
+
+**Measured** (`scripts/measure-sign-in-timing.py`, method and table in docs/13
+§5). Request latency over 1,000 alternating pairs: median 5.79 ms listed,
+5.84 ms unlisted; p95 8.92 / 8.68; p99 11.75 / 12.52; Mann-Whitney p 0.18, KS
+p 0.31. The status's first `sent` over 500 pairs: median 1205.19 / 1205.23 ms
+after the request, Mann-Whitney p 0.63, KS p 0.40. Status, body length, body,
+headers, both status shapes, the cooldown `429`, stale, wrong-code, lock and
+unknown-id answers identical throughout. No residual difference found.
+
+**Costs, stated plainly.**
+
+- A tester whose email fails — refused, provider down, out of credit — is shown
+  `sent` and is not given resend early: the cooldown and the hourly count
+  stand, as they do for an unlisted address. Before, an outage lifted both.
+  They have the "Contact us" line; the operator has the log lines and the
+  `failed` records.
+- A resend replaces the earlier emailed code at once, even if the resend's
+  email then fails; before, an outright failure put the earlier code back.
+- An address added to the allowlist (a restart) while its request's message
+  waits is sent a code that does not match: its challenge was stored unlisted.
+  Asking again works.
+- The worker's decision is visible in the database (`sign_in_code_emails.status`,
+  `sent` against `dropped`) to anyone with the owner connection. Not to the
+  runtime role or any client.
+
+---
+
+## 71. The native sign-in code step has no "Didn't arrive in two minutes? Contact us" line
+
+The web client's email code step shows, for every address, "Didn't arrive in
+two minutes? Contact us", linked to the deployment's support channel from
+`GET /api/v1/auth/otp/contact` (entry "Sign-in emails go through an outbox, and
+an unlisted address's is dropped there"). The native app's email code step
+(`app/`, another session's tree) does not. It still polls the delivery status,
+which for sign-in now only ever says `sending` then `sent`, so its "We couldn't
+send the code" branch is unreachable against this server rather than wrong.
+
+**Risk if left** A native tester whose code never comes has the spam-folder
+line and no route to the operator on that screen.
+
+**Fix** Add the line under the code step in the native client, reading
+`GET /api/v1/auth/otp/contact`, following only `https://wa.me/…` and `mailto:`
+links (as `signInContactLink` in `static/app/auth-outcome.js`), and the same
+words without a link when `configured` is false; strings through the native
+catalogue, English first.
+

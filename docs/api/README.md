@@ -21,6 +21,7 @@ only now in the file:
 | `GET /auth/otp/channels` | [Authentication](#authentication) |
 | `POST /auth/otp/email/request`, `POST /auth/otp/email/verify` | [Authentication](#authentication) |
 | `GET /auth/otp/email/delivery/{requestId}` | [Authentication](#authentication) |
+| `GET /auth/otp/contact` | [Authentication](#authentication) |
 | `GET /me/messages` | [Authentication](#authentication), after the provider failures |
 | `GET /households/{householdId}/connect/digilocker/documents` | [Authentication](#authentication), after the provider failures |
 | `GET /households/{householdId}/where-and-who` | [Phase 3 and 4](#phase-3-and-4-the-parts-that-decide-who-sees-what) |
@@ -57,6 +58,7 @@ POST /api/v1/auth/otp/request        { phone }        → requestId, expiresInSe
 POST /api/v1/auth/otp/verify         { phone, code }  → accessToken, refreshToken, isNewUser, user
 POST /api/v1/auth/otp/email/request  { email }        → the same challenge shape
 GET  /api/v1/auth/otp/email/delivery/{requestId}      → requestId, status, failure?, message?, resendAfterSeconds?
+GET  /api/v1/auth/otp/contact                        → configured, channel?, link?, display?, replyTime?
 POST /api/v1/auth/otp/email/verify   { email, code }  → the same login shape
 POST /api/v1/auth/refresh            { refreshToken } → a new pair
 ```
@@ -83,27 +85,31 @@ are phone-only *responses* at sign-in. The send happens after the response. The
 one exception is development, where `developmentCode` is present only for an
 allowed address.
 
-**But a failed email is never silent.** On the code step, poll
-`GET /auth/otp/email/delivery/{requestId}` about once a second until `status`
-is not `sending`:
+**The code step polls a status that says `sent`, for everyone.** Every email
+sign-in request, allowed or not, is queued, and a worker sends an allowed
+address's code and drops anything else without calling the provider. So on the
+code step, poll `GET /auth/otp/email/delivery/{requestId}` about once a second
+until `status` is not `sending`:
 
 | `status` | Do |
 |---|---|
-| `sending` | Ask again shortly. |
-| `sent` | Nothing more to say. |
-| `delayed` | Show the delayed sentence; resend is open now (`resendAfterSeconds: 0`). The code still works if it arrives. |
-| `failed` | Say **"We couldn't send the code."** with the sentence for `failure` (`otp_provider_unavailable` · `otp_service_unavailable`, the same advice as the phone codes; keep handling `otp_delivery_failed` too, though sign-in no longer sends it — see below); resend is open now. This request's code is gone; if it replaced an earlier code that is still live, that code works again, under either request id. |
+| `sending` | Ask again shortly. Expect it for the send timeout plus a second (six seconds by default). |
+| `sent` | Say the code was sent. It is said at that moment for every request, whatever the worker did with the email. |
+| `delayed`, `failed` | No longer produced for sign-in. Keep handling them as an older server sent them: `delayed` — the delayed sentence, resend open now; `failed` — **"We couldn't send the code."** with the sentence for `failure`, resend open now. |
+
+The status cannot say an email failed: only an allowed address is ever sent
+anything, so only an allowed address could ever fail, and saying so would tell
+anyone who is listed. What the person is given instead, on every code step, is
+the line **"Didn't arrive in two minutes? Contact us"**, with "Contact us"
+opening the deployment's support channel from `GET /auth/otp/contact` (no sign-in
+needed; the same answer as `GET /support/contact`). When `configured` is false,
+show the same words without a link. Follow only the link the server built
+(`https://wa.me/…` or `mailto:…`).
 
 Unknown or expired request ids are `404 otp_request_unknown`; treat that, a
 server without the endpoint, and any status you do not know as "stop asking".
-An address that is not allowed gets a status too, and it settles the way an
-allowed address's would with the email provider as it is — so a failing
-provider fails for both, and nothing here needs a branch either. Every outcome
-is applied at one moment after the request (the send timeout plus a second, six
-seconds by default), so expect `sending` for that long. When the provider
-refuses one address, the status says `sent`: only an allowed address can ever be
-refused, so reporting it would tell anyone who is listed. Every signal that was
-considered, and how each is classified, is in
+Every signal that was considered, how each is classified, and the timing
+measured between allowed and not-allowed addresses are in
 [Doc 13 §5](../13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha).
 
 **Taking an address off the allowlist signs that tester out.** Once a server

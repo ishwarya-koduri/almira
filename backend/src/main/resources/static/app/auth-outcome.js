@@ -42,6 +42,14 @@
                  this build does not know): stop asking. Like 30 polls that
                  never settle, it is unconfirmed, and deliveryWhenAskingStops
                  shows it as the delayed banner with resend open, never as sent.
+
+   Since the sign-in email outbox (docs/13 §5) a server says `sending` and then
+   `sent` for every email sign-in, at the same moment whatever became of the
+   email: only a listed address could ever fail, so a failure it showed would
+   tell strangers who is listed. `delayed` and `failed` are still followed as
+   above, for an older server. What a tester whose code did not come is given
+   instead is the same line everyone sees, "Didn't arrive in two minutes?
+   Contact us", linked by signInContactLink below.
    ============================================================================= */
 
 export const KNOWN_CHANNELS = ["phone", "email"];
@@ -140,4 +148,17 @@ export function deliveryOutcome(status) {
 export function deliveryWhenAskingStops(last) {
   if (last && (last.kind === "sent" || last.kind === "delayed" || last.kind === "failed")) return last;
   return { kind: "delayed", resendAfterSeconds: 0 };
+}
+
+/**
+ * The link behind "Contact us" on the code step, from GET /auth/otp/contact, or
+ * null for the same words without a link. Only the two kinds of link the server
+ * builds are followed — a wa.me address or a mailto: — so a misconfigured or
+ * unexpected answer can never become a link somewhere else.
+ *
+ * @param contact  the parsed body, or null when it could not be read
+ */
+export function signInContactLink(contact) {
+  if (!contact || contact.configured !== true || typeof contact.link !== "string") return null;
+  return /^(https:\/\/wa\.me\/\d{8,15}|mailto:[^\s?#]+@[^\s?#]+)$/.test(contact.link) ? contact.link : null;
 }

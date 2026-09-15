@@ -381,13 +381,16 @@ provider account, then a live email adapter watched failing all four ways.
 Two operational facts about the allowlist: **removing an address takes a
 restart**, and that restart signs the tester out of every session they hold
 (audited as `auth.session_ended_not_allowlisted`); and a sign-in email that
-fails is **shown to the tester** ("We couldn't send the code") through
-`GET /api/v1/auth/otp/email/delivery/{requestId}`, which the reverse proxy must
-pass through like the other auth endpoints — except when the provider refuses
-that one address, which is shown as sent (anything else would reveal who is
-listed) and logged as `ERROR SIGN-IN EMAIL REFUSED` for the operator to follow
-up. With a live email provider, `ALMIRA_ALPHA_EMAIL_DECOY_SINK` must be set
-(an address that discards mail) or the server refuses to start.
+fails is **not shown to the tester**. Every email sign-in request, listed or
+not, is queued, and the outbox worker sends a listed address's code and drops
+anything else without calling the provider, so a stranger typing addresses
+costs nothing. The code step shows `sent` at the same moment for every address
+(`GET /api/v1/auth/otp/email/delivery/{requestId}`, which the reverse proxy
+must pass through like the other auth endpoints) and, for everyone, "Didn't
+arrive in two minutes? Contact us", linked to `ALMIRA_SUPPORT_CHANNEL` when it
+is set — so set it before inviting testers. A failed send is logged for the
+operator: `ERROR SIGN-IN EMAIL REFUSED` when the provider refuses a listed
+address, ProviderCalls' WARN and `PROVIDER ACCOUNT PROBLEM` ERROR otherwise.
 [Doc 13 §5](13-providers-and-going-live.md) has the design and
 [Doc 18 §3](18-handover.md) the alpha sequence.
 

@@ -65,7 +65,19 @@ data class SupportContactResponse(
 class SupportContactController(private val properties: SupportProperties) {
 
     @GetMapping("/api/v1/support/contact")
-    fun supportContact(): SupportContactResponse {
+    fun supportContact(): SupportContactResponse = contact()
+
+    /**
+     * The same, before anyone is signed in, for the sign-in code step's "Didn't
+     * arrive in two minutes? Contact us" (docs/13 §5). Under /auth/otp, which is
+     * open, so the settings endpoint keeps its sign-in requirement. Configuration
+     * only, the same answer for everyone: it names the deployment's support
+     * channel and nothing about whoever asks or the address they typed.
+     */
+    @GetMapping("/api/v1/auth/otp/contact")
+    fun signInContact(): SupportContactResponse = contact()
+
+    private fun contact(): SupportContactResponse {
         if (!properties.configured) return SupportContactResponse(false, null, null, null, null)
         val link = when (properties.channel) {
             "whatsapp" -> "https://wa.me/${properties.address.removePrefix("+")}"

@@ -2105,5 +2105,68 @@ select pg_temp.assert(not exists (select 1 from support_codes where user_id = (s
   'ADMIN cannot see another member''s support codes');
 select pg_temp.as_user('ish');
 
+-- ------------------------------------------------------ sign-in email outbox --
+-- V110. Every email sign-in request queues a message through one definer
+-- function, listed address or not. Where it goes and how it ended are the
+-- worker's alone, on the owner connection: the runtime role writes through the
+-- function and can read, change or delete nothing, whoever it acts for.
+do $$ begin raise notice '--- sign-in email outbox (V110) ---'; end $$;
+
+select app.enqueue_sign_in_code_email('someone.unlisted@example.test', 'login', gen_random_uuid(), 6);
+
+do $$
+declare blocked boolean;
+begin
+  blocked := false;
+  begin perform count(*) from sign_in_code_emails;
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot read how a sign-in email ended');
+
+  blocked := false;
+  begin perform address from sign_in_code_email_bodies;
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot read where a sign-in email goes');
+
+  blocked := false;
+  begin update sign_in_code_emails set status = 'sent';
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot mark a sign-in email sent');
+
+  blocked := false;
+  begin update sign_in_code_email_bodies set address = 'attacker@example.test';
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot redirect a queued sign-in email');
+
+  blocked := false;
+  begin delete from sign_in_code_email_bodies;
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot delete a queued sign-in email');
+
+  blocked := false;
+  begin insert into sign_in_code_emails default values;
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'the runtime role writes a sign-in email only through the function');
+end $$;
+
+do $$
+declare blocked boolean := false;
+begin
+  -- Only a login code is queued; the table refuses anything else.
+  begin
+    perform app.enqueue_sign_in_code_email('someone@example.test', 'step_up', gen_random_uuid(), 6);
+  exception when check_violation then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'only a sign-in code is queued this way');
+end $$;
+
+select pg_temp.as_user('ish');
+do $$
+declare blocked boolean := false;
+begin
+  begin perform count(*) from sign_in_code_email_bodies;
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'a signed-in person cannot read the sign-in email queue either');
+end $$;
+
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;
 rollback;

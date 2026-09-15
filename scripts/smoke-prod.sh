@@ -11,7 +11,9 @@
 # misconfiguration that would have exposed one family member's records to
 # another would have shown up here as two identical totals.
 #
-# IT WRITES DATA. It signs in two throwaway users, creates a household called
+# IT WRITES DATA — but only once the deployment's own checks (up, database,
+# row-level security enforced, not the owner role) have passed; if any fails it
+# stops before signing anybody in. It signs in two throwaway users, creates a household called
 # "Smoke test <timestamp>", and leaves it there — deleting a user is not
 # something the API does, and it should not be. Run it against a staging
 # deployment, or accept that a real one gains one obviously-named household.
@@ -28,7 +30,7 @@
 set -uo pipefail
 
 BASE="${1:-}"
-[ -n "$BASE" ] || { sed -n '2,28p' "$0"; exit 2; }
+[ -n "$BASE" ] || { sed -n '2,29p' "$0"; exit 2; }
 BASE="${BASE%/}"
 
 PASS=0; FAIL=0
@@ -102,6 +104,20 @@ is "row-level security is enforced against the runtime role" \
 ROLE=$(printf '%s' "$HEALTH" | j "['dbRole']")
 isnt "and that role is not the schema owner" "$ROLE" "almira"
 echo "       ${DIM}connected as: $ROLE${OFF}"
+
+# Nothing below this line is written until the deployment itself has passed.
+# Signing two people in and creating a household on a server that is not
+# enforcing row-level security writes real rows — and requests real one-time
+# codes — to a deployment already known to be exposing every record. It used to
+# carry on regardless and report the failures at the end.
+if [ "$FAIL" -gt 0 ]; then
+  echo
+  echo "${RED}${BOLD}Stopped before writing anything:${OFF}${RED} $FAIL check(s) on the deployment itself failed.${OFF}"
+  echo "If row-level security is not enforced, STOP: the application is reading as a role"
+  echo "that bypasses it, and every member can see every record. Nobody was signed in and"
+  echo "nothing was created."
+  exit 1
+fi
 
 ENVIRONMENT=$(printf '%s' "$HEALTH" | j "['environment']")
 if [ "$ENVIRONMENT" != "production" ]; then

@@ -2526,6 +2526,22 @@ channel without consent), `MessageTemplatesTest` and `rls_privacy_test.sql`.
 
 ## 81. Only a closure is carried out while a household is dormant, and only there does what was shared survive an erasure
 
+**Resolved in part** (2026-09-15), by the owner's answer: *apply the split to
+every erasure. A special case that only fires on dormancy will drift out of step
+with the general path.* (1) is fixed: `AccountPurge` now erases a person from
+every household they leave by one set of lines — private records and their
+papers erased, what was shared and their part of joint records kept under a
+former member — and `AccountClosureService.closurePreview` promises the same.
+`AccountClosureApiTest` proves it in a household that is not dormant, watched
+failing against the old path; the names others' records kept are now unlinked
+with no contact-card link (flagged for counsel, Doc 23). What remains: (2) as
+written; (3) as written, now for every erasure; and a departure's *download, then
+erase* choice still erases everything solely held whatever its visibility, as
+its *take* choice still moves it — a departure keeps the person's account and
+disposes of their records by their choice, so whether the household's claim on
+shared records applies there too is a separate call for the owner. The entry is
+kept below as it was found.
+
 **Where** `lifecycle/AccountPurge.kt`, `lifecycle/DepartureCompletion.kt`,
 `LifecycleWrites.becomeFormerMember` (V136), docs/05 §12.1, §12.7.
 

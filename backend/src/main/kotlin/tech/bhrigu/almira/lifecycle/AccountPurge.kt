@@ -18,7 +18,8 @@ data class PurgeResult(
     val householdsErased: Int,
     val householdsLeft: Int,
     val recordsErased: Int,
-    val sharesPassedOn: Int,
+    /** Shared or jointly held records that stayed, held by a former member. */
+    val recordsKept: Int,
     /**
      * Households where the person was the last owner and records remain: made
      * dormant, with what the person held for the household kept under a former
@@ -39,14 +40,16 @@ data class PurgeResult(
  *
  * **What goes.** Everything [AccountClosureService.closurePreview] listed under
  * "erased", decided by the same [LifecycleRecords] rule: the user row and all
- * that hangs from it, every record they solely hold, the documents that went
- * with those, and every household in which nobody else signs in.
+ * that hangs from it, every record that was private to them alone, the papers
+ * that went only with those, and every household in which nobody else signs in.
  *
- * **What stays.** Joint records, with the person's part passed to the other
- * holders. Records they typed in for other people, with their name taken off.
- * Other people's records that named them — a nomination, a will — keep the name
- * as text, because those are other people's records. The household, handed to
- * whoever was named to carry it on.
+ * **What stays.** What they shared with the household or with named people, and
+ * their part of what they held jointly, held from then on by a **former member**
+ * (V136) that carries no name or date of anyone. Other people's records that
+ * named them — a nomination, a will — keep the name as text, as that record
+ * wrote it, unlinked from them and with no contact details (owner's decision,
+ * 2026-09-15; flagged for counsel in docs/23). The household, handed to whoever
+ * was named to carry it on.
  *
  * **What is kept, and why.** The audit log. Rows the person wrote lose their
  * actor (the foreign key sets it null); rows in a household that is erased lose
@@ -62,19 +65,18 @@ data class PurgeResult(
  * transaction, so bytes storage fails to delete are tried again on every sweep
  * until they are gone (V109).
  *
- * **Nothing waits on the household.** The owner's answer (D8, 2026-09-15): "The
+ * **One rule, every household.** The owner's answer (D8, 2026-09-15): "The
  * departed person's own personal data is erased on schedule — their right
  * doesn't wait on absent relatives. The household's records belong to the other
- * members and survive." Before anything is carried out, each household is asked
- * whether this person is its last owner while other people and records remain
- * in it (`app.going_leaves_household_ownerless`, V120). Such a household is made
- * dormant first — so it is never ownerless without saying so — and then the
- * person is erased from it as from any other, with one difference: what they
- * held that was shared with the household or with named people, and their part
- * of joint records, stays, held by a **former member** (V136) that carries no
- * name or date of anyone. What was private to them alone is erased, with the
- * papers that went only with it. The account, sessions, factors, consents,
- * drafts and snapshots go in the same transaction, on the same day as anyone's.
+ * members and survive." And, asked whether that is only for a household left
+ * without an owner: *apply the split to every erasure. A special case that only
+ * fires on dormancy will drift out of step with the general path.* So each
+ * household is first asked whether this person is its last owner while other
+ * people and records remain (`app.going_leaves_household_ownerless`, V120); such
+ * a household is made dormant before a row of theirs is touched, and any other
+ * they own is handed on. Then every household they leave goes through the same
+ * lines below. The account, sessions, factors, consents, drafts and snapshots go
+ * in the same transaction, on the same day as anyone's.
  */
 @Component
 class AccountPurge(
@@ -124,7 +126,7 @@ class AccountPurge(
             var erasedHouseholds = 0
             var leftHouseholds = 0
             var erasedRecords = 0
-            var passed = 0
+            var keptRecords = 0
 
             val memberships = jdbc.query(
                 "select household_id, role from household_memberships where user_id = :uid and status = 'active'",
@@ -140,28 +142,8 @@ class AccountPurge(
                 .map { it.first }.toSet()
             opened = held.mapNotNull { dormancy.open(it, userId, "owner_closing_account", closureId, null) }
 
-            held.forEach { householdId ->
-                val mine = records.memberIds(householdId, userId)
-                val sole = records.solelyHeld(householdId, userId, mine)
-                val erased = records.privateOnes(sole)
-                val documents = records.documentsFollowingPrivate(householdId, userId, erased)
-                keys += writes.erase(erased, documents)
-                erasedRecords += erased.size + documents.size
-                writes.detachPerson(householdId, userId)
-                val former = writes.becomeFormerMember(householdId, mine)
-                writes.systemAudit(
-                    householdId, "member.erased", "household", householdId,
-                    mapOf(
-                        "recordsErased" to erased.size + documents.size,
-                        "recordsKeptForHousehold" to sole.size - erased.size,
-                        "formerMember" to former,
-                    ),
-                )
-                leftHouseholds++
-            }
-
-            memberships.filter { it.first !in held }.forEach { (householdId, role) ->
-                if (records.otherPeopleWithLogin(householdId, userId) == 0) {
+            memberships.forEach { (householdId, role) ->
+                if (householdId !in held && records.otherPeopleWithLogin(householdId, userId) == 0) {
                     keys += jdbc.query(
                         "select storage_key from documents where household_id = :hid",
                         mapOf("hid" to householdId),
@@ -176,25 +158,30 @@ class AccountPurge(
                     return@forEach
                 }
 
-                val mine = records.memberIds(householdId, userId)
-                if (role == "owner") handOver(householdId, userId)
+                // Handed on before anything of theirs is touched; a dormant one was opened above.
+                if (householdId !in held && role == "owner") handOver(householdId, userId)
 
+                // One rule for every household a person is erased from (owner's decision,
+                // 2026-09-15): what was private to them goes, with its papers; what they
+                // shared, and their part of what they held jointly, stays under a former member.
+                val mine = records.memberIds(householdId, userId)
                 val sole = records.solelyHeld(householdId, userId, mine)
-                val documents = records.documentsFollowing(householdId, userId, sole)
-                records.jointlyHeld(householdId, mine).forEach {
-                    records.passShare(it.type, it.id, mine)
-                    passed++
-                }
-                keys += writes.erase(sole, documents)
-                erasedRecords += sole.size + documents.size
-                writes.keepNamesOnOthersRecords(mine)
+                val joint = records.jointlyHeld(householdId, mine)
+                val erased = records.privateOnes(sole)
+                val documents = records.documentsFollowingPrivate(householdId, userId, erased)
+                keys += writes.erase(erased, documents)
+                erasedRecords += erased.size + documents.size
+                keptRecords += sole.size - erased.size + joint.size
                 writes.detachPerson(householdId, userId)
-                if (mine.isNotEmpty()) {
-                    jdbc.update("delete from members where id in (:mids)", mapOf("mids" to mine))
-                }
+                val former = writes.becomeFormerMember(householdId, mine)
                 writes.systemAudit(
                     householdId, "member.erased", "household", householdId,
-                    mapOf("recordsErased" to sole.size + documents.size),
+                    mapOf(
+                        "recordsErased" to erased.size + documents.size,
+                        "recordsKeptForHousehold" to sole.size - erased.size,
+                        "jointRecordsKept" to joint.size,
+                        "formerMember" to former,
+                    ),
                 )
                 leftHouseholds++
             }
@@ -204,6 +191,18 @@ class AccountPurge(
             // A row still holding something is left for the foreign key to unlink
             // (members.user_id is set null with the user) rather than deleted from
             // under the record, which would break its shares at commit.
+            val leftBehind = jdbc.query(
+                """
+                select m.id from members m
+                 where m.user_id = :uid
+                   and not exists (select 1 from investment_ownerships o where o.member_id = m.id)
+                   and not exists (select 1 from liability_holders h where h.member_id = m.id)
+                   and not exists (select 1 from account_holders h where h.member_id = m.id)
+                """.trimIndent(),
+                mapOf("uid" to userId),
+            ) { rs, _ -> rs.getObject("id", UUID::class.java) }
+            // A nomination there that named them keeps the name, unlinked, as anywhere else.
+            writes.keepNamesOnOthersRecords(leftBehind)
             jdbc.update(
                 """
                 delete from members m
@@ -230,12 +229,13 @@ class AccountPurge(
                 null, "account.purge", "account_closure", closureId,
                 mapOf(
                     "householdsErased" to erasedHouseholds, "householdsLeft" to leftHouseholds,
-                    "recordsErased" to erasedRecords, "sharesPassedOn" to passed, "householdsLeftDormant" to held.size,
+                    "recordsErased" to erasedRecords, "recordsKeptUnderFormerMember" to keptRecords,
+                    "householdsLeftDormant" to held.size,
                 ),
             )
             pendingDeletions.queue(keys)
             storageKeys = keys
-            PurgeResult(closureId, erasedHouseholds, leftHouseholds, erasedRecords, passed, held.size)
+            PurgeResult(closureId, erasedHouseholds, leftHouseholds, erasedRecords, keptRecords, held.size)
         } ?: return null
 
         opened.forEach { id ->
@@ -247,9 +247,9 @@ class AccountPurge(
         runCatching { pendingDeletions.deleteQueued(storageKeys) }
             .onFailure { log.warn("could not delete stored documents after purge: {}", it.javaClass.simpleName) }
         log.info(
-            "account purge {}: {} household(s) erased, {} left ({} of them dormant), {} record(s) erased, {} share(s) passed on",
+            "account purge {}: {} household(s) erased, {} left ({} of them dormant), {} record(s) erased, {} kept under a former member",
             closureId, result.householdsErased, result.householdsLeft, result.householdsLeftDormant, result.recordsErased,
-            result.sharesPassedOn,
+            result.recordsKept,
         )
         return result
     }

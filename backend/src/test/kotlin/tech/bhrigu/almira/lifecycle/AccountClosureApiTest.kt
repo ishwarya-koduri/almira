@@ -63,6 +63,23 @@ class AccountClosureApiTest : LifecycleTestSupport() {
             "/api/v1/households/$householdId/liabilities", ravi,
             mapOf("title" to "Ravi's bike loan", "kind" to "other", "outstanding" to 80_000),
         ).json()
+        // Recorded only in his name, but shared with the household: the household's too.
+        val raviShared = capture(
+            ravi, householdId, "gold_physical", "Ravi's household gold", BigDecimal(50_000), visibility = "household",
+        )
+        // Ishwarya's will names Ravi as executor, with a contact card that has his number.
+        val card = db.queryForObject(
+            "insert into contacts (household_id, name, phone) values (?::uuid, 'Ravi K', '+919800000001') returning id",
+            UUID::class.java, householdId,
+        )!!
+        val will = db.queryForObject(
+            "insert into estate_documents (household_id, member_id, kind, title) values (?::uuid, ?::uuid, 'will', 'Her will') returning id",
+            UUID::class.java, householdId, ishwaryaMemberId,
+        )!!
+        db.update(
+            "insert into estate_roles (estate_document_id, role, member_id, contact_id) values (?::uuid, 'executor', ?::uuid, ?::uuid)",
+            will, raviMemberId, card,
+        )
         // Ishwarya's record that nominates Ravi: hers, and it should still say who.
         put(
             "/api/v1/households/$householdId/investments/${ishGold.path("id").asText()}/nominees", ishwarya,
@@ -71,6 +88,7 @@ class AccountClosureApiTest : LifecycleTestSupport() {
         return mapOf(
             "raviGold" to raviGold.path("id").asText(), "flat" to flat.path("id").asText(),
             "ishGold" to ishGold.path("id").asText(), "loan" to loan.path("id").asText(),
+            "raviShared" to raviShared.path("id").asText(), "will" to will.toString(), "card" to card.toString(),
         )
     }
 
@@ -91,7 +109,12 @@ class AccountClosureApiTest : LifecycleTestSupport() {
         assertThat(erased).doesNotContain("Joint locker gold", "Ishwarya's gold")
 
         val joint = preview.path("stays").first { it.path("title").asText() == "Joint locker gold" }
-        assertThat(joint.path("detail").asText()).contains("Ishwarya")
+        assertThat(joint.path("detail").asText()).contains("Ishwarya").contains("Former member")
+
+        // The same split as a dormant household's, though this one is not (owner's decision, 2026-09-15).
+        assertThat(erased).doesNotContain("Ravi's household gold")
+        val shared = preview.path("stays").first { it.path("title").asText() == "Ravi's household gold" }
+        assertThat(shared.path("detail").asText()).contains("Former member")
         assertThat(preview.path("blockers")).isEmpty()
         assertThat(preview.path("waitDays").asInt()).isEqualTo(30)
         assertThat(preview.path("retention").asText()).contains("one year").contains("8(3)")
@@ -165,13 +188,30 @@ class AccountClosureApiTest : LifecycleTestSupport() {
         assertThat(exists("liabilities", ids.getValue("loan"))).isFalse()
         assertThat(exists("investments", ids.getValue("ishGold"))).isTrue()
 
-        // The joint record stays, whole, with Ishwarya holding all of it.
-        val shares = db.queryForList(
-            "select share_pct from investment_ownerships where investment_id = ?::uuid",
-            BigDecimal::class.java, UUID.fromString(ids.getValue("flat")),
+        // One rule for every erasure (owner's decision, 2026-09-15): what he shared, and his
+        // part of the joint record, stay — held by a former member with no name of anyone.
+        fun heldBy(id: String) = db.queryForList(
+            """
+            select m.display_name, m.former_since is not null as former, m.user_id is null as unlinked, o.share_pct
+              from investment_ownerships o join members m on m.id = o.member_id
+             where o.investment_id = ?::uuid order by o.share_pct
+            """.trimIndent(),
+            UUID.fromString(id),
         )
-        assertThat(shares).hasSize(1)
-        assertThat(shares.first()).isEqualByComparingTo("100")
+        assertThat(exists("investments", ids.getValue("raviShared"))).isTrue()
+        assertThat(heldBy(ids.getValue("raviShared")).single())
+            .containsEntry("display_name", "Former member").containsEntry("former", true).containsEntry("unlinked", true)
+        val joint = heldBy(ids.getValue("flat"))
+        assertThat(joint).hasSize(2)
+        assertThat(joint[0]).containsEntry("display_name", "Former member").containsEntry("former", true)
+        assertThat(joint[0]["share_pct"] as BigDecimal).isEqualByComparingTo("40")
+        assertThat(joint[1]["display_name"]).isEqualTo("Ishwarya")
+        assertThat(
+            db.queryForObject(
+                "select count(*) from members where household_id = ?::uuid and former_since is not null",
+                Int::class.java, householdId,
+            ),
+        ).describedAs("one former member holds both").isEqualTo(1)
 
         // Her nomination still says who she nominated.
         assertThat(
@@ -180,6 +220,15 @@ class AccountClosureApiTest : LifecycleTestSupport() {
                 String::class.java, UUID.fromString(ids.getValue("ishGold")),
             ),
         ).isEqualTo("Ravi")
+
+        // Her will still says who she named, as the household wrote it — unlinked from him,
+        // and with no way through it to his number. The card itself is the household's.
+        assertThat(
+            db.queryForMap(
+                "select person_name, member_id is null as unlinked, contact_id is null as no_contact from estate_roles where estate_document_id = ?::uuid",
+                UUID.fromString(ids.getValue("will")),
+            ),
+        ).containsEntry("person_name", "Ravi").containsEntry("unlinked", true).containsEntry("no_contact", true)
 
         // Security records are kept, without his name on them.
         assertThat(

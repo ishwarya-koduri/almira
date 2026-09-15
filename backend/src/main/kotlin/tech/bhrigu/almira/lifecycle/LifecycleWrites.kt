@@ -69,6 +69,17 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
      * Before a member row goes, the records that name them and belong to other
      * people keep the name as text. Ravi's nomination of his wife is Ravi's
      * record, and it should still say who he nominated.
+     *
+     * Owner's decision (2026-09-15), on an erasure: *the name stays — a
+     * nomination naming Lakshmi is a fact about the record owner's arrangement.
+     * Two conditions: it must not stay linked to the erased account, and no
+     * contact details survive — the name only, as the other person wrote it.*
+     * So: the name the record itself was given, or else the name the household
+     * knew them by on its member list — never anything from their account; the
+     * member link cleared; and a role's link to a contact card cleared with it,
+     * since that card is where a phone number or address would be. The record's
+     * own relationship, share and note are the other person's writing and stay as
+     * they were. Flagged for counsel (docs/23).
      */
     fun keepNamesOnOthersRecords(memberIds: List<UUID>) {
         if (memberIds.isEmpty()) return
@@ -85,7 +96,7 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
         jdbc.update(
             """
             update estate_roles r
-               set person_name = coalesce(r.person_name, m.display_name), member_id = null
+               set person_name = coalesce(r.person_name, m.display_name), member_id = null, contact_id = null
               from members m
              where m.id = r.member_id and r.member_id in (:mids)
             """.trimIndent(),

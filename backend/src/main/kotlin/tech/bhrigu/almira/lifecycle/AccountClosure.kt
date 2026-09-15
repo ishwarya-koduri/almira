@@ -100,38 +100,38 @@ class AccountClosureService(
                 return@forEach
             }
 
-            // The last owner of a household with records: it goes dormant, and what they
-            // shared with it stays under a former member (docs/05 §12.7, V136). The same
-            // question the purge asks, from what the owner can ask about their own household.
+            // The last owner of a household with records: it goes dormant (docs/05 §12.7,
+            // V135). The same question the purge asks, from what the owner can ask about
+            // their own household. It changes who carries the household on, not what is kept.
             val next = if (household.myRole == "owner") records.nextOwner(hid, userId) else null
             val leftDormant = next is LifecycleRecords.Handover.To && holdsRecords(hid)
 
+            // One rule for every household (owner's decision, 2026-09-15): what was private
+            // to you goes, with its papers; what you shared stays, held by "Former member".
             val sole = records.solelyHeld(hid, userId, mine)
-            val goes = if (leftDormant) records.privateOnes(sole) else sole
+            val goes = records.privateOnes(sole)
             goes.forEach { erased += LifecycleLine(hid, household.name, lineKind(it.type), it.id, it.title) }
-            (if (leftDormant) records.documentsFollowingPrivate(hid, userId, goes) else records.documentsFollowing(hid, userId, sole))
+            records.documentsFollowingPrivate(hid, userId, goes)
                 .forEach { erased += LifecycleLine(hid, household.name, "document", it.id, it.title) }
-            if (leftDormant) {
-                (sole - goes.toSet()).forEach {
-                    stays += LifecycleLine(
-                        hid, household.name, lineKind(it.type), it.id, it.title,
-                        "You shared this, so it stays with ${household.name}, held by \"Former member\" — not your name.",
-                    )
-                }
+            (sole - goes.toSet()).forEach {
+                stays += LifecycleLine(
+                    hid, household.name, lineKind(it.type), it.id, it.title,
+                    "You shared this, so it stays with ${household.name}, held by \"Former member\" — not your name.",
+                )
             }
 
             records.jointlyHeld(hid, mine).forEach {
                 val holders = records.otherHolders(it.type, it.id, mine)
                 stays += LifecycleLine(
                     hid, household.name, lineKind(it.type), it.id, it.title,
-                    if (leftDormant) "Your part stays with it, held by \"Former member\"; ${holders.joinToString(" and ")} keep theirs."
-                    else "Your part passes to ${holders.joinToString(" and ")}.",
+                    "Your part stays with it, held by \"Former member\"; ${holders.joinToString(" and ")} keep theirs.",
                 )
             }
             stays += LifecycleLine(
                 hid, household.name, "household", hid, household.name,
                 "The household carries on without you. What you added for other people stays with " +
-                    "them, without your name on it.",
+                    "them, without your name on it. Where someone else's record names you, such as a " +
+                    "nomination or a will, it keeps your name as they wrote it, and nothing else about you.",
             )
             if (next != null) {
                 when (next) {

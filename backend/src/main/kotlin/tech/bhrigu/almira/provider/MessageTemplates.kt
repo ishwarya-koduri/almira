@@ -73,6 +73,10 @@ object MessageTemplates {
         "lifecycle.memorial.marked",
         "lifecycle.successor.claimed",
         "lifecycle.departure.asked",
+        // An operator is asked to make someone owner of your household, and did
+        // (V137, scripts/dormancy-repair.sh).
+        "lifecycle.household.repair_requested",
+        "lifecycle.household.repair_done",
     )
 
     fun isEssential(template: String): Boolean = template in ESSENTIAL_TEMPLATES

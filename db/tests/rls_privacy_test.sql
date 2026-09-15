@@ -2360,6 +2360,37 @@ begin
 
   blocked := false;
   begin
+    perform app.dormancy_has_someone_to_take_it_on(gen_random_uuid());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor whether anyone may take a household on (V137)');
+
+  blocked := false;
+  begin
+    perform app.tell_household_of_repair(gen_random_uuid(), 'lifecycle.household.repair_done', 'x', 'y');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor to tell a household of an operator repair');
+
+  blocked := false;
+  begin
+    perform ops.carry_out_dormancy_repair(gen_random_uuid(), 'someone');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'and the operator functions are not the runtime role''s at all');
+
+  blocked := false;
+  begin
+    insert into dormancy_repair_requests (household_id, dormancy_id, member_id, reason, requester_name,
+                                          requester_relationship, evidence_reference, requested_by_operator, act_after)
+    values ((select v from t where k='dh'), gen_random_uuid(), gen_random_uuid(), 'a reason long enough', 'x', 'y',
+            'ticket', 'me', now() + interval '8 days');
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nobody writes a repair request through the application');
+
+  blocked := false;
+  begin
     update members set former_since = now()
      where household_id = (select v from t where k='dh') and display_name = 'Chintu';
   exception when others then blocked := sqlerrm = 'only the erasure makes a former member';

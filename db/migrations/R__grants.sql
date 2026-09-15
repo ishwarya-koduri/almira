@@ -121,6 +121,14 @@ begin
     execute 'revoke execute on function app.dormancy_asks_first(uuid) from almira_app, public';
   end if;
 
+  -- Operator repairs (V137). The household reads its requests through RLS;
+  -- only ops.* functions, as the owner, write them or tell the household.
+  if to_regclass('public.dormancy_repair_requests') is not null then
+    execute 'revoke insert, update, delete, truncate on dormancy_repair_requests from almira_app';
+    execute 'revoke execute on function app.dormancy_has_someone_to_take_it_on(uuid) from almira_app, public';
+    execute 'revoke execute on function app.tell_household_of_repair(uuid, text, text, text) from almira_app, public';
+  end if;
+
   -- Anything a later migration creates inherits these defaults automatically.
   execute 'alter default privileges in schema public '
           'grant select, insert, update, delete on tables to almira_app';

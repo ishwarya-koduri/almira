@@ -131,6 +131,12 @@ almira:
   # gateway, so every household is on the default plan with nothing ending. A
   # price is `price-inr` under a definition: whole rupees for the whole
   # household, never per person. Left out, the price page says none is decided.
+  # A dormant household (docs/05 §12.7): how long the successor the departed
+  # owner named is asked first, alone, before every adult member may take it on.
+  # After the week a memorial waits. 1 to 90 days or the server refuses to start.
+  lifecycle:
+    dormancy:
+      successor-window: ${ALMIRA_DORMANCY_SUCCESSOR_WINDOW:14d}
   plans:
     default-plan: ${ALMIRA_PLANS_DEFAULT_PLAN:family}
     grace-days: ${ALMIRA_PLANS_GRACE_DAYS:30}

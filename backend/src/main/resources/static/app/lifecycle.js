@@ -247,9 +247,9 @@ export async function loadFamilyLifecycle() {
 
 /**
  * Nobody runs the household at the moment: its last owner has gone while
- * records remain (docs/05 §12.7). Everything can still be seen; an adult
- * member takes it on, with a step-up, and only then does anything that needs an
- * owner or admin work again.
+ * records remain (docs/05 §12.7). Everything can still be seen; who is in the
+ * household is frozen until an adult member takes it on, with a step-up — the
+ * successor the owner named first, then everyone.
  */
 export function dormancyCard(context) {
   const d = context.dormancy;
@@ -263,11 +263,22 @@ export function dormancyCard(context) {
       await reload();
     } catch (error) { toast(error.message, { tone: "error" }); }
   });
+  // The successor the departed owner named is asked first, and may say no, which
+  // asks the other adults here (docs/05 §12.7). No step-up: saying no gives
+  // nothing to anyone.
+  const decline = el("button.btn", { type: "button" }, t("lifecycle.declineIt"));
+  decline.onclick = () => withBusy(decline, async () => {
+    try {
+      await api.post(`/api/v1/households/${hid}/dormancy/decline`);
+      toast(t("lifecycle.declined", { household: state.household.name }));
+      await reload();
+    } catch (error) { toast(error.message, { tone: "error" }); }
+  });
   return el("div.card.stack-3", { role: "status" },
     el("h4", {}, t("lifecycle.dormantTitle", { household: state.household.name })),
     el("p.lifecycle-text", {}, t("lifecycle.dormantBody", { name: d.ownerName || t("lifecycle.theOwner") })),
     d.explanation && el("p.lifecycle-text.muted", {}, d.explanation),
-    d.canAccept && el("div.row.wrap", {}, take),
+    (d.canAccept || d.canDecline) && el("div.row.wrap", {}, d.canAccept && take, d.canDecline && decline),
   );
 }
 

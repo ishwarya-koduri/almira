@@ -57,6 +57,7 @@ check it.*
 | The audit trail | The application itself | `almira_app` has INSERT only on `activity_log` | `R__grants.sql`; SQL suite |
 | Imported provider data | A provider returning too much, or the wrong household's | Imports arrive at the household's default visibility; the AA sandbox proves the consent gate | `ProviderApiTest` |
 | A statement's password, a photographed paper | The operator, any third-party service | Opened and read in the browser by vendored pdf.js and tesseract.js; only the rows or words the person keeps are sent; no library is fetched from anywhere else | `ClientVendorAssetsTest`, `scripts/browser-checks/on-device.html` |
+| A household whose last owner has gone | A member taking it over out of turn; an operator acting without the family knowing; an erasure that quietly waits forever | Dormancy freezes membership only; the named successor alone is asked first for a configured window; taking it on needs an eligible adult and a step-up, atomically; the departed person is erased on schedule and what they shared stays under a former member; an operator repair needs a documented request, a notice before, a wait of at least a week, and a notice after — config-gated, owner credentials, audited | `DormantHouseholdApiTest`, `DormancyOrderApiTest`, `DormancyRepairTest`, SQL suite dormant section |
 | The offline copy of the handbook | Whoever later uses a shared or lost device; a copy of the browser profile | Off by default; an allowlist of fields; AES-GCM under a non-extractable key held apart; deleted on sign-out and after 30 days — see below | `scripts/check-offline-store.js`, `on-device.html` |
 
 ### The offline copy (P-21)
@@ -130,6 +131,8 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | AC-7 | Guest sessions are read-only in the database — `V21__guests_are_read_only.sql` |
 | AC-8 | Emergency access reveals continuity records only, and only to the requester — `V20`, `EmergencyService.kt` |
 | AC-9 | The emergency window opens only after real inactivity by the person it concerns — `V25__emergency_needs_real_inactivity.sql`, `security/SessionActivity.kt` |
+| AC-11 | A dormant household freezes membership in the policies, and is offered to the named successor first — `V120`, `V135__dormancy_asks_the_successor_first_and_freezes_membership_only.sql`, `lifecycle/Dormancy.kt` |
+| AC-12 | The operator repair of a dormant household runs only as the schema owner, only on a documented request, only after the household is told and a wait — `V137`, `scripts/dormancy-repair.sh` (refuses unless `ALMIRA_OPS_DORMANCY_REPAIR=enabled`) |
 | AC-10 | A recovery copy is readable by its owner and by the person holding an open window on that owner only; who holds a share only by members who can see a value that person sealed — `V55__recovery_for_sealed_fields.sql` (`app.emergency_open_on_user`) |
 
 ### Cryptography
@@ -169,6 +172,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | DP-7 | The opt-in offline copy: allowlisted fields, AES-GCM under a non-extractable key held apart, deleted on sign-out and after 30 days — `app/offline-store.js` |
 | DP-8 | A sign-in email's record keeps its outcome (sent, dropped, failed, unconfirmed, expired) and no address or code, owner connection only, for 30 days. Sent-against-dropped is kept on purpose (owner's decision, 2026-09-15): the owner connection already holds the allowlist, and it is what tells a dropped send from a provider failure — `auth/SignInCodeOutbox.kt`, V110, Doc 13 §5 |
 | DP-9 | A backup of a deployment with documents in object storage needs `ALMIRA_BACKUP_DOCUMENTS=external`, and says in its output and manifest that they are not in it; restores and drills require the same before writing — `scripts/lib/backup_documents.py`, Doc 17 §6 |
+| DP-10 | An erasure is not held back by a dormant household: the person's own data goes on the day, what they shared stays under a former member with no personal data — `lifecycle/AccountPurge.kt`, `V136`; checked by scanning every table (`DormantHouseholdApiTest`) |
 
 ### Audit
 | | |
@@ -177,6 +181,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | AU-2 | Every share, emergency transition and provider import audited |
 | AU-3 | Outbound messages recorded with outcome, never content |
 | AU-4 | A sign-in email an allowlisted address did not get raises an operator alert — an ERROR line with no address or code, a flag on its record, a count on `/health` behind `ALMIRA_OPS_HEALTH_TOKEN` — and changes nothing a client sees — `auth/SignInCodeOutbox.kt`, `auth/SignInEmailAlerts.kt`, V130, `scripts/check-health.sh` |
+| AU-5 | Every operator repair attempt on a dormant household, refused or not, audited with its outcome and the operator's name — `ops.carry_out_dormancy_repair` (V137) |
 
 ### Software supply chain
 | | |
@@ -235,6 +240,7 @@ disbelieving:
 | No formal DPDP or SOC 2 programme | Design aligns; the programme is separate work |
 | A second factor is optional, and not yet required for emergency-access grantors | The card asks for two ways in; making it mandatory is a product decision (docs/05 §2) |
 | The native app cannot finish a sign-in that needs a second factor | known-issues 29 |
+| An operator repair of a dormant household trusts the operator's reading of the evidence | The request records where the evidence is and who asked, and the household is told a week or more before; nothing checks the evidence itself (known-issues, "An operator repair records where the evidence is, and nothing checks it") |
 | The offline copy of the handbook is readable by anyone who can run the browser profile it is in | Opt-in, and said so in Settings; a key wrapped by a passphrase or device unlock is not built (known-issues 60) |
 
 [‹ Index](README.md)

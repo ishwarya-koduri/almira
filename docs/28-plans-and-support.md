@@ -133,6 +133,13 @@ household's admins can read. The `ops` schema is never granted to
 `almira_app`, and `R__grants` does not grant it, so a compromised application
 cannot reach it. The owner's database credentials are the authentication.
 
+The same door, and the same authentication, is the only way to make someone
+owner of a dormant household nobody in it may take on
+(`scripts/dormancy-repair.sh`, V137, docs/05 §12.7). It also refuses unless
+`ALMIRA_OPS_DORMANCY_REPAIR=enabled` is set for that environment, needs a
+documented request, tells the household before and after, and waits at least a
+week in between.
+
 ---
 
 ## 4 · Share a support code

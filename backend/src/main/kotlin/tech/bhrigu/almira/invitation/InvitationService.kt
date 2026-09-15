@@ -197,11 +197,23 @@ class InvitationService(
         throw ApiException.notFound("That invitation link isn't valid.")
     } catch (e: UncategorizedSQLException) {
         throw translate(e)
+    } catch (e: org.springframework.dao.DataAccessException) {
+        // Joining a dormant household waits until someone takes it on (V135), refused
+        // in the database before any row is written.
+        if ("household_dormant" in (e.mostSpecificCause.message ?: "")) throw joiningWaits()
+        throw e
     }
+
+    private fun joiningWaits() = ApiException(
+        org.springframework.http.HttpStatus.FORBIDDEN, HouseholdService.DORMANT_CODE,
+        "Nobody runs that household at the moment, so nobody can join it until someone there " +
+            "takes it on. Ask them again after that.",
+    )
 
     private fun translate(e: UncategorizedSQLException): ApiException {
         val text = e.sqlException?.message ?: e.mostSpecificCause.message ?: ""
         return when {
+            "household_dormant" in text -> joiningWaits()
             "invitation_not_found" in text ->
                 ApiException.notFound("That invitation link isn't valid.")
             "invitation_used" in text ->

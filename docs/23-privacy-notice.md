@@ -249,6 +249,7 @@ kind is the owner's test (V140), asked of the person the notice is sent to:
 | Your household has nobody running it: nobody can invite or remove people, and an adult may take it on (V143) | `lifecycle.household.dormant` |
 | Your closure or leaving waits because nobody else runs the household (V143) | `lifecycle.household.dormant.you` |
 | Someone took on your household, or its owner came back and it runs as before (V143) | `lifecycle.household.ownership_accepted`, `lifecycle.household.running_again` |
+| Almira has been asked to make someone the owner of your household, and later that it did | `lifecycle.household.repair_requested`, `lifecycle.household.repair_done` |
 
 A sign-in code by SMS is sent at sign-in, not as a notification, and is not
 under consent either. Everything else sent outside the app is: reminders, the
@@ -267,6 +268,9 @@ recorded in known issues ("No message tells a child they have come of age").
 The dormancy notices added with V120 change the access of the person told —
 who may run, invite into or take on the household — so they are on the list
 (V143).
+The two operator-repair notices (V137) are on it because they are the
+household's only warning before someone is made its owner from outside the app
+(docs/05 §12.7); a memorial does not stop them either.
 
 **Children.** Family → Add someone with a date of birth under 18 opens
 "Adding Aarav's records" before anything is saved: parent or lawful

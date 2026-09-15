@@ -95,7 +95,10 @@ class HouseholdService(
         diedOn: LocalDate? = null,
     ): MemberRow {
         val userId = userContext.require()
-        requireAdmin(get(householdId))
+        val household = get(householdId)
+        requireAdmin(household)
+        // Adding a person is membership, frozen while dormant (V135).
+        refuseWhileDormant(household)
 
         if (displayName.isBlank()) {
             throw ApiException.badRequest("name_required", "Give this person a name.")
@@ -130,6 +133,9 @@ class HouseholdService(
 
         // You may always edit your own entry; editing anyone else needs admin.
         if (member.userId != userId) requireAdmin(household)
+        // A date of birth decides who may take a dormant household on: frozen with
+        // membership (V135). The name is not, and stays editable.
+        if (dateOfBirth != null && dateOfBirth != member.dateOfBirth) refuseWhileDormant(household)
 
         checkDiedOn(diedOn, dateOfBirth ?: member.dateOfBirth)
         val updated = repo.updateMember(
@@ -169,6 +175,8 @@ class HouseholdService(
         val userId = userContext.require()
         val household = get(householdId)
         requireAdmin(household)
+        // Removing a person is membership, frozen while dormant (V135).
+        refuseWhileDormant(household)
         val member = repo.member(householdId, memberId, userId)
             ?: throw ApiException.notFound("We couldn't find that person.")
 
@@ -262,16 +270,18 @@ class HouseholdService(
     fun requireAdministrator(householdId: UUID) {
         if (!repo.canAdminister(householdId)) {
             repo.find(householdId, userContext.require())
-                ?.takeIf { it.dormant && it.myRole in setOf("owner", "admin") }
-                ?.let { throw dormant(it) }
+                ?.takeIf { it.dormantBecauseOfMe }
+                ?.let { throw dormantOwner(it) }
             throw ApiException.forbidden()
         }
     }
 
     /**
-     * For a service that checks an owner or admin role itself: a dormant
-     * household has nobody who may act as one (V120), and says so in words
-     * rather than as a policy's bare refusal.
+     * For what changes who is in a household, or with what role: inviting,
+     * joining, adding or removing a person, asking someone to leave, naming a
+     * successor, marking someone as passed away through the admin door. Frozen
+     * while the household is dormant (V135), and said in words rather than as a
+     * policy's bare refusal. Everything else an admin could do stays open.
      */
     fun refuseWhileDormant(household: HouseholdRow) {
         if (household.dormant) throw dormant(household)
@@ -285,7 +295,7 @@ class HouseholdService(
         if (household.myRole !in setOf("owner", "admin")) {
             throw ApiException.forbidden("Only the household owner or an admin can do that.")
         }
-        refuseWhileDormant(household)
+        if (household.dormantBecauseOfMe) throw dormantOwner(household)
     }
 
     private fun requireVisibility(value: String) {
@@ -313,9 +323,17 @@ class HouseholdService(
 
         fun dormant(household: HouseholdRow) = ApiException(
             org.springframework.http.HttpStatus.FORBIDDEN, DORMANT_CODE,
-            "Nobody runs ${household.name} at the moment, so this has to wait until someone takes it on. " +
-                "An adult in the household can, on the Family screen. You can still see everything, open " +
-                "the handbook and download everything.",
+            "Nobody runs ${household.name} at the moment, so who is in it can't change until someone " +
+                "takes it on. An adult in the household can, on the Family screen. You can still see " +
+                "everything, open the handbook and download everything.",
+        )
+
+        /** The owner whose going made it dormant, trying to run it meanwhile. */
+        fun dormantOwner(household: HouseholdRow) = ApiException(
+            org.springframework.http.HttpStatus.FORBIDDEN, DORMANT_CODE,
+            "${household.name} is waiting for someone to take it on, so you can't run it meanwhile. " +
+                "If you've changed your mind, say so and it runs as before. You can still see everything, " +
+                "open the handbook and download everything.",
         )
     }
 

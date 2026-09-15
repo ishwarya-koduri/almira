@@ -31,7 +31,7 @@ function isMinorOn(dateOfBirth, today = new Date()) {
 
 export async function familyScreen(host) {
   const members = state.members;
-  // A dormant household has nobody who may manage it until someone takes it on (docs/05 §12.7).
+  // Adding and inviting people is membership, frozen while a household is dormant (docs/05 §12.7).
   const canManage = ["owner", "admin"].includes(state.household.myRole) && !state.household.readOnly
     && !state.household.dormant;
   // Leaving, a successor, a memorial, coming of age (docs/05 §12), and the

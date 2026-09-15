@@ -956,6 +956,8 @@ const messages = {
     "lifecycle.theOwner": "The owner",
     "lifecycle.takeItOn": "Take on the household",
     "lifecycle.tookItOn": "You now run {household}.",
+    "lifecycle.declineIt": "Decline",
+    "lifecycle.declined": "Done. The other adults in {household} are asked now.",
     "lifecycle.youAreNamed": "You've been named to carry {household} on.",
     "lifecycle.chooseSomeone": "Choose someone",
     "lifecycle.nameThem": "Save",

@@ -1974,9 +1974,18 @@ with nobody eligible stays dormant and is never erased for that. Proven by
 `DormantHouseholdApiTest` and the "dormant household" block of
 `db/tests/rls_privacy_test.sql`.
 
-**What is still open** See "A dormant household with nobody who may take it on
-waits for good" and "The last owner of a household with records must be taken on
-explicitly, even with a successor named".
+**Revised** (2026-09-15, the owner's answers to the two entries this left open,
+both now resolved): a closure is no longer held by the household — the person is
+erased on the day and what they shared stays under a former member (V136); the
+named successor is asked first, for a window, before anyone else (V135); a
+dormant household freezes membership only (V135); and a household with nobody
+eligible has an operator repair (V137). docs/05 §12.7 is the current statement.
+
+**What is still open** See "Only a closure is carried out while a household is
+dormant, and only there does what was shared survive an erasure", "An operator
+repair records where the evidence is, and nothing checks it", and "Marking
+someone as passed away through the admin door, and a date of birth, are frozen
+with membership".
 
 ---
 
@@ -2088,6 +2097,10 @@ a process already serving.
 | smoke-prod.sh deployment checks (up, database, rlsEnforced, not owner) | requesting codes, signing in, creating a household | stops before the first write | `6f6847d` |
 | A sign-in email's address is on the allowlist | a provider call (to the decoy sink) for every unlisted address | `SignInEmailOutbox` asks the list before stamping the send, deriving a code or calling a provider | `03c9508` |
 | No email, SMS or push without consent to messages | (absence of consent counted as a yes, so the row was written) | `app.enqueue_outbound_message` asks `app.messages_consent_given` before the insert; `MessagesConsentTest` looks for the row and the provider call (V125) | `25dc628` |
+| Only the named successor may take a dormant household on during their window | — (new) | `app.accept_household_ownership` refuses others before the role change and the audit line (V135); watched failing with the check moved after the update — Ravi's direct call went through (`DormancyOrderApiTest`) | ws/dormant-ordered |
+| An operator repair has a request, its wait, its before-notice, a dormant household and an eligible member | — (new) | `ops.carry_out_dormancy_repair` decides the outcome, and audits it, before the role change (V137); watched failing with the role change moved in front — the advisor became owner during the wait (`DormancyRepairTest`) | ws/dormant-ordered |
+| dormancy-repair.sh is enabled for this environment | — (new) | before psql is called; watched failing with the gate moved to the end (`scripts/tests/dormancy-repair-refuses-unless-enabled.sh`) | ws/dormant-ordered |
+| A closure's household is made dormant before the person's rows in it are touched | — (new) | `AccountPurge` opens the dormancy first; watched failing with it moved after the erasure — the successor was gone and nobody was asked first (`DormancyOrderApiTest`) | ws/dormant-ordered |
 
 The scripts' tests are in `scripts/tests/` and run the real scripts against
 throwaway containers and volumes, or with a stub `curl`; each was watched failing
@@ -2099,6 +2112,17 @@ docs/16 AC-2 and docs/17 §3.
 
 **Still open:**
 
+- **A refusal and the write it refuses inside one request transaction cannot be
+  told apart by order.** Moving the membership freeze in `InvitationService`
+  after the insert, or the step-up after `app.accept_household_ownership`,
+  left `DormantHouseholdApiTest` passing: the refusal rolls the write back, and
+  nothing the write did is visible outside the transaction. The owner accepted
+  that for the transfer (D-proof, 2026-09-15); the tests instead prove the whole
+  request fails atomically (every row of the household's and the caller's,
+  table by table) and were watched failing with the refusal removed. The
+  invitation freeze is also in the database for accepting; creating an
+  invitation has no row-level security (see "Invitations have no row-level
+  security").
 - **`StartupRefusalOrderTest` finds a refusal by its words.** It fails on a
   class that says "Refusing to start" outside the two mechanisms, and on a
   properties class that refuses in an init block without being bound early. A
@@ -2298,50 +2322,38 @@ they would say yes.
 
 ## 73. A dormant household with nobody who may take it on waits for good
 
-**Where** `app.accept_household_ownership`, `app.going_leaves_household_ownerless`
-(V120), `lifecycle/AccountPurge.kt`, `lifecycle/DepartureCompletion.kt`.
+**Resolved** (2026-09-15, owner's answers D8 and D8b). Kept so the number means
+something where it is cited.
 
-**What** When the only people left besides the departed owner are advisors,
-restricted members, minors or people memorialised, nobody can take the household
-on, so it stays dormant: nothing needing an owner or admin can be done, and the
-departed owner's closure or departure stays pending — their account is not
-erased — for as long as that lasts. This is the owner's rule ("never silently
-purged"), and it is deliberate. A member who turns eighteen becomes eligible on
-the day (`app.is_minor`), and a memorialised member who says "I'm here" does too;
-nothing else changes it.
-
-**Why not fixed** What should happen next is a decision: an operator repair
-(making someone owner by hand, with a record), inviting a new adult (which needs
-an admin, and there is none), or telling the departed owner that their erasure
-is waiting on it. There is no runbook and no operator tool, and nothing lists
-such households other than `select * from household_dormancies where ended_at is
-null`.
-
-**Risk if left** Rare. The family's records are safe and readable; the cost is a
-household nobody can manage and an erasure that does not complete.
+The departed owner's erasure no longer waits on the household: the purge erases
+them on the day and keeps what they shared under a former member (V136,
+`AccountPurge`). A household with nobody eligible has an operator repair: a
+documented request (`dormancy_repair_requests`), audited, a notice to the
+household before, a wait of at least seven days, then the change and a notice
+after, only through `scripts/dormancy-repair.sh` as the schema owner with
+`ALMIRA_OPS_DORMANCY_REPAIR=enabled` (V137). `ops.dormant_households_nobody_may_take_on()`
+lists them. Proven by `DormantHouseholdApiTest` ("with nobody who may take it
+on…") and `DormancyRepairTest`. What remains is "An operator repair records
+where the evidence is, and nothing checks it".
 
 ---
 
 ## 74. The last owner of a household with records must be taken on explicitly, even with a successor named
 
-**Where** `lifecycle/AccountPurge.kt`, `lifecycle/DepartureCompletion.kt`,
-`lifecycle/AccountClosure.kt` (`closurePreview`), V120.
+**Resolved** (2026-09-15, owner's answers D6 and D7). Kept so the number means
+something where it is cited.
 
-**What** The owner's decision was read literally: *require an explicit transfer
-before any purge*. So a named successor or an admin is no longer made owner by
-the sweep in a household with records; they are told and must accept (step-up).
-Two consequences to confirm: (1) the automatic handover remains only where the
-household holds no records; (2) while a memorial-caused dormancy waits its week,
-a remaining admin can do nothing that needs an admin (invite, remove, rename),
-where before the memorial they could. The request-time blocker
-(`owner_needs_successor`) is unchanged.
-
-**Why not fixed** It is the owner's call whether a named successor's earlier
-consent-by-naming should count as the transfer, and whether an existing admin
-should keep admin capabilities during the memorial week.
-
-**Risk if left** Friction, not loss: one more step for the successor, and a
-week without admin actions after a memorial.
+(1) Naming is not the transfer: "Acceptance is the whole point. Order it, don't
+automate it." The named successor, if eligible, is asked first and alone for
+the successor's window (`almira.lifecycle.dormancy.successor-window`, 14 days),
+after the general wait (a week after a memorial, none otherwise); they accept
+with a step-up or decline; on a decline, at the end of the window or when they
+stop being eligible, every eligible member may, and is told then (V135,
+`DormancyOffers`). The automatic handover where the household holds no records
+is unchanged. (2) The memorial week is kept, but only membership is frozen: an
+admin who remains keeps every other admin capability (renaming, connections,
+editing names). Proven by `DormancyOrderApiTest`, `DormantHouseholdApiTest`
+("during a memorial's week…") and the SQL suite's dormant block.
 
 ---
 
@@ -2370,8 +2382,9 @@ emergency window in that household.
 **Where** `app/lifecycle.js` (`dormancyCard`), `app/screens/family.js`,
 `lifecycle/Dormancy.kt`, `app/` (native).
 
-**What** The web Family screen shows a dormant household and a "Take on the
-household" button. The native app has neither; a member there sees
+**What** The web Family screen shows a dormant household, a "Take on the
+household" button and, for the successor asked first, "Decline". The native app
+has none of these; a member there sees
 `household_dormant` refusals in words but cannot take the household on. The
 card's Telugu and Hindi are machine drafts; the explanation and the notices are
 English sentences from the server, as the other lifecycle ones are.
@@ -2486,3 +2499,99 @@ because someone runs it again. This matches docs/05 §12.7, which already called
 `lifecycle.household.dormant` essential. Household news ("someone else joined
 or left") stays under consent. Pinned by `MessagesConsentTest` (sent on every
 channel without consent), `MessageTemplatesTest` and `rls_privacy_test.sql`.
+
+---
+
+## 81. Only a closure is carried out while a household is dormant, and only there does what was shared survive an erasure
+
+**Where** `lifecycle/AccountPurge.kt`, `lifecycle/DepartureCompletion.kt`,
+`LifecycleWrites.becomeFormerMember` (V136), docs/05 §12.1, §12.7.
+
+**What** The owner's D8 answer was applied to the purge of a household's last
+owner, which is where it was asked. Three things it did not settle:
+(1) In any *other* household a closure still erases everything the person
+solely held, whatever its visibility, as §12.1 always said — so a
+household-shared holding recorded only in the departing member's name vanishes
+from a household that is not dormant, while the same holding in a dormant one
+stays under "Former member". (2) An owner's *departure* still waits for someone
+to take the household on: the person keeps their account, so no right of theirs
+is delayed, but what they hold there does not move. (3) A joint record that was
+private and whose other holder has no login (a child) survives the erasure,
+readable by nobody, as it was before.
+
+**Why not fixed** Whether "the household's records belong to the other members
+and survive" is the rule for every erasure, or only when nobody is left to run
+the household, is the owner's call; applying it everywhere changes what
+every closure preview has promised.
+
+**Risk if left** Inconsistency between two households, not loss of anything
+private: private records are erased in both cases.
+
+---
+
+## 82. An operator repair records where the evidence is, and nothing checks it
+
+**Where** `dormancy_repair_requests.evidence_reference` (V137),
+`scripts/dormancy-repair.sh`, docs/05 §12.7.
+
+**What** A request needs a reason, the requester's name and relationship, and a
+reference to where the evidence is kept (a ticket, a case file). The database
+checks those are present and that the household is told a week or more before
+anything is done; it cannot check that the evidence exists or says what the
+operator believes. There is no runbook for what evidence is enough (a death
+certificate, a succession certificate, a court order), no second operator
+required, and the notices go only to addresses on the members' own accounts — a
+household whose remaining members never sign in may not see them.
+
+**Why not fixed** What counts as sufficient evidence, and whether a second
+person must approve, are policy for the owner and counsel, not code.
+
+**Risk if left** A mistaken or deceived operator could hand a household to the
+wrong member after a wait nobody noticed. Every step is audited with the
+operator's name, the request is readable by the household, and the owner
+credentials plus the environment switch are needed.
+
+---
+
+## 83. Marking someone as passed away through the admin door, and a date of birth, are frozen with membership
+
+**Where** `member_memorials_insert`, `members_insert`/`members_delete` policies,
+`app.members_frozen_while_dormant` (V135), `HouseholdService.addMember`,
+`updateMember`.
+
+**What** The owner listed invite, remove, role change, successor change and who
+may accept as frozen during a dormancy, and everything else open. Three more
+were read as membership and frozen too: marking another member as passed away
+through the admin door (it takes away their capabilities, and would change who
+may take the household on — the trusted-contact door stays open); adding a
+person without a login (the roster); and changing a member's date of birth or
+login (a date of birth decides who is a minor, and so who may take it on).
+Renaming a member stays open. The freeze also applies to a dormancy caused by a
+closure or departure, not only to the week after a memorial.
+
+**Why not fixed** Confirmation needed that these belong with membership, and
+that the freeze lasts as long as the dormancy rather than only the memorial's
+week.
+
+**Risk if left** A remaining admin cannot record a second death, or correct a
+wrong date of birth, until someone takes the household on.
+
+---
+
+## 84. Invitations have no row-level security
+
+**Where** `invitations` (V1, V7), `invitation/InvitationService.kt`.
+
+**What** Found while freezing membership. `invitations` has no RLS enabled and
+no policies; creating, listing and revoking are guarded only by the service's
+role check (and now its dormancy check). Accepting goes through
+`app.accept_invitation`, which does refuse while dormant (V135). The runtime role
+could insert an invitation for any household with SQL.
+
+**Why not fixed** Enabling RLS on the table changes every invitation path and is
+outside this workstream's scope; a token still has to be delivered and accepted
+through the checked function to have any effect.
+
+**Risk if left** Needs SQL access as the runtime role; an invitation written that
+way cannot be accepted into a dormant household, and elsewhere still needs its
+token.

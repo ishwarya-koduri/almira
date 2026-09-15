@@ -10,7 +10,7 @@
    in i18n.js (corrected as needed) and delete it here: scripts/check-i18n.js
    fails if a key is in both. Keys are in the same order as English.
 
-   1783 keys.
+   1785 keys.
    ============================================================================= */
 
 export const draft = {
@@ -669,6 +669,8 @@ export const draft = {
   "lifecycle.theOwner": "मालिक",
   "lifecycle.takeItOn": "घर की ज़िम्मेदारी लें",
   "lifecycle.tookItOn": "अब {household} आप चलाते हैं।",
+  "lifecycle.declineIt": "मना करें",
+  "lifecycle.declined": "हो गया। अब {household} के बाकी वयस्कों से पूछा जाएगा।",
   "lifecycle.youAreNamed": "{household} को आगे संभालने के लिए आपका नाम दिया गया है।",
   "lifecycle.chooseSomeone": "किसी को चुनें",
   "lifecycle.nameThem": "सहेजें",

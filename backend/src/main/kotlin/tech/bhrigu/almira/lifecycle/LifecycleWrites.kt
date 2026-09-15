@@ -128,6 +128,52 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
         }
     }
 
+    /**
+     * What an erased person held for a household that stays (docs/05 §12.7,
+     * V136): a new member row marked `former_since`, named "Former member" and
+     * carrying nothing else about anyone, takes over their holder rows; then
+     * their own member rows go, and with them everything that was about them as
+     * a person there — emergency contacts either way, requests and heir plans
+     * about them, grants to them, their tax pack links, memorial, departure and
+     * key-holder asks. Returns the former member's id, or null when they held
+     * nothing that stays.
+     */
+    fun becomeFormerMember(householdId: UUID, memberIds: List<UUID>): UUID? {
+        if (memberIds.isEmpty()) return null
+        val p = mapOf("mids" to memberIds)
+        val holds = jdbc.queryForObject(
+            """
+            select exists (select 1 from investment_ownerships where member_id in (:mids))
+                or exists (select 1 from liability_holders where member_id in (:mids))
+                or exists (select 1 from account_holders where member_id in (:mids))
+                or exists (select 1 from goals where member_id in (:mids))
+                or exists (select 1 from estate_documents where member_id in (:mids))
+                or exists (select 1 from lost_money_checks where member_id in (:mids))
+            """.trimIndent(),
+            p, Boolean::class.java,
+        ) == true
+        var former: UUID? = null
+        if (holds) {
+            former = jdbc.queryForObject(
+                """
+                insert into members (household_id, display_name, former_since)
+                values (:hid, 'Former member', now()) returning id
+                """.trimIndent(),
+                mapOf("hid" to householdId), UUID::class.java,
+            )
+            val moved = mapOf("mids" to memberIds, "former" to former)
+            listOf(
+                "investment_ownerships", "liability_holders", "account_holders", "goals", "estate_documents",
+                "lost_money_checks",
+            ).forEach { table ->
+                jdbc.update("update $table set member_id = :former where member_id in (:mids)", moved)
+            }
+        }
+        keepNamesOnOthersRecords(memberIds)
+        jdbc.update("delete from members where id in (:mids)", p)
+        return former
+    }
+
     /** Hands the owner role on, and says so in the log. */
     fun makeOwner(householdId: UUID, userId: UUID, reason: String) {
         jdbc.update(

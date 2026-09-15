@@ -116,6 +116,24 @@ begin
     execute 'revoke execute on function app.end_household_dormancy(uuid, text, uuid) from almira_app, public';
   end if;
 
+  -- The order a dormant household is offered in, and the membership freeze
+  -- (V135). The window is the application's to set on the owner connection;
+  -- whether a named person may take a household on, and who is asked first,
+  -- are asked only inside the accept and decline functions.
+  if to_regclass('public.dormancy_settings') is not null then
+    execute 'revoke all on dormancy_settings from almira_app';
+    execute 'revoke execute on function app.may_take_on_household(uuid, uuid) from almira_app, public';
+    execute 'revoke execute on function app.dormancy_asks_first(uuid) from almira_app, public';
+  end if;
+
+  -- Operator repairs (V137). The household reads its requests through RLS;
+  -- only ops.* functions, as the owner, write them or tell the household.
+  if to_regclass('public.dormancy_repair_requests') is not null then
+    execute 'revoke insert, update, delete, truncate on dormancy_repair_requests from almira_app';
+    execute 'revoke execute on function app.dormancy_has_someone_to_take_it_on(uuid) from almira_app, public';
+    execute 'revoke execute on function app.tell_household_of_repair(uuid, text, text, text) from almira_app, public';
+  end if;
+
   -- Anything a later migration creates inherits these defaults automatically.
   execute 'alter default privileges in schema public '
           'grant select, insert, update, delete on tables to almira_app';

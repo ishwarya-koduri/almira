@@ -92,6 +92,10 @@ object MessageTemplates {
         "lifecycle.household.dormant.you",
         "lifecycle.household.running_again",
         "lifecycle.household.ownership_accepted",
+        // An operator is asked to make someone owner of your household, and did
+        // (V137, scripts/dormancy-repair.sh).
+        "lifecycle.household.repair_requested",
+        "lifecycle.household.repair_done",
     )
 
     /** Essential, and about the person's place in a household rather than their account (V140, V143). */

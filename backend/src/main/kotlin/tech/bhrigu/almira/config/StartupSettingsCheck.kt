@@ -10,6 +10,7 @@ import tech.bhrigu.almira.auth.SignInChannels
 import tech.bhrigu.almira.continuity.ContinuityProperties
 import tech.bhrigu.almira.crypto.LocalKeyManagement
 import tech.bhrigu.almira.guidance.SupportProperties
+import tech.bhrigu.almira.lifecycle.DormancyProperties
 import tech.bhrigu.almira.plans.PlanProperties
 import tech.bhrigu.almira.privacy.PrivacyProperties
 import tech.bhrigu.almira.provider.ProviderCalls
@@ -71,5 +72,6 @@ class StartupSettingsCheck : EnvironmentPostProcessor {
         binder.bind("almira.plans", Bindable.of(PlanProperties::class.java))
         binder.bind("almira.support", Bindable.of(SupportProperties::class.java))
         binder.bind("almira.continuity", Bindable.of(ContinuityProperties::class.java))
+        binder.bind("almira.lifecycle.dormancy", Bindable.of(DormancyProperties::class.java))
     }
 }

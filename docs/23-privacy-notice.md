@@ -204,14 +204,17 @@ and `MessageTemplates.ESSENTIAL_TEMPLATES`; one list, pinned together by
 | You were marked as passed away | `lifecycle.memorial.marked` |
 | Someone has taken over as owner of your household | `lifecycle.successor.claimed` |
 | You have been asked to leave a household | `lifecycle.departure.asked` |
+| Almira has been asked to make someone the owner of your household, and later that it did | `lifecycle.household.repair_requested`, `lifecycle.household.repair_done` |
 
 A sign-in code by SMS is sent at sign-in, not as a notification, and is not
 under consent either. Everything else sent outside the app is: reminders, the
 Still true? digest, being named an emergency contact or a successor, a
 key-holder question, a child coming of age, someone else joining, leaving or
-signing back in, and any kind of message added later until it is deliberately
-put on the list above. There is no dormancy notice today; when there is one, it
-belongs on the list.
+signing back in, a household needing someone to run it or asking you first to
+take it on, and any kind of message added later until it is deliberately put on
+the list above. The two operator-repair notices are on it because they are the
+household's only warning before someone is made its owner from outside the app
+(docs/05 §12.7); a memorial does not stop them either.
 
 **Children.** Family → Add someone with a date of birth under 18 opens
 "Adding Aarav's records" before anything is saved: parent or lawful

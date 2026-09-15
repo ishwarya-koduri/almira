@@ -223,7 +223,7 @@ to them or in their name, or because the notice changes their own rights or
 obligations — and they are not held by quiet hours or the daily limit. The last
 kind is the owner's test (V140), asked of the person the notice is sent to:
 *does it change YOUR rights or obligations?* Exactly these, and nothing else
-(`app.message_is_essential`, V125 and V140, and
+(`app.message_is_essential`, V125, V140 and V143, and
 `MessageTemplates.ESSENTIAL_TEMPLATES`; one list, pinned together by
 `MessagesConsentTest`):
 
@@ -246,6 +246,9 @@ kind is the owner's test (V140), asked of the person the notice is sent to:
 | You've left a household — your access changed (V140) | `lifecycle.departure.completed.you` |
 | The passed-away label you gave someone was taken away — a major change of state (V140) | `lifecycle.memorial.reversed` |
 | You were named to carry a household on — sent to the successor only (V140) | `lifecycle.successor.named` |
+| Your household has nobody running it: nobody can invite or remove people, and an adult may take it on (V143) | `lifecycle.household.dormant` |
+| Your closure or leaving waits because nobody else runs the household (V143) | `lifecycle.household.dormant.you` |
+| Someone took on your household, or its owner came back and it runs as before (V143) | `lifecycle.household.ownership_accepted`, `lifecycle.household.running_again` |
 
 A sign-in code by SMS is sent at sign-in, not as a notification, and is not
 under consent either. Everything else sent outside the app is: reminders, the
@@ -259,12 +262,11 @@ message added later until it is deliberately put on the list above.
 A child coming of age changes *that child's* rights, so it is essential to the
 child. No message about it reaches the child today: a child is noticed only
 while they have no login of their own, and is welcomed in the app when they
-first sign in ("These are yours now"). The dormancy notices added with V120
-(`lifecycle.household.dormant`, `.dormant.you`, `.running_again`,
-`.ownership_accepted`) are not on the list; whether the owner's test puts them
-there is recorded in known issues ("The dormancy notices have not been put to
-the owner's test"); so is the missing notice to the child ("No message tells a
-child they have come of age").
+first sign in ("These are yours now"). The missing notice to the child is
+recorded in known issues ("No message tells a child they have come of age").
+The dormancy notices added with V120 change the access of the person told —
+who may run, invite into or take on the household — so they are on the list
+(V143).
 
 **Children.** Family → Add someone with a date of birth under 18 opens
 "Adding Aarav's records" before anything is saved: parent or lawful

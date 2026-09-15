@@ -863,8 +863,8 @@ came.** `DeliveryPacing` keeps it as the worker claims each row:
    differ. A template that is on neither list — a new kind of message — is not
    essential. A notice that changes the recipient's own rights or obligations is
    on it (V140: being named an emergency contact or a successor, having left a
-   household, a memorial reversed), so it also skips quiet hours and the daily
-   limit; household news — someone else joining or leaving — and a child coming
+   household, a memorial reversed; V143: a household left with nobody running
+   it, or running again), so it also skips quiet hours and the daily limit; household news — someone else joining or leaving — and a child coming
    of age told to the adults are not.
 2. **A switched-off channel is skipped** — `skipped`, `turned_off` — in every
    mode. Preferences: `GET`/`PUT /api/v1/me/notification-preferences`

@@ -47,7 +47,7 @@ object MessageTemplates {
      * sent outside the app (a reminder, the Still true? digest, a note that
      * someone else joined or left, a child came of age) goes only to someone who said yes.
      *
-     * **One list.** `app.message_is_essential` (V125, V140) is the same list in the
+     * **One list.** `app.message_is_essential` (V125, V140, V143) is the same list in the
      * database, and it is the one the gates ask: queueing, the worker's re-check
      * before a send, and pacing. This copy is for the wording ([kindOf]) and for
      * reading. MessagesConsentTest fails if the two ever differ.
@@ -85,11 +85,20 @@ object MessageTemplates {
         "lifecycle.departure.completed.you",
         "lifecycle.memorial.reversed",
         "lifecycle.successor.named",
+        // Your household has nobody running it, or has someone again (V143): while it
+        // is dormant nobody can invite or remove people and an adult may take it on;
+        // the owner whose going made it dormant is told that going waits.
+        "lifecycle.household.dormant",
+        "lifecycle.household.dormant.you",
+        "lifecycle.household.running_again",
+        "lifecycle.household.ownership_accepted",
     )
 
-    /** Essential, and about the person's place in a household rather than their account (V140). */
+    /** Essential, and about the person's place in a household rather than their account (V140, V143). */
     private val YOUR_PLACE_TEMPLATES = setOf(
         "lifecycle.departure.completed.you", "lifecycle.memorial.reversed", "lifecycle.successor.named",
+        "lifecycle.household.dormant", "lifecycle.household.dormant.you", "lifecycle.household.running_again",
+        "lifecycle.household.ownership_accepted",
     )
 
     fun isEssential(template: String): Boolean = template in ESSENTIAL_TEMPLATES

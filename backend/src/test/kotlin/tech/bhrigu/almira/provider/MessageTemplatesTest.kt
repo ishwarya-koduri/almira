@@ -74,7 +74,12 @@ class MessageTemplatesTest {
         }
         // It changes your own rights or obligations (V140): essential, and worded as always coming.
         assertThat(MessageTemplates.kindOf("emergency.named")).isEqualTo(MessageTemplates.Kind.EMERGENCY)
-        listOf("lifecycle.departure.completed.you", "lifecycle.memorial.reversed", "lifecycle.successor.named").forEach {
+        listOf(
+            "lifecycle.departure.completed.you", "lifecycle.memorial.reversed", "lifecycle.successor.named",
+            // V143: the dormancy notices change your access too.
+            "lifecycle.household.dormant", "lifecycle.household.dormant.you", "lifecycle.household.running_again",
+            "lifecycle.household.ownership_accepted",
+        ).forEach {
             assertThat(MessageTemplates.isEssential(it)).describedAs(it).isTrue()
             assertThat(MessageTemplates.kindOf(it)).describedAs(it).isEqualTo(MessageTemplates.Kind.YOUR_PLACE)
         }

@@ -2227,6 +2227,12 @@ begin
                          and app.message_is_essential('lifecycle.memorial.reversed')
                          and app.message_is_essential('lifecycle.successor.named'),
     'being named, leaving, a memorial reversed and a successor named are essential (V140)');
+  -- V143: the dormancy notices change the recipient's access, so they are essential too.
+  perform pg_temp.assert(app.message_is_essential('lifecycle.household.dormant')
+                         and app.message_is_essential('lifecycle.household.dormant.you')
+                         and app.message_is_essential('lifecycle.household.running_again')
+                         and app.message_is_essential('lifecycle.household.ownership_accepted'),
+    'a household left with nobody running it, or running again, is essential (V143)');
   perform pg_temp.assert(not app.message_is_essential('lifecycle.departure.completed')
                          and not app.message_is_essential('lifecycle.departure.started')
                          and not app.message_is_essential('lifecycle.coming_of_age.welcomed'),

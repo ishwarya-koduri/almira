@@ -2280,9 +2280,10 @@ is not finished is *asking*:
 Answered by the owner and closed here (2026-09-15): which informational notices
 are essential (V140: "does it change YOUR rights or obligations?"), how long
 "Not now" lasts and what it is about (V141: 90 days, per holding and for the
-digest), and a yes from before channels (V142: not inherited, asked again). Two
-edges of the first answer are still open: "No message tells a child they have
-come of age" and "The dormancy notices have not been put to the owner's test".
+digest), and a yes from before channels (V142: not inherited, asked again). One
+edge of the first answer is still open: "No message tells a child they have
+come of age". The dormancy notices were put to the same test when the branches
+met (V143, entry 80).
 
 **Why it is still here** The native screens and the other entry points are
 separate pieces of work.
@@ -2473,22 +2474,15 @@ next open the household.
 
 ## 80. The dormancy notices have not been put to the owner's test
 
-**Where** `lifecycle/Dormancy.kt`, V120, V140, docs/23 "Notices that protect
-your account".
+**Resolved** (2026-09-15, integration of the consent and dormant-household
+work). Kept as a stub so the number still means something where it is cited.
 
-**What** V140 applied the owner's test ("does it change YOUR rights or
-obligations?") to the notices the owner named. The dormancy notices added with
-V120 were not among them and are still under consent:
-`lifecycle.household.dormant` (nobody can invite or remove people until an
-adult takes it on — arguably a change to your access), `.dormant.you`,
-`.running_again` and `.ownership_accepted` (someone else now runs your
-household — close to `lifecycle.successor.claimed`, which is essential). Read
-strictly, the test would put some or all of them on the list; the answer named
-only "someone else joined or left" as household news. Until the owner says, the
-safe direction is kept: nothing more goes without consent.
-
-**Why not fixed** It widens what is sent without a yes, which is the owner's
-decision, not an inference.
-
-**Risk if left** A member who has not said yes to messages learns that their
-household is dormant, or who runs it now, only in the app.
+V143 puts `lifecycle.household.dormant`, `.dormant.you`, `.running_again` and
+`.ownership_accepted` on `app.message_is_essential` and
+`MessageTemplates.ESSENTIAL_TEMPLATES` (worded as `YOUR_PLACE`): each changes
+the recipient's rights or access — nobody can invite or remove people, an adult
+may take the household on, the owner's own going is held, or that right ends
+because someone runs it again. This matches docs/05 §12.7, which already called
+`lifecycle.household.dormant` essential. Household news ("someone else joined
+or left") stays under consent. Pinned by `MessagesConsentTest` (sent on every
+channel without consent), `MessageTemplatesTest` and `rls_privacy_test.sql`.

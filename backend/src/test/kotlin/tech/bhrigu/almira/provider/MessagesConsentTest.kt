@@ -99,6 +99,9 @@ class MessagesConsentTest : ApiTestBase() {
      */
     private val changesYourRights = listOf(
         "emergency.named", "lifecycle.departure.completed.you", "lifecycle.memorial.reversed", "lifecycle.successor.named",
+        // V143: a household with nobody running it, or running again, changes your access.
+        "lifecycle.household.dormant", "lifecycle.household.dormant.you", "lifecycle.household.running_again",
+        "lifecycle.household.ownership_accepted",
     )
 
     /** Someone else joined or left: household news, and under consent. */

@@ -13,6 +13,7 @@ import tech.bhrigu.almira.config.AlmiraProperties
 import tech.bhrigu.almira.provider.FailureKind
 import tech.bhrigu.almira.provider.ProviderCallFailed
 import tech.bhrigu.almira.provider.ProviderCalls
+import tech.bhrigu.almira.provider.RestoredMessageAlerts
 import java.math.BigInteger
 import java.time.Duration
 import java.util.UUID
@@ -94,10 +95,12 @@ data class SignInEmailDrainResult(
      * each raised the operator alert ([SignInEmailOutbox.ALERT_EVENT]).
      */
     val alerts: Int = 0,
+    /** Of [failed], those whose body a restore did not bring back: counted once per restore (V145). */
+    val notRestored: Int = 0,
 ) {
     operator fun plus(o: SignInEmailDrainResult) = SignInEmailDrainResult(
         sent + o.sent, failed + o.failed, dropped + o.dropped, unconfirmed + o.unconfirmed, expired + o.expired,
-        alerts + o.alerts,
+        alerts + o.alerts, notRestored + o.notRestored,
     )
 }
 
@@ -148,8 +151,9 @@ data class SignInEmailDrainResult(
  * outcome (V130). [SignInEmailAlerts] counts those for the operator's view of
  * `/health`. An unlisted address's drop, and a tester taken off the list while
  * their message waited, are intended and raise nothing. A message whose body a
- * restore did not bring back has no address left to ask about, and raises
- * nothing either. The alert is logged after the record commits, on the
+ * restore did not bring back has no address left to ask about, so it raises no
+ * alert of its own; it is counted against its restore, which alerts once with
+ * the total ([RestoredMessageAlerts], V145). The alert is logged after the record commits, on the
  * worker's thread, so nothing a client can reach waits for it or sees it.
  *
  * **At most once.** A message whose send was started by a worker that then
@@ -169,6 +173,8 @@ class SignInEmailOutbox(
     private val calls: ProviderCalls,
     private val channels: SignInChannels,
     private val props: AlmiraProperties,
+    /** Told how many messages a claim found without a body, so a restore is alerted once (V145). */
+    private val restored: RestoredMessageAlerts? = null,
 ) : SignInCodeOutbox, AutoCloseable {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -222,6 +228,7 @@ class SignInEmailOutbox(
             val (finished, claimed) = claim()
             // Logged once the transaction that recorded them has committed.
             finished.alerts.forEach(::alert)
+            restored?.noticed(finished.result.notRestored)
             total += finished.result
             claimed.forEach { total += decideAndSend(it) }
             if (claimed.isEmpty()) return@withLock total
@@ -281,8 +288,10 @@ class SignInEmailOutbox(
                     if (listed) alerts += Alert(id, "unconfirmed", FailureKind.TIMEOUT.code)
                 }
                 row["address"] == null -> {
+                    // No address left to ask the allowlist about, so no per-message alert; the
+                    // restore is alerted once, with the count, by RestoredMessageAlerts (V145).
                     finish(id, null, "failed", BODY_NOT_RESTORED, alert = false)
-                    finished += SignInEmailDrainResult(failed = 1)
+                    finished += SignInEmailDrainResult(failed = 1, notRestored = 1)
                 }
                 row["expired"] == true -> {
                     finish(id, null, "expired", null, alert = listed)

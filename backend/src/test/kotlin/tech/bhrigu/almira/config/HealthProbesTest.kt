@@ -28,6 +28,7 @@ class HealthProbesTest : ApiTestBase() {
     @Autowired private lateinit var properties: AlmiraProperties
     @Autowired private lateinit var redis: StringRedisTemplate
     @Autowired private lateinit var signInEmailAlerts: tech.bhrigu.almira.auth.SignInEmailAlerts
+    @Autowired private lateinit var restoredMessageAlerts: tech.bhrigu.almira.provider.RestoredMessageAlerts
 
     @Test
     fun `both probes answer without a session, and a healthy stack is ready`() {
@@ -51,7 +52,7 @@ class HealthProbesTest : ApiTestBase() {
     private fun controller(
         jdbc: NamedParameterJdbcTemplate,
         redisTemplate: StringRedisTemplate = redis,
-    ) = HealthController(jdbc, jdbc.jdbcTemplate.dataSource!!, properties, redisTemplate, signInEmailAlerts)
+    ) = HealthController(jdbc, jdbc.jdbcTemplate.dataSource!!, properties, redisTemplate, signInEmailAlerts, restoredMessageAlerts)
 
     private fun appJdbc() = NamedParameterJdbcTemplate(
         DriverManagerDataSource(TestInfra.dbUrl, TestInfra.dbAppUser, TestInfra.dbAppPassword),

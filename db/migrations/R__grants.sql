@@ -104,6 +104,13 @@ begin
     execute 'revoke all on sign_in_code_email_bodies from almira_app';
   end if;
 
+  -- Restores and the queued messages they lost (V145). Written by restore.sh and
+  -- the workers on the owner connection; how many messages a restore lost is the
+  -- operator's to read, not the runtime role's.
+  if to_regclass('public.restore_events') is not null then
+    execute 'revoke all on restore_events from almira_app';
+  end if;
+
   -- Dormant households (V120). The household reads its state through RLS; only
   -- the sweep, the triggers and app.accept_household_ownership write it. The
   -- helpers that open and end one, or answer the rule for a person the caller

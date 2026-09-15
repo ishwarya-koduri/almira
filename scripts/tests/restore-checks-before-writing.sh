@@ -74,6 +74,11 @@ create table sealed_values (
 create table e2e_keys (
   id uuid primary key, household_id uuid, user_id uuid, kdf_salt text, wrapped_key text, verifier text,
   iterations int, key_version int, wrapped_key_sha256 bytea, verifier_sha256 bytea);
+create table restore_events (
+  id uuid primary key default gen_random_uuid(), restored_at timestamptz not null default now(),
+  recorded_by text not null, backup_name text check (backup_name is null or backup_name ~ '^[A-Za-z0-9._-]{1,120}$'),
+  not_restored int not null default 0, first_noticed_at timestamptz, last_noticed_at timestamptz,
+  alerted_at timestamptz, alerted_count int);
 create table e2e_recovery_wraps (
   id uuid primary key, household_id uuid, user_id uuid, kind text, kdf_salt text, wrapped_key text,
   verifier text, wrapped_key_sha256 bytea, verifier_sha256 bytea);
@@ -220,6 +225,8 @@ restore "$CLEAN_BACKUP"
 check "2 · into an empty target it restores (exit $STATUS)" bash -c "[ $STATUS = 0 ] && grep -q 'Restore verified' '$WORK/restore.out'"
 check "    with the rows" bash -c "[ \"\$(docker exec $PG psql -U almira -d almira -tAc 'select count(*) from sealed_values')\" = 1 ]"
 check "    and the documents" bash -c "docker run --rm -v $TARGET_VOLUME:/d alpine:latest cat /d/h/doc.bin | grep -q scan"
+check "    and the restore is recorded once, by restore.sh, with the backup's name (V145)" \
+  bash -c "[ \"\$(docker exec $PG psql -U almira -d almira -tAc \"select count(*) || '|' || string_agg(recorded_by || '|' || backup_name, ',') from restore_events\")\" = \"1|restore.sh|\$(basename $CLEAN_BACKUP)\" ]"
 [ "$STATUS" = 0 ] || sed 's/^/        /' "$WORK/restore.out"
 
 : > "$CALLS"
@@ -227,6 +234,8 @@ bash "$REPO/scripts/restore.sh" --project ws-script-test-drill --env-file "$ENV_
 STATUS=$?
 check "D7 · a manifest from before the field, into a filesystem target, passes step 0 as before (exit $STATUS)" \
   bash -c "[ $STATUS = 0 ] && grep -q 'Restore verified' '$WORK/restore.out' && ! grep -q 'NOT RESTORED' '$WORK/restore.out'"
+check "     and --verify-only records no second restore" \
+  bash -c "[ \"\$(docker exec $PG psql -U almira -d almira -tAc 'select count(*) from restore_events')\" = 1 ]"
 
 start_pg target-s3
 use_compose_shim

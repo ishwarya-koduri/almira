@@ -2160,6 +2160,22 @@ begin
   begin update sign_in_code_emails set operator_alert = false;
   exception when insufficient_privilege then blocked := true; end;
   perform pg_temp.assert(blocked, 'the runtime role cannot clear an operator alert');
+
+  -- V145: a restore and the messages it lost are the operator's alone.
+  blocked := false;
+  begin perform count(*) from restore_events;
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot read how many messages a restore lost');
+
+  blocked := false;
+  begin insert into restore_events (recorded_by) values ('detected');
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot record a restore');
+
+  blocked := false;
+  begin update restore_events set alerted_at = now(), alerted_count = 1;
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot mark a restore''s alert as raised');
 end $$;
 
 do $$

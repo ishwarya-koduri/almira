@@ -92,6 +92,16 @@ if sys.argv[3] != "0":
         print(f"{v['lastHour']} sign-in email(s) to an allowlisted address not delivered in the last hour "
               f"(newest {v.get('newest') or '?'}); the tester was shown 'sent'. "
               "Look for SIGN-IN EMAIL NOT DELIVERED in the logs (docs/17 §8)"); sys.exit(1)
+    # A restore's lost messages: raised once (MESSAGES LOST IN A RESTORE), so this fails for
+    # the hour after that alert, not for as long as the loss is shown (V145).
+    lost = b.get("messagesLostInRestore")
+    if isinstance(lost, dict) and lost.get("alertedAt"):
+        import datetime
+        at = datetime.datetime.fromisoformat(lost["alertedAt"].replace("Z", "+00:00"))
+        if datetime.datetime.now(datetime.timezone.utc) - at <= datetime.timedelta(hours=1):
+            print(f"{lost.get('alertedCount')} queued message(s) lost their body in the restore of "
+                  f"{lost.get('restoredAt')} ({lost.get('recordedBy')}) and will never be sent. "
+                  "Look for MESSAGES LOST IN A RESTORE in the logs (docs/13 \"After a restore\")"); sys.exit(1)
 PY
 ) || fail "$verdict"
 

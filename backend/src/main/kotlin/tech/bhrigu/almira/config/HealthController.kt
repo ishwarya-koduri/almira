@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RestController
 import tech.bhrigu.almira.auth.SignInEmailAlerts
+import tech.bhrigu.almira.provider.RestoredMessageAlerts
 import java.security.MessageDigest
 import javax.sql.DataSource
 
@@ -18,6 +19,7 @@ class HealthController(
     private val properties: AlmiraProperties,
     private val redis: StringRedisTemplate,
     private val signInEmailAlerts: SignInEmailAlerts,
+    private val restoredMessageAlerts: RestoredMessageAlerts,
 ) {
     /**
      * Reports which database role serves requests. If this ever says `almira`
@@ -36,7 +38,10 @@ class HealthController(
      * value in `X-Almira-Ops-Token`, the body also carries
      * `signInEmailNotDelivered`: how many sign-in emails an address on the
      * allowlist did not get in the last hour, and when the newest was — never
-     * which address (owner's decision, 2026-09-15; docs/17 §8). Without the
+     * which address (owner's decision, 2026-09-15; docs/17 §8) — and
+     * `messagesLostInRestore`: the newest restore in the last week that left
+     * queued messages without a body, how many, and when the operator was
+     * alerted, once (V145), or an empty object. Without the
      * token configured, without the header, or with a wrong one, the answer is
      * exactly the one everybody gets, so nobody can tell whether the view
      * exists. Behind a token because a count that anyone could read would tell
@@ -58,10 +63,22 @@ class HealthController(
         )
         if (!isOperator(opsToken)) return body
         val recent = signInEmailAlerts.within()
-        return body + ("signInEmailNotDelivered" to mapOf(
-            "lastHour" to recent.count,
-            "newest" to (recent.newest?.toString() ?: ""),
-        ))
+        val lost: Map<String, Any> = restoredMessageAlerts.latest()?.let {
+            mapOf(
+                "restoredAt" to it.restoredAt.toString(),
+                "recordedBy" to it.recordedBy,
+                "notRestored" to it.notRestored,
+                "alertedAt" to (it.alertedAt?.toString() ?: ""),
+                "alertedCount" to (it.alertedCount ?: 0),
+            )
+        } ?: emptyMap()
+        return body + mapOf(
+            "signInEmailNotDelivered" to mapOf(
+                "lastHour" to recent.count,
+                "newest" to (recent.newest?.toString() ?: ""),
+            ),
+            "messagesLostInRestore" to lost,
+        )
     }
 
     /** Constant time, and false whenever the view is off: an empty token opens nothing. */

@@ -36,10 +36,12 @@ data class OutboxDrainResult(
     val skipped: Int = 0,
     /** Held back until a quiet window ends or tomorrow's allowance: still queued, with `not_before`. */
     val deferred: Int = 0,
+    /** Of [failed], those whose body a restore did not bring back: counted once per restore for the operator (V145). */
+    val notRestored: Int = 0,
 ) {
     operator fun plus(o: OutboxDrainResult) = OutboxDrainResult(
         sent + o.sent, failed + o.failed, unconfirmed + o.unconfirmed, resent + o.resent, skipped + o.skipped,
-        deferred + o.deferred,
+        deferred + o.deferred, notRestored + o.notRestored,
     )
     val touched get() = sent + failed + unconfirmed + skipped + deferred
 }
@@ -101,7 +103,8 @@ data class OutboxDrainResult(
  * body. It cannot be sent — there are no words, and an empty or stand-in message
  * would be worse than none — and it will never get one, so it is not left queued
  * either: it is recorded `failed` with `failure = body_not_restored`, once, with a
- * WARN naming only the message id and the channel.
+ * WARN naming only the message id and the channel, and counted against its
+ * restore, which alerts the operator once with the total ([RestoredMessageAlerts]).
  */
 @Component
 class NotificationOutbox(
@@ -111,6 +114,8 @@ class NotificationOutbox(
     private val props: AlmiraProperties,
     private val directory: DeliveryDirectory,
     private val pacing: DeliveryPacing,
+    /** Told how many messages a claim found without a body, so a restore is alerted once (V145). */
+    private val restored: RestoredMessageAlerts? = null,
 ) : AutoCloseable {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -166,6 +171,8 @@ class NotificationOutbox(
         var total = OutboxDrainResult()
         repeat(MAX_ROUNDS) {
             val (finished, claimed) = claim()
+            // Counted once the claim that finished them has committed.
+            restored?.noticed(finished.notRestored)
             var round = finished
             claimed.forEach { round += send(it) }
             total += round
@@ -317,7 +324,7 @@ class NotificationOutbox(
                             "marked failed as {}, not sent (message {})",
                         row.channel, BODY_NOT_RESTORED, row.id,
                     )
-                    finished += OutboxDrainResult(failed = 1)
+                    finished += OutboxDrainResult(failed = 1, notRestored = 1)
                 }
                 else -> {
                     // Only the claim here. The send is stamped by send(), just before it starts,

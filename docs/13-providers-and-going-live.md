@@ -919,7 +919,30 @@ one on an at-most-once channel is still recorded `timeout`, because it may have
 gone. The person sees it in `/me/messages`: "Not sent — it was still waiting to
 go out when our service was restored from a backup. Nothing for you to do." The
 in-app row, which has no body to lose, is unaffected. `NotificationOutboxTest`
-holds all of this.
+holds all of this. A queued sign-in email whose body a restore did not bring back
+is recorded the same way by its own worker, with no alert of its own — there is
+no address left to ask the allowlist about.
+
+**The operator is alerted once per restore, with a count** (V145; owner's
+decision, 2026-09-15: *a permanently undeliverable queued message is exactly the
+silent class*). `scripts/restore.sh` records each verified restore in
+`restore_events`. Both workers add every `body_not_restored` they finish to the
+newest restore noticed or recorded in the last 24 hours — a body can only be
+missing after a restore — and open one marked `detected` when a restore was done
+some other way. Once nothing more has been found for a minute, so both workers'
+counts are in, `RestoredMessageAlerts` stamps the restore and logs one ERROR:
+
+```
+MESSAGES LOST IN A RESTORE: 7 queued message(s) had no body after the restore of 2026-09-15T10:15:02Z
+(recorded by restore.sh, backup almira-20260915T101500Z) and will never be sent; …
+```
+
+No message, address or person is in it. It is said once: anything found later
+still adds to the restore's count, which the operator's view of `/health` shows
+as `messagesLostInRestore` (`notRestored` beside `alertedCount`) for a week, and
+`check-health.sh --ops-token-file` fails for the hour after the alert. The table
+is the owner connection's alone. `RestoredMessageAlertsTest` holds this; the
+per-message WARNs stay.
 
 ### Idempotency keys, and what they guarantee
 

@@ -44,6 +44,10 @@
 #        c. the stored digest of every ciphertext, where the schema has one
 #           (deploy/restore/digest-check.sql).
 #      --verify-only runs b and c against a stack that is already restored.
+#   7. Records the restore in restore_events (V145), once verified and not with
+#      --verify-only, so the workers count the queued messages it left without a
+#      body against it and the operator is alerted once, with the total
+#      (docs/13 "After a restore").
 #
 # The application is NOT started. Start it yourself once this is green, then
 # check /health/ready and run scripts/smoke-prod.sh. The KMS key must be the
@@ -204,6 +208,21 @@ if [ -n "$(sql "select 1 from information_schema.columns where table_name = 'sea
 else
   step "6c · Stored digests"
   echo "  ${DIM}skipped: this schema predates the stored digest.${OFF}"
+fi
+
+if [ "$VERIFY_ONLY" = 0 ]; then
+  step "7 · The restore is recorded"
+  if [ -n "$(sql "select to_regclass('public.restore_events')")" ]; then
+    # Passed as a psql variable, never pasted into the SQL; a name the table would refuse is left out.
+    BACKUP_NAME=$(basename "$FROM")
+    printf '%s' "$BACKUP_NAME" | grep -Eq '^[A-Za-z0-9._-]{1,120}$' || BACKUP_NAME=""
+    dc exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAq -v ON_ERROR_STOP=1 -v backup="$1"' sh "$BACKUP_NAME" \
+      <<<"insert into restore_events (recorded_by, backup_name) values ('restore.sh', nullif(:'backup', ''));" \
+      || die "the restore is verified, but it could not be recorded in restore_events; a queued message it lost would be counted against a detected restore instead."
+    ok "recorded: queued messages this restore left without a body will be counted against it, and alerted once"
+  else
+    echo "  ${DIM}skipped: this schema predates restore_events (V145).${OFF}"
+  fi
 fi
 
 echo

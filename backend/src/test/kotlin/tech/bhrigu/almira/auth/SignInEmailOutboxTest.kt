@@ -317,10 +317,11 @@ class SignInEmailOutboxTest : ApiTestBase() {
         }
         assertThat(flagged(newest()["id"])).isFalse()
 
-        // A restore that did not bring a body back leaves no address to ask about.
+        // A restore that did not bring a body back leaves no address to ask about: no alert of
+        // its own, but counted against its restore, which RestoredMessageAlerts says once (V145).
         request(listed[16])
         db.update("delete from sign_in_code_email_bodies where message_id = ?", newest()["id"])
-        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(failed = 1))
+        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(failed = 1, notRestored = 1))
         assertThat(flagged(newest()["id"])).isFalse()
 
         assertThat(alertLines()).isEmpty()

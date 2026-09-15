@@ -119,6 +119,28 @@ container, as a second line; `RuntimeRoleCheckTest` starts the real application
 as each kind of wrong role and proves Flyway's `migrate` was never reached and no
 web server started.
 
+### Every refusal comes before the database is migrated
+
+A refusal after Flyway has applied pending migrations — column drops included —
+has refused too late. Two mechanisms keep every refusal in front, and a test
+fails if a new one is outside both:
+
+- **Settings that need no database** (the JWT secret, the key's length,
+  sign-in channels, OTP and provider bounds, and the privacy, plans, support and
+  continuity properties) are refused by `StartupSettingsCheck` and the other
+  `EnvironmentPostProcessor`s, before any application context exists.
+- **Checks that read the database or reach a provider** — page checksums, the
+  runtime role, the key-encryption key, an S3 bucket — are `StartupRefusal`
+  beans. The Flyway bean takes every one of them as a parameter and verifies
+  each before configuring Flyway, so implementing the interface is the whole of
+  the wiring.
+
+`StartupRefusalOrderTest` fails if a `StartupRefusal` bean is not a dependency
+of the Flyway bean, if a refusal registered from outside the application does
+not stop a real start before `migrate`, or if a class that says "Refusing to
+start" (or a properties class that refuses in its init block) is outside both
+mechanisms.
+
 ### Correction: "never on a missing value" was false for two of these three
 
 Until 2026-09-13 this document said the checks relax only on an **explicit**
@@ -492,6 +514,11 @@ rather than taking the matching ones down. Reproduced both ways in a container:
 the right key logs `opens all N household key(s)` and serves; the wrong key logs
 `Refusing to start — ALMIRA_KMS_MASTER_KEY is not the key this database was
 encrypted with` and does not.
+
+Since 2026-09-15 it refuses **before Flyway migrates**. It used to wait for the
+migrations so that it could read the table, which meant a restored copy started
+with the wrong key had every pending migration applied to it and then refused.
+A database with no key table yet (a fresh install) has nothing to check.
 
 ### A drill with nothing but Docker
 

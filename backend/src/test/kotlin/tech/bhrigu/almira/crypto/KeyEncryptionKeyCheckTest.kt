@@ -2,10 +2,13 @@ package tech.bhrigu.almira.crypto
 
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.beans.factory.support.StaticListableBeanFactory
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.mock.env.MockEnvironment
 import tech.bhrigu.almira.config.AlmiraProperties
@@ -13,6 +16,7 @@ import tech.bhrigu.almira.crypto.KeyEncryptionKeyCheck.Verdict
 import tech.bhrigu.almira.support.ApiTestBase
 import java.security.SecureRandom
 import java.util.Base64
+import javax.sql.DataSource
 
 /**
  * The wrong KMS key refuses at startup instead of looking healthy until the
@@ -30,8 +34,11 @@ class KeyEncryptionKeyCheckTest : ApiTestBase() {
      * the first case is what caught it.
      */
     private val system by lazy { NamedParameterJdbcTemplate(db) }
-    @Autowired private lateinit var flyway: Flyway
     @Autowired private lateinit var properties: AlmiraProperties
+    @Autowired @Qualifier("ownerDataSource") private lateinit var ownerDataSource: DataSource
+
+    private fun provider(kms: KeyManagementService): ObjectProvider<KeyManagementService> =
+        StaticListableBeanFactory(mapOf("kms" to kms)).getBeanProvider(KeyManagementService::class.java)
 
     private val production = MockEnvironment().apply {
         setProperty("ALMIRA_ENV", "production")
@@ -82,7 +89,7 @@ class KeyEncryptionKeyCheckTest : ApiTestBase() {
         assertThat(system.jdbcTemplate.queryForObject(
             "select count(*) from encryption_keys where kek_id = ?", Long::class.java, kms.kekId,
         )).isPositive()
-        KeyEncryptionKeyCheck(kms, system, production, flyway).afterPropertiesSet()
+        KeyEncryptionKeyCheck(provider(kms), ownerDataSource, production).verifyBeforeMigrating()
     }
 
     @Test
@@ -94,8 +101,29 @@ class KeyEncryptionKeyCheckTest : ApiTestBase() {
                 encryption = properties.encryption.copy(masterKey = Base64.getEncoder().encodeToString(otherKey)),
             ),
         )
-        assertThatThrownBy { KeyEncryptionKeyCheck(wrongKms, system, production, flyway).afterPropertiesSet() }
+        assertThatThrownBy { KeyEncryptionKeyCheck(provider(wrongKms), ownerDataSource, production).verifyBeforeMigrating() }
             .isInstanceOf(IllegalStateException::class.java)
             .hasMessageContaining("not the key this database was encrypted with")
+    }
+
+    /**
+     * It runs before Flyway now, so on a fresh install there is no table to read
+     * yet. That is nothing to check, like an empty table — not a failure. A new
+     * database in the test server, with no migrations, stands in for it.
+     */
+    @Test
+    fun `before the first migration, a database with no key table passes in production`() {
+        val name = "almira_kek_fresh_${System.nanoTime()}"
+        db.execute("create database $name")
+        try {
+            val url = tech.bhrigu.almira.support.TestInfra.dbUrl.replace(Regex("/[^/?]+(\\?|$)"), "/$name$1")
+            val fresh = org.springframework.jdbc.datasource.DriverManagerDataSource(
+                url, tech.bhrigu.almira.support.TestInfra.dbOwnerUser, tech.bhrigu.almira.support.TestInfra.dbOwnerPassword,
+            )
+            assertThat(JdbcTemplate(fresh).queryForObject("select current_database()", String::class.java)).isEqualTo(name)
+            KeyEncryptionKeyCheck(provider(kms), fresh, production).verifyBeforeMigrating()
+        } finally {
+            db.execute("drop database if exists $name with (force)")
+        }
     }
 }

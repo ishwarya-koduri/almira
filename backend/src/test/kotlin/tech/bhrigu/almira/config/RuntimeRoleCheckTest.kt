@@ -41,10 +41,11 @@ import java.util.concurrent.CopyOnWriteArrayList
  *  - no web server was started and no application reached "started";
  *  - flyway_schema_history has as many rows as before.
  *
- * Watched failing with the check moved back behind the action: calling
- * `roleCheck.verify` only from the overridden `migrate`, after `super.migrate()`,
- * made every startup case report `flyway` as initialised; deleting the call
- * altogether made every one of them start a web server. See the commit.
+ * Watched failing with the check moved back behind the action: with the
+ * before-migrating check removed, so that only the re-check after
+ * `super.migrate()` was left, every startup case failed — `flyway` had been
+ * initialised, which is `migrate` running, and the refusal came "after
+ * migrating". See the commit.
  *
  * The roles are made here, as the owner, and dropped afterwards. Each can log
  * in; each is wrong in exactly one way.
@@ -212,7 +213,10 @@ class RuntimeRoleCheckTest {
         val config = DatabaseConfig(props)
         config.ownerDataSource().use { ownerPool ->
             (config.dataSource() as HikariDataSource).use { runtimePool ->
-                val flyway = config.flyway(ownerPool, runtimePool, environment)
+                val flyway = config.flyway(
+                    ownerPool, runtimePool,
+                    listOf(config.pageChecksumRefusal(ownerPool, environment), config.runtimeRoleRefusal(runtimePool)),
+                )
                 owner("alter role almira_guard_late bypassrls")
                 assertThatThrownBy { flyway.migrate() }
                     .hasMessageContaining("Refusing to start (after migrating, before serving)")

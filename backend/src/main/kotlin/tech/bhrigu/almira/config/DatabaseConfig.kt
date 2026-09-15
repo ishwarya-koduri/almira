@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
+import org.springframework.core.annotation.Order
 import org.springframework.core.env.Environment
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
@@ -68,7 +69,7 @@ class DatabaseConfig(private val props: AlmiraProperties) {
      * The name is deliberately unpleasant. Anything injecting this is opting out
      * of the privacy model and has to justify itself; request-handling code must
      * never use it. Its consumers are ReminderWorker, the NotificationOutbox
-     * worker, AlphaAllowlistAccess, and KeyEncryptionKeyCheck — all code that
+     * worker, AlphaAllowlistAccess and the sweeps — all code that
      * runs without a request user.
      */
     @Bean("systemJdbcBypassingRls")
@@ -88,25 +89,47 @@ class DatabaseConfig(private val props: AlmiraProperties) {
     ): PlatformTransactionManager = RlsTransactionManager(dataSource, userContext)
 
     /**
+     * Page checksums, refused before anything is written. See [PageChecksumCheck]
+     * and [StartupRefusal].
+     */
+    @Bean
+    @Order(1)
+    fun pageChecksumRefusal(
+        @Qualifier("ownerDataSource") ownerDataSource: HikariDataSource,
+        environment: Environment,
+    ): StartupRefusal = StartupRefusal { PageChecksumCheck(environment).verify(ownerDataSource) }
+
+    /** A runtime role that can bypass row-level security. See [RuntimeRoleCheck]. */
+    @Bean
+    @Order(2)
+    fun runtimeRoleRefusal(@Qualifier("dataSource") runtimeDataSource: DataSource): StartupRefusal =
+        StartupRefusal { RuntimeRoleCheck(props).verify(runtimeDataSource, "before migrating") }
+
+    /**
      * Migrations run as the owner before the app serves anything. The repeatable
      * R__grants migration re-grants privileges to the runtime role each time it
      * changes, so a table added by a future migration is never unreachable.
      *
-     * The page-checksum and runtime-role checks run first, so a database that
-     * would be refused has had nothing written to it. The runtime-role check
-     * runs once more after migrating (a migration runs as the owner and could
-     * hand a table to the runtime role), which is still before the web server
-     * accepts a connection. See [PageChecksumCheck] and [RuntimeRoleCheck].
+     * **Every [StartupRefusal] comes first**, structurally: they are this
+     * method's parameter, so Spring builds each (running any constructor
+     * refusal) before Flyway exists, and each is verified here before Flyway is
+     * configured. A database that would be refused has had nothing written to
+     * it, and a refusal added next year needs only to implement the interface.
+     * StartupRefusalOrderTest fails if a refusal bean is not a dependency of
+     * this one.
+     *
+     * The runtime-role check runs once more after migrating (a migration runs as
+     * the owner and could hand a table to the runtime role), which is still
+     * before the web server accepts a connection. See [RuntimeRoleCheck].
      */
     @Bean(initMethod = "migrate")
     fun flyway(
         @Qualifier("ownerDataSource") ownerDataSource: HikariDataSource,
         @Qualifier("dataSource") runtimeDataSource: DataSource,
-        environment: Environment,
+        refusals: List<StartupRefusal>,
     ): Flyway {
-        PageChecksumCheck(environment).verify(ownerDataSource)
+        refusals.forEach { it.verifyBeforeMigrating() }
         val roleCheck = RuntimeRoleCheck(props)
-        roleCheck.verify(runtimeDataSource, "before migrating")
         val configuration = Flyway.configure()
             .dataSource(ownerDataSource)
             .locations("classpath:db/migration")

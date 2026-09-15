@@ -7,7 +7,11 @@ import org.springframework.boot.env.EnvironmentPostProcessor
 import org.springframework.core.env.ConfigurableEnvironment
 import tech.bhrigu.almira.auth.OtpService
 import tech.bhrigu.almira.auth.SignInChannels
+import tech.bhrigu.almira.continuity.ContinuityProperties
 import tech.bhrigu.almira.crypto.LocalKeyManagement
+import tech.bhrigu.almira.guidance.SupportProperties
+import tech.bhrigu.almira.plans.PlanProperties
+import tech.bhrigu.almira.privacy.PrivacyProperties
 import tech.bhrigu.almira.provider.ProviderCalls
 import tech.bhrigu.almira.security.JwtService
 
@@ -54,5 +58,18 @@ class StartupSettingsCheck : EnvironmentPostProcessor {
         }
         OtpService.checkBounds(props.otp)
         ProviderCalls.checkBounds(props.providers)
+
+        // Properties classes that refuse in their own init blocks. Binding one
+        // constructs it, so the refusal happens here rather than whenever the
+        // context first injects it — which was after Flyway. Their messages
+        // are their own; binding wraps them in a BindException that names the
+        // prefix.
+        // StartupRefusalOrderTest fails when a @ConfigurationProperties class
+        // that refuses is missing from this list.
+        val binder = Binder.get(environment)
+        binder.bind("almira.privacy", Bindable.of(PrivacyProperties::class.java))
+        binder.bind("almira.plans", Bindable.of(PlanProperties::class.java))
+        binder.bind("almira.support", Bindable.of(SupportProperties::class.java))
+        binder.bind("almira.continuity", Bindable.of(ContinuityProperties::class.java))
     }
 }

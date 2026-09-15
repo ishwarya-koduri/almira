@@ -58,14 +58,17 @@ command -v psql >/dev/null 2>&1 || {
   exit 1
 }
 
-echo "${BOLD}Creating the runtime role…${OFF}"
+echo "${BOLD}Creating the runtime role, then checking it cannot bypass row-level security…${OFF}"
 psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q \
   -v app_user="$ALMIRA_DB_APP_USER" \
   -v app_password="$ALMIRA_DB_APP_PASSWORD" \
   -f deploy/bootstrap-db.sql
 
+# bootstrap-db.sql ends by checking the role it made, and psql exits non-zero
+# (set -e stops here) if that role can bypass row-level security — so "Done"
+# is only ever printed for a role the application will accept.
 echo
-echo "${GREEN}Done.${OFF} Start the application, then confirm the role it actually connects as:"
-echo "  ${DIM}curl -s https://your-host/health${OFF}"
-echo "  It must report ${BOLD}\"dbRole\":\"$ALMIRA_DB_APP_USER\"${OFF} and ${BOLD}\"rlsEnforced\":true${OFF}."
-echo "  If it names the owner instead, stop: row-level security is being bypassed."
+echo "${GREEN}Done.${OFF} The runtime role ${BOLD}$ALMIRA_DB_APP_USER${OFF} cannot bypass row-level security."
+echo "  The application checks this again at every start, before migrating, and refuses"
+echo "  to start if it can (the refusal names the role and the attribute)."
+echo "  ${DIM}/health reports it too: \"dbRole\":\"$ALMIRA_DB_APP_USER\", \"rlsEnforced\":true${OFF}"

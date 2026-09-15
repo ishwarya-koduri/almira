@@ -14,6 +14,7 @@ import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import software.amazon.awssdk.services.s3.model.S3Exception
 import tech.bhrigu.almira.config.AlmiraProperties
+import tech.bhrigu.almira.config.StartupRefusal
 import java.net.URI
 import java.nio.file.NoSuchFileException
 import java.time.Duration
@@ -30,10 +31,16 @@ import java.time.Duration
  * It refuses to start rather than fail on the first upload: a missing bucket or
  * region, or a bucket this identity cannot reach, is named at boot, before a
  * family's scan is the thing that discovers it.
+ *
+ * Those refusals are in the constructor, and it is a [StartupRefusal] only so
+ * that the constructor runs before Flyway migrates: the Flyway bean takes every
+ * StartupRefusal as a parameter, which builds this first. Before that it was
+ * built whenever the first upload-handling bean needed it — after migration.
+ * [verifyBeforeMigrating] has nothing left to do.
  */
 @Component
 @ConditionalOnProperty(name = ["almira.storage.provider"], havingValue = "s3")
-class S3DocumentStorage(props: AlmiraProperties) : DocumentStorage, DisposableBean {
+class S3DocumentStorage(props: AlmiraProperties) : DocumentStorage, DisposableBean, StartupRefusal {
 
     private val log = LoggerFactory.getLogger(javaClass)
     private val config = props.storage.s3
@@ -85,6 +92,9 @@ class S3DocumentStorage(props: AlmiraProperties) : DocumentStorage, DisposableBe
         }
         log.info("document storage: s3 bucket {} prefix {}", bucket, prefix)
     }
+
+    /** Construction was the check: a bucket that cannot be reached has already refused. */
+    override fun verifyBeforeMigrating() = Unit
 
     override val describe = "s3:$bucket/$prefix"
 

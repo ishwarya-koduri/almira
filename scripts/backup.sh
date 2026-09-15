@@ -12,7 +12,14 @@
 #   manifest.json   sha256 of both files, row counts per table AS THEY ARE IN
 #                   THE DUMP, the migration version, and the server settings
 #
-# WHAT IS NOT IN IT, ON PURPOSE: ALMIRA_KMS_MASTER_KEY. Account numbers and
+# WHAT IS NOT IN IT, ON PURPOSE: the rows of outbound_message_bodies — the
+# rendered text of messages still waiting to be sent, one-time codes among them.
+# The table is in the dump, empty. A message still queued when the backup was
+# taken comes back without its body and is recorded failed, once, as
+# body_not_restored instead of being sent (docs/13 "After a restore"). The
+# manifest lists the table under excluded_table_data.
+#
+# And ALMIRA_KMS_MASTER_KEY. Account numbers and
 # document contents are unreadable without it, so a backup that contained the
 # key would be a backup that contained the data in the clear. Keep the key
 # somewhere that is not this host and not this backup (docs/17 §4). A backup
@@ -22,6 +29,12 @@
 # ever added or soft-deleted, so every document row in the dump has its file in
 # a tarball taken afterwards. The reverse order can capture a row whose file
 # is not in the tarball.
+#
+# Everything this checks is checked BEFORE the dump is written: the database is
+# up, the documents volume exists, and the bodies table is where the exclusion
+# expects it. A backup refused after pg_dump used to leave a dump behind with no
+# documents and no manifest (docs/known-issues.md, "A guard runs before the
+# action it guards").
 #
 # --project is required and there is no default. A backup script that guesses
 # which stack it is looking at is how a development database gets backed up
@@ -59,25 +72,45 @@ dc() {
 
 dc exec -T db pg_isready -q || die "The database in project '$PROJECT' is not running or not ready."
 
+sql() { dc exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAq -v ON_ERROR_STOP=1' <<<"$1"; }
+
+# --- checked before anything is written --------------------------------------
+DOCS_VOLUME=$(dc config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes"]["documents"]["name"])')
+docker volume inspect "$DOCS_VOLUME" >/dev/null 2>&1 || die "Documents volume $DOCS_VOLUME does not exist."
+
+# The table whose rows are left out. --exclude-table-data matches by name and
+# says nothing when it matches no table, so a renamed or second bodies table
+# would be dumped in full without a word. Refuse unless the only table that
+# looks like one is this one. (A database from before V32 has none, and nothing
+# to leave out.)
+BODIES_TABLE="public.outbound_message_bodies"
+BODIES_LIKE=$(sql "select coalesce(string_agg(n.nspname || '.' || c.relname, ', ' order by 1), '')
+                     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                    where c.relkind in ('r', 'p') and c.relname ilike '%message%bod%'
+                      and n.nspname not in ('pg_catalog', 'information_schema')")
+case "$BODIES_LIKE" in
+  ""|"$BODIES_TABLE") ;;
+  *) die "Refusing to back up: the message bodies are expected in $BODIES_TABLE alone, but this database has: $BODIES_LIKE. Their rows would be dumped in full. Update BODIES_TABLE in this script to match the schema.";;
+esac
+
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 DEST="$OUT/almira-$STAMP"
 [ -e "$DEST" ] && die "$DEST already exists."
+
+# --- written from here on -----------------------------------------------------
 mkdir -p "$DEST"
 chmod 700 "$DEST"
 
 echo "${BOLD}Backing up project $PROJECT → $DEST${OFF}"
 
-echo "  database…"
-dc exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$DEST/database.dump"
+echo "  database… ${DIM}(without the rows of $BODIES_TABLE)${OFF}"
+dc exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --exclude-table-data="$1"' sh "$BODIES_TABLE" > "$DEST/database.dump"
 
-sql() { dc exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAq -v ON_ERROR_STOP=1' <<<"$1"; }
 MIGRATION=$(sql "select version from flyway_schema_history where success and version is not null order by installed_rank desc limit 1")
 CHECKSUMS=$(sql "show data_checksums")
 SERVER=$(sql "show server_version")
 
 echo "  documents…"
-DOCS_VOLUME=$(dc config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes"]["documents"]["name"])')
-docker volume inspect "$DOCS_VOLUME" >/dev/null 2>&1 || die "Documents volume $DOCS_VOLUME does not exist."
 # Read-only mount: a backup has no business being able to change what it copies.
 docker run --rm -v "$DOCS_VOLUME":/src:ro -v "$(cd "$DEST" && pwd)":/out alpine:latest \
   tar czf /out/documents.tgz -C /src .
@@ -102,9 +135,9 @@ for line in sys.stdin:
 json.dump(counts, open(sys.argv[1], "w"), indent=1, sort_keys=True)
 ' "$DEST/.counts.json"
 
-python3 - "$DEST" "$PROJECT" "$MIGRATION" "$CHECKSUMS" "$SERVER" "$(sed -n 's/^ALMIRA_IMAGE_TAG=//p' "$ENV_FILE")" <<'PY'
+python3 - "$DEST" "$PROJECT" "$MIGRATION" "$CHECKSUMS" "$SERVER" "$(sed -n 's/^ALMIRA_IMAGE_TAG=//p' "$ENV_FILE")" "$BODIES_TABLE" <<'PY'
 import hashlib, json, os, sys, datetime
-dest, project, migration, checksums, server, tag = sys.argv[1:7]
+dest, project, migration, checksums, server, tag, bodies = sys.argv[1:8]
 def sha(name):
     h = hashlib.sha256()
     with open(os.path.join(dest, name), "rb") as f:
@@ -125,6 +158,9 @@ manifest = {
         "documents.tgz": {"sha256": sha("documents.tgz"), "bytes": os.path.getsize(os.path.join(dest, "documents.tgz"))},
     },
     "row_counts": counts,
+    # Rows deliberately not in the dump; the tables themselves are. Not counted
+    # above, so a restore's row-count check does not expect them.
+    "excluded_table_data": [bodies],
     "not_included": "ALMIRA_KMS_MASTER_KEY — kept separately, never with a backup (docs/17 §4)",
 }
 json.dump(manifest, open(os.path.join(dest, "manifest.json"), "w"), indent=2, sort_keys=True)

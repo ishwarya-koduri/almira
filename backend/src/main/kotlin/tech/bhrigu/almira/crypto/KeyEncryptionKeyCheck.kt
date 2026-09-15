@@ -1,13 +1,15 @@
 package tech.bhrigu.almira.crypto
 
-import org.flywaydb.core.Flyway
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.InitializingBean
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.core.env.Environment
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Component
 import tech.bhrigu.almira.config.PageChecksumCheck
+import tech.bhrigu.almira.config.StartupRefusal
+import javax.sql.DataSource
 
 /**
  * Refuses to start with a key-encryption key that does not open this database.
@@ -19,7 +21,13 @@ import tech.bhrigu.almira.config.PageChecksumCheck
  * likely mistake in a restore (the key lives somewhere else, on purpose) and it
  * looked exactly like a healthy deployment.
  *
- * Two checks, before the web server accepts a connection:
+ * Two checks, before Flyway migrates — so before the web server accepts a
+ * connection too. It used to wait for migrations (it injected Flyway so as to
+ * read the table afterwards), which meant a server restored with the wrong key
+ * applied every pending migration to the restored copy and only then refused.
+ * It is a [StartupRefusal] now, so it runs first; a database with no
+ * `encryption_keys` table yet — a fresh install, before its first migration —
+ * has nothing to check, exactly like an empty table.
  *
  *  1. **The fingerprint.** Every wrapped household key records the `kek_id` of
  *     the KEK that wrapped it. If household keys exist and not one of them names
@@ -39,27 +47,42 @@ import tech.bhrigu.almira.config.PageChecksumCheck
  * rule as [PageChecksumCheck]: a development key regenerated on a laptop orphans
  * that laptop's data, which is worth a warning and not worth a failing test suite.
  *
- * Reads through the owner connection, because `encryption_keys` is behind
+ * Reads through the owner pool, because `encryption_keys` is behind
  * row-level security and there is no user at startup.
  */
 @Component
+@Order(3)
 class KeyEncryptionKeyCheck(
-    private val kms: KeyManagementService,
-    @Qualifier("systemJdbcBypassingRls") private val system: NamedParameterJdbcTemplate,
+    // A provider, not the service: every StartupRefusal is built before any is
+    // verified, and building the local key service can write a development key
+    // file. Asked for here, after the page-checksum and runtime-role refusals.
+    private val kmsProvider: ObjectProvider<KeyManagementService>,
+    // The owner pool itself, not the systemJdbcBypassingRls template: Spring Boot
+    // makes every JdbcTemplate bean depend on Flyway (database initialisation
+    // ordering), so injecting one here would put Flyway in front of this again —
+    // as a circular reference, since Flyway waits for this.
+    @Qualifier("ownerDataSource") ownerDataSource: DataSource,
     private val environment: Environment,
-    // Injected only so migrations have run before this reads the table.
-    @Suppress("unused") private val flyway: Flyway,
-) : InitializingBean {
+) : StartupRefusal {
 
     private val log = LoggerFactory.getLogger(javaClass)
+    private val system = JdbcTemplate(ownerDataSource)
 
-    override fun afterPropertiesSet() {
-        val rows = system.jdbcTemplate.query(
+    override fun verifyBeforeMigrating() {
+        val kms = kmsProvider.getObject()
+        val migrated = system.queryForObject(
+            "select to_regclass('public.encryption_keys') is not null", Boolean::class.java,
+        ) == true
+        if (!migrated) {
+            log.info("Key-encryption key {}: no encryption_keys table yet, nothing to check", kms.kekId)
+            return
+        }
+        val rows = system.query(
             "select kek_id, count(*) as n from encryption_keys group by kek_id",
         ) { rs, _ -> rs.getString("kek_id") to rs.getLong("n") }.toMap()
 
         val sample = if (rows.containsKey(kms.kekId)) {
-            system.jdbcTemplate.query(
+            system.query(
                 "select wrapped_dek from encryption_keys where kek_id = ? limit 1",
                 { rs, _ -> rs.getBytes(1) }, kms.kekId,
             ).firstOrNull()

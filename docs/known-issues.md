@@ -2062,23 +2062,35 @@ a process already serving.
 | up.sh runtime role does not bypass RLS | the app starting and serving | SQL check before `up -d app` | `784aa65` |
 | uitest bridge port is free | starting the bridge | `claim-port.sh` before it | `3bb4ace` |
 | verify.sh scratch services are its own | the backend suite | preflight, and the suite gated on them | `57df7e6` |
+| The application's runtime role cannot bypass RLS (superuser, BYPASSRLS, CREATEROLE, owns an RLS table, or can SET ROLE to such a role) | the application migrating and serving; only `/health` reported it | `RuntimeRoleCheck` before Flyway migrates, and again before serving; every environment | `5d06681` |
+| bootstrap-db.sql: the runtime role is not the owner, and cannot bypass RLS | its ALTER ROLE (which set the owner's password); "start the application, then check" | before the ALTER ROLE; the made role checked before "Done" | `5d06681` |
+| Nothing forced a bean refusal ahead of Flyway | — (each had to remember) | `StartupRefusal`: the Flyway bean's parameter; `StartupRefusalOrderTest` fails on one outside it | `b5d7b72` |
+| Key-encryption key opens this database | Flyway migrate (it injected Flyway) | a `StartupRefusal`, before migrate | `b5d7b72` |
+| S3 bucket reachable; privacy, plans, support and continuity properties | Flyway migrate (built when first injected) | a `StartupRefusal`; bound in `StartupSettingsCheck` | `b5d7b72` |
+| backup.sh documents volume exists; bodies table is the one excluded | `pg_dump` writing the dump | before the backup directory is created | `850d8e3` |
+| restore.sh documents volume is empty | the runtime role and `pg_restore` | step 2, with the other target checks | `7700220` |
+| restore-row.sh backup copy intact (sweep rules, digest); live row exists | the UPDATE over the live row | before the UPDATE, in the same transaction | `7700220` |
+| freeze-api-spec.sh fetched spec is complete | emptying the frozen file | into a temporary file, renamed over it only when valid | `713b64e` |
+| smoke-prod.sh deployment checks (up, database, rlsEnforced, not owner) | requesting codes, signing in, creating a household | stops before the first write | `6f6847d` |
+
+The scripts' tests are in `scripts/tests/` and run the real scripts against
+throwaway containers and volumes, or with a stub `curl`; each was watched failing
+against the script as it was before its commit.
 
 **Still open:**
 
-- **Flyway itself does not depend on the checks** (infra session:
-  `config/DatabaseConfig.kt`). `StartupSettingsCheck` covers every
-  configuration refusal a bean makes today; a new bean constructor refusal
-  added later is behind Flyway again unless it is added there too.
-  `PageChecksumCheck` and `KeyEncryptionKeyCheck` are the infra session's to
-  judge.
+- **`StartupRefusalOrderTest` finds a refusal by its words.** It fails on a
+  class that says "Refusing to start" outside the two mechanisms, and on a
+  properties class that refuses in an init block without being bound early. A
+  refusal worded some other way, in an ordinary bean, is found only if it is a
+  `StartupRefusal` — which is what review has to ask.
+- **The key-encryption key check reads `encryption_keys` before migrating.** If
+  a future migration changed that table's `kek_id` or `wrapped_dek` columns,
+  the check would read the old shape; nothing pending does.
 - **A setting supplied by `@DynamicPropertySource` is invisible to
   `StartupSettingsCheck`** — it arrives after the check. The beans still check
   it. Tests that switch email on must supply the allowlist the same way
   (`OtpCodeNeverLeaksTest`).
-- **The application does not refuse, at startup, a runtime role that bypasses
-  RLS** — only dev-personal/up.sh does, and `/health` reports it afterwards.
-  `scripts/bootstrap-prod-db.sh` still tells the operator to start the
-  application and then check. Infra session.
 - **The reminder sweep is still one transaction over two pools.** The claim is
   in front and released on a throw, but a throw on reminder N still rolls back
   the queued rows of reminders 1…N−1, whose claims have committed. Not a check
@@ -2090,3 +2102,30 @@ a process already serving.
   covers the suite gate), and verify.sh still `docker rm -f`s its own two
   containers by name at the start of a run, which its header says it never
   does.
+
+---
+
+## 69. Backups carried queued message bodies that docs/13 said they left out
+
+**Resolved** (2026-09-15, `850d8e3`). Kept so the number means something where it is cited.
+
+**Where** `scripts/backup.sh`, docs/13 "After a restore: `body_not_restored`",
+docs/17 §6.
+
+**What was wrong** docs/13 and docs/16 (DP-4) said a backup leaves out the rows
+of `outbound_message_bodies`, and the worker was built for that — a restored
+queued message fails once as `body_not_restored`. `backup.sh` dumped the table
+in full, so a backup taken while a one-time code or reminder was waiting held
+its rendered text in plaintext.
+
+**What changed** The dump uses `--exclude-table-data=public.outbound_message_bodies`
+(the table is kept, empty) and the manifest lists it under
+`excluded_table_data`. Because that option matches by name and says nothing
+when it matches no table, `backup.sh` refuses, before dumping, if a bodies table
+exists under any other name. `scripts/tests/backup-checks-before-dumping.sh`
+proves the dump has the table, none of its rows and no body text.
+
+**What is still open** Backups taken before this commit contain the bodies of
+whatever was queued when they were taken; they age out with the retention
+period. Documents in S3 are still not in a backup at all (entry 41, an owner's
+decision).

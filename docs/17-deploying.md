@@ -33,27 +33,30 @@ openssl rand -base64 24    # → ALMIRA_REDIS_PASSWORD
 $EDITOR .env.production    # fill in every REQUIRED value
 
 # Bring up the database and cache, then create the non-owner runtime role.
+# The bootstrap ends by checking that role and fails if it can bypass RLS.
 docker compose -f deploy/docker-compose.prod.yml --env-file .env.production up -d db redis
 docker compose -f deploy/docker-compose.prod.yml --env-file .env.production run --rm db-bootstrap
 
 # Build and start the application. Flyway migrates on first boot.
 docker compose -f deploy/docker-compose.prod.yml --env-file .env.production up -d --build app
 
-# The one check that matters before anybody signs in:
+# Confirm from outside what the application already checked on the way up:
 curl -s http://127.0.0.1:8080/health
 ```
 
-That last command must print:
+That last command prints:
 
 ```json
 {"status":"ok","database":"up","dbRole":"almira_app","rlsEnforced":true,"environment":"production"}
 ```
 
-**If `dbRole` names the schema owner, stop.** PostgreSQL lets a table's owner
-bypass its own row-level security, so the application would be reading with
+**A runtime role that can bypass row-level security does not get this far.**
+PostgreSQL lets a superuser, a BYPASSRLS role and a table's owner skip its
+row-level security, so an application serving as any of them would read with
 every privacy policy switched off — and nothing else would look wrong. The
-runtime role exists for exactly this, and `/health` reports it so the mistake is
-visible from outside, without signing in.
+application refuses to start in that case, before migrating (§3), and
+`bootstrap-db.sql` refuses to finish for such a role before that. `/health`
+still reports the role, so it is visible from outside without signing in.
 
 **If `environment` is `development`**, one-time codes are echoed in API
 responses and the signing-secret, encryption-key and page-checksum checks are
@@ -69,11 +72,13 @@ Then point your TLS terminator at `127.0.0.1:8080` and run the smoke test:
 It signs two people into one household and asserts they see **different** net
 worth. That single property is what the whole product rests on: if it holds
 through a real deployment — proxy, pool, runtime role and all — then privacy is
-enforced end to end. It writes data, and prints the SQL to remove it afterwards.
+enforced end to end. It writes data, and prints the SQL to remove it afterwards
+— but only after `/health` has passed: if the service, the database,
+`rlsEnforced` or the role fails, it stops before signing anybody in.
 
 ## 3 · What refuses to start, and why
 
-Three checks fire before the first request, all for the same reason: a
+These checks fire before the first request, all for the same reason: a
 deployment that runs with a development placeholder looks entirely healthy, and
 nothing about it appears wrong.
 
@@ -82,9 +87,61 @@ nothing about it appears wrong.
 | `ALMIRA_KMS_MASTER_KEY` | Refuses to start. Data encrypted with a key nobody chose, kept nowhere durable, is worse than an application that will not boot. |
 | `ALMIRA_JWT_SECRET` still the development value, or shorter than 32 characters | Refuses to start. The default is printed in this repository; anybody could mint a session with it. |
 | Postgres `data_checksums` is `off` | Refuses to start. See below. |
+| The runtime role (`ALMIRA_DB_APP_USER`) can bypass row-level security | Refuses to start, **in every environment**. See below. |
 
-All three are relaxed in `development` so the app runs out of the box with no
-configuration — which is exactly why the environment flag has to be right.
+The first three are relaxed in `development` so the app runs out of the box with no
+configuration — which is exactly why the environment flag has to be right. The
+runtime-role check is never relaxed.
+
+### The runtime role: refused before migrating, in every environment
+
+Row-level security is the privacy model, so a role that gets past it is not a
+misconfiguration to report but a deployment with no privacy. Until 2026-09-15
+production started regardless and only `/health` said so. Now `RuntimeRoleCheck`
+asks, **as the runtime role**, which roles it is or is a member of, and the
+application refuses to start if any of them
+
+- is a superuser, or has BYPASSRLS;
+- has CREATEROLE (before PostgreSQL 16 that can grant itself membership of the
+  owner, which is the rest of this list);
+- owns a table with row-level security enabled;
+
+or if `ALMIRA_DB_APP_USER` is `ALMIRA_DB_OWNER_USER`. The refusal names the role
+and the attribute — `the runtime database role 'almira_app' (ALMIRA_DB_APP_USER)
+has BYPASSRLS`, or `… is a member of 'almira' (so can SET ROLE to it), which is a
+SUPERUSER`. A catalogue it cannot read refuses too.
+
+It runs **before Flyway migrates**, so a refused start has written nothing, and
+once more after migrating and before the web server is created, because a
+migration runs as the owner and could hand a table to the runtime role. There is
+no development or test relaxation: `dev-personal` and the test suite use the
+same two-role split, and a suite run as a bypassing role would pass while
+production leaked. `dev-personal/up.sh` still checks the role before starting the
+container, as a second line; `RuntimeRoleCheckTest` starts the real application
+as each kind of wrong role and proves Flyway's `migrate` was never reached and no
+web server started.
+
+### Every refusal comes before the database is migrated
+
+A refusal after Flyway has applied pending migrations — column drops included —
+has refused too late. Two mechanisms keep every refusal in front, and a test
+fails if a new one is outside both:
+
+- **Settings that need no database** (the JWT secret, the key's length,
+  sign-in channels, OTP and provider bounds, and the privacy, plans, support and
+  continuity properties) are refused by `StartupSettingsCheck` and the other
+  `EnvironmentPostProcessor`s, before any application context exists.
+- **Checks that read the database or reach a provider** — page checksums, the
+  runtime role, the key-encryption key, an S3 bucket — are `StartupRefusal`
+  beans. The Flyway bean takes every one of them as a parameter and verifies
+  each before configuring Flyway, so implementing the interface is the whole of
+  the wiring.
+
+`StartupRefusalOrderTest` fails if a `StartupRefusal` bean is not a dependency
+of the Flyway bean, if a refusal registered from outside the application does
+not stop a real start before `migrate`, or if a class that says "Refusing to
+start" (or a properties class that refuses in its init block) is outside both
+mechanisms.
 
 ### Correction: "never on a missing value" was false for two of these three
 
@@ -353,7 +410,20 @@ remember the flags:
 count of every table *as it is in the dump*, the migration version, and the
 server's checksum setting. It takes the database first and the documents second,
 because documents are only ever added or soft-deleted, so every document row in
-the dump has its file in a tarball taken just after.
+the dump has its file in a tarball taken just after. It checks everything it
+needs — the database answering, the documents volume existing, the bodies table
+being where it expects — **before** it writes the dump, so a refused backup
+leaves nothing behind.
+
+**Queued message bodies are deliberately not in the backup.** The dump has the
+`outbound_message_bodies` table but none of its rows (`pg_dump
+--exclude-table-data`), so a backup taken while a one-time code or reminder was
+waiting to go holds no rendered message in plaintext; the manifest lists it under
+`excluded_table_data`. Because that exclusion matches by name and is silent when
+it matches nothing, `backup.sh` refuses if a bodies table exists under any other
+name. On the restored server a message that was still queued is recorded failed,
+once, as `body_not_restored` and is not sent ([Doc 13](13-providers-and-going-live.md),
+"After a restore").
 
 **The key-encryption key is deliberately not in the backup.** Account numbers
 and documents are unreadable without it, so a backup that carried it would be a
@@ -369,15 +439,18 @@ start (below). **An untested backup is a hope, not a backup.**
 
 1. **The files match the manifest's sha256.** A single flipped byte in the dump
    or the tarball stops it here.
-2. **The target is empty and has page checksums on.** It will not restore over a
-   database that already has tables — that is a merge nobody designed — and it
-   will not restore onto a volume without `--data-checksums`, because the
-   application would refuse to start on it anyway (§3) and learning that after a
-   two-hour restore is worse than learning it now.
+2. **The target is empty and protected**: no table in the database, page
+   checksums on, and an empty documents volume — all checked before anything is
+   written to the target. It will not restore over a database that already has
+   tables — that is a merge nobody designed — and it will not restore onto a
+   volume without `--data-checksums`, because the application would refuse to
+   start on it anyway (§3) and learning that after a two-hour restore is worse
+   than learning it now. (The documents volume used to be checked only after
+   `pg_restore`, which left a restored database beside a volume it then refused.)
 3. **The runtime role**, created by the same idempotent bootstrap as a fresh
    install, so the dump's grants have a role to land on.
 4. **pg_restore**, stopping on the first error.
-5. **The documents volume**, which must also be empty.
+5. **The documents**, extracted into the volume checked in step 2.
 6. **Verify** — the part that makes it a proven restore rather than a completed
    one:
    a. every table has the row count the manifest recorded;
@@ -417,9 +490,11 @@ It catches accidental damage between a write and a restore, and nothing else.
 
 When a row is named, `./scripts/restore-row.sh --table … --id …` copies that one
 row's ciphertext back from the backup — triggers suppressed, so it does not
-stamp a new digest over damaged bytes — and re-runs both checks. If the backup's
-copy is also bad, that is an older-backup problem, and the script says so rather
-than pretending.
+stamp a new digest over damaged bytes — and re-runs both checks. **Before** it
+writes, it checks the backup's copy of that row against the sweep's rules and its
+stored digest, and that the live row exists. If the backup's copy is also bad,
+that is an older-backup problem: the script says so and the live row keeps the
+bytes it had. (It used to write first and find out from the re-check.)
 
 ### Watched failing, not just watched passing
 
@@ -459,6 +534,21 @@ rather than taking the matching ones down. Reproduced both ways in a container:
 the right key logs `opens all N household key(s)` and serves; the wrong key logs
 `Refusing to start — ALMIRA_KMS_MASTER_KEY is not the key this database was
 encrypted with` and does not.
+
+Since 2026-09-15 it refuses **before Flyway migrates**. It used to wait for the
+migrations so that it could read the table, which meant a restored copy started
+with the wrong key had every pending migration applied to it and then refused.
+A database with no key table yet (a fresh install) has nothing to check.
+
+### The scripts' own refusals are tested
+
+`scripts/tests/` runs `backup.sh`, `restore.sh`, `restore-row.sh`,
+`bootstrap-prod-db.sh`, `freeze-api-spec.sh` and `smoke-prod.sh` for real —
+against throwaway Postgres containers and volumes it removes afterwards, or with
+a stub `curl` — and proves that each refusal comes **before** the thing it
+refuses: no dump written, no `pg_restore` run, no live row overwritten, no
+frozen spec emptied, nobody signed in. `./scripts/tests/run-all.sh` runs them
+all; `SCRIPT_TEST_PREFIX` names the containers.
 
 ### A drill with nothing but Docker
 
@@ -652,7 +742,7 @@ Alert on these, most urgent first. Each has the first thing to look at.
 | Signal | Means | First move |
 |---|---|---|
 | `check-health.sh` fails on `live` for 2 minutes | the app is down | `docker compose … ps` and `logs app --tail 200`; a refusal to start names its reason in one line (§3) |
-| `ready` is 503 with `rlsEnforced:false` | the app is connected as the schema owner: **every member can see every record** | stop the app now (`… stop app`), then fix `ALMIRA_DB_APP_USER` (§2). Do not wait for users to leave |
+| `ready` is 503 with `rlsEnforced:false` | the app is connected as the schema owner: **every member can see every record**. The startup check (§3) should make this impossible, so it also means that check was bypassed or the role was changed while running | stop the app now (`… stop app`), then fix `ALMIRA_DB_APP_USER` (§2). Do not wait for users to leave |
 | `ready` is 503 with `database:false` or `redis:false` | nobody can sign in | Postgres or Redis container health, disk space (`df -h`), memory (§6 "single small VPS") |
 | any `"level":"ERROR"` line | an unhandled server fault, answered `500 internal_error` | the `logger`, `error` and `frames` fields; the request that caused it is not logged by design, so reproduce from the route |
 | repeated `one-time code by sms failed` or `… by email failed` (WARN) | sign-in codes are not being delivered | the provider's status page and balance; the `Providers:` line at startup says which mode each is in |

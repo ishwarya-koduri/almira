@@ -84,6 +84,28 @@ class StartupSettingsCheckTest {
             mapOf("almira.otp.send-timeout" to "60s"),
             "almira.otp.send-timeout must be more than zero and at most PT15S (is PT1M)",
         ),
+        // Properties classes that refuse in their own init blocks. These were
+        // built when first injected, which was after Flyway.
+        Case(
+            "a grievance answered in 120 days",
+            mapOf("almira.privacy.grievance.response-days" to "120"),
+            "almira.privacy.grievance.response-days is 120; it must be between 1 and 90",
+        ),
+        Case(
+            "a default plan that is not defined",
+            mapOf("almira.plans.default-plan" to "gold"),
+            "almira.plans.default-plan is 'gold', which is not one of almira.plans.definitions",
+        ),
+        Case(
+            "a support channel nobody reads",
+            mapOf("almira.support.channel" to "pigeon"),
+            "almira.support.channel is 'pigeon'",
+        ),
+        Case(
+            "continuity links over plain http",
+            mapOf("almira.continuity.link-base-url" to "http://almira.example.in"),
+            "almira.continuity.link-base-url must be an https address",
+        ),
     )
 
     @TestFactory

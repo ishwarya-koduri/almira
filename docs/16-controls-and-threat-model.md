@@ -122,7 +122,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | | |
 |---|---|
 | AC-1 | Per-record visibility enforced in PostgreSQL — `db/migrations/V4__rls_privacy.sql` |
-| AC-2 | Application connects as a non-owner role — `config/DatabaseConfig.kt`, `infra/postgres-init/01-app-role.sql` |
+| AC-2 | Application connects as a non-owner role, and refuses to start — before migrating, in every environment — if that role is a superuser, has BYPASSRLS or CREATEROLE, owns a table under RLS, or can SET ROLE to such a role — `config/DatabaseConfig.kt`, `config/RuntimeRoleCheck.kt`, `deploy/bootstrap-db.sql` |
 | AC-3 | Transaction-scoped identity, discarded at commit — `config/RlsTransactionManager.kt` |
 | AC-4 | Capability (role) checks separated from visibility — `app.can_write_household`, `app.can_read_record` |
 | AC-5 | Only a record's holder may grant visibility — `V8__generalise_visibility_grants.sql` |

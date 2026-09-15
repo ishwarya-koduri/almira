@@ -14,11 +14,25 @@
 --
 -- Or, on the compose stack:  ./scripts/bootstrap-prod-db.sh
 --
--- After this, /health must report "dbRole":"almira_app" and "rlsEnforced":true.
--- If it says the owner's name, stop and fix it before anybody signs in.
+-- It ends by checking the role it made, and fails if that role can get past
+-- row-level security. The application checks the same thing again at every
+-- start, before migrating, and refuses to start if it can (RuntimeRoleCheck,
+-- docs/17 §3). /health still reports "dbRole" and "rlsEnforced".
 -- =============================================================================
 
 \set ON_ERROR_STOP on
+
+-- The runtime role must not be the role running this. Checked before the
+-- ALTER ROLE statements below, which would otherwise set the owner's password
+-- to the runtime role's and try to strip the owner's own attributes.
+select set_config('almira.bootstrap_app_user', :'app_user', false);
+do $$
+begin
+  if current_setting('almira.bootstrap_app_user') = current_user then
+    raise exception 'app_user % is the role running this bootstrap (the owner). The runtime role must be a different role.', current_user;
+  end if;
+end
+$$;
 
 -- The role. Password is passed in rather than written here, so this file can be
 -- committed and read by anybody.
@@ -42,7 +56,36 @@ select format('grant usage on schema public to %I', :'app_user')
 -- The table-level grants themselves live in db/migrations/R__grants.sql, which
 -- Flyway runs last on every deploy — so a table added next year is covered
 -- without anybody remembering this file exists.
+
+-- Checked here, before anybody starts the application, and not left to /health
+-- afterwards. The ALTER ROLE above cannot undo a membership: a runtime role
+-- granted a superuser, a BYPASSRLS role or a table owner can SET ROLE to it.
+-- The same rule as RuntimeRoleCheck, which the application runs again itself.
+do $$
+declare
+  app text := current_setting('almira.bootstrap_app_user');
+  problems text;
+begin
+  select string_agg(format('%s %s', case when r.rolname = app then format('%I', app)
+                                         else format('%I is a member of %I, which', app, r.rolname) end,
+                           concat_ws(', ',
+                             case when r.rolsuper then 'is a SUPERUSER' end,
+                             case when r.rolbypassrls then 'has BYPASSRLS' end,
+                             case when r.rolcreaterole then 'has CREATEROLE' end,
+                             case when exists (select 1 from pg_class c where c.relowner = r.oid and c.relrowsecurity)
+                                  then 'owns tables under row-level security' end)), '; ')
+    into problems
+    from pg_roles r
+   where pg_has_role(app, r.oid, 'MEMBER')
+     and (r.rolsuper or r.rolbypassrls or r.rolcreaterole
+          or exists (select 1 from pg_class c where c.relowner = r.oid and c.relrowsecurity));
+  if problems is not null then
+    raise exception 'the runtime role can bypass row-level security: %. Do not start the application; fix the role first.', problems;
+  end if;
+end
+$$;
+
 \echo ''
-\echo 'Runtime role ready. Flyway will grant table privileges on first start.'
-\echo 'Then check: curl -s https://your-host/health'
-\echo 'It must report "dbRole":"almira_app" and "rlsEnforced":true.'
+\echo 'Runtime role ready, and it cannot bypass row-level security.'
+\echo 'Flyway will grant table privileges on first start. The application checks'
+\echo 'the role again before migrating and refuses to start if it can bypass.'

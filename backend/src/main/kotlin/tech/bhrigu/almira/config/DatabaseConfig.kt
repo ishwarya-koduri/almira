@@ -3,6 +3,7 @@ package tech.bhrigu.almira.config
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import org.flywaydb.core.Flyway
+import org.flywaydb.core.api.output.MigrateResult
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -91,18 +92,33 @@ class DatabaseConfig(private val props: AlmiraProperties) {
      * R__grants migration re-grants privileges to the runtime role each time it
      * changes, so a table added by a future migration is never unreachable.
      *
-     * The page-checksum check runs first, so a database that would be refused
-     * has had nothing written to it. See [PageChecksumCheck].
+     * The page-checksum and runtime-role checks run first, so a database that
+     * would be refused has had nothing written to it. The runtime-role check
+     * runs once more after migrating (a migration runs as the owner and could
+     * hand a table to the runtime role), which is still before the web server
+     * accepts a connection. See [PageChecksumCheck] and [RuntimeRoleCheck].
      */
     @Bean(initMethod = "migrate")
-    fun flyway(@Qualifier("ownerDataSource") ownerDataSource: HikariDataSource, environment: Environment): Flyway {
+    fun flyway(
+        @Qualifier("ownerDataSource") ownerDataSource: HikariDataSource,
+        @Qualifier("dataSource") runtimeDataSource: DataSource,
+        environment: Environment,
+    ): Flyway {
         PageChecksumCheck(environment).verify(ownerDataSource)
-        return Flyway.configure()
+        val roleCheck = RuntimeRoleCheck(props)
+        roleCheck.verify(runtimeDataSource, "before migrating")
+        val configuration = Flyway.configure()
             .dataSource(ownerDataSource)
             .locations("classpath:db/migration")
             .baselineOnMigrate(true)
             .validateOnMigrate(true)
-            .load()
+        // The re-check wraps migrate() rather than being a Flyway AFTER_MIGRATE
+        // callback: any callback makes Flyway open one more owner connection than
+        // the two this pool has, and startup then times out waiting for it.
+        return object : Flyway(configuration) {
+            override fun migrate(): MigrateResult =
+                super.migrate().also { roleCheck.verify(runtimeDataSource, "after migrating, before serving") }
+        }
     }
 
     private fun hikari(user: String, password: String, poolName: String, maxPoolSize: Int) =

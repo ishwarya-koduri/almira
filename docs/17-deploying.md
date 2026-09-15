@@ -33,27 +33,30 @@ openssl rand -base64 24    # → ALMIRA_REDIS_PASSWORD
 $EDITOR .env.production    # fill in every REQUIRED value
 
 # Bring up the database and cache, then create the non-owner runtime role.
+# The bootstrap ends by checking that role and fails if it can bypass RLS.
 docker compose -f deploy/docker-compose.prod.yml --env-file .env.production up -d db redis
 docker compose -f deploy/docker-compose.prod.yml --env-file .env.production run --rm db-bootstrap
 
 # Build and start the application. Flyway migrates on first boot.
 docker compose -f deploy/docker-compose.prod.yml --env-file .env.production up -d --build app
 
-# The one check that matters before anybody signs in:
+# Confirm from outside what the application already checked on the way up:
 curl -s http://127.0.0.1:8080/health
 ```
 
-That last command must print:
+That last command prints:
 
 ```json
 {"status":"ok","database":"up","dbRole":"almira_app","rlsEnforced":true,"environment":"production"}
 ```
 
-**If `dbRole` names the schema owner, stop.** PostgreSQL lets a table's owner
-bypass its own row-level security, so the application would be reading with
+**A runtime role that can bypass row-level security does not get this far.**
+PostgreSQL lets a superuser, a BYPASSRLS role and a table's owner skip its
+row-level security, so an application serving as any of them would read with
 every privacy policy switched off — and nothing else would look wrong. The
-runtime role exists for exactly this, and `/health` reports it so the mistake is
-visible from outside, without signing in.
+application refuses to start in that case, before migrating (§3), and
+`bootstrap-db.sql` refuses to finish for such a role before that. `/health`
+still reports the role, so it is visible from outside without signing in.
 
 **If `environment` is `development`**, one-time codes are echoed in API
 responses and the signing-secret, encryption-key and page-checksum checks are
@@ -82,9 +85,39 @@ nothing about it appears wrong.
 | `ALMIRA_KMS_MASTER_KEY` | Refuses to start. Data encrypted with a key nobody chose, kept nowhere durable, is worse than an application that will not boot. |
 | `ALMIRA_JWT_SECRET` still the development value, or shorter than 32 characters | Refuses to start. The default is printed in this repository; anybody could mint a session with it. |
 | Postgres `data_checksums` is `off` | Refuses to start. See below. |
+| The runtime role (`ALMIRA_DB_APP_USER`) can bypass row-level security | Refuses to start, **in every environment**. See below. |
 
-All three are relaxed in `development` so the app runs out of the box with no
-configuration — which is exactly why the environment flag has to be right.
+The first three are relaxed in `development` so the app runs out of the box with no
+configuration — which is exactly why the environment flag has to be right. The
+runtime-role check is never relaxed.
+
+### The runtime role: refused before migrating, in every environment
+
+Row-level security is the privacy model, so a role that gets past it is not a
+misconfiguration to report but a deployment with no privacy. Until 2026-09-15
+production started regardless and only `/health` said so. Now `RuntimeRoleCheck`
+asks, **as the runtime role**, which roles it is or is a member of, and the
+application refuses to start if any of them
+
+- is a superuser, or has BYPASSRLS;
+- has CREATEROLE (before PostgreSQL 16 that can grant itself membership of the
+  owner, which is the rest of this list);
+- owns a table with row-level security enabled;
+
+or if `ALMIRA_DB_APP_USER` is `ALMIRA_DB_OWNER_USER`. The refusal names the role
+and the attribute — `the runtime database role 'almira_app' (ALMIRA_DB_APP_USER)
+has BYPASSRLS`, or `… is a member of 'almira' (so can SET ROLE to it), which is a
+SUPERUSER`. A catalogue it cannot read refuses too.
+
+It runs **before Flyway migrates**, so a refused start has written nothing, and
+once more after migrating and before the web server is created, because a
+migration runs as the owner and could hand a table to the runtime role. There is
+no development or test relaxation: `dev-personal` and the test suite use the
+same two-role split, and a suite run as a bypassing role would pass while
+production leaked. `dev-personal/up.sh` still checks the role before starting the
+container, as a second line; `RuntimeRoleCheckTest` starts the real application
+as each kind of wrong role and proves Flyway's `migrate` was never reached and no
+web server started.
 
 ### Correction: "never on a missing value" was false for two of these three
 
@@ -652,7 +685,7 @@ Alert on these, most urgent first. Each has the first thing to look at.
 | Signal | Means | First move |
 |---|---|---|
 | `check-health.sh` fails on `live` for 2 minutes | the app is down | `docker compose … ps` and `logs app --tail 200`; a refusal to start names its reason in one line (§3) |
-| `ready` is 503 with `rlsEnforced:false` | the app is connected as the schema owner: **every member can see every record** | stop the app now (`… stop app`), then fix `ALMIRA_DB_APP_USER` (§2). Do not wait for users to leave |
+| `ready` is 503 with `rlsEnforced:false` | the app is connected as the schema owner: **every member can see every record**. The startup check (§3) should make this impossible, so it also means that check was bypassed or the role was changed while running | stop the app now (`… stop app`), then fix `ALMIRA_DB_APP_USER` (§2). Do not wait for users to leave |
 | `ready` is 503 with `database:false` or `redis:false` | nobody can sign in | Postgres or Redis container health, disk space (`df -h`), memory (§6 "single small VPS") |
 | any `"level":"ERROR"` line | an unhandled server fault, answered `500 internal_error` | the `logger`, `error` and `frames` fields; the request that caused it is not logged by design, so reproduce from the route |
 | repeated `one-time code by sms failed` or `… by email failed` (WARN) | sign-in codes are not being delivered | the provider's status page and balance; the `Providers:` line at startup says which mode each is in |

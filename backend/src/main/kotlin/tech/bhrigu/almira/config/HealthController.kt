@@ -19,6 +19,8 @@ class HealthController(
      * Reports which database role serves requests. If this ever says `almira`
      * (the schema owner) instead of `almira_app`, row-level security is being
      * bypassed and the privacy model is off — worth seeing at a glance.
+     * [RuntimeRoleCheck] refuses to start in that case, before migrating, so
+     * this is the view from outside of something already checked on the way up.
      *
      * It also reports the environment it believes it is in, because the other
      * way to deploy something dangerous is to deploy it with development

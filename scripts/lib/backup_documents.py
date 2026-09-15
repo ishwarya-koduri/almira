@@ -22,6 +22,13 @@ warns — it requires an explicit acknowledgement. So:
            documents are in a bucket is refused for a target that does not use
            object storage, where every document would be missing.
 
+           One deliberate override exists for that last refusal, for data-only
+           testing (owner's decision, 2026-09-15): ALMIRA_RESTORE_DOCUMENTS_ABSENT
+           set to exactly `every-document-will-be-a-broken-link`, together with
+           the acknowledgement. The restore then stamps the backup's
+           manifest.json with a `documents_absent` entry. The name is meant to be
+           impossible to type by accident, and it is refused anywhere else.
+
 Every decision here only reads files and the environment, so the scripts call
 it before they write anything (docs/known-issues.md, "A guard runs before the
 action it guards").
@@ -32,6 +39,7 @@ action it guards").
                                                        itself (no target check; a manifest without
                                                        the field and no env file: documents included)
     backup_documents.py manifest-block ENV_FILE      → the manifest's `documents` object, as JSON
+    backup_documents.py stamp-absent MANIFEST PROJECT ENV_FILE → records a documents-absent restore in the manifest
 """
 import json
 import os
@@ -41,6 +49,8 @@ import urllib.parse
 
 ACK_NAME = "ALMIRA_BACKUP_DOCUMENTS"
 ACK_VALUE = "external"
+ABSENT_NAME = "ALMIRA_RESTORE_DOCUMENTS_ABSENT"
+ABSENT_VALUE = "every-document-will-be-a-broken-link"
 PROVIDERS = ("filesystem", "s3")
 
 
@@ -86,6 +96,18 @@ def acknowledgement():
         raise Refused(f"{ACK_NAME} is '{value}'. The only value it takes is '{ACK_VALUE}', "
                       "meaning: I know the documents are not in this backup.")
     return ACK_VALUE
+
+
+def documents_absent_override():
+    """False when unset; True only for the exact value; refused otherwise — never guessed at."""
+    value = os.environ.get(ABSENT_NAME)
+    if value is None or value == "":
+        return False
+    if value != ABSENT_VALUE:
+        raise Refused(f"{ABSENT_NAME} is '{value}'. The only value it takes is '{ABSENT_VALUE}', meaning: restore "
+                      "the database for data-only testing, knowing every document in it will be a broken link. "
+                      "Nothing has been written.")
+    return True
 
 
 def safe_endpoint(endpoint):
@@ -186,11 +208,46 @@ def restore_decision(manifest_path, env_file, check_target=True):
     if not external and ack is not None:
         raise Refused(f"Refusing to restore: {ACK_NAME}={ACK_VALUE} is set, but {said}. Unset {ACK_NAME}. "
                       "Nothing has been written.")
-    if check_target and external and target != "s3":
+    absent = documents_absent_override()
+    needs_override = check_target and external and target != "s3"
+    if absent and not needs_override:
+        raise Refused(f"Refusing to restore: {ABSENT_NAME} is set, but {said}"
+                      + (" and the target keeps documents in object storage" if external else "")
+                      + ", so no document would be a broken link and there is nothing to override. "
+                      f"Unset {ABSENT_NAME}. Nothing has been written.")
+    if needs_override and not absent:
         raise Refused(f"Refusing to restore: {said}, but {env_file} keeps documents on the filesystem, where "
                       "none of them are: every document would be missing. Point the target at the bucket "
-                      "(ALMIRA_STORAGE_PROVIDER=s3 and its ALMIRA_S3_* settings). Nothing has been written.")
-    return {"DOCS_EXTERNAL": "1" if external else "0", "DOCS_PROVIDER": target or "", "DOCS_WHERE": said}
+                      "(ALMIRA_STORAGE_PROVIDER=s3 and its ALMIRA_S3_* settings). For data-only testing only, "
+                      f"{ABSENT_NAME}={ABSENT_VALUE} restores the database anyway and stamps the backup's "
+                      "manifest.json 'documents absent'. Nothing has been written.")
+    return {"DOCS_EXTERNAL": "1" if external else "0", "DOCS_PROVIDER": target or "", "DOCS_WHERE": said,
+            "DOCS_ABSENT": "1" if needs_override else "0"}
+
+
+def stamp_absent(manifest_path, project, env_file):
+    """
+    Appends to the backup's manifest.json that it was restored with its documents
+    absent: when, into which project, from which env file, under which override.
+    Written to a temporary file and renamed, so a half-written manifest never
+    replaces the one the backup was verified against. The file hashes in the
+    manifest cover the dump and the tarball, not the manifest, so they still hold.
+    """
+    import datetime
+    with open(manifest_path, encoding="utf-8") as f:
+        manifest = json.load(f)
+    manifest.setdefault("documents_absent", []).append({
+        "restored_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "project": project,
+        "target_env_file": os.path.basename(env_file),
+        "override": f"{ABSENT_NAME}={ABSENT_VALUE}",
+        "note": "Restored for data-only testing into a target without the bucket: every document in that "
+                "database is a broken link. Not a restore anyone should run the service on.",
+    })
+    tmp = manifest_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, sort_keys=True)
+    os.replace(tmp, manifest_path)
 
 
 def main(argv):
@@ -201,6 +258,9 @@ def main(argv):
             out = restore_decision(argv[2], argv[3])
         elif len(argv) in (3, 4) and argv[1] == "drill":
             out = restore_decision(argv[2], argv[3] if len(argv) == 4 else None, check_target=False)
+        elif len(argv) == 5 and argv[1] == "stamp-absent":
+            stamp_absent(argv[2], argv[3], argv[4])
+            return 0
         elif len(argv) == 3 and argv[1] == "manifest-block":
             print(json.dumps(manifest_block(argv[2])))
             return 0

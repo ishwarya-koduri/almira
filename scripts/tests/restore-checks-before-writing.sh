@@ -29,6 +29,17 @@
 #       target restores the database, says the documents are not restored, and
 #       extracts nothing; a pre-field manifest into a filesystem target passes
 #       step 0 as before.
+#   A1. restore.sh: ALMIRA_RESTORE_DOCUMENTS_ABSENT with any value but the exact
+#       one refuses, the target untouched.
+#   A2. restore.sh: the override where nothing needs it (a backup that holds its
+#       documents) refuses, the target untouched.
+#   A3. restore.sh: the override, exact, with the acknowledgement, lets external
+#       documents into a filesystem target for data-only testing: the database
+#       is restored, nothing is extracted, the output says documents are absent,
+#       and the backup's manifest.json gains a documents_absent entry while its
+#       file hashes still verify.
+#   A4. restore-drill-local.sh --from: the override is refused before any
+#       container starts (a drill restores no documents to be absent).
 #
 # restore-row.sh
 #   3. A row whose BACKUP copy is damaged too — a digest that does not match,
@@ -231,6 +242,58 @@ check "     with the rows" bash -c "[ \"\$(docker exec $PG psql -U almira -d alm
 check "     saying, before and after, that the documents are not restored" \
   bash -c "grep -q 'DOCUMENTS ARE NOT RESTORED BY THIS SCRIPT' '$WORK/restore.out' && grep -q 'Documents were not part of it' '$WORK/restore.out'"
 check "     and extracting nothing" bash -c "! grep -q 'tar xzf' '$CALLS' && [ -z \"\$(docker run --rm -v $S3_TARGET_VOLUME:/d alpine:latest ls -A /d)\" ]"
+
+# --- the documents-absent override (owner's decision, 2026-09-15) ------------
+start_pg target-absent
+use_compose_shim
+make_volume target-absent-documents
+ABSENT_VOLUME="$VOLUME"
+export DOCS_VOLUME_NAME="$ABSENT_VOLUME"
+
+: > "$CALLS"
+ALMIRA_BACKUP_DOCUMENTS=external ALMIRA_RESTORE_DOCUMENTS_ABSENT=yes restore_env "$ENV_FILE" "$S3_BACKUP"
+check "A1 · the override with any other value refuses (exit $STATUS)" \
+  bash -c "[ $STATUS != 0 ] && grep -q 'The only value it takes is' '$WORK/restore.out'"
+check "     and the target is untouched" untouched
+
+: > "$CALLS"
+ALMIRA_RESTORE_DOCUMENTS_ABSENT=every-document-will-be-a-broken-link restore_env "$ENV_FILE" "$CLEAN_BACKUP"
+check "A2 · the override where no document would be missing refuses (exit $STATUS)" \
+  bash -c "[ $STATUS != 0 ] && grep -q 'nothing to override' '$WORK/restore.out'"
+check "     and the target is untouched" untouched
+
+BEFORE_STAMP=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1])).get("documents_absent", [])))' "$S3_BACKUP/manifest.json")
+: > "$CALLS"
+ALMIRA_BACKUP_DOCUMENTS=external ALMIRA_RESTORE_DOCUMENTS_ABSENT=every-document-will-be-a-broken-link restore_env "$ENV_FILE" "$S3_BACKUP"
+check "A3 · exact, acknowledged: external documents restore into a filesystem target, data only (exit $STATUS)" \
+  bash -c "[ $STATUS = 0 ] && grep -q 'Restore verified' '$WORK/restore.out'"
+[ "$STATUS" = 0 ] || sed 's/^/        /' "$WORK/restore.out"
+check "     with the rows" bash -c "[ \"\$(docker exec $PG psql -U almira -d almira -tAc 'select count(*) from sealed_values')\" = 1 ]"
+check "     saying before and after that the documents are absent" \
+  bash -c "grep -q 'DATA-ONLY TEST RESTORE: DOCUMENTS ABSENT' '$WORK/restore.out' && grep -q 'Data-only test restore: documents absent' '$WORK/restore.out'"
+check "     extracting nothing" bash -c "! grep -q 'tar xzf' '$CALLS' && [ -z \"\$(docker run --rm -v $ABSENT_VOLUME:/d alpine:latest ls -A /d)\" ]"
+check "     and stamping the backup's manifest.json 'documents absent', hashes still holding" python3 -c '
+import hashlib, json, os, sys
+d, before = sys.argv[1], int(sys.argv[2])
+m = json.load(open(os.path.join(d, "manifest.json")))
+stamps = m.get("documents_absent", [])
+assert len(stamps) == before + 1, stamps
+last = stamps[-1]
+assert last["project"] == "ws-script-test-drill" and last["override"].endswith("every-document-will-be-a-broken-link"), last
+assert m["documents"]["in_this_backup"] is False, m["documents"]
+for name, want in m["files"].items():
+    h = hashlib.sha256(open(os.path.join(d, name), "rb").read()).hexdigest()
+    assert h == want["sha256"], name
+assert not os.path.exists(os.path.join(d, "manifest.json.tmp"))
+' "$S3_BACKUP" "$BEFORE_STAMP"
+
+ALMIRA_BACKUP_DOCUMENTS=external ALMIRA_RESTORE_DOCUMENTS_ABSENT=every-document-will-be-a-broken-link \
+  bash "$REPO/scripts/restore-drill-local.sh" --name-prefix "$PREFIX-drill-absent" --from "$S3_BACKUP" > "$WORK/drill-absent.out" 2>&1
+STATUS=$?
+check "A4 · restore-drill-local.sh --from refuses the override (exit $STATUS)" \
+  bash -c "[ $STATUS != 0 ] && grep -q 'nothing to override' '$WORK/drill-absent.out'"
+check "     before any container was started" \
+  bash -c "[ -z \"\$(docker ps -a --format '{{.Names}}' | grep '^$PREFIX-drill-absent' || true)\" ]"
 
 # --- restore-row.sh, against the source as the live database --------------------
 PG="$SOURCE"

@@ -693,6 +693,35 @@ server anything. The one implementation is `scripts/lib/backup_documents.py`;
 provider's object versioning or replication: that, not these backups, is what
 brings documents back.
 
+**Refusing a filesystem target is the rule; data-only testing has one override,
+named so nobody types it by accident** (owner's decision, 2026-09-15: *a restore
+that produces a database where every document is a broken link is worse than no
+restore*). For a test that needs the rows and not the files:
+
+```bash
+ALMIRA_BACKUP_DOCUMENTS=external \
+ALMIRA_RESTORE_DOCUMENTS_ABSENT=every-document-will-be-a-broken-link \
+  ./scripts/restore.sh --project almira-datatest --env-file .env.datatest --from /srv/backups/almira-…
+```
+
+It works only for the case it exists for — a backup whose documents are in a
+bucket, into a filesystem target — and only with the acknowledgement too. Any
+other value, or the override where no document would be missing, is refused
+before anything is written, and `restore-drill-local.sh --from` refuses it (a
+drill restores no documents to be absent). The restore prints `DATA-ONLY TEST
+RESTORE: DOCUMENTS ABSENT` at the start and the end, and once the database is
+in, appends to the backup's own `manifest.json`:
+
+```json
+"documents_absent": [{"restored_at": "…", "project": "almira-datatest", "target_env_file": ".env.datatest",
+                      "override": "ALMIRA_RESTORE_DOCUMENTS_ABSENT=every-document-will-be-a-broken-link", "note": "…"}]
+```
+
+The manifest's file hashes cover the dump and the tarball, not the manifest, so
+the backup still verifies; the stamp is written to a temporary file and renamed,
+and a manifest the restore cannot write to is refused in step 0. Never run the
+service on such a restore.
+
 ### The single small VPS this assumes
 
 One box runs Postgres, Redis and the application (§1). The compose file caps the

@@ -15,6 +15,11 @@
 #      manifest from before the field is treated per the target env file's
 #      provider (scripts/lib/backup_documents.py). Checked from the files alone,
 #      before anything is started or written — --verify-only included.
+#      For data-only testing only, ALMIRA_RESTORE_DOCUMENTS_ABSENT set to exactly
+#      every-document-will-be-a-broken-link (with the acknowledgement) lets such
+#      a backup into a filesystem target; the database is restored, no document
+#      is, and the backup's manifest.json is stamped with a documents_absent
+#      entry. The override is refused in every other case.
 #   1. The backup files match the sha256 in their manifest.
 #   2. The target is EMPTY and protected: the database has no table and has
 #      page checksums on, and the documents volume is empty. It refuses a
@@ -79,6 +84,11 @@ esac
 DOCS_DECISION=$(python3 scripts/lib/backup_documents.py restore "$FROM/manifest.json" "$ENV_FILE" 2>&1) \
   || die "$DOCS_DECISION"
 eval "$DOCS_DECISION"
+if [ "${DOCS_ABSENT:-0}" = 1 ] && [ "$VERIFY_ONLY" = 0 ]; then
+  # The stamp is written after pg_restore; a manifest it cannot write to is found out now.
+  [ -w "$FROM/manifest.json" ] && [ -w "$FROM" ] \
+    || die "ALMIRA_RESTORE_DOCUMENTS_ABSENT is set, but $FROM/manifest.json cannot be written, so the restore could not be stamped 'documents absent'. Nothing has been written."
+fi
 
 dc() {
   docker compose -p "$PROJECT" -f deploy/docker-compose.prod.yml ${OVERRIDE:+-f "$OVERRIDE"} \
@@ -88,7 +98,10 @@ sql() { dc exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAq -v 
 psql_file() { dc exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -X -q -v ON_ERROR_STOP=1 -f -' < "$1"; }
 
 echo "${BOLD}Restore into project $PROJECT from $FROM${OFF}"
-if [ "$DOCS_EXTERNAL" = 1 ]; then
+if [ "${DOCS_ABSENT:-0}" = 1 ]; then
+  echo "${RED}${BOLD}  DATA-ONLY TEST RESTORE: DOCUMENTS ABSENT.${OFF}${RED} $DOCS_WHERE, and this target has no bucket: every document will be a broken link.${OFF}"
+  echo "  ${DIM}(ALMIRA_RESTORE_DOCUMENTS_ABSENT=every-document-will-be-a-broken-link; the backup's manifest.json is stamped)${OFF}"
+elif [ "$DOCS_EXTERNAL" = 1 ]; then
   echo "${RED}${BOLD}  DOCUMENTS ARE NOT RESTORED BY THIS SCRIPT:${OFF}${RED} $DOCS_WHERE.${OFF}"
   echo "  ${DIM}(acknowledged with ALMIRA_BACKUP_DOCUMENTS=external)${OFF}"
 fi
@@ -142,7 +155,11 @@ PY
   ok "pg_restore finished without error"
 
   step "5 · The documents"
-  if [ "$DOCS_EXTERNAL" = 1 ]; then
+  if [ "${DOCS_ABSENT:-0}" = 1 ]; then
+    python3 scripts/lib/backup_documents.py stamp-absent "$FROM/manifest.json" "$PROJECT" "$ENV_FILE" \
+      || die "the database is restored, but the manifest could not be stamped 'documents absent'. Treat this target as data-only."
+    echo "  ${RED}absent${OFF}: no document restored, none reachable. $FROM/manifest.json now records this restore under documents_absent."
+  elif [ "$DOCS_EXTERNAL" = 1 ]; then
     echo "  ${RED}not restored${OFF}: $DOCS_WHERE. Every document must already be in that bucket."
   else
     docker volume create "$DOCS_VOLUME" >/dev/null
@@ -191,7 +208,9 @@ fi
 
 echo
 echo "${GREEN}${BOLD}Restore verified.${OFF}"
-if [ "$DOCS_EXTERNAL" = 1 ]; then
+if [ "${DOCS_ABSENT:-0}" = 1 ]; then
+  echo "  ${RED}${BOLD}Data-only test restore: documents absent.${OFF}${RED} Every document is a broken link. Do not run the service on this.${OFF}"
+elif [ "$DOCS_EXTERNAL" = 1 ]; then
   echo "  ${RED}${BOLD}Documents were not part of it:${OFF}${RED} $DOCS_WHERE.${OFF}"
 fi
 echo "  Next: start the application with the KMS key from when the backup was taken,"

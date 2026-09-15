@@ -59,6 +59,8 @@ class NotificationOutboxTest : ApiTestBase() {
         outbox.drain()
         faults.clear()
         owner = signIn()
+        // Everything below is about how a message is sent, so the people here said yes (V125).
+        consentToMessages(owner)
         val household = createHousehold(owner, "Koduri", "private", "Ishwarya")
         householdId = household.path("id").asText()
         ownerUserId = db.queryForObject(
@@ -78,7 +80,7 @@ class NotificationOutboxTest : ApiTestBase() {
             "trustedMemberId" to post(
                 "/api/v1/households/$householdId/members", owner,
                 mapOf("displayName" to "Meera", "relationship" to "sibling"),
-            ).json().path("id").asText().also { joinHousehold(owner, householdId, it, signIn()) },
+            ).json().path("id").asText().also { joinHousehold(owner, householdId, it, signIn().also { meera -> consentToMessages(meera) }) },
             "waitDays" to 14,
         ),
     )
@@ -601,13 +603,14 @@ class NotificationOutboxTest : ApiTestBase() {
             paths.filter { java.nio.file.Files.isRegularFile(it) }.toList()
         }.associateWith { code(it) }.filterValues { it.isNotEmpty() }
         // V32 creates it; each later migration that names it redefines the enqueue function
-        // (V40, V103, V107, V108) or adds the address column beside the body (V108).
+        // (V40, V103, V107, V108, V125) or adds the address column beside the body (V108).
         assertThat(sql.keys.map { it.fileName.toString() }).containsExactlyInAnyOrder(
             "V32__notification_outbox.sql",
             "V40__closing_an_account_and_passing_away.sql",
             "V103__warnings_a_memorial_does_not_stop.sql",
             "V107__definer_helpers_answer_only_their_callers.sql",
             "V108__phone_change_notice_reaches_the_old_number.sql",
+            "V125__consent_to_messages_is_asked_for.sql",
         )
         assertThat(sql.values.flatten().map { it.trim() }).describedAs("the schema creates it, locks it, and the enqueue function writes it; nothing selects from it")
             .allSatisfy { assertThat(it).doesNotContainIgnoringCase("select").doesNotContainIgnoringCase("join") }
@@ -656,7 +659,7 @@ class NotificationOutboxTest : ApiTestBase() {
     fun `naming the same emergency contact twice tells them once`() {
         val trusted = post(
             "/api/v1/households/$householdId/members", owner, mapOf("displayName" to "Meera", "relationship" to "sibling"),
-        ).json().path("id").asText().also { joinHousehold(owner, householdId, it, signIn()) }
+        ).json().path("id").asText().also { joinHousehold(owner, householdId, it, signIn().also { meera -> consentToMessages(meera) }) }
         repeat(2) {
             val named = post(
                 "/api/v1/households/$householdId/emergency/contacts", owner,

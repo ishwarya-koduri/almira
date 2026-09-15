@@ -116,6 +116,7 @@ class DataRightsApiTest : ApiTestBase() {
 
     @Test
     fun `withdrawn consent to messages stops email and text but keeps the in-app copy and safety notices`() {
+        post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true))
         post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to false))
         val user = UUID.fromString(ownerUserId)
         val household = UUID.fromString(householdId)
@@ -124,7 +125,7 @@ class DataRightsApiTest : ApiTestBase() {
             OutboundNotification(user, household, null, "reminder.maturity", "FD matures", "Due soon", "dpdp:reminder:$user"),
         )
         notifier.deliver(
-            OutboundNotification(user, household, null, "emergency.named", "Named", "Nothing changes", "dpdp:emergency:$user"),
+            OutboundNotification(user, household, null, "emergency.requested", "Asked", "You can stop it", "dpdp:emergency:$user"),
         )
 
         fun outside(template: String) = db.queryForObject(
@@ -138,7 +139,7 @@ class DataRightsApiTest : ApiTestBase() {
 
         assertThat(outside("reminder.maturity")).describedAs("no email or text after withdrawal").isZero()
         assertThat(inApp("reminder.maturity")).describedAs("the in-app copy is still kept").isPositive()
-        assertThat(outside("emergency.named"))
+        assertThat(outside("emergency.requested"))
             .describedAs("a safety notice is not under this consent").isPositive()
 
         // And giving it back is one call too.
@@ -147,6 +148,96 @@ class DataRightsApiTest : ApiTestBase() {
             OutboundNotification(user, household, null, "reminder.maturity", "FD matures", "Due soon", "dpdp:reminder2:$user"),
         )
         assertThat(outside("reminder.maturity")).isPositive()
+    }
+
+    // --- asked when it helps ------------------------------------------------------
+
+    @Test
+    fun `someone never asked is asked, with every channel offered and none chosen for them`() {
+        val ask = get("/api/v1/me/privacy/messages-ask", owner).json()
+        assertThat(ask.path("ask").asBoolean()).isTrue()
+        assertThat(ask.path("channels").map { it.asText() }).containsExactly("email", "sms", "push")
+        assertThat(ask.path("notNowUntil").let { it.isNull || it.isMissingNode }).isTrue()
+        assertThat(ask.path("noticeVersion").asText()).isNotEmpty()
+    }
+
+    @Test
+    fun `a yes asked in context names its channels and where it was asked, and is not asked again`() {
+        val given = post(
+            "/api/v1/me/privacy/consents", owner,
+            mapOf("purpose" to "messages", "given" to true, "channels" to listOf("sms", "email"), "askedIn" to "in_context"),
+        )
+        assertThat(given.status()).isEqualTo(HttpStatus.OK)
+        assertThat(given.json().path("consents")[1].path("channels").map { it.asText() })
+            .describedAs("in the order they are shown").containsExactly("email", "sms")
+        assertThat(
+            db.queryForObject(
+                "select asked_in || ':' || array_to_string(channels, ',') || ':' || notice_version from consent_events where user_id = ?::uuid",
+                String::class.java, ownerUserId,
+            ),
+        ).startsWith("in_context:email,sms:")
+        assertThat(get("/api/v1/me/privacy/messages-ask", owner).json().path("ask").asBoolean()).isFalse()
+        assertThat(get("/api/v1/me/privacy/history", owner).json()[0].path("channels").map { it.asText() })
+            .containsExactly("email", "sms")
+        assertThat(
+            db.queryForObject(
+                "select diff::text from activity_log where actor_user_id = ?::uuid and action = 'privacy.consent_give'",
+                String::class.java, ownerUserId,
+            ),
+        ).contains("in_context", "sms")
+
+        // The same yes again is not a second decision; a yes for other channels is.
+        post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true, "channels" to listOf("email", "sms")))
+        post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true, "channels" to listOf("email")))
+        assertThat(get("/api/v1/me/privacy/history", owner).json().map { it.path("action").asText() })
+            .containsExactly("given", "given")
+    }
+
+    @Test
+    fun `a yes must choose somewhere this server can send, and a withdrawal is never asked about again`() {
+        val none = post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true, "channels" to emptyList<String>()))
+        assertThat(none.status()).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(none.errorCode()).isEqualTo("channels_required")
+        val carrierPigeon = post(
+            "/api/v1/me/privacy/consents", owner,
+            mapOf("purpose" to "messages", "given" to true, "channels" to listOf("email", "pigeon")),
+        )
+        assertThat(carrierPigeon.errorCode()).isEqualTo("channel_not_offered")
+        val where = post(
+            "/api/v1/me/privacy/consents", owner,
+            mapOf("purpose" to "messages", "given" to true, "channels" to listOf("email"), "askedIn" to "a_banner"),
+        )
+        assertThat(where.errorCode()).isEqualTo("asked_in_invalid")
+        assertThat(db.queryForObject("select count(*) from consent_events where user_id = ?::uuid", Int::class.java, ownerUserId))
+            .describedAs("nothing refused was recorded").isZero()
+
+        post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to false))
+        assertThat(get("/api/v1/me/privacy/messages-ask", owner).json().path("ask").asBoolean())
+            .describedAs("no is an answer").isFalse()
+    }
+
+    @Test
+    fun `not now records no consent and keeps the question away for ninety days, for that person only`() {
+        val answered = post("/api/v1/me/privacy/messages-ask/not-now", owner)
+        assertThat(answered.status()).isEqualTo(HttpStatus.OK)
+        assertThat(answered.json().path("ask").asBoolean()).isFalse()
+        assertThat(answered.json().path("notNowUntil").asText()).isNotEmpty()
+        assertThat(get("/api/v1/me/privacy", owner).json().path("consents")[1].path("given").let { it.isNull || it.isMissingNode })
+            .describedAs("not now is not a decision").isTrue()
+        assertThat(get("/api/v1/me/privacy/history", owner).json().size()).isZero()
+        assertThat(get("/api/v1/me/privacy/messages-ask", spouse).json().path("ask").asBoolean())
+            .describedAs("someone else's not now is not yours").isTrue()
+
+        db.update("update messages_consent_asks set not_now_at = now() - interval '89 days' where user_id = ?::uuid", ownerUserId)
+        assertThat(get("/api/v1/me/privacy/messages-ask", owner).json().path("ask").asBoolean()).isFalse()
+        db.update("update messages_consent_asks set not_now_at = now() - interval '91 days' where user_id = ?::uuid", ownerUserId)
+        assertThat(get("/api/v1/me/privacy/messages-ask", owner).json().path("ask").asBoolean()).isTrue()
+
+        // Twice is one row, moved on.
+        post("/api/v1/me/privacy/messages-ask/not-now", owner)
+        assertThat(db.queryForObject("select count(*) from messages_consent_asks where user_id = ?::uuid", Int::class.java, ownerUserId))
+            .isEqualTo(1)
+        assertThat(get("/api/v1/me/privacy/messages-ask").status()).isEqualTo(HttpStatus.UNAUTHORIZED)
     }
 
     // --- requests --------------------------------------------------------------

@@ -223,6 +223,8 @@ class ProviderApiTest : ApiTestBase() {
             mapOf("displayName" to "Meera", "relationship" to "sibling"),
         ).json().path("id").asText()
         val trusted = signIn()
+        // Being named is not an essential notice: it goes outside the app to someone who said yes (V125).
+        consentToMessages(trusted)
         joinHousehold(owner, householdId, trustedMemberId, trusted)
 
         post(

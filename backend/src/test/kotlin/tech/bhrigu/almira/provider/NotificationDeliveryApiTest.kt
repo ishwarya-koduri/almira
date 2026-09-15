@@ -48,6 +48,8 @@ class NotificationDeliveryApiTest : ApiTestBase() {
         faults.clear()
         phone = uniquePhone()
         owner = signIn(phone)
+        // How a message reaches someone who said yes to messages (V125).
+        consentToMessages(owner)
         householdId = createHousehold(owner, "Koduri", "private", "Ishwarya").path("id").asText()
         userId = UUID.fromString(db.queryForObject("select id::text from users where phone = ?", String::class.java, phone))
     }
@@ -253,7 +255,7 @@ class NotificationDeliveryApiTest : ApiTestBase() {
         listOf("sms", "email", "push").forEach { assertThat(row(first, it).status).describedAs(it).isEqualTo("sent") }
 
         val second = tell()
-        val essential = tell(template = "emergency.named")
+        val essential = tell(template = "emergency.requested")
         outbox.drain()
         listOf("sms", "email", "push").forEach {
             assertThat(row(second, it)).describedAs(it).extracting("status", "deferredFor").containsExactly("queued", "daily_limit")
@@ -293,7 +295,7 @@ class NotificationDeliveryApiTest : ApiTestBase() {
         outbox.drain()
         listOf("sms", "email", "push").forEach {
             assertThat(row(reminder, it)).describedAs(it).extracting("status", "failure")
-                .containsExactly("skipped", "consent_withdrawn")
+                .containsExactly("skipped", "no_consent")
         }
         assertThat(row(reminder, "in_app").status).isEqualTo("sent")
         assertThat(row(emergency, "sms").status).describedAs("a safety notice is not under consent to messages").isEqualTo("sent")

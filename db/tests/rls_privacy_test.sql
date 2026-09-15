@@ -1079,12 +1079,12 @@ do $$
 declare blocked boolean := false;
 begin
   -- Even about oneself: the question takes any user id, so it is asked only
-  -- where an email or text is queued (app.enqueue_outbound_message, V107).
+  -- where an email or text is queued (app.enqueue_outbound_message, V125).
   begin
-    perform app.messages_consent_withdrawn((select v from t where k='ish'));
+    perform app.messages_consent_given((select v from t where k='ish'), 'email');
   exception when insufficient_privilege then blocked := true;
   end;
-  perform pg_temp.assert(blocked, 'the runtime role cannot ask whether anyone has withdrawn consent');
+  perform pg_temp.assert(blocked, 'the runtime role cannot ask whether anyone has consented to messages (V125)');
 end $$;
 
 do $$
@@ -2103,6 +2103,80 @@ select set_config('app.guest_share_id', '', false);
 select pg_temp.as_user('ravi');
 select pg_temp.assert(not exists (select 1 from support_codes where user_id = (select v from t where k='ish')),
   'ADMIN cannot see another member''s support codes');
+select pg_temp.as_user('ish');
+
+-- ------------------------------------------------- consent to messages --
+-- V125. A yes names its channels; "not now" is one person's own row, never
+-- anyone else's, and never deleted by the application.
+do $$ begin raise notice '--- consent to messages is asked for (V125) ---'; end $$;
+
+select pg_temp.as_user('ish');
+insert into consent_events (user_id, purpose, action, notice_version, channels, asked_in)
+  values ((select v from t where k='ish'), 'messages', 'given', app.current_privacy_notice_version(),
+          array['email'], 'in_context');
+select pg_temp.assert(
+  (select channels = array['email'] and asked_in = 'in_context' from consent_events
+    where user_id = (select v from t where k='ish') order by seq desc limit 1),
+  'a yes to messages records the channels it covers and where it was asked');
+
+do $$
+declare blocked boolean;
+begin
+  blocked := false;
+  begin
+    insert into consent_events (user_id, purpose, action, notice_version, channels)
+      values ((select v from t where k='ish'), 'messages', 'given', app.current_privacy_notice_version(),
+              array['carrier_pigeon']);
+  exception when check_violation then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a yes names only channels that exist');
+
+  blocked := false;
+  begin
+    insert into consent_events (user_id, purpose, action, notice_version, channels)
+      values ((select v from t where k='ish'), 'messages', 'withdrawn', app.current_privacy_notice_version(),
+              array['email']);
+  exception when check_violation then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a withdrawal names no channels: it withdraws them all');
+
+  -- Which messages are essential is about no one, so the runtime role may ask it.
+  perform pg_temp.assert(app.message_is_essential('auth.new_sign_in')
+                         and not app.message_is_essential('reminder.maturity'),
+    'a sign-in notice is essential and a reminder is not');
+end $$;
+
+insert into messages_consent_asks (user_id) values ((select v from t where k='ish'));
+select pg_temp.assert((select count(*) from messages_consent_asks) = 1,
+  'a person sees their own "not now"');
+update messages_consent_asks set not_now_at = now() where user_id = (select v from t where k='ish');
+
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    delete from messages_consent_asks;
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a "not now" is not deleted by the application');
+end $$;
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from messages_consent_asks) = 0,
+  'an admin sees nothing of another member''s "not now"');
+do $$
+declare n int; blocked boolean := false;
+begin
+  update messages_consent_asks set not_now_at = now() - interval '1 year'
+   where user_id = (select v from t where k='ish');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor moves it, to make them be asked again');
+  begin
+    insert into messages_consent_asks (user_id) values ((select v from t where k='ish'));
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nobody says "not now" in someone else''s name');
+end $$;
 select pg_temp.as_user('ish');
 
 do $$ begin raise notice ''; raise notice 'ALL PRIVACY ASSERTIONS PASSED'; end $$;

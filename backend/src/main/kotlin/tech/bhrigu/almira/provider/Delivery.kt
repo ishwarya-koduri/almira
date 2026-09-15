@@ -205,10 +205,11 @@ class RecordingNotifier(
     override fun deliver(notification: OutboundNotification) {
         val logical = notification.idempotencyKey ?: "${notification.template}:${UUID.randomUUID()}"
         record(notification, keyFor(logical, channel))
-        // Withdrawn consent to messages stops email and text for reminders and the
-        // digest, never the in-app row above (docs/23 "Your data rights").
-        // app.enqueue_outbound_message decides that (V107), as it does a memorial:
-        // whose consent it is is not something the runtime role may read.
+        // Nothing but an essential notice goes outside the app without the person's
+        // yes on that channel; the in-app row above is written either way (docs/23
+        // "What you agree to"). app.enqueue_outbound_message decides that (V125)
+        // before it writes anything, as it does a memorial: whose consent it is is
+        // not something the runtime role may read.
         var queued = 0
         channels.forEach { sender ->
             runCatching {

@@ -137,9 +137,12 @@ class DeliveryDirectory(@Qualifier("ownerDataSource") dataSource: DataSource) {
  * turns it on for the tests that prove the rules. A switched-off channel is
  * honoured in every mode.
  *
- * **Essential messages** ([MessageTemplates.isEssential]) are not paced and not
- * switched off: someone asking for emergency access to your records has to be
- * heard about at 23:00, not the next morning.
+ * **Essential messages** are not paced and not switched off: someone asking for
+ * emergency access to your records has to be heard about at 23:00, not the next
+ * morning. Which they are is `app.message_is_essential` (V125), asked by the
+ * worker as it claims the row and passed in as [Queued.essential] — the same
+ * answer that decided whether the message needed consent to be queued at all
+ * ([MessageTemplates.ESSENTIAL_TEMPLATES]).
  */
 @Component
 class DeliveryPacing(
@@ -166,6 +169,8 @@ class DeliveryPacing(
         val userId: UUID,
         val channel: String,
         val template: String,
+        /** `app.message_is_essential(template)`, asked of the database with the row. */
+        val essential: Boolean,
         /** The idempotency key without its channel: one logical message. */
         val logicalKey: String,
         val timeZone: ZoneId,
@@ -178,7 +183,7 @@ class DeliveryPacing(
      * not both treated as the first of the day.
      */
     fun decide(row: Queued, sender: ChannelSender, chosenToday: MutableMap<UUID, String>): Decision {
-        if (MessageTemplates.isEssential(row.template)) return Decision.Send
+        if (row.essential) return Decision.Send
         val preferences = directory.preferences(row.userId)
         if (!preferences.channelEnabled(row.channel)) return Decision.Skip(TURNED_OFF)
         if (sender.mode != ProviderMode.LIVE && !paceSandboxChannels) return Decision.Send
@@ -221,7 +226,7 @@ class DeliveryPacing(
                 and o.send_started_at >= :dayStart
                 -- started and then found to have nowhere to go: nothing arrived
                 and o.status <> 'skipped'
-                and not ${MessageTemplates.ESSENTIAL_SQL}
+                and not app.message_is_essential(o.template)
                 and o.idempotency_key is not null
                 and left(o.idempotency_key, length(o.idempotency_key) - length(o.channel) - 1) <> :logical
             )

@@ -34,7 +34,7 @@ class OutboxBackgroundDrainTest : ApiTestBase() {
         val trusted = post(
             "/api/v1/households/$householdId/members", owner,
             mapOf("displayName" to "Meera", "relationship" to "sibling"),
-        ).json().path("id").asText().also { joinHousehold(owner, householdId, it, signIn()) }
+        ).json().path("id").asText().also { joinHousehold(owner, householdId, it, signIn().also { meera -> consentToMessages(meera) }) }
         val named = post(
             "/api/v1/households/$householdId/emergency/contacts", owner,
             mapOf("trustedMemberId" to trusted, "waitDays" to 14),

@@ -267,6 +267,7 @@ class StillTrueSweepTest : ApiTestBase() {
 
     @Test
     fun `a failed channel is recorded as it failed, and the next sweep does not resend it`() {
+        consentToMessages(owner)
         faults.always("push", SandboxFault.REJECTED)
         faults.always("sms", SandboxFault.TIMEOUT)
         dueFd("SBI FD")

@@ -127,6 +127,19 @@ abstract class ApiTestBase {
         ).json().path("accessToken").asText()
     }
 
+    /**
+     * Says yes to reminders outside the app, as the person would (V125). Without it,
+     * nothing but an essential notice is queued for them on any channel: a test about
+     * how a reminder is sent has to ask first, like the product does.
+     */
+    protected fun consentToMessages(token: String, channels: List<String> = listOf("email", "sms", "push")) {
+        val given = post(
+            "/api/v1/me/privacy/consents", token,
+            mapOf("purpose" to "messages", "given" to true, "channels" to channels, "askedIn" to "settings"),
+        )
+        check(given.statusCode.is2xxSuccessful) { "consent to messages not recorded (${given.statusCode}): ${given.body}" }
+    }
+
     protected fun createHousehold(
         token: String,
         name: String = "Test household",

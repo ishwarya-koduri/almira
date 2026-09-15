@@ -22,7 +22,8 @@ data class OutboundMessageResponse(
      * When failed: `timeout`, `unavailable`, `rejected`, `insufficient_balance`, `error`, or
      * `body_not_restored` — it was still waiting to go when the server was restored from a backup,
      * which does not carry message bodies, so it was never sent.
-     * When skipped on purpose: `turned_off`, `no_recipient` or `daily_limit` (docs/13 "Pacing").
+     * When skipped on purpose: `turned_off`, `no_recipient`, `daily_limit`, `notifications_stopped` or
+     * `no_consent` — consent to messages on that channel was withdrawn while it waited (docs/13 "Pacing").
      */
     val failure: String?,
     val attempts: Int,
@@ -87,6 +88,8 @@ class OutboundMessages(
             "turned_off" -> "Not sent — you turned this off in Settings. It's here instead."
             "no_recipient" -> "Not sent — we don't have somewhere to send this for you. It's here instead."
             "daily_limit" -> "Not sent — you'd already had a message that day, and we keep to one. It's here instead."
+            NotificationOutbox.NO_CONSENT ->
+                "Not sent — you haven't said yes to reminders this way. It's here instead. Change it in Settings, Your data rights."
             NotificationOutbox.BODY_NOT_RESTORED ->
                 "Not sent — it was still waiting to go out when our service was restored from a backup. Nothing for you to do."
             else -> "Not sent — something went wrong on our side."

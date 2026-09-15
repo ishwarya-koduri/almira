@@ -54,6 +54,8 @@ class LiveEmailDeliveryApiTest : ApiTestBase() {
         smtp.clear()
         val phone = uniquePhone()
         owner = signIn(phone)
+        // A live email for someone who said yes to reminders by email (V125).
+        consentToMessages(owner)
         householdId = createHousehold(owner, "Koduri", "private", "Ishwarya").path("id").asText()
         userId = UUID.fromString(db.queryForObject("select id::text from users where phone = ?", String::class.java, phone))
         address = "ishwarya.${UUID.randomUUID().toString().take(8)}@example.test"

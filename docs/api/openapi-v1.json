@@ -813,6 +813,15 @@
       },
       "ChangeConsentBody": {
         "properties": {
+          "askedIn": {
+            "type": "string"
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "given": {
             "type": "boolean"
           },
@@ -1251,6 +1260,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "kind": {
             "type": "string"
           },
@@ -1276,6 +1291,12 @@
           "changedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "given": {
             "type": "boolean"
@@ -5867,6 +5888,32 @@
           "isMinor",
           "passedAway",
           "version"
+        ],
+        "type": "object"
+      },
+      "MessagesAsk": {
+        "properties": {
+          "ask": {
+            "type": "boolean"
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "notNowUntil": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "noticeVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ask",
+          "channels",
+          "noticeVersion"
         ],
         "type": "object"
       },
@@ -20281,6 +20328,46 @@
                     "$ref": "#/components/schemas/ConsentHistoryEntry"
                   },
                   "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      }
+    },
+    "/api/v1/me/privacy/messages-ask": {
+      "get": {
+        "operationId": "privacyMessagesAsk",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagesAsk"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "data-rights-controller"
+        ]
+      }
+    },
+    "/api/v1/me/privacy/messages-ask/not-now": {
+      "post": {
+        "operationId": "privacyMessagesNotNow",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagesAsk"
                 }
               }
             },

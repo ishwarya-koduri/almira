@@ -437,15 +437,18 @@ start (below). **An untested backup is a hope, not a backup.**
 
 1. **The files match the manifest's sha256.** A single flipped byte in the dump
    or the tarball stops it here.
-2. **The target is empty and has page checksums on.** It will not restore over a
-   database that already has tables — that is a merge nobody designed — and it
-   will not restore onto a volume without `--data-checksums`, because the
-   application would refuse to start on it anyway (§3) and learning that after a
-   two-hour restore is worse than learning it now.
+2. **The target is empty and protected**: no table in the database, page
+   checksums on, and an empty documents volume — all checked before anything is
+   written to the target. It will not restore over a database that already has
+   tables — that is a merge nobody designed — and it will not restore onto a
+   volume without `--data-checksums`, because the application would refuse to
+   start on it anyway (§3) and learning that after a two-hour restore is worse
+   than learning it now. (The documents volume used to be checked only after
+   `pg_restore`, which left a restored database beside a volume it then refused.)
 3. **The runtime role**, created by the same idempotent bootstrap as a fresh
    install, so the dump's grants have a role to land on.
 4. **pg_restore**, stopping on the first error.
-5. **The documents volume**, which must also be empty.
+5. **The documents**, extracted into the volume checked in step 2.
 6. **Verify** — the part that makes it a proven restore rather than a completed
    one:
    a. every table has the row count the manifest recorded;
@@ -485,9 +488,11 @@ It catches accidental damage between a write and a restore, and nothing else.
 
 When a row is named, `./scripts/restore-row.sh --table … --id …` copies that one
 row's ciphertext back from the backup — triggers suppressed, so it does not
-stamp a new digest over damaged bytes — and re-runs both checks. If the backup's
-copy is also bad, that is an older-backup problem, and the script says so rather
-than pretending.
+stamp a new digest over damaged bytes — and re-runs both checks. **Before** it
+writes, it checks the backup's copy of that row against the sweep's rules and its
+stored digest, and that the live row exists. If the backup's copy is also bad,
+that is an older-backup problem: the script says so and the live row keeps the
+bytes it had. (It used to write first and find out from the re-check.)
 
 ### Watched failing, not just watched passing
 

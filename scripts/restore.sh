@@ -9,15 +9,19 @@
 # In order, stopping at the first thing that is wrong:
 #
 #   1. The backup files match the sha256 in their manifest.
-#   2. The target database is EMPTY and has page checksums on. It refuses a
+#   2. The target is EMPTY and protected: the database has no table and has
+#      page checksums on, and the documents volume is empty. It refuses a
 #      database with any table in it — restoring over live data is not a
-#      restore, it is a merge nobody designed — and it refuses one without
-#      checksums, because the application would refuse to start on it anyway
-#      and finding that out after a two-hour restore is worse (docs/17 §3).
+#      restore, it is a merge nobody designed — and one without checksums,
+#      because the application would refuse to start on it anyway and finding
+#      that out after a two-hour restore is worse (docs/17 §3). All of this is
+#      checked before anything is written to the target: the documents volume
+#      used to be checked only after pg_restore, which left a restored database
+#      beside a volume it refused.
 #   3. The runtime role is created (the same bootstrap as a fresh install), so
 #      the privileges in the dump have a role to land on.
 #   4. pg_restore, stopping on the first error.
-#   5. The documents volume, which must also be empty.
+#   5. The documents, extracted into the volume checked in step 2.
 #   6. VERIFY:
 #        a. row counts per table equal the counts in the dump (straight after
 #           pg_restore only — skipped by --verify-only, since a running
@@ -99,6 +103,16 @@ PY
   ok "no tables in the target database"
   [ "$(sql "show data_checksums")" = on ] || die "the target database has data_checksums off. Recreate it with POSTGRES_INITDB_ARGS=--data-checksums (docs/17 §3)."
   ok "page checksums are on"
+  DOCS_VOLUME=$(dc config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes"]["documents"]["name"])')
+  # Inspected, not created: a volume that does not exist yet is empty, and
+  # nothing is made on the target until every check here has passed.
+  if docker volume inspect "$DOCS_VOLUME" >/dev/null 2>&1; then
+    EXISTING=$(docker run --rm -v "$DOCS_VOLUME":/dst:ro alpine:latest sh -c 'find /dst -mindepth 1 | wc -l' | tr -d '[:space:]')
+    [ "$EXISTING" = 0 ] || die "the documents volume $DOCS_VOLUME is not empty ($EXISTING entries). Nothing has been written to the target."
+    ok "the documents volume $DOCS_VOLUME is empty"
+  else
+    ok "the documents volume $DOCS_VOLUME does not exist yet"
+  fi
 
   step "3 · The runtime role"
   dc --profile bootstrap run --rm -T db-bootstrap >/dev/null
@@ -110,10 +124,7 @@ PY
   ok "pg_restore finished without error"
 
   step "5 · The documents"
-  DOCS_VOLUME=$(dc config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes"]["documents"]["name"])')
   docker volume create "$DOCS_VOLUME" >/dev/null
-  EXISTING=$(docker run --rm -v "$DOCS_VOLUME":/dst alpine:latest sh -c 'find /dst -mindepth 1 | wc -l')
-  [ "$EXISTING" = 0 ] || die "the documents volume $DOCS_VOLUME is not empty ($EXISTING entries)."
   docker run --rm -v "$DOCS_VOLUME":/dst -v "$(cd "$FROM" && pwd)":/in:ro alpine:latest \
     sh -c 'tar xzf /in/documents.tgz -C /dst && chown -R 10001:10001 /dst'
   ok "extracted into $DOCS_VOLUME"

@@ -21,6 +21,7 @@ import { t, localDate } from "../i18n.js";
 import { openPrivacyNotice } from "../privacy.js";
 import { confirmItsYou } from "../step-up.js";
 import { openClosure } from "../lifecycle.js";
+import { openMessagesConsent, channelNames } from "../message-consent.js";
 
 export async function rightsScreen(host) {
   const [overview, history, trusted] = await Promise.all([
@@ -108,7 +109,9 @@ function consentCard(overview, redraw) {
 
 function consentRow(consent, redraw) {
   const status = consent.given === true
-    ? t("rights.consent.givenOn", { date: localDate(consent.changedAt) })
+    ? [t("rights.consent.givenOn", { date: localDate(consent.changedAt) }),
+       consent.channels?.length ? t("rights.consent.channels", { channels: channelNames(consent.channels) }) : null,
+      ].filter(Boolean).join(" · ")
     : consent.given === false
       ? t("rights.consent.withdrawnOn", { date: localDate(consent.changedAt) })
       : t("rights.consent.notAsked");
@@ -125,6 +128,13 @@ function consentRow(consent, redraw) {
       giving ? t("rights.consent.give") : t("rights.consent.withdraw"));
     action.onclick = () => withBusy(action, async () => {
       try {
+        // A yes to messages chooses its channels, none ticked for you (V125): the
+        // same sheet that asks when a reminder is first made.
+        if (giving && consent.purpose === "messages") {
+          const ask = await api.messagesAsk();
+          openMessagesConsent({ channels: ask.channels, askedIn: "settings", onAnswered: (yes) => yes && redraw() });
+          return;
+        }
         await api.changeConsent(consent.purpose, giving);
         toast(giving ? t("rights.consent.gaveToast") : t("rights.consent.withdrewToast"));
         redraw();
@@ -221,6 +231,11 @@ function historyText(entry) {
   if (entry.kind === "notice") return t("rights.history.notice", { date: localDate(entry.noticeVersion) });
   if (entry.kind === "parental_consent") {
     return t(`rights.history.parental.${entry.action}`, { name: entry.subject || "" });
+  }
+  if (entry.action === "given" && entry.channels?.length) {
+    return t("rights.history.consent.givenChannels", {
+      purpose: t(`rights.purpose.${entry.purpose}`), channels: channelNames(entry.channels),
+    });
   }
   return t(`rights.history.consent.${entry.action}`, { purpose: t(`rights.purpose.${entry.purpose}`) });
 }

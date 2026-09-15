@@ -12,6 +12,7 @@ import { reload } from "../app.js";
 import { whereWhoCard } from "../where.js";
 import { sealedNoteCard } from "../sealed-notes.js";
 import { t } from "../i18n.js";
+import { liabilityImpliesReminder, offerRemindersOutsideTheApp } from "../message-consent.js";
 
 // Labels are looked up when drawn, so a change of language reaches them.
 const KIND_CODES = ["home", "car", "personal", "education", "gold", "credit_card", "lap", "las",
@@ -163,6 +164,8 @@ export async function liabilitiesScreen(host) {
         modal.close();
         toast(t("common.saved"));
         await reload();
+        // An EMI day makes a monthly reminder: ask whether it may come outside the app too (V125).
+        if (liabilityImpliesReminder(body)) offerRemindersOutsideTheApp();
       } catch (error) {
         titleField.setError(error.message);
       }

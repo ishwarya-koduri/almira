@@ -108,7 +108,11 @@ function consentCard(overview, redraw) {
 }
 
 function consentRow(consent, redraw) {
-  const status = consent.given === true
+  // A yes from before channels could be chosen counts for nothing now (V142): say
+  // so, and ask again with the same Give.
+  const status = consent.askingAgain
+    ? t("rights.consent.askingAgain", { date: localDate(consent.changedAt) })
+    : consent.given === true
     ? [t("rights.consent.givenOn", { date: localDate(consent.changedAt) }),
        consent.channels?.length ? t("rights.consent.channels", { channels: channelNames(consent.channels) }) : null,
       ].filter(Boolean).join(" · ")
@@ -132,7 +136,10 @@ function consentRow(consent, redraw) {
         // same sheet that asks when a reminder is first made.
         if (giving && consent.purpose === "messages") {
           const ask = await api.messagesAsk();
-          openMessagesConsent({ channels: ask.channels, askedIn: "settings", onAnswered: (yes) => yes && redraw() });
+          openMessagesConsent({
+            channels: ask.channels, askedIn: "settings", askingAgain: Boolean(consent.askingAgain),
+            onAnswered: (yes) => yes && redraw(),
+          });
           return;
         }
         await api.changeConsent(consent.purpose, giving);
@@ -233,9 +240,12 @@ function historyText(entry) {
     return t(`rights.history.parental.${entry.action}`, { name: entry.subject || "" });
   }
   if (entry.action === "given" && entry.channels?.length) {
-    return t("rights.history.consent.givenChannels", {
+    return t(entry.askedAgain ? "rights.history.consent.givenAgain" : "rights.history.consent.givenChannels", {
       purpose: t(`rights.purpose.${entry.purpose}`), channels: channelNames(entry.channels),
     });
+  }
+  if (entry.action === "withdrawn" && entry.askedAgain) {
+    return t("rights.history.consent.withdrawnAgain", { purpose: t(`rights.purpose.${entry.purpose}`) });
   }
   return t(`rights.history.consent.${entry.action}`, { purpose: t(`rights.purpose.${entry.purpose}`) });
 }

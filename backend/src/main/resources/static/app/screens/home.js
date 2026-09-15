@@ -19,6 +19,7 @@ import { openCapture } from "./capture.js";
 import { openDetail } from "./detail.js";
 import { t, language, categoryName } from "../i18n.js";
 import { loadReview, reviewCard } from "../review.js";
+import { loadDigestAsk } from "../message-consent.js";
 import { trendPoints } from "../glance.js";
 import { captureForm } from "./capture.js";
 import { resumeCard } from "../draft-ui.js";
@@ -38,6 +39,8 @@ export async function homeScreen(host) {
     data: api.peek(paths.dashboard),
     trend: api.peek(paths.trend) || null,
     inbox: api.peek(paths.review) || null,
+    // Never kept: whether to ask is the server's answer each time (V141).
+    consentAsk: null,
   };
   let status = host.querySelector("[data-home-status]");
   const draw = (view) => { status = render(host, view); host.dataset.home = paths.dashboard; };
@@ -57,7 +60,10 @@ export async function homeScreen(host) {
       api.netWorthTrend(hid, scope, member).catch(() => null),
       loadReview(hid),
     ]);
-    fresh = { data, trend, inbox };
+    // Before the first Still true? digest would go outside the app, ask on the
+    // card beside the questions (V141). Only when there are some; never throws.
+    const consentAsk = inbox?.items?.some((item) => item.kind === "still_true") ? await loadDigestAsk() : null;
+    fresh = { data, trend, inbox, consentAsk };
   } catch (error) {
     if (!last.data) throw error;
     if (host.isConnected && status) status.textContent = t("block.notRefreshed");
@@ -71,7 +77,7 @@ export async function homeScreen(host) {
   if (shown && status) mount(status, updatedNote());
 }
 
-function render(host, { data, trend, inbox }) {
+function render(host, { data, trend, inbox, consentAsk = null }) {
   const scopes = [
     { value: "me", label: t("home.scope.me") },
     { value: "household", label: state.household.name },
@@ -102,7 +108,7 @@ function render(host, { data, trend, inbox }) {
 
     // What is waiting, then what is due, before any breakdown: what needs doing
     // comes before what there is.
-    reviewCard(state.household.id, inbox, { onChanged: refresh }),
+    reviewCard(state.household.id, inbox, { onChanged: refresh, consentAsk }),
 
     // A form left half-filled on this phone (X-83), then the shelves still to
     // fill (P-10): both are things to finish, so both come before what there is.

@@ -636,8 +636,11 @@ export function captureForm(type, onSaved, prefill = null) {
         await (onSaved ? onSaved() : reload());
         if (andAnother) openCapture(onSaved);
         // It has a date we'll remind about: the moment to ask whether that may be
-        // by email, SMS or push too (V125). Never pre-ticked; asked once.
-        else if (holdingImpliesReminder(body)) offerRemindersOutsideTheApp();
+        // by email, SMS or push too (V125), about this holding (V141). Never
+        // pre-ticked; asked once per holding.
+        else if (holdingImpliesReminder(body) && created.visibleToYou) {
+          offerRemindersOutsideTheApp({ contextType: "investment", contextId: created.id });
+        }
       } catch (error) {
         const fields = error.details?.fields;
         if (fields) {

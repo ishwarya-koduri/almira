@@ -178,6 +178,13 @@ async function unauthenticated(method, path, body) {
   return payload;
 }
 
+/** `?contextType=…&contextId=…` for a messages-ask context, or nothing. Pure. */
+export function askQuery(context) {
+  if (!context?.contextType) return "";
+  const id = context.contextId ? `&contextId=${encodeURIComponent(context.contextId)}` : "";
+  return `?contextType=${encodeURIComponent(context.contextType)}${id}`;
+}
+
 export const api = {
   get:    (path)       => request("GET", path),
   post:   (path, body) => request("POST", path, body),
@@ -554,8 +561,10 @@ export const api = {
   // For messages given: { channels, askedIn } — the channels ticked, and "settings" or "in_context".
   changeConsent: (purpose, given, extra = {}) =>
     api.post("/api/v1/me/privacy/consents", { purpose, given, ...extra }),
-  messagesAsk:   ()               => api.get("/api/v1/me/privacy/messages-ask"),
-  messagesNotNow: ()              => api.post("/api/v1/me/privacy/messages-ask/not-now"),
+  // A context — { contextType, contextId } — asks about one holding or loan, or the
+  // Still true? digest; "Not now" is then kept for that context only (V141).
+  messagesAsk:   (context)        => api.get(`/api/v1/me/privacy/messages-ask${askQuery(context)}`),
+  messagesNotNow: (context)       => api.post("/api/v1/me/privacy/messages-ask/not-now", context?.contextType ? context : undefined),
   consentHistory: ()              => api.get("/api/v1/me/privacy/history"),
   accessSummary: ()               => api.get("/api/v1/me/privacy/summary"),
   rightsRequest: (body)           => api.post("/api/v1/me/privacy/requests", body),

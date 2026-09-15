@@ -160,12 +160,15 @@ export async function liabilitiesScreen(host) {
       if (securedBy.value) body.securedByInvestmentId = securedBy.value;
 
       try {
-        await api.createLiability(state.household.id, body);
+        const created = await api.createLiability(state.household.id, body);
         modal.close();
         toast(t("common.saved"));
         await reload();
-        // An EMI day makes a monthly reminder: ask whether it may come outside the app too (V125).
-        if (liabilityImpliesReminder(body)) offerRemindersOutsideTheApp();
+        // An EMI day makes a monthly reminder: ask whether it may come outside the app
+        // too (V125), about this loan (V141).
+        if (liabilityImpliesReminder(body) && created?.id) {
+          offerRemindersOutsideTheApp({ contextType: "liability", contextId: created.id });
+        }
       } catch (error) {
         titleField.setError(error.message);
       }

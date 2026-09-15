@@ -19,6 +19,7 @@ import { el, mount, sheet, toast, when, empty } from "./ui.js";
 import { t, localDate } from "./i18n.js";
 import { monthFromToday } from "./still-true.js";
 import { openDetail } from "./screens/detail.js";
+import { digestAsk } from "./message-consent.js";
 
 export { firstNeedByRecord } from "./glance.js";
 
@@ -51,8 +52,11 @@ export function needLabel(item) {
  * empty inbox is a calm sentence, not a missing card.
  *
  * @param onChanged called once the flow closes after anything was answered
+ * @param consentAsk the server's answer about asking before the first Still true?
+ *   digest goes outside the app (loadDigestAsk), or null. Shown only beside Still
+ *   true? questions, never pre-ticked (V141, docs/23 "Asked when it helps").
  */
-export function reviewCard(householdId, inbox, { onChanged } = {}) {
+export function reviewCard(householdId, inbox, { onChanged, consentAsk = null } = {}) {
   if (!inbox) return null;
   if (inbox.items.length === 0) {
     return el("div.card", { "data-review": "empty" },
@@ -77,6 +81,7 @@ export function reviewCard(householdId, inbox, { onChanged } = {}) {
     el("div.row.wrap", { style: { marginTop: "12px" } },
       el("button.btn", { type: "button", onclick: () => start(0) }, t("review.start")),
       inbox.items.some((item) => item.kind === "still_true") && askLaterButton()),
+    inbox.items.some((item) => item.kind === "still_true") && digestAsk(consentAsk),
   );
 }
 

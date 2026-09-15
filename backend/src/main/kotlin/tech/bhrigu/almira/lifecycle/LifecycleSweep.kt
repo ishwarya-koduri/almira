@@ -12,6 +12,8 @@ data class LifecycleSweepResult(
     val accountsErased: Int = 0,
     val departuresCompleted: Int = 0,
     val comingOfAgeNotices: Int = 0,
+    /** Closures that could not finish because a household they own is dormant (docs/05 §12.7). */
+    val closuresHeld: Int = 0,
 )
 
 /**
@@ -45,9 +47,16 @@ class LifecycleSweep(
         runCatching { purge.pendingDeletions.deleteQueued() }
             .onFailure { log.warn("retrying stored document deletions failed: {}", it.javaClass.simpleName) }
         var erased = 0
+        var held = 0
         purge.due(asOf).forEach { closure ->
             runCatching { purge.purge(closure, asOf) }
-                .onSuccess { if (it != null) erased++ }
+                .onSuccess {
+                    when {
+                        it == null -> Unit
+                        it.householdsHeld > 0 -> held++
+                        else -> erased++
+                    }
+                }
                 .onFailure { log.warn("account purge {} failed: {}", closure, it.javaClass.simpleName) }
         }
         var departed = 0
@@ -59,7 +68,9 @@ class LifecycleSweep(
         val noticed = runCatching { comingOfAge.run(LocalDate.ofInstant(asOf, INDIA)) }
             .onFailure { log.warn("coming-of-age notices failed: {}", it.javaClass.simpleName) }
             .getOrDefault(0)
-        return LifecycleSweepResult(accountsErased = erased, departuresCompleted = departed, comingOfAgeNotices = noticed)
+        return LifecycleSweepResult(
+            accountsErased = erased, departuresCompleted = departed, comingOfAgeNotices = noticed, closuresHeld = held,
+        )
     }
 
     private companion object {

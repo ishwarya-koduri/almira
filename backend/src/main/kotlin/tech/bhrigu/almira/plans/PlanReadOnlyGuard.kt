@@ -95,6 +95,8 @@ class PlanReadOnlyGuard(
             // closing an owner's account can require first.
             null to Regex("^/departures(/.*)?$"),
             null to Regex("^/successor(/.*)?$"),
+            // Taking on a household whose last owner has gone (docs/05 §12.7).
+            "POST" to Regex("^/dormancy/accept$"),
             "PATCH" to Regex("^/members/$ID$"),
             "DELETE" to Regex("^/members/$ID$"),
             // A death, a child coming of age, and consent for a minor.

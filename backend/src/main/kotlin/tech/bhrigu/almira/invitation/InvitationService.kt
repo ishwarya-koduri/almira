@@ -71,6 +71,7 @@ class InvitationService(
         if (household.myRole !in setOf("owner", "admin")) {
             throw ApiException.forbidden("Only the household owner or an admin can invite people.")
         }
+        households.refuseWhileDormant(household)
         if (role !in roles) {
             throw ApiException.badRequest("role_invalid", "Choose one of: ${roles.joinToString()}.")
         }
@@ -159,6 +160,7 @@ class InvitationService(
         if (household.myRole !in setOf("owner", "admin")) {
             throw ApiException.forbidden("Only the household owner or an admin can do that.")
         }
+        households.refuseWhileDormant(household)
         val updated = jdbc.update(
             """
             update invitations set revoked_at = now()

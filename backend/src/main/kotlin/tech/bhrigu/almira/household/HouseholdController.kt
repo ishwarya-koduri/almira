@@ -69,6 +69,12 @@ data class HouseholdResponse(
      * label is wrong (docs/05 §12).
      */
     val readOnly: Boolean = false,
+    /**
+     * Nobody runs this household at the moment: its last owner has gone while
+     * records remain. Everything can still be seen; what needs an owner or admin
+     * waits until an adult member takes it on (GET /dormancy, docs/05 §12.7).
+     */
+    val dormant: Boolean = false,
 )
 
 data class MemberResponse(
@@ -149,6 +155,7 @@ class HouseholdController(private val service: HouseholdService) {
 
     private fun HouseholdRow.toResponse() = HouseholdResponse(
         id, name, baseCurrency, defaultVisibility, myRole, myMemberId, memberCount, version, readOnly,
+        dormant = dormant,
     )
 
     private fun MemberRow.toResponse() = MemberResponse(

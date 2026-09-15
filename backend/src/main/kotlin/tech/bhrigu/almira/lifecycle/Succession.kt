@@ -122,6 +122,7 @@ class SuccessionService(
         if (household.myRole != "owner" || household.readOnly) {
             throw ApiException.forbidden("Only the household owner names who carries it on.")
         }
+        households.refuseWhileDormant(household)
         val member = households.members(householdId).firstOrNull { it.id == memberId }
             ?: throw ApiException.notFound("We couldn't find that person.")
         when {
@@ -164,6 +165,7 @@ class SuccessionService(
         if (household.myRole != "owner" || household.readOnly) {
             throw ApiException.forbidden("Only the household owner names who carries it on.")
         }
+        households.refuseWhileDormant(household)
         val removed = jdbc.update(
             "delete from household_successors where household_id = :hid and claimed_at is null",
             mapOf("hid" to householdId),

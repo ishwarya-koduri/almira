@@ -68,6 +68,7 @@ class AccountClosureService(
     private val audit: AuditService,
     private val notifiers: List<Notifier>,
     private val userContext: RequestUserContext,
+    private val dormancy: DormancyNotices,
 ) {
     private val records = LifecycleRecords(jdbc)
 
@@ -119,10 +120,22 @@ class AccountClosureService(
             )
             if (household.myRole == "owner") {
                 when (val next = records.nextOwner(hid, userId)) {
-                    is LifecycleRecords.Handover.To -> stays += LifecycleLine(
-                        hid, household.name, "people", null, "${next.name} becomes the owner",
-                        if (next.named) "You named them to carry the household on." else "They are an admin here.",
-                    )
+                    is LifecycleRecords.Handover.To -> stays += if (holdsRecords(hid)) {
+                        // V120: the last owner of a household with records is never purged
+                        // before someone has taken it on.
+                        LifecycleLine(
+                            hid, household.name, "people", null, "${next.name} is asked to take it on",
+                            (if (next.named) "You named them to carry the household on. " else "They are an admin here. ") +
+                                "When your thirty days are up, ${household.name} waits until they or another " +
+                                "adult here accepts. Until then nothing of yours in it is erased, and your " +
+                                "account stays open.",
+                        )
+                    } else {
+                        LifecycleLine(
+                            hid, household.name, "people", null, "${next.name} becomes the owner",
+                            if (next.named) "You named them to carry the household on." else "They are an admin here.",
+                        )
+                    }
                     LifecycleRecords.Handover.NobodyChosen -> blockers += LifecycleBlocker(
                         hid, household.name, "owner_needs_successor",
                         "You're the only one who runs ${household.name}. Name who carries it on first.",
@@ -183,6 +196,10 @@ class AccountClosureService(
     @Transactional
     fun cancelClosure(): ClosureStatus {
         val userId = userContext.require()
+        val dormant = jdbc.query(
+            "select id from account_closures where user_id = :uid and cancelled_at is null and purged_at is null",
+            mapOf("uid" to userId),
+        ) { rs, _ -> rs.getObject("id", UUID::class.java) }.flatMap { dormancy.causedBy(closureId = it) }
         val cancelled = jdbc.update(
             """
             update account_closures set cancelled_at = now()
@@ -199,9 +216,15 @@ class AccountClosureService(
                 userId, "lifecycle.closure.cancelled", "closure.cancelled:$userId:${Instant.now()}",
                 "Your Almira account is staying open", "Nothing was erased.",
             )
+            // A household that waited for someone to take it on runs as before (V120's trigger).
+            dormancy.returned(dormant)
         }
         return current(userId)
     }
+
+    private fun holdsRecords(householdId: UUID): Boolean = jdbc.queryForObject(
+        "select app.household_holds_records_for_its_owner(:hid)", mapOf("hid" to householdId), Boolean::class.java,
+    ) == true
 
     private fun current(userId: UUID): ClosureStatus = jdbc.query(
         """

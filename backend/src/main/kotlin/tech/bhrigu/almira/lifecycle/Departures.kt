@@ -107,6 +107,7 @@ class DepartureService(
     private val audit: AuditService,
     private val notifiers: List<Notifier>,
     private val userContext: RequestUserContext,
+    private val dormancy: DormancyNotices,
 ) {
     private val records = LifecycleRecords(jdbc)
 
@@ -175,6 +176,7 @@ class DepartureService(
             if (household.myRole !in setOf("owner", "admin")) {
                 throw ApiException.forbidden("Only the household owner or an admin can ask someone to leave.")
             }
+            households.refuseWhileDormant(household)
             if (target.userId == null) {
                 throw ApiException.badRequest(
                     "member_has_no_login",
@@ -302,6 +304,7 @@ class DepartureService(
                 else "Only the person leaving can change their mind.",
             )
         }
+        val dormant = dormancy.causedBy(departureId = departureId)
         jdbc.update("update household_departures set cancelled_at = now() where id = :id", mapOf("id" to departureId))
         audit.record(
             householdId = householdId, actorUserId = userId, action = "household.departure.cancel",
@@ -311,6 +314,7 @@ class DepartureService(
             householdId, others(householdId, null), "lifecycle.departure.cancelled", "departure.cancelled:$departureId",
             "${current.memberName} is staying in ${household.name}", "Nothing has changed.",
         )
+        dormancy.returned(dormant)
         return view(departureId)
     }
 

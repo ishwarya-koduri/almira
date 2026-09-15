@@ -45,7 +45,7 @@ object MessageTemplates {
      * quiet hours or the daily limit, and is not stopped by a switched-off
      * channel — the same way a bank's security alert is not. Everything else
      * sent outside the app (a reminder, the Still true? digest, a note that
-     * someone else joined or left, a child came of age) goes only to someone who said yes.
+     * someone else joined or left, the note to the adults that a child came of age) goes only to someone who said yes.
      *
      * **One list.** `app.message_is_essential` (V125, V140, V143) is the same list in the
      * database, and it is the one the gates ask: queueing, the worker's re-check
@@ -98,14 +98,18 @@ object MessageTemplates {
         // (V137, scripts/dormancy-repair.sh; kept on the database's list by V144).
         "lifecycle.household.repair_requested",
         "lifecycle.household.repair_done",
+        // You came of age (V146): what is held in your name is yours to manage now.
+        // Sent only to the young adult, whose rights are the ones changing.
+        "lifecycle.coming_of_age.you",
     )
 
-    /** Essential, and about the person's place in a household rather than their account (V140, V143, V144). */
+    /** Essential, and about the person's place in a household rather than their account (V140, V143, V144, V146). */
     private val YOUR_PLACE_TEMPLATES = setOf(
         "lifecycle.departure.completed.you", "lifecycle.memorial.reversed", "lifecycle.successor.named",
         "lifecycle.household.dormant", "lifecycle.household.dormant.you", "lifecycle.household.running_again",
         "lifecycle.household.ownership_accepted", "lifecycle.household.asked_first",
         "lifecycle.household.repair_requested", "lifecycle.household.repair_done",
+        "lifecycle.coming_of_age.you",
     )
 
     fun isEssential(template: String): Boolean = template in ESSENTIAL_TEMPLATES

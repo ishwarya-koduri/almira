@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import tech.bhrigu.almira.lifecycle.ComingOfAgeNotices
+import tech.bhrigu.almira.security.RequestUserContext
 import java.util.UUID
 
 data class CreateInvitationBody(
@@ -23,7 +25,13 @@ data class CreateInvitationBody(
 
 @RestController
 @RequestMapping("/api/v1")
-class InvitationController(private val service: InvitationService) {
+class InvitationController(
+    private val service: InvitationService,
+    private val comingOfAge: ComingOfAgeNotices,
+    private val userContext: RequestUserContext,
+) {
+    private val log = org.slf4j.LoggerFactory.getLogger(javaClass)
+
 
     @PostMapping("/households/{householdId}/invitations")
     @ResponseStatus(HttpStatus.CREATED)
@@ -51,6 +59,13 @@ class InvitationController(private val service: InvitationService) {
             ?: throw tech.bhrigu.almira.common.ApiException.badRequest(
                 "token_required", "That invitation link isn't valid.",
             )
-        return service.accept(token)
+        val accepted = service.accept(token)
+        // Once the claim has committed: a young adult who came of age with no login is told
+        // now, at their first sign-in as themselves (V146). Nothing if they already were.
+        accepted.memberId?.let { memberId ->
+            runCatching { comingOfAge.tellOnFirstSignIn(memberId, userContext.require()) }
+                .onFailure { log.warn("coming of age: could not tell member {} at first sign-in: {}", memberId, it.javaClass.simpleName) }
+        }
+        return accepted
     }
 }

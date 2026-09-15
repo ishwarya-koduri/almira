@@ -264,11 +264,11 @@ joining, leaving, staying after all or signing in for the first time as an adult
 that a child turns 18 (`lifecycle.coming_of_age.guardian`), and any kind of
 message added later until it is deliberately put on the list above.
 
-A child coming of age changes *that child's* rights, so it is essential to the
-child. No message about it reaches the child today: a child is noticed only
-while they have no login of their own, and is welcomed in the app when they
-first sign in ("These are yours now"). The missing notice to the child is
-recorded in known issues ("No message tells a child they have come of age").
+A child coming of age changes *that child's* rights, so the child's own notice,
+`lifecycle.coming_of_age.you`, is on the list (V146). A child with a login of
+their own is sent it when the sweep notices them; a child with none is told the
+adults still need to tell them, and is given it the moment they first sign in as
+themselves, before the welcome ("These are yours now").
 The dormancy notices added with V120 change the access of the person told —
 who may run, invite into or take on the household — so they are on the list
 (V143).

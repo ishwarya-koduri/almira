@@ -2472,6 +2472,18 @@ in flight at that second.
 
 ## 79. No message tells a child they have come of age
 
+**Resolved** (2026-09-15, V146), by the owner's answer: *a child-only notice —
+their rights are the ones changing. With no channel to them, show it in-app at
+their next sign-in and tell the guardian the child still needs telling.* The
+sweep notices a child whether or not they have a login. With one, the child is
+sent `lifecycle.coming_of_age.you` at once, essential (on
+`app.message_is_essential` and `ESSENTIAL_TEMPLATES` together); without one, the
+admins' note is titled "… and still needs telling" and the child is given the
+notice at their first sign-in (`InvitationController.accept` →
+`ComingOfAgeNotices.tellOnFirstSignIn`). `child_told_at` keeps it to once,
+watched failing with that guard removed (`ComingOfAgeApiTest`). The entry is
+kept below as it was found.
+
 **Where** `lifecycle/ComingOfAge.kt` (`ComingOfAgeNotices`), V140,
 `provider/MessageTemplates.kt`, docs/23 "Notices that protect your account".
 

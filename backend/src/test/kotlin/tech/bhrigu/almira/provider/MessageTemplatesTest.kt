@@ -59,13 +59,21 @@ class MessageTemplatesTest {
     }
 
     @Test
-    fun `emergency and account messages are essential, reminders and Still true? are not`() {
+    fun `the essential notices are a list, not a prefix, and only they are worded as always coming`() {
         assertThat(MessageTemplates.isEssential("emergency.requested")).isTrue()
         assertThat(MessageTemplates.isEssential("lifecycle.memorial.marked")).isTrue()
         assertThat(MessageTemplates.isEssential("auth.new_sign_in")).isTrue()
         assertThat(MessageTemplates.isEssential("auth.phone_changed")).isTrue()
+        assertThat(MessageTemplates.isEssential("lifecycle.closure.requested")).isTrue()
         assertThat(MessageTemplates.isEssential("reminder.maturity")).isFalse()
         assertThat(MessageTemplates.isEssential("still_true.digest")).isFalse()
+        // Informational, and under consent: being named, a child coming of age, a new auth.* nobody classified.
+        listOf("emergency.named", "lifecycle.coming_of_age.welcomed", "auth.something_new").forEach {
+            assertThat(MessageTemplates.isEssential(it)).describedAs(it).isFalse()
+            assertThat(MessageTemplates.kindOf(it)).describedAs(it).isEqualTo(MessageTemplates.Kind.OTHER)
+        }
+        assertThat(MessageTemplates.kindOf("emergency.requested")).isEqualTo(MessageTemplates.Kind.EMERGENCY)
+        assertThat(MessageTemplates.kindOf("auth.phone_changed")).isEqualTo(MessageTemplates.Kind.ACCOUNT)
     }
 
     @Test

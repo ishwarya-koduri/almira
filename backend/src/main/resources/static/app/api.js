@@ -551,7 +551,11 @@ export const api = {
   // --- data rights (docs/23 "Your data rights") -------------------------------
   privacy:       ()               => api.get("/api/v1/me/privacy"),
   acceptNotice:  (version)        => api.post("/api/v1/me/privacy/notice/accept", { version }),
-  changeConsent: (purpose, given) => api.post("/api/v1/me/privacy/consents", { purpose, given }),
+  // For messages given: { channels, askedIn } — the channels ticked, and "settings" or "in_context".
+  changeConsent: (purpose, given, extra = {}) =>
+    api.post("/api/v1/me/privacy/consents", { purpose, given, ...extra }),
+  messagesAsk:   ()               => api.get("/api/v1/me/privacy/messages-ask"),
+  messagesNotNow: ()              => api.post("/api/v1/me/privacy/messages-ask/not-now"),
   consentHistory: ()              => api.get("/api/v1/me/privacy/history"),
   accessSummary: ()               => api.get("/api/v1/me/privacy/summary"),
   rightsRequest: (body)           => api.post("/api/v1/me/privacy/requests", body),

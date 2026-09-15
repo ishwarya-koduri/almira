@@ -70,10 +70,14 @@ you sealed.
 ### What you agree to, one purpose at a time
 
 Almira asks separately for each thing it does with your data: keeping your
-records and showing them to the people you choose, and sending reminders by
-email or text. You can withdraw either in one tap on Your data rights, the same
-way you gave it. Withdrawing the first means closing your account. Every choice
-is kept as a dated line you can see.
+records and showing them to the people you choose, and sending you reminders
+outside the app, by email, SMS or push. Nothing is sent outside the app until
+you say yes, and we ask when a reminder would first help. Notices that protect
+your account come either way: a sign-in code, a new sign-in, a changed phone
+number or sign-in method, a request for emergency access you can stop, and your
+account being closed or taken over. You can withdraw either consent in one tap
+on Your data rights, the same way you gave it. Withdrawing the first means
+closing your account. Every choice is kept as a dated line you can see.
 
 ### Your rights
 
@@ -133,8 +137,11 @@ Below the cards:
 - **What you've agreed to**, purpose by purpose (Rule 3's itemised notice).
   `records` is given by using Almira and withdrawn by closing the account;
   `messages` has one button that says Give or Withdraw, the same size in the
-  same place. Below it, the notice version in force, whether you accepted it,
-  and "a draft, not yet legally reviewed" while that is true.
+  same place. Give opens the same question as below ("Want a reminder when this
+  is due?"), with no channel ticked; a yes shows as "Given on 15 Sept 2026 · By
+  email, SMS". Until then it says "Not given: nothing is sent outside the app
+  until you say yes". Below it, the notice version in force, whether you
+  accepted it, and "a draft, not yet legally reviewed" while that is true.
 - **Who can act for you**: your emergency contact beside your nominees, with the
   one sentence that tells them apart — *your emergency contact is someone in
   your household who can ask to see the records you marked if you can't be
@@ -143,6 +150,68 @@ Below the cards:
 - **Your requests**, each with "We reply by" or its outcome.
 - **Consent history** as a dated timeline: consents given and withdrawn, notice
   versions accepted, and parental consents you gave or withdrew.
+
+**Asked when it helps.** Consent to messages is **opt-in** (V125, the owner's
+decision: *"Ask at the moment the first reminder would be useful. Do not
+inherit consent from people who were never asked."*). No `messages` event is a
+no, for everyone, including everyone who signed up before V125: nobody was
+migrated into consent. The web client asks right after a save that makes a
+reminder — adding a holding with a maturity, premium, renewal or SIP date, or a
+loan with an EMI day (`static/app/message-consent.js`):
+
+> **Want a reminder when this is due?** It's already in your reminders here. We
+> can also tell you outside the app a few days before, so it isn't missed.
+> Where should we send it? ☐ Email ☐ SMS ☐ A notification on your phone
+> — **Not now** · **Yes, remind me**
+
+- Only the channels this server sends on are listed, and **none is ticked**.
+  "Yes, remind me" is disabled until one is.
+- **Yes** records a `given` event with the channels ticked, `asked_in =
+  in_context` (or `settings` from Your data rights) and the notice version in
+  force (`POST /api/v1/me/privacy/consents` with `channels`, `askedIn`; audited
+  as `privacy.consent_give`). A yes covers only those channels. A yes recorded
+  before V125 names no channels; its button said "Reminders by email or text",
+  so it covers email and SMS.
+- **Not now** records **no consent**. It keeps the question away for 90 days,
+  on every device (`POST /api/v1/me/privacy/messages-ask/not-now`,
+  `messages_consent_asks`, audited as `privacy.messages_not_now`). Closing the
+  sheet records nothing, and the question comes back on the next visit.
+- **Whether to ask** is the server's answer (`GET
+  /api/v1/me/privacy/messages-ask`): only someone who has never answered, on a
+  server that offers a channel, and not within 90 days of a "Not now". A
+  withdrawal is an answer: someone who said no is not asked again.
+- In-app reminders and notices are the same whatever the answer.
+
+**Notices that protect your account.** These are not under consent to messages
+— the person needs them to protect their account, or to stop something being
+done to them or in their name — and they are not held by quiet hours or the
+daily limit. Exactly these, and nothing else (`app.message_is_essential`, V125,
+and `MessageTemplates.ESSENTIAL_TEMPLATES`; one list, pinned together by
+`MessagesConsentTest`):
+
+| Notice | Template |
+|---|---|
+| A sign-in code by email | `otp_email` |
+| A new sign-in | `auth.new_sign_in` |
+| The phone number on your account was changed (also to the old number) | `auth.phone_changed` |
+| An authenticator app or passkey added or removed | `auth.authenticator_added`, `auth.authenticator_removed`, `auth.passkey_added`, `auth.passkey_removed` |
+| Recovery codes replaced, or one used | `auth.recovery_codes_replaced`, `auth.recovery_code_used` |
+| "Are you there?" before emergency access begins | `emergency.check_in` |
+| Emergency access has been requested for your records (you can stop it) | `emergency.requested` |
+| A request was raised in your name because someone went quiet | `emergency.raised` |
+| An emergency access request was stopped | `emergency.vetoed` |
+| Your account will close, or is staying open | `lifecycle.closure.requested`, `lifecycle.closure.cancelled` |
+| You were marked as passed away | `lifecycle.memorial.marked` |
+| Someone has taken over as owner of your household | `lifecycle.successor.claimed` |
+| You have been asked to leave a household | `lifecycle.departure.asked` |
+
+A sign-in code by SMS is sent at sign-in, not as a notification, and is not
+under consent either. Everything else sent outside the app is: reminders, the
+Still true? digest, being named an emergency contact or a successor, a
+key-holder question, a child coming of age, someone else joining, leaving or
+signing back in, and any kind of message added later until it is deliberately
+put on the list above. There is no dormancy notice today; when there is one, it
+belongs on the list.
 
 **Children.** Family → Add someone with a date of birth under 18 opens
 "Adding Aarav's records" before anything is saved: parent or lawful
@@ -200,9 +269,20 @@ So, while legal review of third-party consent is **pending**:
   `family.consent.*` and `stepUp.*` string exist in English only; Telugu and
   Hindi fall back to English until translated.
 - Legal review of the data-rights design (whether a step-up code and a
-  declaration are "verifiable" parental consent under Rule 10, whether the
-  `messages` default for people never asked is acceptable, whether the access
-  summary is a sufficient s.11 answer) needs counsel and has not happened.
+  declaration are "verifiable" parental consent under Rule 10, whether the list
+  of notices that protect your account is right to send without consent,
+  whether the access summary is a sufficient s.11 answer) needs counsel and has
+  not happened.
+- The question "Want a reminder when this is due?" is asked on the web only,
+  and only after adding a dated holding or a loan with an EMI day
+  (known-issues, "Consent to messages is asked for on the web only, and some
+  reminders are never asked about"). Its Telugu and Hindi, and the changed
+  "What you agree to" paragraph, are machine drafts. Seen in a browser against
+  a local server, in English, at desktop width (V125's change): adding a loan
+  with an EMI day opened the sheet with nothing ticked, Email and Yes recorded
+  `{email}` / `in_context`, and Your data rights showed "Given on 15 Sept 2026 ·
+  By email". Not seen at phone width, at 200% text, or in Telugu or Hindi.
+  `scripts/check-message-consent.js` (jsc) checks the sheet's behaviour.
 - Seen in a browser against a local development server (V33's change): the link
   at the end of onboarding opened the notice in Telugu, and Settings → Privacy
   notice opened it in English, with every section and the draft banner. Hindi

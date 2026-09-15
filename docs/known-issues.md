@@ -950,7 +950,7 @@ checkboxes stay unticked for this reason.
 - A memorial stops messages from the moment it is made. The outbox worker asks
   again as it claims each queued row, as it does for withdrawn consent to
   messages, so an email, text or push waiting out quiet hours or the daily limit
-  is recorded `skipped` (`notifications_stopped`, `consent_withdrawn`) instead of
+  is recorded `skipped` (`notifications_stopped`, `no_consent`) instead of
   going. Only a send already started when the memorial or withdrawal lands can
   still arrive.
 - A memorial does not stop the warnings a living person needs in order to say
@@ -1071,28 +1071,24 @@ with a sentence, and nothing changes. The others are completeness.
 
 ## 32. Consent to messages is assumed until someone withdraws it
 
-**Where** `db/migrations/V45__data_rights_and_parental_consent.sql`
-(`app.messages_consent_withdrawn`), asked since V107 only inside
-`app.enqueue_outbound_message`; the runtime role can no longer call it.
+**Resolved** (2026-09-15, "Consent to messages is asked for"). Kept as a stub so
+the number still means something where it is cited.
 
-**What** A person with no `messages` event at all — everyone who signed up
-before V45 — still gets reminders and the "still true?" digest by email and
-text. Only an explicit withdrawal stops them. The page shows such a person "Not
-asked yet: sent as before until you choose".
-
-**Which is right** Not decided. Rule 3 wants consent that is given, not
-presumed; stopping every existing reminder silently on the day this shipped
-would have been its own harm, and there are no live email or SMS providers yet.
-
-**Why it is still here** It is a product and legal decision, not a code one.
-
-**When to fix** Before 13 May 2027. Either ask everyone once (the notice
-acceptance is the natural moment) and flip the default in
-`app.messages_consent_withdrawn` to "not given", or have counsel say the
-current behaviour is acceptable.
-
-**Risk if left** Email or text reminders to someone who was never asked, once a
-live provider exists.
+Owner's decision: *"Message consent: opt-in, not opt-out. Ask at the moment the
+first reminder would be useful. Do not inherit consent from people who were
+never asked."* V125 turned the question round: `app.messages_consent_given(user,
+channel)` is true only when the person's latest `messages` event is `given` and
+names that channel, and `app.enqueue_outbound_message` asks it **before** it
+writes a row, so a reminder, the Still true? digest or any other non-essential
+message is never queued for someone who did not say yes. Nobody was migrated
+into consent. The worker asks again as it claims a row (`no_consent`). The
+essential account and security notices that go regardless are one list,
+`app.message_is_essential` (docs/23 "Notices that protect your account"). The
+question is asked in the web client right after a save that makes a reminder,
+and on Your data rights. `MessagesConsentTest` proves nothing is queued or sent
+without a yes; it was watched failing with the check moved after the insert.
+What is still open is "Consent to messages is asked for on the web only, and
+some reminders are never asked about".
 
 ---
 
@@ -2080,6 +2076,7 @@ a process already serving.
 | freeze-api-spec.sh fetched spec is complete | emptying the frozen file | into a temporary file, renamed over it only when valid | `713b64e` |
 | smoke-prod.sh deployment checks (up, database, rlsEnforced, not owner) | requesting codes, signing in, creating a household | stops before the first write | `6f6847d` |
 | A sign-in email's address is on the allowlist | a provider call (to the decoy sink) for every unlisted address | `SignInEmailOutbox` asks the list before stamping the send, deriving a code or calling a provider | `03c9508` |
+| No email, SMS or push without consent to messages | (absence of consent counted as a yes, so the row was written) | `app.enqueue_outbound_message` asks `app.messages_consent_given` before the insert; `MessagesConsentTest` looks for the row and the provider call (V125) | `25dc628` |
 
 The scripts' tests are in `scripts/tests/` and run the real scripts against
 throwaway containers and volumes, or with a stub `curl`; each was watched failing
@@ -2220,3 +2217,48 @@ links (as `signInContactLink` in `static/app/auth-outcome.js`), and the same
 words without a link when `configured` is false; strings through the native
 catalogue, English first.
 
+---
+
+## 72. Consent to messages is asked for on the web only, and some reminders are never asked about
+
+**Where** `static/app/message-consent.js` (the ask), `screens/capture.js` and
+`screens/liabilities.js` (where it is asked), V125, docs/23 "Asked when it helps".
+
+**What** Since V125 nobody gets a reminder outside the app without a yes
+("Consent to messages is assumed until someone withdraws it", resolved). What
+is not finished is *asking*:
+
+- **The native app never asks.** It has no Your data rights screen and no
+  prompt, so someone who only uses the phone app gets in-app reminders and
+  nothing else until they say yes on the web. Nothing is sent wrongly; the
+  phone app just cannot say yes yet.
+- **Not every reminder is asked about in context.** The web asks after adding a
+  holding with a maturity, premium, renewal or SIP date, and a loan with an EMI
+  day. It does not ask after editing an existing record to add a date, after a
+  CSV or statement import, after a queued offline save goes through, or before
+  the first Still true? digest (the digest is made for anyone with records, not
+  by something the person creates). Those people are asked the next time they
+  add something dated, or can say yes on Your data rights.
+- **Telugu and Hindi** for the question, the channel names and the changed
+  notice paragraph are machine drafts (`i18n-te.js`, `i18n-hi.js`), not reviewed.
+- **Informational notices lost their "always".** Being named an emergency
+  contact, a child coming of age, someone else's departure, a memorial reversed
+  and a successor named used to ride on the `emergency.`/`lifecycle.` prefixes
+  as essential. They are now under consent and paced like a reminder. That
+  follows the owner's rule, but whether any of them should be essential after
+  all (`emergency.named` and `lifecycle.departure.completed.you` are the
+  closest calls) is the owner's to say.
+- **A yes from before V125 names no channels.** It was a tap on "Reminders by
+  email or text", so it covers email and SMS and not push. Nobody on a live
+  server has one yet (there was no live provider), but a development database
+  may.
+
+**Why it is still here** The native screens and the other entry points are
+separate pieces of work; the classification question is a product decision.
+
+**When to fix** The native prompt before the phone app is given to anyone who
+does not also use the web. The rest when the screens involved are next opened.
+
+**Risk if left** Nothing is sent without consent. The risk is the opposite one:
+people who would want reminders outside the app are not asked at the moment
+they would say yes.

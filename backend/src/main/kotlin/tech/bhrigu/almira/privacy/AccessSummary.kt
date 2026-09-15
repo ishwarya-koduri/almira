@@ -175,7 +175,11 @@ class AccessSummaryService(
             ),
             ProcessingPurpose(
                 "messages", "consent",
-                "Reminders and \"still true?\" questions by email or text. In-app messages are always kept.",
+                "Reminders and \"still true?\" questions by email, text or push, only once you say yes, and only the ways you chose. In-app messages are always kept.",
+            ),
+            ProcessingPurpose(
+                "account_notices", "legitimate_use",
+                "Telling you, by email, text or push whatever you chose about reminders, about a new sign-in, a changed phone number or sign-in method, a request for emergency access you can stop, and your account being closed or taken over.",
             ),
             ProcessingPurpose(
                 "security", "legitimate_use",

@@ -32,27 +32,63 @@ object MessageTemplates {
     enum class Kind { REMINDER, STILL_TRUE, EMERGENCY, ACCOUNT, OTHER }
 
     /**
-     * Messages that must reach a person whatever they have chosen: someone asking
-     * for emergency access to their records, a change to their own account. They
-     * are not paced by quiet hours or the daily limit and not stopped by a
-     * switched-off channel — the same way a bank's security alert is not.
+     * The essential notices: messages a person needs to protect their account, or
+     * to stop something being done to them or in their name (docs/23 "What you
+     * agree to", docs/13 "Pacing"). Exactly these, and nothing by prefix — a new
+     * kind of message is not essential until someone decides it is, in review.
+     *
+     * An essential notice is **not under consent to messages**, is not paced by
+     * quiet hours or the daily limit, and is not stopped by a switched-off
+     * channel — the same way a bank's security alert is not. Everything else
+     * sent outside the app (a reminder, the Still true? digest, a note that
+     * someone named you, a household change) goes only to someone who said yes.
+     *
+     * **One list.** `app.message_is_essential` (V125) is the same list in the
+     * database, and it is the one the gates ask: queueing, the worker's re-check
+     * before a send, and pacing. This copy is for the wording ([kindOf]) and for
+     * reading. EssentialMessagesTest fails if the two ever differ.
      */
-    fun isEssential(template: String): Boolean = kindOf(template) in ESSENTIAL
+    val ESSENTIAL_TEMPLATES: Set<String> = setOf(
+        // A sign-in code by email (auth/EmailOtpSender.kt), sent at sign-in rather
+        // than through the outbox; listed so the classification is complete.
+        "otp_email",
+        // A takeover of the account itself (auth/AccountNotices.kt).
+        "auth.new_sign_in",
+        "auth.phone_changed",
+        "auth.authenticator_added",
+        "auth.authenticator_removed",
+        "auth.passkey_added",
+        "auth.passkey_removed",
+        "auth.recovery_codes_replaced",
+        "auth.recovery_code_used",
+        // Emergency access: the question before it begins, the request against
+        // you (your chance to veto), a request raised in your name, and the veto.
+        "emergency.check_in",
+        "emergency.requested",
+        "emergency.raised",
+        "emergency.vetoed",
+        // Your account, or your place in a household, is being ended or taken.
+        "lifecycle.closure.requested",
+        "lifecycle.closure.cancelled",
+        "lifecycle.memorial.marked",
+        "lifecycle.successor.claimed",
+        "lifecycle.departure.asked",
+    )
 
-    /** The SQL form of [isEssential], for the worker's "already told today?" check. */
-    const val ESSENTIAL_SQL =
-        "(o.template like 'emergency.%' or o.template like 'lifecycle.%' or o.template like 'auth.%')"
+    fun isEssential(template: String): Boolean = template in ESSENTIAL_TEMPLATES
 
+    /**
+     * Why a message came. Only an essential notice is worded as one that "always
+     * comes": a note that you were named an emergency contact, or that a child
+     * came of age, is under consent like a reminder, and says so no differently
+     * from anything else from the household.
+     */
     fun kindOf(template: String): Kind = when {
         template.startsWith("reminder.") -> Kind.REMINDER
         template.startsWith("still_true.") -> Kind.STILL_TRUE
+        !isEssential(template) -> Kind.OTHER
         template.startsWith("emergency.") -> Kind.EMERGENCY
-        template.startsWith("lifecycle.") -> Kind.ACCOUNT
-        // Sign-in security notices (auth/AccountNotices.kt): a new sign-in, a
-        // changed phone number, a factor added or removed. Held by quiet hours
-        // or the daily limit, a warning of a takeover would arrive too late.
-        template.startsWith("auth.") -> Kind.ACCOUNT
-        else -> Kind.OTHER
+        else -> Kind.ACCOUNT
     }
 
     data class Wording(
@@ -71,8 +107,6 @@ object MessageTemplates {
         /** The language actually used, which is English whenever the person's is still a draft. */
         val language: String,
     )
-
-    private val ESSENTIAL = setOf(Kind.EMERGENCY, Kind.ACCOUNT)
 
     val ENGLISH = Wording(
         language = "en",

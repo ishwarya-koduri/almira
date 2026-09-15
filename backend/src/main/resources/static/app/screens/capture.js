@@ -27,6 +27,7 @@ import { canReadPhotos } from "../ocr.js";
 import { reportCaptureAbandoned } from "../measurement.js";
 import { attachDraft, isOffline, queueCapture } from "../draft-ui.js";
 import { helpMark } from "../glossary.js";
+import { holdingImpliesReminder, offerRemindersOutsideTheApp } from "../message-consent.js";
 
 export function openCapture(onSaved) {
   chooseHowToAdd(onSaved);
@@ -634,6 +635,9 @@ export function captureForm(type, onSaved, prefill = null) {
           : t("capture.savedPrivateList"));
         await (onSaved ? onSaved() : reload());
         if (andAnother) openCapture(onSaved);
+        // It has a date we'll remind about: the moment to ask whether that may be
+        // by email, SMS or push too (V125). Never pre-ticked; asked once.
+        else if (holdingImpliesReminder(body)) offerRemindersOutsideTheApp();
       } catch (error) {
         const fields = error.details?.fields;
         if (fields) {

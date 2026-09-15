@@ -200,6 +200,7 @@ class NotificationOutbox(
         val address: String?,
         val timeZone: String?,
         val createdAt: java.time.Instant,
+        val essential: Boolean,
     )
 
     /**
@@ -219,7 +220,8 @@ class NotificationOutbox(
         val candidates = jdbc.query(
             """
             select o.id, o.household_id, o.user_id, o.channel, o.template, o.title, o.idempotency_key,
-                   o.send_started_at is not null as started, b.body, b.address, h.time_zone, o.created_at
+                   o.send_started_at is not null as started, b.body, b.address, h.time_zone, o.created_at,
+                   app.message_is_essential(o.template) as essential
             from outbound_messages o
             left join outbound_message_bodies b on b.message_id = o.id
             left join households h on h.id = o.household_id
@@ -246,6 +248,7 @@ class NotificationOutbox(
                 address = rs.getString("address"),
                 timeZone = rs.getString("time_zone"),
                 createdAt = rs.getTimestamp("created_at").toInstant(),
+                essential = rs.getBoolean("essential"),
             )
         }
 
@@ -266,7 +269,7 @@ class NotificationOutbox(
             } else {
                 pacing.decide(
                     DeliveryPacing.Queued(
-                        userId = row.userId, channel = row.channel, template = row.template,
+                        userId = row.userId, channel = row.channel, template = row.template, essential = row.essential,
                         logicalKey = DeliveryPacing.logicalKey(row.key, row.channel),
                         timeZone = zoneOf(row.timeZone), createdAt = row.createdAt,
                     ),
@@ -470,21 +473,24 @@ class NotificationOutbox(
         name?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() } ?: DEFAULT_ZONE
 
     /**
-     * The two stops `app.enqueue_outbound_message` (V108) applies, asked again as a row is
-     * claimed, as a reason or null: the person is memorialised, or withdrew consent to messages
-     * for a reminder or the digest. The worker is on the owner connection, which may ask both.
+     * The two stops `app.enqueue_outbound_message` (V125) applies, asked again as a row is
+     * claimed, as a reason or null: the person is memorialised, or there is no consent to
+     * messages on this channel for anything but an essential notice — withdrawn while the row
+     * waited, or never given for a row queued before V125 made absence a no. The worker is on
+     * the owner connection, which may ask both.
      */
     private fun stoppedFor(row: Candidate): String? = jdbc.queryForObject(
         """
         select case
                  when not app.never_stopped_by_memorial(cast(:template as text))
                       and app.notifications_stopped(cast(:uid as uuid), cast(:hid as uuid)) then '$NOTIFICATIONS_STOPPED'
-                 when (cast(:template as text) like 'reminder.%' or cast(:template as text) = 'still_true.digest')
-                      and app.messages_consent_withdrawn(cast(:uid as uuid)) then '$CONSENT_WITHDRAWN'
+                 when not app.message_is_essential(cast(:template as text))
+                      and not app.messages_consent_given(cast(:uid as uuid), cast(:channel as text)) then '$NO_CONSENT'
                end
         """.trimIndent(),
         MapSqlParameterSource()
-            .addValue("template", row.template).addValue("uid", row.userId.toString()).addValue("hid", row.householdId?.toString()),
+            .addValue("template", row.template).addValue("uid", row.userId.toString())
+            .addValue("hid", row.householdId?.toString()).addValue("channel", row.channel),
         String::class.java,
     )
 
@@ -558,6 +564,7 @@ class NotificationOutbox(
         private val DEFAULT_ZONE: java.time.ZoneId = java.time.ZoneId.of("Asia/Kolkata")
         private val LEASE_MARGIN: Duration = Duration.ofMinutes(1)
         private const val NOTIFICATIONS_STOPPED = "notifications_stopped"
-        private const val CONSENT_WITHDRAWN = "consent_withdrawn"
+        /** No consent to messages on this channel when the row was claimed. Stored in outbound_messages.failure. */
+        const val NO_CONSENT = "no_consent"
     }
 }

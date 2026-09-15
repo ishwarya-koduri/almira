@@ -695,7 +695,9 @@ deadline is a reason to revisit that before WhatsApp goes live (known-issues 21)
 
 Nobody is sitting in front of a reminder. `RecordingNotifier.deliver` writes the
 `in_app` row as `sent` (it is the database, not a provider) and one `queued` row
-per configured channel, in the caller's transaction, and returns. It never calls
+per configured channel the message may go on — any, for an essential notice; only
+those the person said yes to, for anything else (V125, "Pacing" below) — in the
+caller's transaction, and returns. It never calls
 a provider. The worker is woken after the commit and also polls every
 `almira.outbox.poll-interval` (`PT2S`); it claims queued rows `for update skip
 locked`, sends each through `ProviderCalls` with the provider's policy, and
@@ -770,17 +772,27 @@ The promise Settings makes ("Our quiet promise"): **at most one reminder a day,
 none in your quiet hours, never a sales message, and every reminder says why it
 came.** `DeliveryPacing` keeps it as the worker claims each row:
 
-0. **A stop made while it waited holds.** Before pacing, the worker asks again
-   what queueing asked (V108): a person since marked as passed away
-   (`skipped`, `notifications_stopped`, except the warnings V103 lets through),
-   or a reminder or digest for someone who has since withdrawn consent to
-   messages (`skipped`, `consent_withdrawn`). A row waiting out quiet hours or
-   the daily limit does not go after either.
-1. **Essential messages go.** Emergency-access notices (`emergency.*`) and
-   notices about the person's own account (`lifecycle.*`, and the sign-in
-   security notices `auth.*`) are not reminders:
-   they are not held by quiet hours, not counted against the day, and not
-   stopped by a switched-off channel.
+0. **Nothing is queued without consent** (V125). `app.enqueue_outbound_message`
+   writes a row for a non-essential message only when the person's latest
+   `messages` consent is `given` and names that channel; with no consent at all
+   — everyone who was never asked — only the in-app row is written. Consent is
+   opt-in and asked for in the app (Doc 23 "Asked when it helps").
+   **A stop made while it waited holds.** Before pacing, the worker asks again
+   what queueing asked: a person since marked as passed away (`skipped`,
+   `notifications_stopped`, except the warnings V103 lets through), or a
+   non-essential message for someone with no consent on that channel any more
+   (`skipped`, `no_consent`). A row waiting out quiet hours or the daily limit
+   does not go after either.
+1. **Essential messages go.** The notices that protect the person's account or
+   let them stop something done in their name — listed in Doc 23 "Notices that
+   protect your account" — are not under consent, not held by quiet hours, not
+   counted against the day, and not stopped by a switched-off channel. Which they
+   are is one explicit list, `app.message_is_essential` (V125), asked by the
+   queueing, the worker's re-check and pacing; `MessageTemplates.ESSENTIAL_TEMPLATES`
+   is the same list for the wording, and `MessagesConsentTest` fails if the two
+   differ. A template that is on neither list — a new kind of message — is not
+   essential. Being named an emergency contact, a child coming of age and other
+   notes about the household are not on it.
 2. **A switched-off channel is skipped** — `skipped`, `turned_off` — in every
    mode. Preferences: `GET`/`PUT /api/v1/me/notification-preferences`
    (`smsEnabled`, `emailEnabled`, `pushEnabled`, `quietFrom`, `quietUntil` as

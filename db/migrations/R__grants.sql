@@ -59,7 +59,14 @@ begin
   if to_regprocedure('app.is_remembrance_day(uuid, date)') is not null then
     execute 'revoke execute on function app.is_remembrance_day(uuid, date) from almira_app, public';
     execute 'revoke execute on function app.notifications_stopped(uuid, uuid) from almira_app, public';
-    execute 'revoke execute on function app.messages_consent_withdrawn(uuid) from almira_app, public';
+  end if;
+  -- Consent to messages (V125), which replaced V45's messages_consent_withdrawn.
+  if to_regprocedure('app.messages_consent_given(uuid, text)') is not null then
+    execute 'revoke execute on function app.messages_consent_given(uuid, text) from almira_app, public';
+  end if;
+  -- A "not now" is kept or moved on, never deleted by the application (V125).
+  if to_regclass('public.messages_consent_asks') is not null then
+    execute 'revoke delete, truncate on messages_consent_asks from almira_app';
   end if;
 
   -- Plans and support codes (V101, V102). A household's plan is set only by an

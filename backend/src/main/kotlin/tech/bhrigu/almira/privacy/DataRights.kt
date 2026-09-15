@@ -21,6 +21,8 @@ import tech.bhrigu.almira.auth.StepUpService
 import tech.bhrigu.almira.common.ApiException
 import tech.bhrigu.almira.common.EmailAddress
 import tech.bhrigu.almira.common.PhoneNumber
+import tech.bhrigu.almira.provider.ChannelSender
+import tech.bhrigu.almira.provider.ProviderMode
 import tech.bhrigu.almira.security.RequestUserContext
 import java.sql.ResultSet
 import java.time.Instant
@@ -42,15 +44,41 @@ data class GrievanceContact(
 /**
  * One purpose and where the person stands on it.
  *
- * [given] is null when they have never been asked — everyone who signed up
- * before this notice. `records` is [required]: it is the service itself, and
- * withdrawing it is closing the account.
+ * [given] is null when they have never answered. For `messages` that is a no:
+ * nothing but an essential account or security notice goes outside the app
+ * until they say yes (V125). `records` is [required]: it is the service itself,
+ * and withdrawing it is closing the account.
  */
 data class ConsentState(
     val purpose: String,
     val required: Boolean,
     val given: Boolean?,
     val changedAt: Instant?,
+    /**
+     * For `messages` when [given]: the channels the yes covers — `email`, `sms`,
+     * `push`, `whatsapp`. A yes from before these were recorded covers `email`
+     * and `sms`, which is what it was a yes to. Null otherwise.
+     */
+    val channels: List<String>? = null,
+)
+
+/**
+ * Whether to ask, now, "Want a reminder by email or SMS when this is due?"
+ * (docs/23 "Asked when it helps").
+ *
+ * [ask] is true only for someone who has never answered about messages, on a
+ * server that offers a channel to answer for, who has not said "Not now" in the
+ * last [DataRightsService.NOT_NOW_FOR]. Someone who withdrew is not asked
+ * again: that was an answer.
+ */
+data class MessagesAsk(
+    val ask: Boolean,
+    /** The channels this server can send on, in the order to show them. Never pre-ticked. */
+    val channels: List<String>,
+    /** The notice a yes is recorded against. */
+    val noticeVersion: String,
+    /** Set after "Not now": no ask before this. */
+    val notNowUntil: Instant?,
 )
 
 data class Nominee(
@@ -95,11 +123,24 @@ data class ConsentHistoryEntry(
     val noticeVersion: String?,
     /** For a parental consent: the child's name. Nothing else is ever put here. */
     val subject: String?,
+    /** For consent to messages given: the channels it covers (see [ConsentState.channels]). */
+    val channels: List<String>? = null,
 )
 
 data class AcceptNoticeBody(val version: String)
 
-data class ChangeConsentBody(val purpose: String, val given: Boolean)
+data class ChangeConsentBody(
+    val purpose: String,
+    val given: Boolean,
+    /**
+     * For `messages` given: the channels ticked, each one this server offers. Omitted by
+     * a client from before V125, whose button read "Reminders by email or text": that yes
+     * covers `email` and `sms`.
+     */
+    val channels: List<String>? = null,
+    /** `settings` or `in_context` (asked at the moment a reminder would first help). */
+    val askedIn: String? = null,
+)
 
 data class CreateRightsRequestBody(
     val kind: String,
@@ -130,6 +171,7 @@ class DataRightsService(
     private val stepUp: StepUpService,
     private val audit: AuditService,
     private val userContext: RequestUserContext,
+    private val senders: List<ChannelSender>,
 ) {
 
     fun grievance(): GrievanceContact = props.grievance.let {
@@ -195,12 +237,21 @@ class DataRightsService(
         return overview()
     }
 
+    /** The channels a yes to messages can name here: the ones this server sends on. */
+    fun offeredChannels(): List<String> {
+        val live = senders.filter { it.mode == ProviderMode.LIVE || it.mode == ProviderMode.SANDBOX }
+            .map { it.channel }.toSet()
+        return MESSAGE_CHANNELS.filter { it in live }
+    }
+
     /**
      * One tap either way. Asking for the state you are already in writes
-     * nothing, so the history shows decisions rather than button presses.
+     * nothing, so the history shows decisions rather than button presses. A yes
+     * to messages names its channels; a yes for different channels is a new
+     * decision and is recorded.
      */
     @Transactional
-    fun changeConsent(purpose: String, given: Boolean): PrivacyOverview {
+    fun changeConsent(purpose: String, given: Boolean, channels: List<String>? = null, askedIn: String? = null): PrivacyOverview {
         val userId = userContext.require()
         if (purpose !in PURPOSES) {
             throw ApiException.badRequest("purpose_invalid", "Choose one of: ${PURPOSES.joinToString()}.")
@@ -211,22 +262,87 @@ class DataRightsService(
                 "Keeping your records is the service itself. To withdraw this, close your account.",
             )
         }
+        if (askedIn != null && askedIn !in ASKED_IN) {
+            throw ApiException.badRequest("asked_in_invalid", "Choose one of: ${ASKED_IN.joinToString()}.")
+        }
+        val chosen = if (purpose == MESSAGES && given && channels != null) {
+            val offered = offeredChannels()
+            val distinct = channels.map { it.trim().lowercase() }.distinct()
+            if (distinct.isEmpty()) {
+                throw ApiException.badRequest("channels_required", "Choose at least one way to be reminded.")
+            }
+            distinct.firstOrNull { it !in offered }?.let {
+                throw ApiException.badRequest(
+                    "channel_not_offered", "We can't send reminders by $it. Choose from: ${offered.joinToString()}.",
+                )
+            }
+            MESSAGE_CHANNELS.filter { it in distinct }
+        } else {
+            null
+        }
         val current = consents().first { it.purpose == purpose }
-        if (current.given != given) {
+        val effective = if (purpose == MESSAGES && given) chosen ?: LEGACY_CHANNELS else null
+        val unchanged = current.given == given && (!given || purpose != MESSAGES || current.channels == effective)
+        if (!unchanged) {
             jdbc.update(
                 """
-                insert into consent_events (user_id, purpose, action, notice_version)
-                values (:uid, :purpose, :action, app.current_privacy_notice_version())
+                insert into consent_events (user_id, purpose, action, notice_version, channels, asked_in)
+                values (:uid, :purpose, :action, app.current_privacy_notice_version(),
+                        cast(:channels as text[]), :askedIn)
                 """.trimIndent(),
-                mapOf("uid" to userId, "purpose" to purpose, "action" to if (given) "given" else "withdrawn"),
+                MapSqlParameterSource()
+                    .addValue("uid", userId).addValue("purpose", purpose)
+                    .addValue("action", if (given) "given" else "withdrawn")
+                    .addValue("channels", chosen?.joinToString(",", "{", "}"))
+                    .addValue("askedIn", askedIn),
             )
             audit.record(
                 householdId = null, actorUserId = userId,
                 action = if (given) "privacy.consent_give" else "privacy.consent_withdraw",
-                diff = mapOf("purpose" to purpose),
+                diff = buildMap {
+                    put("purpose", purpose)
+                    effective?.let { put("channels", it) }
+                    askedIn?.let { put("askedIn", it) }
+                },
             )
         }
         return overview()
+    }
+
+    /** Whether to ask about messages now. See [MessagesAsk]. */
+    @Transactional(readOnly = true)
+    fun messagesAsk(): MessagesAsk {
+        userContext.require()
+        val offered = offeredChannels()
+        val answered = consents().first { it.purpose == MESSAGES }.given != null
+        val notNowAt = jdbc.query(
+            "select not_now_at from messages_consent_asks", emptyMap<String, Any>(),
+        ) { rs, _ -> rs.getTimestamp("not_now_at").toInstant() }.firstOrNull()
+        val notNowUntil = notNowAt?.plus(NOT_NOW_FOR)?.takeIf { it.isAfter(Instant.now()) }
+        return MessagesAsk(
+            ask = offered.isNotEmpty() && !answered && notNowUntil == null,
+            channels = offered,
+            noticeVersion = currentNotice().first,
+            notNowUntil = notNowUntil,
+        )
+    }
+
+    /**
+     * "Not now": not a consent record, and nothing is sent because of it. It only
+     * keeps the question from coming back for [NOT_NOW_FOR].
+     */
+    @Transactional
+    fun messagesNotNow(): MessagesAsk {
+        val userId = userContext.require()
+        jdbc.update(
+            """
+            insert into messages_consent_asks (user_id) values (:uid)
+            on conflict (user_id) do update set not_now_at = now()
+            """.trimIndent(),
+            mapOf("uid" to userId),
+        )
+        audit.record(householdId = null, actorUserId = userId, action = "privacy.messages_not_now")
+        return messagesAsk()
     }
 
     /** Consent events, notice acceptances and the parental consents this person gave, newest first. */
@@ -235,17 +351,19 @@ class DataRightsService(
         val userId = userContext.require()
         return jdbc.query(
             """
-            select created_at as at, 'consent' as kind, purpose, action, notice_version, null as subject
+            select created_at as at, 'consent' as kind, purpose, action, notice_version, null as subject,
+                   case when purpose = '$MESSAGES' and action = 'given'
+                        then array_to_string(coalesce(channels, array['email', 'sms']), ',') end as channels
               from consent_events
             union all
-            select accepted_at, 'notice', null, 'accepted', notice_version, null
+            select accepted_at, 'notice', null, 'accepted', notice_version, null, null
               from privacy_notice_acceptances
             union all
-            select pc.given_at, 'parental_consent', null, 'given', pc.notice_version, m.display_name
+            select pc.given_at, 'parental_consent', null, 'given', pc.notice_version, m.display_name, null
               from parental_consents pc join members m on m.id = pc.member_id
              where pc.given_by = :uid
             union all
-            select pc.withdrawn_at, 'parental_consent', null, 'withdrawn', pc.notice_version, m.display_name
+            select pc.withdrawn_at, 'parental_consent', null, 'withdrawn', pc.notice_version, m.display_name, null
               from parental_consents pc join members m on m.id = pc.member_id
              where pc.given_by = :uid and pc.withdrawn_at is not null
             order by at desc
@@ -260,6 +378,7 @@ class DataRightsService(
                 action = rs.getString("action"),
                 noticeVersion = rs.getString("notice_version"),
                 subject = rs.getString("subject"),
+                channels = rs.getString("channels")?.split(','),
             )
         }
     }
@@ -442,22 +561,29 @@ class DataRightsService(
     private fun consents(): List<ConsentState> {
         val latest = jdbc.query(
             """
-            select distinct on (purpose) purpose, action, created_at
+            select distinct on (purpose) purpose, action, created_at, array_to_string(channels, ',') as channels
               from consent_events order by purpose, seq desc
             """.trimIndent(),
             emptyMap<String, Any>(),
-        ) { rs, _ -> rs.getString("purpose") to (rs.getString("action") to rs.getTimestamp("created_at").toInstant()) }
-            .toMap()
+        ) { rs, _ ->
+            rs.getString("purpose") to Latest(
+                rs.getString("action"), rs.getTimestamp("created_at").toInstant(), rs.getString("channels")?.split(','),
+            )
+        }.toMap()
         return PURPOSES.map { purpose ->
             val event = latest[purpose]
+            val given = event?.action?.let { it == "given" }
             ConsentState(
                 purpose = purpose,
                 required = purpose in REQUIRED_PURPOSES,
-                given = event?.first?.let { it == "given" },
-                changedAt = event?.second,
+                given = given,
+                changedAt = event?.at,
+                channels = if (purpose == MESSAGES && given == true) event?.channels ?: LEGACY_CHANNELS else null,
             )
         }
     }
+
+    private data class Latest(val action: String, val at: Instant, val channels: List<String>?)
 
     private fun request(rs: ResultSet) = RightsRequest(
         id = rs.getObject("id", UUID::class.java),
@@ -475,6 +601,14 @@ class DataRightsService(
         /** In the order the page lists them. */
         val PURPOSES = listOf("records", "messages")
         val REQUIRED_PURPOSES = setOf("records")
+        const val MESSAGES = "messages"
+        /** Every channel a yes to messages can name, in the order they are shown. The same as V125's check. */
+        val MESSAGE_CHANNELS = listOf("email", "sms", "whatsapp", "push")
+        /** What a yes recorded without channels covers: "Reminders by email or text". The same as V125. */
+        val LEGACY_CHANNELS = listOf("email", "sms")
+        val ASKED_IN = listOf("settings", "in_context")
+        /** How long "Not now" keeps the question away. */
+        val NOT_NOW_FOR: java.time.Duration = java.time.Duration.ofDays(90)
         val REQUEST_KINDS = listOf("correction", "grievance")
         val OBLIGATIONS_COMMENCE: LocalDate = LocalDate.of(2027, 5, 13)
         const val MAX_DETAILS = 2000
@@ -503,7 +637,15 @@ class DataRightsController(
 
     @PostMapping("/consents")
     fun changePrivacyConsent(@RequestBody body: ChangeConsentBody): PrivacyOverview =
-        service.changeConsent(body.purpose, body.given)
+        service.changeConsent(body.purpose, body.given, body.channels, body.askedIn)
+
+    /** Whether to ask about reminders outside the app now (docs/23 "Asked when it helps"). */
+    @GetMapping("/messages-ask")
+    fun privacyMessagesAsk(): MessagesAsk = service.messagesAsk()
+
+    /** "Not now": asked again no sooner than in 90 days. Records no consent. */
+    @PostMapping("/messages-ask/not-now")
+    fun privacyMessagesNotNow(): MessagesAsk = service.messagesNotNow()
 
     @GetMapping("/history")
     fun privacyConsentHistory(): List<ConsentHistoryEntry> = service.history()

@@ -27,7 +27,7 @@ class DefinerHelperPrivilegesTest : ApiTestBase() {
         listOf(
             "app.is_remembrance_day(uuid, date)",
             "app.notifications_stopped(uuid, uuid)",
-            "app.messages_consent_withdrawn(uuid)",
+            "app.messages_consent_given(uuid, text)",
             "app.member_present_since(uuid, timestamptz)",
         ).forEach { signature ->
             assertThat(runtimeMayExecute(signature)).describedAs(signature).isFalse()

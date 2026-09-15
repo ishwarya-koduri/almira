@@ -39,6 +39,7 @@ class ProviderFailureApiTest : ApiTestBase() {
         outbox.drain()
         faults.clear()
         owner = signIn()
+        consentToMessages(owner)
         householdId = createHousehold(owner, "Koduri", "private", "Ishwarya").path("id").asText()
     }
 
@@ -55,6 +56,8 @@ class ProviderFailureApiTest : ApiTestBase() {
             mapOf("displayName" to "Meera", "relationship" to "sibling"),
         ).json().path("id").asText()
         val trusted = signIn()
+        // How a failed send is recorded, for someone who said yes to messages (V125).
+        consentToMessages(trusted)
         joinHousehold(owner, householdId, trustedMemberId, trusted)
         post(
             "/api/v1/households/$householdId/emergency/contacts", owner,

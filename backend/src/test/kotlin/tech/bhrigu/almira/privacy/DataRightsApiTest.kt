@@ -71,12 +71,12 @@ class DataRightsApiTest : ApiTestBase() {
 
     @Test
     fun `withdrawing is one call, the same as giving, and the history is dated`() {
-        val given = post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true))
+        val given = post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true, "channels" to listOf("email", "sms")))
         assertThat(given.status()).isEqualTo(HttpStatus.OK)
         assertThat(given.json().path("consents")[1].path("given").asBoolean()).isTrue()
 
         // Pressing it again is not a second decision.
-        post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true))
+        post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true, "channels" to listOf("email", "sms")))
 
         val withdrawn = post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to false))
         assertThat(withdrawn.status()).isEqualTo(HttpStatus.OK)
@@ -116,7 +116,7 @@ class DataRightsApiTest : ApiTestBase() {
 
     @Test
     fun `withdrawn consent to messages stops email and text but keeps the in-app copy and safety notices`() {
-        post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true))
+        post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true, "channels" to listOf("email", "sms")))
         post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to false))
         val user = UUID.fromString(ownerUserId)
         val household = UUID.fromString(householdId)
@@ -143,7 +143,7 @@ class DataRightsApiTest : ApiTestBase() {
             .describedAs("a safety notice is not under this consent").isPositive()
 
         // And giving it back is one call too.
-        post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true))
+        post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true, "channels" to listOf("email", "sms")))
         notifier.deliver(
             OutboundNotification(user, household, null, "reminder.maturity", "FD matures", "Due soon", "dpdp:reminder2:$user"),
         )

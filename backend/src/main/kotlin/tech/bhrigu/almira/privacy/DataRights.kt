@@ -160,9 +160,8 @@ data class ChangeConsentBody(
     val purpose: String,
     val given: Boolean,
     /**
-     * For `messages` given: the channels ticked, each one this server offers. Omitted by
-     * a client from before V125, whose button read "Reminders by email or text": that yes
-     * is recorded as naming `email` and `sms` (V142: no new yes is without channels).
+     * For `messages` given: the channels ticked, at least one, each one this server
+     * offers. A yes with none — empty or left out — is refused as `channels_required`.
      */
     val channels: List<String>? = null,
     /** `settings` or `in_context` (asked at the moment a reminder would first help). */
@@ -292,11 +291,12 @@ class DataRightsService(
         if (askedIn != null && askedIn !in ASKED_IN) {
             throw ApiException.badRequest("asked_in_invalid", "Choose one of: ${ASKED_IN.joinToString()}.")
         }
-        val chosen = if (purpose == MESSAGES && given && channels == null) {
-            LEGACY_CHANNELS
-        } else if (purpose == MESSAGES && given && channels != null) {
+        val chosen = if (purpose == MESSAGES && given) {
+            // A yes that names no channel looks like permission and delivers nothing — worse
+            // than a no, because everyone thinks it is handled (owner's decision, 2026-09-15).
+            // Refused whether the list is empty or left out, before anything is written.
             val offered = offeredChannels()
-            val distinct = channels.map { it.trim().lowercase() }.distinct()
+            val distinct = channels.orEmpty().map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct()
             if (distinct.isEmpty()) {
                 throw ApiException.badRequest("channels_required", "Choose at least one way to be reminded.")
             }
@@ -730,11 +730,6 @@ class DataRightsService(
         const val MESSAGES = "messages"
         /** Every channel a yes to messages can name, in the order they are shown. The same as V125's check. */
         val MESSAGE_CHANNELS = listOf("email", "sms", "whatsapp", "push")
-        /**
-         * What a yes from a client that names no channels is recorded as: its button said
-         * "Reminders by email or text". Recorded with the event, never assumed later (V142).
-         */
-        val LEGACY_CHANNELS = listOf("email", "sms")
         val ASKED_IN = listOf("settings", "in_context")
         const val STILL_TRUE_DIGEST = "still_true_digest"
         /** What "Not now" can be said beside (V141's check). */

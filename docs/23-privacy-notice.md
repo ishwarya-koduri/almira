@@ -173,9 +173,12 @@ loan with an EMI day (`static/app/message-consent.js`):
 - **Yes** records a `given` event with the channels ticked, `asked_in =
   in_context` (or `settings` from Your data rights) and the notice version in
   force (`POST /api/v1/me/privacy/consents` with `channels`, `askedIn`; audited
-  as `privacy.consent_give`). A yes covers only those channels. A client that
-  names no channels (its button said "Reminders by email or text") is recorded
-  as email and SMS, with the event; no new yes is stored without channels (V142).
+  as `privacy.consent_give`). A yes covers only those channels. A yes that
+  names no channel — an empty list, or none sent at all — is **refused**
+  (`channels_required`) before anything is written: it would look like
+  permission and deliver nothing, which is worse than a no, because everyone
+  thinks it is handled (owner's decision, 2026-09-15). No yes is stored without
+  channels (V142).
 - **Not now** records **no consent**, and is about **what was asked** (V141,
   the owner's decision: *keep 90 days, but make the trigger context, not a
   timer*). The question is never asked again about the **same** holding or loan

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.http.HttpStatus
 import tech.bhrigu.almira.reminder.OutboundNotification
 import tech.bhrigu.almira.support.ApiTestBase
 import java.util.UUID
@@ -289,15 +290,20 @@ class MessagesConsentTest : ApiTestBase() {
     }
 
     @Test
-    fun `a yes from a client that named no channels covers email and text, what its button said`() {
-        val given = post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true))
-        assertThat(given.json().path("consents")[1].path("channels").map { it.asText() }).containsExactly("email", "sms")
-        assertThat(
-            db.queryForObject(
-                "select array_to_string(channels, ',') from consent_events where user_id = ?::uuid", String::class.java, userId.toString(),
-            ),
-        ).describedAs("recorded with the event, never assumed later (V142)").isEqualTo("email,sms")
-        assertThat(outside(tell("reminder.maturity"))).containsExactly("email", "sms")
+    fun `a yes that names no channels is refused, empty or left out, and nothing is written or sent`() {
+        val before = db.queryForObject("select count(*) from consent_events where user_id = ?::uuid", Int::class.java, userId.toString())
+        for (body in listOf(
+            mapOf("purpose" to "messages", "given" to true),
+            mapOf("purpose" to "messages", "given" to true, "channels" to emptyList<String>()),
+            mapOf("purpose" to "messages", "given" to true, "channels" to listOf(" ")),
+        )) {
+            val refused = post("/api/v1/me/privacy/consents", owner, body)
+            assertThat(refused.status()).describedAs("refused: %s", body).isEqualTo(HttpStatus.BAD_REQUEST)
+            assertThat(refused.errorCode()).isEqualTo("channels_required")
+        }
+        assertThat(db.queryForObject("select count(*) from consent_events where user_id = ?::uuid", Int::class.java, userId.toString()))
+            .describedAs("no event written, so nobody is left looking handled").isEqualTo(before)
+        assertThat(outside(tell("reminder.maturity"))).describedAs("and nothing leaves the app").isEmpty()
     }
 
     @Test

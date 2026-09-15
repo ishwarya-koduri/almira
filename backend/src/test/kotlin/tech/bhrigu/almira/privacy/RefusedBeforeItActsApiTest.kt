@@ -53,13 +53,16 @@ import java.util.concurrent.atomic.AtomicInteger
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("A refused write is refused before it acts")
 @Import(RefusedBeforeItActsApiTest.Counting::class)
-@TestPropertySource(properties = ["almira.providers.aa.mode=sandbox"])
+@TestPropertySource(properties = ["almira.providers.aa.mode=sandbox", "almira.providers.digilocker.mode=sandbox"])
 class RefusedBeforeItActsApiTest : ApiTestBase() {
 
     class CountingStorage(private val real: DocumentStorage) : DocumentStorage by real {
         val puts = CopyOnWriteArrayList<String>()
         val deletes = CopyOnWriteArrayList<String>()
+        /** When set, puts after this many fail, as storage going away partway through an import would. */
+        @Volatile var putsBeforeFailing: Int? = null
         override fun put(key: String, ciphertext: ByteArray) {
+            putsBeforeFailing?.let { if (puts.size >= it) throw IllegalStateException("storage went away") }
             puts += key
             real.put(key, ciphertext)
         }
@@ -214,10 +217,10 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
 
     @Test
     fun `an editor cannot spend a DigiLocker authorisation code`() {
-        post(connect("digilocker/start"), owner)
+        val state = post(connect("digilocker/start"), owner).json().path("state").asText()
         vault.calls.clear()
 
-        val refused = post(connect("digilocker/complete"), editor, mapOf("code" to "sandbox-code"))
+        val refused = post(connect("digilocker/complete"), editor, mapOf("code" to "sandbox-code", "state" to state))
 
         assertThat(refused.status()).isEqualTo(HttpStatus.FORBIDDEN)
         assertThat(vault.calls).describedAs("DigiLocker calls made for a refused complete").isEmpty()
@@ -235,8 +238,8 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
 
     @Test
     fun `a viewer's DigiLocker import fetches nothing and stores nothing`() {
-        post(connect("digilocker/start"), owner)
-        val offered = post(connect("digilocker/complete"), owner, mapOf("code" to "sandbox-code")).json()
+        val state = post(connect("digilocker/start"), owner).json().path("state").asText()
+        val offered = post(connect("digilocker/complete"), owner, mapOf("code" to "sandbox-code", "state" to state)).json()
         vault.calls.clear()
 
         val refused = post(connect("digilocker/import"), viewer, mapOf("uris" to listOf(offered[0].path("uri").asText())))
@@ -248,27 +251,40 @@ class RefusedBeforeItActsApiTest : ApiTestBase() {
 
     /**
      * Not a refusal but the same class: storage is outside the transaction, and
-     * its clean-up used to run only when the insert itself failed. Here the
-     * first document is fully stored and indexed, the second fetch fails, the
-     * import rolls back — and the first file must not outlive its row.
+     * its clean-up used to run only when the insert itself failed.
+     *
+     * This branch fetches every document before it stores any, so a fetch that
+     * fails partway stores nothing at all. The clean-up is proven where a file can
+     * still be written before the rollback: the first document is fully stored and
+     * indexed, storing the second fails, the import rolls back — and the first
+     * file must not outlive its row.
      */
     @Test
     fun `an import that fails partway leaves no file without a row`() {
-        post(connect("digilocker/start"), owner)
-        val offered = post(connect("digilocker/complete"), owner, mapOf("code" to "sandbox-code")).json()
+        val state = post(connect("digilocker/start"), owner).json().path("state").asText()
+        val offered = post(connect("digilocker/complete"), owner, mapOf("code" to "sandbox-code", "state" to state)).json()
+        val uris = offered.take(2).map { it.path("uri").asText() }
+
         vault.fetchesBeforeFailing = 1
         try {
-            val failed = post(
-                connect("digilocker/import"), owner,
-                mapOf("uris" to offered.take(2).map { it.path("uri").asText() }),
-            )
+            val failed = post(connect("digilocker/import"), owner, mapOf("uris" to uris))
             assertThat(failed.status().is2xxSuccessful).isFalse()
         } finally {
             vault.fetchesBeforeFailing = null
         }
+        assertThat(storage.puts.filter { it.startsWith("$householdId/") })
+            .describedAs("a fetch that failed partway stored nothing").isEmpty()
+
+        storage.putsBeforeFailing = storage.puts.size + 1
+        try {
+            val failed = post(connect("digilocker/import"), owner, mapOf("uris" to uris))
+            assertThat(failed.status().is2xxSuccessful).isFalse()
+        } finally {
+            storage.putsBeforeFailing = null
+        }
 
         val stored = storage.puts.filter { it.startsWith("$householdId/") }
-        assertThat(stored).describedAs("the first document was stored before the second fetch failed").isNotEmpty()
+        assertThat(stored).describedAs("the first document was stored before storing the second failed").isNotEmpty()
         val indexed = db.queryForList(
             "select storage_key from documents where household_id = ?::uuid", String::class.java, householdId,
         ).toSet()

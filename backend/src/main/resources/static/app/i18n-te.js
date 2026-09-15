@@ -10,7 +10,7 @@
    in i18n.js (corrected as needed) and delete it here: scripts/check-i18n.js
    fails if a key is in both. Keys are in the same order as English.
 
-   1755 keys.
+   1757 keys.
    ============================================================================= */
 
 export const draft = {
@@ -567,6 +567,8 @@ export const draft = {
   "measure.event.capture_abandoned": "చేర్చే ఫారాన్ని సేవ్ చేయకుండా మూసివేశారు, దాని మూడు దశల్లో ఏ దశలో అనేది.",
   "measure.never.title": "ఎప్పుడూ లెక్కించనివి",
   "measure.never.body": "మొత్తాలు, పేర్లు, నంబర్లు, పత్రాల్లోని విషయాలు, మీరు టైప్ చేసే ఏదైనా. 18 ఏళ్ల లోపు వారి రికార్డుకు సంబంధించిన ఏదైనా. గెస్ట్ లింక్ ద్వారా చేసిన ఏదైనా. లెక్కించడం ఆపేశాక, ఏదీ లెక్కించం.",
+  "auth.email.notArrived": "రెండు నిమిషాల్లో రాలేదా?",
+  "auth.email.contactUs": "మమ్మల్ని సంప్రదించండి",
   "lifecycle.code": "6 అంకెల కోడ్",
   "lifecycle.codeEmailed": "మేము ఈమెయిల్ చేసిన కోడ్ నమోదు చేయండి",
   "lifecycle.codeTexted": "మేము మెసేజ్ పంపిన కోడ్ నమోదు చేయండి",

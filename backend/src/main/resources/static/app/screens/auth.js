@@ -6,10 +6,14 @@
    presented up front, because most people have one obvious answer.
 
    The email request is answered the same way whether or not the address may
-   sign in, so this screen never learns which it was and never says. It does
-   say when the email could not be sent: the code step asks the server how the
-   send went (deliveryOutcome in auth-outcome.js) and, if it failed, says "We
-   couldn't send the code" and opens resend, instead of waiting in silence.
+   sign in, so this screen never learns which it was and never says. The code
+   step shows "Sending your code…" and then that it was sent, when the server's
+   delivery status says so (deliveryOutcome in auth-outcome.js). The server
+   says sent at the same moment for every address, whatever became of the
+   email, because only a listed address could ever fail (docs/13 §5); so under
+   it, for everyone, is "Didn't arrive in two minutes? Contact us", linked to
+   the deployment's support channel when one is set, and the same words
+   without a link when not.
 
    Anything short of a plain success goes through signInOutcome (auth-outcome.js):
    a delayed code still opens the code step, a refused channel switches to the
@@ -23,7 +27,7 @@
 import { api } from "../api.js";
 import { el, mount, field, textInput, withBusy, toast } from "../ui.js";
 import { t } from "../i18n.js";
-import { signInOutcome, deliveryOutcome, deliveryWhenAskingStops } from "../auth-outcome.js";
+import { signInOutcome, deliveryOutcome, deliveryWhenAskingStops, signInContactLink } from "../auth-outcome.js";
 import { secondFactorStep } from "../sign-in-security.js";
 
 const CHANNELS = {
@@ -50,6 +54,27 @@ export function authScreen(onSignedIn) {
 }
 
 /** The message for a plain error: our own sentence when there is one, else the server's. */
+
+/**
+ * "Didn't arrive in two minutes? Contact us" — the same line for every address,
+ * straight away. "Contact us" becomes a link once the deployment's channel is
+ * known (GET /auth/otp/contact); with none configured, or none reachable, it
+ * stays the same words in the same place, without one. The server sends
+ * nothing: a WhatsApp or mailto: link is opened by the phone itself.
+ */
+function contactLine() {
+  const contact = el("span", { "data-auth-contact": "" }, t("auth.email.contactUs"));
+  const line = el("p.caption.faint", { style: { margin: 0 }, "data-auth-not-arrived": "" },
+    t("auth.email.notArrived"), " ", contact);
+  api.signInContact().then((answer) => {
+    const link = signInContactLink(answer);
+    if (!link || !contact.isConnected) return;
+    contact.replaceWith(el("a", {
+      href: link, target: "_blank", rel: "noopener noreferrer", "data-auth-contact": "",
+    }, t("auth.email.contactUs")));
+  }).catch(() => {});
+  return line;
+}
 function messageFor(outcome) {
   return outcome.messageKey ? t(outcome.messageKey) : outcome.message;
 }
@@ -262,6 +287,7 @@ function showCodeStep(host, channels, channel, address, challenge, onSignedIn) {
         el("h1", {}, t(`auth.${channel}.check`)),
         delivery,
         channel === "email" && el("p.caption.faint", { style: { margin: 0 } }, t("auth.email.spam")),
+        channel === "email" && contactLine(),
       ),
       codeField,
       submit,

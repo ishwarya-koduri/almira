@@ -11,7 +11,7 @@
        # or: node scripts/check-auth-outcome.js  (as an ES module)
    ============================================================================= */
 
-import { signInOutcome, usableChannels, deliveryOutcome, deliveryWhenAskingStops } from "../backend/src/main/resources/static/app/auth-outcome.js";
+import { signInOutcome, usableChannels, deliveryOutcome, deliveryWhenAskingStops, signInContactLink } from "../backend/src/main/resources/static/app/auth-outcome.js";
 
 const log = typeof print === "function" ? print : console.log;
 let failures = 0;
@@ -117,6 +117,18 @@ expect("no answer at all is shown as a late email, not as sent",
 expect("a sent email still says sent", deliveryWhenAskingStops(deliveryOutcome(status("sent"))), { kind: "sent" });
 expect("a failure is kept as it was said",
   deliveryWhenAskingStops(deliveryOutcome(status("failed", { failure: "otp_delivery_failed", message: "m" }))).kind, "failed");
+
+// "Didn't arrive in two minutes? Contact us": a link only to what the server builds.
+expect("a WhatsApp channel is a link", signInContactLink({ configured: true, channel: "whatsapp", link: "https://wa.me/919876543210" }),
+  "https://wa.me/919876543210");
+expect("an email channel is a link", signInContactLink({ configured: true, channel: "email", link: "mailto:help@almira.example" }),
+  "mailto:help@almira.example");
+expect("no channel configured: the same words, no link", signInContactLink({ configured: false }), null);
+expect("an answer that could not be read: no link", signInContactLink(null), null);
+for (const link of ["javascript:alert(1)", "https://evil.example/wa.me/919876543210", "http://wa.me/919876543210",
+  "mailto:help@almira.example?bcc=x@y.z", "https://wa.me/919876543210/extra"]) {
+  expect(`anything else is not followed: ${link}`, signInContactLink({ configured: true, link }), null);
+}
 
 if (failures > 0) throw new Error(`${failures} check(s) failed`);
 log("auth-outcome: all checks pass");

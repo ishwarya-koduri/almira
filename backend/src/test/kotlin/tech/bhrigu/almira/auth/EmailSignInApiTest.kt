@@ -332,6 +332,15 @@ class EmailSignInApiTest : ApiTestBase() {
             .describedAs("the operator's record of the refusals").hasSizeGreaterThanOrEqualTo(3)
     }
 
+    /** The line under the code step names the same channel for everyone, before anyone is signed in. */
+    @Test
+    fun `the contact line's channel can be read before signing in, the same for every address`() {
+        val r = get("/api/v1/auth/otp/contact")
+        assertThat(r.statusCode.value()).describedAs(r.body).isEqualTo(200)
+        assertThat(r.json().path("configured").asBoolean()).isFalse()
+        assertThat(r.body).isEqualTo(get("/api/v1/auth/otp/contact").body)
+    }
+
     @Test
     fun `an unknown request id is not found, and the status says nothing about any address`() {
         val r = delivery(java.util.UUID.randomUUID().toString())

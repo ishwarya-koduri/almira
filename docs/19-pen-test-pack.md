@@ -416,7 +416,11 @@ trade.
   by design; a disabled channel refuses with `403 sign_in_channel_disabled`. The
   residual questions a tester should press: the allowlist re-check at verify
   (marked not-watched-failing by the author), and that email is a second
-  account-bearing identifier joined to the same user.
+  account-bearing identifier joined to the same user. Every request, listed or
+  not, queues one row through `app.enqueue_sign_in_code_email`; the worker
+  drops an unlisted address's without a provider call
+  (`SignInEmailOutboxTest`), and `scripts/measure-sign-in-timing.py` compares
+  the two groups' timing and every returned field (docs/13 §5, "Measured").
 - **Account enumeration** is limited (request is identical for known/unknown
   numbers) but the same endpoint is sign-up and sign-in with an `isNewUser` flag;
   once a code is in hand, existence leaks.
@@ -471,8 +475,10 @@ means a slow provider ties up a request thread and a duplicate text is possible
 Endpoints, all behind auth unless noted: `GET /me/messages` (RLS-isolated —
 marked not-watched-failing), `GET /auth/otp/channels`,
 `POST /auth/otp/email/request|verify`,
-`GET /auth/otp/email/delivery/{requestId}` (polled ~1/s for 30s; `404
-otp_request_unknown` for an unknown id), `GET /households/{id}/where-and-who`,
+`GET /auth/otp/email/delivery/{requestId}` (polled ~1/s for 30s; `sending`
+then `sent` at the same moment for every address; `404 otp_request_unknown` for
+an unknown id), `GET /auth/otp/contact` (unauthenticated; the deployment's
+support channel for "Didn't arrive in two minutes? Contact us"), `GET /households/{id}/where-and-who`,
 `GET /households/{id}/still-true`,
 `POST …/still-true/{type}/{id}/confirm|snooze`,
 `GET /households/{id}/continuity/readiness`.

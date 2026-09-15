@@ -100,6 +100,9 @@ almira:
   # by a background worker (docs/13 "Interactive and background"). It is woken
   # after each commit that queues something, and polls at this interval for
   # anything missed. ISO-8601, because @Scheduled reads it.
+  # The operator's view of /health (AlmiraProperties.Ops, docs/17 §8). Empty: off.
+  ops:
+    health-token: ${ALMIRA_OPS_HEALTH_TOKEN:}
   outbox:
     poll-interval: ${ALMIRA_OUTBOX_POLL_INTERVAL:PT2S}
     batch-size: 50

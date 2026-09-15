@@ -89,9 +89,15 @@ data class SignInEmailDrainResult(
     val unconfirmed: Int = 0,
     /** Queued past the code's lifetime: not sent. */
     val expired: Int = 0,
+    /**
+     * Of the above, those that were not sent to an address on the allowlist:
+     * each raised the operator alert ([SignInEmailOutbox.ALERT_EVENT]).
+     */
+    val alerts: Int = 0,
 ) {
     operator fun plus(o: SignInEmailDrainResult) = SignInEmailDrainResult(
         sent + o.sent, failed + o.failed, dropped + o.dropped, unconfirmed + o.unconfirmed, expired + o.expired,
+        alerts + o.alerts,
     )
 }
 
@@ -129,6 +135,22 @@ data class SignInEmailDrainResult(
  * address listed. A provider refusing a listed address is logged at ERROR,
  * `SIGN-IN EMAIL REFUSED`, with the address masked; an outage or an account
  * problem is ProviderCalls' WARN and ERROR, as for any provider call.
+ *
+ * **What the outcome changes for the operator: an alert, when the address is
+ * listed** (owner's decision, 2026-09-15: *a stuck tester is fine seeing
+ * "sent"; nobody noticing is not*). Every way a message can end other than
+ * `sent` — the provider failed or refused, a stopped worker left it
+ * `unconfirmed`, it `expired` in the queue, or it was `dropped` because this
+ * server no longer offers email sign-in — raises one alert when the address is
+ * on the allowlist as the worker decides: the ERROR line [ALERT_EVENT], with
+ * the outcome and the failure kind and never the address or a code, and
+ * `operator_alert` on the record, set in the statement that records the
+ * outcome (V130). [SignInEmailAlerts] counts those for the operator's view of
+ * `/health`. An unlisted address's drop, and a tester taken off the list while
+ * their message waited, are intended and raise nothing. A message whose body a
+ * restore did not bring back has no address left to ask about, and raises
+ * nothing either. The alert is logged after the record commits, on the
+ * worker's thread, so nothing a client can reach waits for it or sees it.
  *
  * **At most once.** A message whose send was started by a worker that then
  * stopped is recorded `unconfirmed` and never sent again: a second email with
@@ -198,7 +220,9 @@ class SignInEmailOutbox(
         var total = SignInEmailDrainResult()
         repeat(MAX_ROUNDS) {
             val (finished, claimed) = claim()
-            total += finished
+            // Logged once the transaction that recorded them has committed.
+            finished.alerts.forEach(::alert)
+            total += finished.result
             claimed.forEach { total += decideAndSend(it) }
             if (claimed.isEmpty()) return@withLock total
         }
@@ -214,8 +238,12 @@ class SignInEmailOutbox(
         val codeLength: Int,
     )
 
+    private data class Alert(val id: UUID, val outcome: String, val failure: String?)
+
+    private data class Finished(val result: SignInEmailDrainResult, val alerts: List<Alert>)
+
     /** One transaction: finishes what can never be sent, claims the rest, commits before any decision. */
-    private fun claim(): Pair<SignInEmailDrainResult, List<Claimed>> = transactions.execute {
+    private fun claim(): Pair<Finished, List<Claimed>> = transactions.execute {
         jdbc.update(
             "delete from sign_in_code_emails where status <> 'queued' and finished_at < now() - make_interval(secs => :keep)",
             MapSqlParameterSource("keep", RETENTION.seconds.toDouble()),
@@ -238,23 +266,28 @@ class SignInEmailOutbox(
                 .addValue("batch", props.outbox.batchSize),
         )
         var finished = SignInEmailDrainResult()
+        val alerts = mutableListOf<Alert>()
         val claimed = mutableListOf<Claimed>()
         rows.forEach { row ->
             val id = row["id"] as UUID
+            // Listed as the worker decides. No body (a restore): no address to ask about.
+            val listed = (row["address"] as String?)?.let(channels::isAllowed) ?: false
             when {
                 row["started"] == true -> {
-                    finish(id, null, "unconfirmed", FailureKind.TIMEOUT.code)
+                    finish(id, null, "unconfirmed", FailureKind.TIMEOUT.code, alert = listed)
                     log.warn("sign-in email outbox: a send was started by a worker that stopped before recording it; " +
                         "marked unconfirmed, not sent again (message {})", id)
-                    finished += SignInEmailDrainResult(unconfirmed = 1)
+                    finished += SignInEmailDrainResult(unconfirmed = 1, alerts = if (listed) 1 else 0)
+                    if (listed) alerts += Alert(id, "unconfirmed", FailureKind.TIMEOUT.code)
                 }
                 row["address"] == null -> {
-                    finish(id, null, "failed", BODY_NOT_RESTORED)
+                    finish(id, null, "failed", BODY_NOT_RESTORED, alert = false)
                     finished += SignInEmailDrainResult(failed = 1)
                 }
                 row["expired"] == true -> {
-                    finish(id, null, "expired", null)
-                    finished += SignInEmailDrainResult(expired = 1)
+                    finish(id, null, "expired", null, alert = listed)
+                    finished += SignInEmailDrainResult(expired = 1, alerts = if (listed) 1 else 0)
+                    if (listed) alerts += Alert(id, "expired", null)
                 }
                 else -> {
                     val token = UUID.randomUUID()
@@ -271,17 +304,21 @@ class SignInEmailOutbox(
                 }
             }
         }
-        finished to claimed.toList()
-    } ?: (SignInEmailDrainResult() to emptyList())
+        Finished(finished, alerts.toList()) to claimed.toList()
+    } ?: (Finished(SignInEmailDrainResult(), emptyList()) to emptyList())
 
     private fun decideAndSend(row: Claimed): SignInEmailDrainResult {
         beforeDecision?.invoke(row.id)
         // First, before the send is stamped or a code derived, let alone a provider
         // called: an address that is not listed now is never sent anything.
         // (docs/known-issues.md, "A guard runs before the action it guards".)
-        if (!channels.isEnabled(OtpChannel.EMAIL) || !channels.isAllowed(row.address)) {
-            return if (finish(row.id, row.token, "dropped", null) == 1) SignInEmailDrainResult(dropped = 1)
-            else SignInEmailDrainResult()
+        val listed = channels.isAllowed(row.address)
+        if (!channels.isEnabled(OtpChannel.EMAIL) || !listed) {
+            // Unlisted: an intended drop, nothing to tell anyone. Listed, on a
+            // server that no longer offers email sign-in: a tester got nothing.
+            if (finish(row.id, row.token, "dropped", if (listed) CHANNEL_DISABLED else null, alert = listed) != 1) return SignInEmailDrainResult()
+            if (listed) alert(Alert(row.id, "dropped", CHANNEL_DISABLED))
+            return SignInEmailDrainResult(dropped = 1, alerts = if (listed) 1 else 0)
         }
         val started = jdbc.update(
             """
@@ -312,12 +349,26 @@ class SignInEmailOutbox(
             log.warn("sign-in email outbox: send failed: {}", e.javaClass.simpleName)
             UNCLASSIFIED
         }
-        val recorded = finish(row.id, row.token, if (failure == null) "sent" else "failed", failure)
+        // Every address that reaches a send is listed, so every failure alerts.
+        val recorded = finish(row.id, row.token, if (failure == null) "sent" else "failed", failure, alert = failure != null)
         return when {
             recorded != 1 -> SignInEmailDrainResult()
             failure == null -> SignInEmailDrainResult(sent = 1)
-            else -> SignInEmailDrainResult(failed = 1)
+            else -> SignInEmailDrainResult(failed = 1, alerts = 1).also { alert(Alert(row.id, "failed", failure)) }
         }
+    }
+
+    /**
+     * The operator alert. One ERROR line with a name of its own, the outcome and
+     * the failure kind: never the address, never a code (docs/17 §8).
+     */
+    private fun alert(a: Alert) {
+        log.error(
+            "{}: a sign-in code for an address on the allowlist was not delivered (outcome {}, failure {}, " +
+                "message {}). The tester was shown it as sent (docs/13 §5); they may be stuck. " +
+                "Check the provider, then sign_in_code_emails where operator_alert.",
+            ALERT_EVENT, a.outcome, a.failure ?: "none", a.id,
+        )
     }
 
     /**
@@ -325,13 +376,13 @@ class SignInEmailOutbox(
      * stopped worker can leave a body behind a finished message. With a [token],
      * only while the claim is still this worker's.
      */
-    private fun finish(id: UUID, token: UUID?, status: String, failure: String?): Int =
+    private fun finish(id: UUID, token: UUID?, status: String, failure: String?, alert: Boolean): Int =
         jdbc.queryForObject(
             """
             with finished as (
                    update sign_in_code_emails
                       set status = :status, failure = :failure, finished_at = now(),
-                          claim_token = null, claimed_until = null
+                          claim_token = null, claimed_until = null, operator_alert = :alert
                     where id = :id and status = 'queued'
                       and (cast(:token as uuid) is null or claim_token = cast(:token as uuid))
                    returning id),
@@ -339,7 +390,7 @@ class SignInEmailOutbox(
             select count(*) from finished
             """.trimIndent(),
             MapSqlParameterSource()
-                .addValue("status", status).addValue("failure", failure)
+                .addValue("status", status).addValue("failure", failure).addValue("alert", alert)
                 .addValue("id", id).addValue("token", token?.toString()),
             Int::class.java,
         )!!
@@ -357,6 +408,10 @@ class SignInEmailOutbox(
     companion object {
         const val BODY_NOT_RESTORED = "body_not_restored"
         const val UNCLASSIFIED = "unclassified"
+        /** The failure recorded on a listed address's message dropped because email sign-in is off. */
+        const val CHANNEL_DISABLED = "channel_disabled"
+        /** The operator alert's event name: what a log alert rule matches (docs/17 §8). */
+        const val ALERT_EVENT = "SIGN-IN EMAIL NOT DELIVERED"
         /** How long a finished record (status and failure, no address) is kept for the operator. */
         val RETENTION: Duration = Duration.ofDays(30)
         private val LEASE_MARGIN: Duration = Duration.ofSeconds(30)

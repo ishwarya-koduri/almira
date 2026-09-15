@@ -2146,6 +2146,18 @@ begin
   begin insert into sign_in_code_emails default values;
   exception when insufficient_privilege then blocked := true; end;
   perform pg_temp.assert(blocked, 'the runtime role writes a sign-in email only through the function');
+
+  -- V130: the operator's alert flag says an address was listed; it is the
+  -- owner connection's alone, like the rest of the record.
+  blocked := false;
+  begin perform count(*) from sign_in_code_emails where operator_alert;
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot count the operator''s sign-in email alerts');
+
+  blocked := false;
+  begin update sign_in_code_emails set operator_alert = false;
+  exception when insufficient_privilege then blocked := true; end;
+  perform pg_temp.assert(blocked, 'the runtime role cannot clear an operator alert');
 end $$;
 
 do $$

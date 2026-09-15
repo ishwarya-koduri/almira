@@ -22,6 +22,7 @@ import org.springframework.test.annotation.DirtiesContext
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import tech.bhrigu.almira.config.AlmiraProperties
+import tech.bhrigu.almira.config.HealthController
 import tech.bhrigu.almira.provider.FailureKind
 import tech.bhrigu.almira.provider.ProviderCalls
 import tech.bhrigu.almira.provider.ProviderFailure
@@ -149,18 +150,19 @@ class SignInEmailOutboxTest : ApiTestBase() {
         val narrowed = props.copy(auth = props.auth.copy(emailAllowlist = listed.filter { it != listed[1] }))
         val restarted = SignInEmailOutbox(requests, ownerDataSource, sender, calls, SignInChannels(narrowed), props)
         try {
-            assertThat(restarted.drain()).isEqualTo(SignInEmailDrainResult(dropped = 1))
+            assertThat(restarted.drain()).describedAs("an intended drop: no operator alert").isEqualTo(SignInEmailDrainResult(dropped = 1))
         } finally {
             restarted.close()
         }
         assertThat(sender.sent).isEmpty()
         assertThat(newest()["status"]).isEqualTo("dropped")
 
-        // And a server that no longer offers email sign-in drops everything.
+        // And a server that no longer offers email sign-in drops everything; a
+        // listed address dropped that way got nothing, and the operator is told.
         request(listed[2])
         val phoneOnly = props.copy(auth = props.auth.copy(signInChannels = listOf("phone")))
         SignInEmailOutbox(requests, ownerDataSource, sender, calls, SignInChannels(phoneOnly), props).use {
-            assertThat(it.drain()).isEqualTo(SignInEmailDrainResult(dropped = 1))
+            assertThat(it.drain()).isEqualTo(SignInEmailDrainResult(dropped = 1, alerts = 1))
         }
         assertThat(sender.sent).isEmpty()
     }
@@ -169,14 +171,14 @@ class SignInEmailOutboxTest : ApiTestBase() {
     fun `a provider refusing a listed address is recorded and logged for the operator, with the address masked`() {
         sender.refuses += listed[3]
         request(listed[3])
-        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(failed = 1))
+        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(failed = 1, alerts = 1))
         assertThat(newest()["status"]).isEqualTo("failed")
         assertThat(newest()["failure"]).isEqualTo("rejected")
         assertThat(newest()["body"]).isNull()
         val errors = logs.list.filter { it.level.toString() == "ERROR" }.map { it.formattedMessage }
-        assertThat(errors).singleElement().satisfies({ line ->
-            assertThat(line).startsWith("SIGN-IN EMAIL REFUSED").doesNotContain(listed[3])
-        })
+        assertThat(errors).hasSize(2)
+        assertThat(errors[0]).startsWith("SIGN-IN EMAIL REFUSED").doesNotContain(listed[3])
+        assertThat(errors[1]).startsWith(SignInEmailOutbox.ALERT_EVENT).doesNotContain(listed[3])
     }
 
     @Test
@@ -189,7 +191,7 @@ class SignInEmailOutboxTest : ApiTestBase() {
             sender.faults.always("email", fault)
             redis.delete("otp:email:cooldown:login:${listed[4]}")
             request(listed[4])
-            assertThat(outbox.drain()).describedAs(fault.name).isEqualTo(SignInEmailDrainResult(failed = 1))
+            assertThat(outbox.drain()).describedAs(fault.name).isEqualTo(SignInEmailDrainResult(failed = 1, alerts = 1))
             assertThat(newest()["failure"]).describedAs(fault.name).isEqualTo(failure)
             assertThat(newest()["body"]).describedAs(fault.name).isNull()
             sender.faults.clear()
@@ -211,12 +213,170 @@ class SignInEmailOutboxTest : ApiTestBase() {
         val old = newest()["id"] as UUID
         db.update("update sign_in_code_emails set created_at = now() - interval '6 minutes' where id = ?", old)
 
-        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(unconfirmed = 1, expired = 1))
+        // The unconfirmed one was listed (an alert); the expired one was not (none).
+        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(unconfirmed = 1, expired = 1, alerts = 1))
         assertThat(sender.sent).isEmpty()
         val byId = records().associateBy { it["id"] }
         assertThat(byId.getValue(started)["status"]).isEqualTo("unconfirmed")
         assertThat(byId.getValue(old)["status"]).isEqualTo("expired")
         assertThat(db.queryForObject("select count(*) from sign_in_code_email_bodies", Int::class.java)).isZero()
+    }
+
+    // --- the operator alert (owner's decision, 2026-09-15; V130) ----------------
+
+    @Autowired private lateinit var alerts: SignInEmailAlerts
+
+    private fun alertLines() = logs.list.filter { it.level.toString() == "ERROR" && it.formattedMessage.startsWith(SignInEmailOutbox.ALERT_EVENT) }
+
+    private fun flagged(id: Any?) = db.queryForObject("select operator_alert from sign_in_code_emails where id = ?", Boolean::class.java, id)
+
+    /** The code a message for [address] would have carried: it must appear in no alert. */
+    private fun codeFor(address: String, requestId: String) = QueuedEmailCodes(props).code("login", address, requestId, props.otp.length)
+
+    /**
+     * Every non-sent end for an address that is listed as the worker decides:
+     * the provider failing and refusing, a stopped worker, the queue outliving
+     * the code, and a server that no longer offers email sign-in. Each raises
+     * one alert — an ERROR line named [SignInEmailOutbox.ALERT_EVENT] with no
+     * address and no code, and the record's flag — and the operator's count
+     * goes up by one.
+     */
+    @Test
+    fun `every way a listed address's message ends unsent raises one operator alert, with no address and no code`() {
+        val before = alerts.within().count
+        val cases = mutableListOf<Triple<String, String, String>>() // label, address, request id
+
+        fun expectOneAlert(label: String, address: String, requestId: String, result: SignInEmailDrainResult, expected: SignInEmailDrainResult) {
+            assertThat(result).describedAs(label).isEqualTo(expected)
+            assertThat(flagged(newest()["id"])).describedAs("$label: the record's flag").isTrue()
+            val line = alertLines().last().formattedMessage
+            assertThat(line).describedAs(label)
+                .doesNotContain(address).doesNotContain(address.substringBefore('@'))
+                .doesNotContain(codeFor(address, requestId))
+            cases += Triple(label, address, requestId)
+        }
+
+        sender.faults.always("email", SandboxFault.UNAVAILABLE)
+        var id = request(listed[10])
+        expectOneAlert("provider down", listed[10], id, outbox.drain(), SignInEmailDrainResult(failed = 1, alerts = 1))
+        sender.faults.clear()
+
+        sender.refuses += listed[11]
+        id = request(listed[11])
+        expectOneAlert("provider refused", listed[11], id, outbox.drain(), SignInEmailDrainResult(failed = 1, alerts = 1))
+
+        id = request(listed[12])
+        db.update("update sign_in_code_emails set send_started_at = now(), claimed_until = now() - interval '1 second' where id = ?", newest()["id"])
+        expectOneAlert("unconfirmed after a stopped worker", listed[12], id, outbox.drain(), SignInEmailDrainResult(unconfirmed = 1, alerts = 1))
+
+        id = request(listed[13])
+        db.update("update sign_in_code_emails set created_at = now() - interval '6 minutes' where id = ?", newest()["id"])
+        expectOneAlert("expired in the queue", listed[13], id, outbox.drain(), SignInEmailDrainResult(expired = 1, alerts = 1))
+
+        id = request(listed[14])
+        val phoneOnly = props.copy(auth = props.auth.copy(signInChannels = listOf("phone")))
+        SignInEmailOutbox(requests, ownerDataSource, sender, calls, SignInChannels(phoneOnly), props).use { restarted ->
+            // The restarted worker logs through the same logger.
+            expectOneAlert("dropped: email sign-in switched off", listed[14], id, restarted.drain(), SignInEmailDrainResult(dropped = 1, alerts = 1))
+        }
+        assertThat(newest()["failure"]).isEqualTo(SignInEmailOutbox.CHANNEL_DISABLED)
+
+        assertThat(alertLines()).describedAs("one ERROR line per case").hasSize(cases.size)
+        assertThat(alerts.within().count).describedAs("the operator's count").isEqualTo(before + cases.size)
+        assertThat(alerts.within().newest).isNotNull()
+        assertThat(sender.sent.map { it.first }).describedAs("nothing sent twice or to anyone else")
+            .containsExactlyInAnyOrder(listed[10], listed[11])
+    }
+
+    /**
+     * The intended drops raise nothing: an unlisted address, however its
+     * message ends, and a tester taken off the list while their message waited.
+     */
+    @Test
+    fun `an unlisted address's message and a tester taken off the list raise no operator alert`() {
+        val before = alerts.within().count
+
+        request(unlisted())
+        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(dropped = 1))
+        assertThat(flagged(newest()["id"])).isFalse()
+
+        request(unlisted())
+        db.update("update sign_in_code_emails set created_at = now() - interval '6 minutes' where id = ?", newest()["id"])
+        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(expired = 1))
+        assertThat(flagged(newest()["id"])).isFalse()
+
+        request(unlisted())
+        db.update("update sign_in_code_emails set send_started_at = now(), claimed_until = now() - interval '1 second' where id = ?", newest()["id"])
+        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(unconfirmed = 1))
+        assertThat(flagged(newest()["id"])).isFalse()
+
+        request(listed[15])
+        val narrowed = props.copy(auth = props.auth.copy(emailAllowlist = listed.filter { it != listed[15] }))
+        SignInEmailOutbox(requests, ownerDataSource, sender, calls, SignInChannels(narrowed), props).use {
+            assertThat(it.drain()).isEqualTo(SignInEmailDrainResult(dropped = 1))
+        }
+        assertThat(flagged(newest()["id"])).isFalse()
+
+        // A restore that did not bring a body back leaves no address to ask about.
+        request(listed[16])
+        db.update("delete from sign_in_code_email_bodies where message_id = ?", newest()["id"])
+        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(failed = 1))
+        assertThat(flagged(newest()["id"])).isFalse()
+
+        assertThat(alertLines()).isEmpty()
+        assertThat(logs.list.filter { it.level.toString() == "ERROR" }).isEmpty()
+        assertThat(alerts.within().count).isEqualTo(before)
+        assertThat(sender.sent).isEmpty()
+    }
+
+    /**
+     * What a client can reach is the same whether the alert fired or not: the
+     * request's answer, the delivery status, and /health, which says nothing of
+     * alerts without the operator's token — or with a wrong one.
+     */
+    @Test
+    fun `an alert changes nothing a client sees, and only the operator's token shows the count`() {
+        sender.faults.always("email", SandboxFault.UNAVAILABLE)
+        val listedAsk = post("/api/v1/auth/otp/email/request", body = mapOf("email" to listed[17]))
+        val strangerAsk = post("/api/v1/auth/otp/email/request", body = mapOf("email" to unlisted()))
+        val healthBefore = get("/health").body
+        assertThat(outbox.drain()).isEqualTo(SignInEmailDrainResult(failed = 1, dropped = 1, alerts = 1))
+        sender.faults.clear()
+
+        fun shape(r: org.springframework.http.ResponseEntity<String>) =
+            r.statusCode to r.body!!.replace(Regex("\"requestId\":\"[0-9a-f-]{36}\""), "#")
+        assertThat(shape(listedAsk)).isEqualTo(shape(strangerAsk))
+        // Once both have reached the moment fixed at the request, the two statuses
+        // say the same thing, the failed listed one and the dropped stranger's.
+        fun status(ask: org.springframework.http.ResponseEntity<String>) =
+            get("/api/v1/auth/otp/email/delivery/${ask.json()["requestId"].asText()}")
+        val deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos()
+        while (status(listedAsk).json()["status"].asText() != "sent" || status(strangerAsk).json()["status"].asText() != "sent") {
+            check(System.nanoTime() < deadline) { "the statuses never reached sent" }
+            Thread.sleep(200)
+        }
+        fun statusShape(ask: org.springframework.http.ResponseEntity<String>) = status(ask).let {
+            it.statusCode to it.body!!.replace(Regex("\"requestId\":\"[0-9a-f-]{36}\""), "#")
+                .replace(Regex("\"resendAfterSeconds\":[0-9]+"), "N")
+        }
+        assertThat(statusShape(listedAsk)).isEqualTo(statusShape(strangerAsk))
+
+        assertThat(get("/health").body).describedAs("no token: /health as it always was").isEqualTo(healthBefore)
+        assertThat(get("/health").json().has("signInEmailNotDelivered")).isFalse()
+        val wrong = withHeader("/health", HealthController.OPS_TOKEN_HEADER, "x".repeat(OPS_TOKEN.length))
+        assertThat(wrong.body).describedAs("a wrong token: the same").isEqualTo(healthBefore)
+
+        val operator = withHeader("/health", HealthController.OPS_TOKEN_HEADER, OPS_TOKEN).json()
+        assertThat(operator["signInEmailNotDelivered"]["lastHour"].asInt()).isGreaterThanOrEqualTo(1)
+        assertThat(operator["signInEmailNotDelivered"]["newest"].asText()).isNotEmpty()
+        assertThat(operator.toString()).doesNotContain(listed[17]).doesNotContain(listed[17].substringBefore('@'))
+    }
+
+    private fun withHeader(path: String, name: String, value: String): org.springframework.http.ResponseEntity<String> {
+        val headers = org.springframework.http.HttpHeaders().apply { set(name, value) }
+        return org.springframework.web.client.RestTemplate().exchange(
+            url(path), org.springframework.http.HttpMethod.GET, org.springframework.http.HttpEntity<Void>(headers), String::class.java,
+        )
     }
 
     @Test
@@ -272,13 +432,15 @@ class SignInEmailOutboxTest : ApiTestBase() {
 
     companion object {
         private val run = System.nanoTime()
-        private val listed = (0..9).map { "outbox.tester+$it.$run@example.test" }
+        private val listed = (0..19).map { "outbox.tester+$it.$run@example.test" }
+        private val OPS_TOKEN = "ops-token-for-the-outbox-test-${"0".repeat(24)}"
 
         @JvmStatic
         @DynamicPropertySource
         fun emailSignIn(registry: DynamicPropertyRegistry) {
             registry.add("almira.auth.sign-in-channels") { "phone,email" }
             registry.add("almira.auth.email-allowlist") { listed.joinToString(",") }
+            registry.add("almira.ops.health-token") { OPS_TOKEN }
         }
     }
 }

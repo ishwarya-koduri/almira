@@ -138,6 +138,16 @@ data class AlmiraProperties(
         val pollInterval: Duration = Duration.ofSeconds(2),
         /** Rows claimed per transaction. */
         val batchSize: Int = 50,
+        /**
+         * Whether this process drains on its own — the poll and the wake after
+         * each commit. Always on in a real server. The test suite turns it off:
+         * one JVM holds many cached application contexts against one database,
+         * and every one of them polling made each outbox test race workers it
+         * could not see (a row "sent" while the test had its worker paused).
+         * Tests drive [tech.bhrigu.almira.provider.NotificationOutbox.drain]
+         * themselves; OutboxBackgroundDrainTest keeps the background path proven.
+         */
+        val background: Boolean = true,
     )
 
     /**
@@ -183,6 +193,18 @@ data class AlmiraProperties(
          * creates cannot be completed (AuthService.requestEmailOtp).
          */
         val emailAllowlist: List<String> = emptyList(),
+        /**
+         * Where an address off the allowlist has its sign-in email sent instead:
+         * an address that accepts mail and throws it away (a provider's mailbox
+         * simulator, or a discarding catch-all the owner runs). A decoy calls the
+         * email provider exactly as a real sign-in does, only to this address,
+         * so it fails, times out or succeeds with the provider as it is at that
+         * moment — the thing a replay of the last real send could not do
+         * (docs/13 §5). Required when the email provider is `live`; anywhere
+         * else the sandbox sends nothing and [OtpService.DEFAULT_EMAIL_DECOY_SINK]
+         * stands in.
+         */
+        val emailDecoySink: String = "",
     )
 
     /**

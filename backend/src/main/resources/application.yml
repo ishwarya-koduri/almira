@@ -103,6 +103,8 @@ almira:
   outbox:
     poll-interval: ${ALMIRA_OUTBOX_POLL_INTERVAL:PT2S}
     batch-size: 50
+    # Always true in a real server; the test suite turns it off (AlmiraProperties.Outbox.background).
+    background: true
   # "Contact us" in Settings (X-42). Off unless set: a channel ("whatsapp" or
   # "email"), its address (+91... or name@domain), and one stated reply time. No
   # provider is called; the client opens a wa.me or mailto: link itself. A
@@ -251,6 +253,11 @@ almira:
   auth:
     sign-in-channels: ${ALMIRA_SIGN_IN_CHANNELS:phone}
     email-allowlist: ${ALMIRA_ALPHA_EMAIL_ALLOWLIST:}
+    # Where an unlisted address's sign-in email goes instead: an address that
+    # accepts and discards (a provider's mailbox simulator). Required when the
+    # email provider is live; unset elsewhere, a placeholder the sandbox never
+    # delivers to (docs/13 §5).
+    email-decoy-sink: ${ALMIRA_ALPHA_EMAIL_DECOY_SINK:}
 
   # Passkeys. Off until both are set, because a passkey is bound to its domain
   # for good: set the domain people will use (ALMIRA_WEBAUTHN_RP_ID=almira.example.in)

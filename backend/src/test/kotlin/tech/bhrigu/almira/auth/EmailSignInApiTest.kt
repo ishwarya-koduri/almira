@@ -14,6 +14,8 @@ import org.springframework.context.annotation.Primary
 import org.springframework.http.ResponseEntity
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import tech.bhrigu.almira.provider.FailureKind
+import tech.bhrigu.almira.provider.ProviderFailure
 import tech.bhrigu.almira.provider.SandboxFault
 import tech.bhrigu.almira.provider.SandboxFaults
 import tech.bhrigu.almira.support.ApiTestBase
@@ -33,15 +35,21 @@ import java.util.concurrent.CopyOnWriteArrayList
 @Import(EmailSignInApiTest.Recording::class)
 class EmailSignInApiTest : ApiTestBase() {
 
-    /** Records codes, can be told to be slow or to fail, never echoes. */
+    /**
+     * Records codes, can be told to be slow or to fail, never echoes. [faults]
+     * fail every send, as a provider that is down does; [refuses] are refused
+     * one address at a time, as a provider refuses a suppressed mailbox.
+     */
     class ControllableEmailSender : EmailOtpSender {
         val sent = CopyOnWriteArrayList<Pair<String, String>>()
         val faults = SandboxFaults()
+        val refuses: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
         @Volatile var delay: Duration = Duration.ZERO
         override val available = true
         override fun send(email: String, code: String) {
             if (!delay.isZero) Thread.sleep(delay.toMillis())
             sent += email to code
+            if (email in refuses) throw ProviderFailure(FailureKind.REJECTED, "test: this address is refused")
             faults.apply("email")
         }
 
@@ -70,8 +78,7 @@ class EmailSignInApiTest : ApiTestBase() {
     fun reset() {
         sender.delay = Duration.ZERO
         sender.faults.clear()
-        // The provider's last outcome is what decoys replay; no test inherits another's.
-        redis.delete(OtpService.EMAIL_WEATHER_KEY)
+        sender.refuses.clear()
     }
 
     private fun requestCode(email: String) = post("/api/v1/auth/otp/email/request", body = mapOf("email" to email))
@@ -171,7 +178,8 @@ class EmailSignInApiTest : ApiTestBase() {
 
     @Test
     fun `the answer does not wait for the email, so it takes no longer for an address on the list`() {
-        sender.delay = Duration.ofMillis(1_500)
+        // Under the one-second send timeout set below, so the send completes.
+        sender.delay = Duration.ofMillis(900)
         val insider = listed[2]
         val outsider = "slow-outsider-$run@example.test"
         // Warm both paths so the first request's class loading is not measured.
@@ -186,7 +194,7 @@ class EmailSignInApiTest : ApiTestBase() {
         val (outsiderResponse, outsiderMillis) = timed(outsider)
         assertThat(shape(insiderResponse)).isEqualTo(shape(outsiderResponse))
         assertThat(insiderMillis)
-            .describedAs("an allowlisted request answered in ${insiderMillis}ms against a 1500ms send " +
+            .describedAs("an allowlisted request answered in ${insiderMillis}ms against a 900ms send " +
                 "(the outsider took ${outsiderMillis}ms); waiting for the send would reveal the list")
             .isLessThan(750)
         sender.codeFor(insider)
@@ -214,9 +222,8 @@ class EmailSignInApiTest : ApiTestBase() {
     }
 
     @Test
-    fun `a listed tester is told when their code could not be sent, for each way it can fail`() {
+    fun `a listed tester is told when their code could not be sent, for each way the provider can fail`() {
         val expected = listOf(
-            SandboxFault.REJECTED to "otp_delivery_failed",
             SandboxFault.UNAVAILABLE to "otp_provider_unavailable",
             SandboxFault.INSUFFICIENT_BALANCE to "otp_service_unavailable",
             SandboxFault.TIMEOUT to null,
@@ -244,42 +251,107 @@ class EmailSignInApiTest : ApiTestBase() {
         }
     }
 
+    /** Every deferred outcome is applied this long after the request: the send timeout below plus the margin. */
+    private val settleAt = SEND_TIMEOUT.plus(OtpService.SETTLE_MARGIN).toMillis()
+
+    private fun askAndSettle(email: String): Triple<ResponseEntity<String>, ResponseEntity<String>, Long> {
+        val askedAt = System.nanoTime()
+        val request = requestCode(email)
+        val (status, millis) = settled(request, askedAt)
+        return Triple(request, status, millis)
+    }
+
+    /** A wrong code against what [email]'s request left, as a stranger would probe it. */
+    private fun wrongCodeProbe(email: String) = verifyCode(email, "000000")
+
     @Test
-    fun `listed and unlisted addresses see the same outcome, answer and timing, with the provider healthy or failing`() {
+    fun `listed and unlisted addresses see the same outcome, answer and timing, with the provider healthy, failing or refusing`() {
         // Slow enough that the send cannot hide inside the first poll.
         sender.delay = Duration.ofMillis(600)
-        for ((i, fault) in listOf(null, SandboxFault.UNAVAILABLE, SandboxFault.INSUFFICIENT_BALANCE, SandboxFault.TIMEOUT).withIndex()) {
-            val label = fault?.name ?: "healthy"
+        for ((i, state) in listOf("healthy", "UNAVAILABLE", "INSUFFICIENT_BALANCE", "TIMEOUT", "refusing the listed address").withIndex()) {
             sender.faults.clear()
-            fault?.let { sender.faults.always("email", it) }
+            sender.refuses.clear()
             val insider = "same.$i.$run@example.test".also { extraListed(it) }
             val outsider = "same-outsider.$i.$run@example.test"
+            SandboxFault.entries.firstOrNull { it.name == state }?.let { sender.faults.always("email", it) }
+            if (state.startsWith("refusing")) sender.refuses += insider
 
-            // The listed address first: the unlisted one replays the provider as
-            // a real send last found it, which is the state being compared.
-            fun askAndSettle(email: String): Triple<ResponseEntity<String>, ResponseEntity<String>, Long> {
-                val askedAt = System.nanoTime()
-                val request = requestCode(email)
-                val (status, millis) = settled(request, askedAt)
-                return Triple(request, status, millis)
-            }
-            val (insiderRequest, insiderStatus, insiderMillis) = askAndSettle(insider)
+            // The unlisted address first: nothing a listed send leaves behind may be what it reports.
             val (outsiderRequest, outsiderStatus, outsiderMillis) = askAndSettle(outsider)
-            assertThat(shape(insiderRequest)).describedAs(label).isEqualTo(shape(outsiderRequest))
-            assertThat(shape(insiderStatus)).describedAs(label).isEqualTo(shape(outsiderStatus))
-            assertThat(insiderStatus.json().path("status").asText()).describedAs(label)
-                .isEqualTo(if (fault == null) "sent" else if (fault == SandboxFault.TIMEOUT) "delayed" else "failed")
-            // Both settle on the same whole-second tick after a 600 ms send.
-            assertThat(listOf(insiderMillis, outsiderMillis)).describedAs("$label: settled after ms")
-                .allSatisfy { assertThat(it).isBetween(700L, 1_900L) }
+            val (insiderRequest, insiderStatus, insiderMillis) = askAndSettle(insider)
+            assertThat(shape(insiderRequest)).describedAs(state).isEqualTo(shape(outsiderRequest))
+            assertThat(shape(insiderStatus)).describedAs(state).isEqualTo(shape(outsiderStatus))
+            val failing = state == "UNAVAILABLE" || state == "INSUFFICIENT_BALANCE"
+            assertThat(insiderStatus.json().path("status").asText()).describedAs(state)
+                .isEqualTo(if (failing) "failed" else if (state == "TIMEOUT") "delayed" else "sent")
+            // Both settle at the one moment every outcome is applied, whatever the send took.
+            assertThat(listOf(insiderMillis, outsiderMillis)).describedAs("$state: settled after ms")
+                .allSatisfy { assertThat(it).isBetween(settleAt - 20, settleAt + 900) }
 
             // And what each leaves behind answers the same: resend refused for
-            // both while the code stands, open for both once it could not go.
+            // both while the code stands, open for both once it could not go;
+            // a wrong code judged the same way.
             val again = listOf(insider, outsider).map(::requestCode)
-            assertThat(shape(again[0])).describedAs("$label: asking again").isEqualTo(shape(again[1]))
-            assertThat(again[0].statusCode.value()).describedAs(label).isEqualTo(if (fault == null) 429 else 200)
+            assertThat(shape(again[0])).describedAs("$state: asking again").isEqualTo(shape(again[1]))
+            assertThat(again[0].statusCode.value()).describedAs(state).isEqualTo(if (state == "healthy" || state.startsWith("refusing")) 429 else 200)
+            // Once those have settled too, so the probe meets what they finally left.
+            if (again[0].statusCode.value() == 200) again.forEach { settled(it) }
+            assertThat(shape(wrongCodeProbe(insider))).describedAs("$state: a wrong code").isEqualTo(shape(wrongCodeProbe(outsider)))
         }
         assertThat(sender.sent.map { it.first }).noneMatch { it.startsWith("same-outsider") }
+    }
+
+    /**
+     * Signal 1 (docs/13 §5), over HTTP and asked again and again: the provider
+     * refuses one listed address and accepts everything else. Nothing a
+     * stranger can ask for — the answer, the delivery status, when it settles,
+     * the resend, a wrong code — may differ from an address that is not listed.
+     */
+    @Test
+    fun `a provider refusing a listed address answers exactly as for an unlisted one, however many times it is probed`() {
+        val insider = listed[3]
+        val outsider = "refused-outsider-$run@example.test"
+        sender.refuses += insider
+        repeat(3) { round ->
+            val label = "probe ${round + 1}"
+            redis.delete(listOf("otp:email:cooldown:login:$insider", "otp:email:cooldown:login:$outsider"))
+            val (outsiderRequest, outsiderStatus, outsiderMillis) = askAndSettle(outsider)
+            val (insiderRequest, insiderStatus, insiderMillis) = askAndSettle(insider)
+            assertThat(shape(insiderRequest)).describedAs(label).isEqualTo(shape(outsiderRequest))
+            assertThat(shape(insiderStatus)).describedAs(label).isEqualTo(shape(outsiderStatus))
+            assertThat(insiderStatus.json().path("status").asText()).describedAs(label).isEqualTo("sent")
+            assertThat(listOf(insiderMillis, outsiderMillis)).describedAs("$label: settled after ms")
+                .allSatisfy { assertThat(it).isBetween(settleAt - 20, settleAt + 900) }
+            val again = listOf(insider, outsider).map(::requestCode)
+            assertThat(again[0].statusCode.value()).describedAs(label).isEqualTo(429)
+            assertThat(shape(again[0])).describedAs("$label: asking again").isEqualTo(shape(again[1]))
+            assertThat(shape(wrongCodeProbe(insider))).describedAs("$label: a wrong code").isEqualTo(shape(wrongCodeProbe(outsider)))
+        }
+        assertThat(sender.sent.count { it.first == insider }).describedAs("the listed address really was tried each time").isEqualTo(3)
+        assertThat(sender.sent.map { it.first }).doesNotContain(outsider)
+    }
+
+    /**
+     * Signal 2 (docs/13 §5), over HTTP: the provider changes state and
+     * strangers probe several unlisted addresses before anyone listed signs in.
+     * Each probe must already report the provider as it now is, the same as the
+     * listed address that comes after them.
+     */
+    @Test
+    fun `after the provider changes, unlisted probes report the change before any listed address is asked for`() {
+        val states = listOf(SandboxFault.UNAVAILABLE, null, SandboxFault.INSUFFICIENT_BALANCE, SandboxFault.TIMEOUT, null)
+        for ((step, fault) in states.withIndex()) {
+            sender.faults.clear()
+            fault?.let { sender.faults.always("email", it) }
+            val label = "step $step: ${fault ?: "healthy"}"
+            val probes = (0..2).map { askAndSettle("probe.$step.$it.$run@example.test").second }
+            val insider = listed[8 + step % 2]
+            redis.delete("otp:email:cooldown:login:$insider")
+            val (_, insiderStatus, _) = askAndSettle(insider)
+            assertThat(probes.map(::shape)).describedAs(label).allSatisfy { assertThat(it).isEqualTo(shape(insiderStatus)) }
+            assertThat(insiderStatus.json().path("status").asText()).describedAs(label)
+                .isEqualTo(if (fault == null) "sent" else if (fault == SandboxFault.TIMEOUT) "delayed" else "failed")
+        }
     }
 
     @Test
@@ -358,10 +430,13 @@ class EmailSignInApiTest : ApiTestBase() {
     companion object {
         private val run = System.nanoTime()
         private val listed = (0..9).map { "alpha.tester+$it.$run@example.test" }
-        private val extra = (0..3).map { "told.$it.$run@example.test" } + (0..3).map { "same.$it.$run@example.test" }
+        private val extra = (0..3).map { "told.$it.$run@example.test" } + (0..4).map { "same.$it.$run@example.test" }
 
         /** Only a check that a test uses an address the allowlist below really has. */
         fun extraListed(address: String) = check(address in extra) { "$address is not on the test allowlist" }
+
+        /** Short, so every deferred outcome here is applied two seconds after its request rather than six. */
+        private val SEND_TIMEOUT: Duration = Duration.ofSeconds(1)
 
         /** RFC 9110 §7.6.1: per-connection, set by the server whoever asks. */
         private val HOP_BY_HOP = setOf("connection", "keep-alive")
@@ -370,6 +445,7 @@ class EmailSignInApiTest : ApiTestBase() {
         @DynamicPropertySource
         fun emailSignIn(registry: DynamicPropertyRegistry) {
             registry.add("almira.auth.sign-in-channels") { "phone,email" }
+            registry.add("almira.otp.send-timeout") { "${SEND_TIMEOUT.toMillis()}ms" }
             // Every other response closes its connection, so a comparison that counted
             // the Connection header fails every run rather than one run in several.
             registry.add("server.tomcat.max-keep-alive-requests") { "2" }

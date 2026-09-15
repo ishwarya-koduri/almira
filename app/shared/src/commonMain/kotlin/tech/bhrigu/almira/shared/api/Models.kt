@@ -180,6 +180,123 @@ data class Dashboard(
     val disclaimer: String,
 )
 
+// --- scores: completeness and handover readiness ---------------------------
+
+/**
+ * A score as a screen may show it: a percentage the records earned, or the
+ * sentence saying why there is none. Never both missing, and never a number
+ * the server did not stand behind (docs/18 §6, known-issues 19, docs/22 §1).
+ *
+ * This is the only way to get at either score. The raw `score` fields below are
+ * private on purpose: a brand-new household's completeness arrives as
+ * `score: 0, scoreEarned: false`, and a screen that read `score` directly
+ * would tell a new user "0%" — which reads as a failure they have not had.
+ * `scripts/check-spec.py` fails if client code reads a score any other way.
+ */
+sealed interface ScoreDisplay {
+    /** An earned number, already written as "72%". */
+    data class Percent(val text: String) : ScoreDisplay
+
+    /** No number; show this sentence where the number would be. */
+    data class NoScore(val sentence: String) : ScoreDisplay
+}
+
+@Serializable
+data class CompletenessCheck(
+    val code: String,
+    val label: String,
+    val fix: String,
+    val done: Int,
+    val outstanding: Int,
+    val investmentIds: List<String> = emptyList(),
+    val weight: Int,
+)
+
+/**
+ * `GET /households/{id}/reports/completeness`. No screen shows it yet; the
+ * model exists now so that the first one cannot forget [scoreEarned].
+ *
+ * [scoreEarned] is required here, as it is in the contract, with no default:
+ * a response without it fails to decode rather than being guessed at.
+ */
+@Serializable
+data class Completeness(
+    /** 0 and meaningless when [scoreEarned] is false. Read it through [display]. */
+    private val score: Int,
+    val scoreEarned: Boolean,
+    /** Present only when [scoreEarned] is false. */
+    val scoreExplanation: String? = null,
+    val recordCount: Int,
+    val scoreLabel: String,
+    val checks: List<CompletenessCheck> = emptyList(),
+    val nextStep: String? = null,
+    val note: String,
+) {
+    fun display(): ScoreDisplay =
+        if (scoreEarned) {
+            ScoreDisplay.Percent("$score%")
+        } else {
+            ScoreDisplay.NoScore(scoreExplanation ?: NOTHING_TO_SCORE)
+        }
+
+    companion object {
+        /** The server's own sentence, for a response that left it out. */
+        const val NOTHING_TO_SCORE =
+            "Nothing is recorded that you can see yet, so there is nothing to score."
+    }
+}
+
+@Serializable
+data class ReadinessCheck(
+    val code: String,
+    val label: String,
+    val done: Int,
+    val applicable: Int,
+    /** Null when nothing counted applies to this check; then show no bar. */
+    val percent: Int? = null,
+)
+
+@Serializable
+data class ReadinessGap(
+    val check: String,
+    val reason: String,
+    val recordType: String? = null,
+    val recordId: String? = null,
+    val title: String? = null,
+    val fix: String,
+)
+
+@Serializable
+data class LeftOutRecord(
+    val recordType: String,
+    val recordId: String,
+    val title: String,
+)
+
+/**
+ * `GET /households/{id}/continuity/readiness`. No screen shows it yet.
+ *
+ * `score` is left out of the JSON when the data has not earned a number, so it
+ * is nullable, private, and read through [display].
+ */
+@Serializable
+data class HandoverReadiness(
+    private val score: Int? = null,
+    /** Always a sentence: how the number was made, or why there is none. */
+    val scoreExplanation: String,
+    /** True only when there is a score, nothing is missing, and nothing is left out. */
+    val complete: Boolean,
+    val recordCount: Int,
+    val leftOutCount: Int,
+    val leftOut: List<LeftOutRecord> = emptyList(),
+    val checks: List<ReadinessCheck> = emptyList(),
+    val gaps: List<ReadinessGap> = emptyList(),
+    val caveats: List<String> = emptyList(),
+) {
+    fun display(): ScoreDisplay =
+        score?.let { ScoreDisplay.Percent("$it%") } ?: ScoreDisplay.NoScore(scoreExplanation)
+}
+
 // --- health, for the connection check ---------------------------------------
 
 @Serializable

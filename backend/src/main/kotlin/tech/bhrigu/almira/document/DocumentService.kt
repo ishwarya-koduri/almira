@@ -5,6 +5,8 @@ import tech.bhrigu.almira.measurement.ProductMeasurement
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.auth.StepUpService
 import tech.bhrigu.almira.common.ApiException
@@ -86,6 +88,12 @@ class DocumentService(
             }
         }
 
+        // Before the key and the storage write, not only at the insert: the
+        // insert's policy refuses a viewer too, but by then a data key may have
+        // been provisioned and bytes written to storage, and a rollback undoes
+        // neither. After the input checks, so a bad file is still a 400.
+        households.requireWriter(householdId)
+
         val id = UUID.randomUUID()
         // Household-scoped key: a stray listing of the bucket groups by family
         // rather than spilling everything into one flat namespace.
@@ -94,6 +102,12 @@ class DocumentService(
         // Encrypted BEFORE it reaches storage, so the backend never holds
         // anything readable — a misconfigured bucket leaks ciphertext.
         storage.put(storageKey, cipher.encryptBytes(householdId, contentField, input.bytes))
+        // Object storage does not join the transaction, so the file is removed
+        // whenever the transaction does not commit — not only when the insert
+        // below throws. A caller's later failure (the next document of an
+        // import, a capture's parse) or the commit itself used to roll the row
+        // back and leave the file with nothing pointing at it.
+        deleteUnlessCommitted(storageKey)
 
         try {
             repo.insert(
@@ -127,6 +141,19 @@ class DocumentService(
         )
         return repo.find(householdId, id)
             ?: throw ApiException.forbidden("Saved, but it's private to what it's attached to.")
+    }
+
+    private fun deleteUnlessCommitted(storageKey: String) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCompletion(status: Int) {
+                    if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                        runCatching { storage.delete(storageKey) }
+                    }
+                }
+            },
+        )
     }
 
     @Transactional(readOnly = true)
@@ -170,15 +197,20 @@ class DocumentService(
     }
 
     /**
-     * Redeems a ticket. Single use: the key is deleted before the bytes are
-     * read, so a token that leaks through a log or a shared screenshot is
-     * already spent.
+     * Redeems a ticket. Single use: the key is taken and deleted in one Redis
+     * command (GETDEL) before the bytes are read, so a token that leaks through
+     * a log or a shared screenshot is already spent — and of two requests
+     * racing with the same token, exactly one gets it.
+     *
+     * It used to be a GET and then a DEL. The DEL was what made the ticket
+     * single-use, it came after the check, and its answer was never looked at:
+     * two requests could both read the ticket before either deleted it, and
+     * both were served.
      */
     fun redeem(token: String): DocumentContent {
         val key = ticketKey(token)
-        val value = redis.opsForValue().get(key)
+        val value = redis.opsForValue().getAndDelete(key)
             ?: throw ApiException.notFound("That link has expired. Open the document again.")
-        redis.delete(key)
 
         val (householdId, documentId, userId) = value.split(":").map(UUID::fromString)
 

@@ -46,19 +46,60 @@ class ReminderWorker(
 
         var queued = 0
         due.forEach { reminder ->
-            recipientsFor(reminder).forEach { userId ->
-                queue(userId, reminder)
-                queued++
+            // Claimed BEFORE anything is queued, and only if it is still the
+            // reminder that was found due. The claim used to be written after
+            // the notifications, unconditionally: a second sweep (another
+            // server, a re-run) that read it as pending meanwhile queued it
+            // again, and a recurring reminder completed during the sweep —
+            // advanced to its next date and set pending — was overwritten to
+            // notified, so its next occurrence never fired.
+            if (!claim(reminder)) return@forEach
+            try {
+                recipientsFor(reminder).forEach { userId ->
+                    queue(userId, reminder)
+                    queued++
+                }
+            } catch (e: RuntimeException) {
+                // Nothing was queued that will commit, so the reminder goes back
+                // to pending for the next sweep, as it stayed before.
+                unclaim(reminder)
+                throw e
             }
-            system.update(
-                """
-                update reminders set status = 'notified', last_notified_at = now()
-                where id = :id
-                """.trimIndent(),
-                mapOf("id" to reminder.id),
-            )
         }
         log.info("reminder sweep: {} due, {} notifications queued", due.size, queued)
+    }
+
+    /**
+     * Marks the reminder notified if, and only if, it is still pending for the
+     * date it was found due for. True when this sweep won it.
+     */
+    private fun claim(reminder: DueReminder): Boolean = system.query(
+        """
+        update reminders set status = 'notified', last_notified_at = now()
+        where id = :id
+          and status = 'pending'
+          and deleted_at is null
+          and due_date = :dueDate
+          and coalesce(snoozed_until, due_date) = :firesOn
+        returning id
+        """.trimIndent(),
+        MapSqlParameterSource()
+            .addValue("id", reminder.id)
+            .addValue("dueDate", reminder.dueDate)
+            .addValue("firesOn", reminder.firesOn),
+    ) { rs, _ -> rs.getObject("id", UUID::class.java) }.isNotEmpty()
+
+    private fun unclaim(reminder: DueReminder) {
+        system.update(
+            """
+            update reminders set status = 'pending', last_notified_at = :previous
+            where id = :id and status = 'notified' and due_date = :dueDate
+            """.trimIndent(),
+            MapSqlParameterSource()
+                .addValue("id", reminder.id)
+                .addValue("dueDate", reminder.dueDate)
+                .addValue("previous", reminder.lastNotifiedAt?.let(java.sql.Timestamp::from)),
+        )
     }
 
     internal data class DueReminder(
@@ -72,12 +113,14 @@ class ReminderWorker(
         /** The date this reminder fires for: its snooze if it has one. Part of the message's identity. */
         val firesOn: java.time.LocalDate,
         val amount: java.math.BigDecimal? = null,
+        val lastNotifiedAt: java.time.Instant? = null,
     )
 
     private fun findDue(): List<DueReminder> = system.query(
         """
         select r.id, r.household_id, r.investment_id, r.liability_id,
-               r.kind, r.title, r.due_date, coalesce(r.snoozed_until, r.due_date) as fires_on, r.amount
+               r.kind, r.title, r.due_date, coalesce(r.snoozed_until, r.due_date) as fires_on, r.amount,
+               r.last_notified_at
         from reminders r
         join households h on h.id = r.household_id
         where r.deleted_at is null
@@ -100,6 +143,7 @@ class ReminderWorker(
             dueDate = rs.getDate("due_date").toLocalDate(),
             firesOn = rs.getDate("fires_on").toLocalDate(),
             amount = rs.getBigDecimal("amount"),
+            lastNotifiedAt = rs.getTimestamp("last_notified_at")?.toInstant(),
         )
     }
 

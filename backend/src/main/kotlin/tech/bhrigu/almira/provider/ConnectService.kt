@@ -229,8 +229,14 @@ class ConnectService(
         requireEnabled(DIGILOCKER, vault.mode)
         // Before the code is spent: a code that arrives with somebody else's
         // state, or none, is somebody else's DigiLocker (login CSRF), and
-        // redeeming it would import their documents into this household.
-        inTransaction { requireState(householdId, userId, state) }
+        // redeeming it would import their documents into this household. And
+        // before it is redeemed, not at the connection's insert: the code is
+        // spent at DigiLocker the moment exchange succeeds, and a member who
+        // may not connect a provider used to spend it and only then be refused.
+        inTransaction {
+            households.requireAdministrator(householdId)
+            requireState(householdId, userId, state)
+        }
         // Not idempotent: an authorisation code redeems once, so a retry after a
         // timeout would come back "rejected" and blame the person for our wait.
         val session = provider(DIGILOCKER, "exchange", idempotent = false) { vault.exchange(householdId, code) }
@@ -273,7 +279,11 @@ class ConnectService(
         val session = inTransaction {
             households.get(householdId)
             requireEnabled(DIGILOCKER, vault.mode)
-            activeSession(householdId)
+            val active = activeSession(householdId)
+            // Before anything is fetched from DigiLocker, stored or encrypted — the
+            // document insert refuses a viewer too, but only after all of that.
+            households.requireWriter(householdId)
+            active
         }
         val available = provider(DIGILOCKER, "list") { vault.list(session) }.associateBy { it.uri }
 
@@ -334,6 +344,9 @@ class ConnectService(
         inTransaction {
             households.get(householdId)
             requireEnabled(AA, aggregator.mode)
+            // Before a consent is created at the aggregator, which the rollback of a
+            // refused connection insert cannot take back.
+            households.requireAdministrator(householdId)
         }
         val request = ConsentRequest(
             purpose = "Personal finance management",
@@ -384,7 +397,11 @@ class ConnectService(
         val handle = inTransaction {
             households.get(householdId)
             requireEnabled(AA, aggregator.mode)
-            externalRef(householdId, "account_aggregator")
+            val ref = externalRef(householdId, "account_aggregator")
+            // Before the aggregator is asked for anyone's data: the investment
+            // insert refuses a viewer too, but only after the fetch.
+            households.requireWriter(householdId)
+            ref
         }
         // A provider failure is its own answer. Only the adapter's own refusal
         // (the consent is not active) means "approve it first" — reading a

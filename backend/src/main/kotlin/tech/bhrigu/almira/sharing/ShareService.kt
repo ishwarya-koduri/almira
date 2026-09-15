@@ -185,6 +185,17 @@ class ShareService(
             )
         }
 
+        // What the link would share, decided before a token exists or a link
+        // row is written. Under the sharer's own RLS either way, and in the
+        // same transaction; it needs nothing from the row.
+        val items = resolveScope(householdId, input, wholeHandbook)
+        if (items.isEmpty()) {
+            throw ApiException.badRequest(
+                "scope_empty",
+                "There's nothing to share in that slice — check the year, or pick some records.",
+            )
+        }
+
         val id = UUID.randomUUID()
         val token = newToken()
         val expiresAt = Instant.now().plus(input.expiresInDays.toLong(), ChronoUnit.DAYS)
@@ -207,13 +218,6 @@ class ShareService(
                 .addValue("member", input.memberId),
         )
 
-        val items = resolveScope(householdId, input, wholeHandbook)
-        if (items.isEmpty()) {
-            throw ApiException.badRequest(
-                "scope_empty",
-                "There's nothing to share in that slice — check the year, or pick some records.",
-            )
-        }
         items.forEach { (type, recordId) ->
             jdbc.update(
                 """
@@ -475,13 +479,19 @@ class ShareService(
         // audit row attributed to nobody is worse than none — the log has to say
         // whose link was opened. Not clamped to the share, because the write is
         // the app's own bookkeeping rather than anything the guest reaches.
+        //
+        // The check above is on a copy read a moment ago. The count re-checks
+        // expiry, revocation and the limit as it writes (V36) and counts nothing
+        // when the link no longer allows the view — a concurrent open that used
+        // the last view, or a revocation since — and that is refused here,
+        // before the audit row and before any payload is built.
         userContext.runAs(share.createdBy) {
             transactions.execute {
                 jdbc.queryForObject(
                     "select app.record_guest_view(:id, :ip, :ua)",
                     mapOf("id" to share.share.id, "ip" to ipHash, "ua" to userAgent?.take(300)),
                     Int::class.javaObjectType,
-                )
+                ) ?: throw ApiException.notFound("That link doesn't work. It may have expired or been withdrawn.")
                 audit.record(
                     householdId = share.householdId, actorUserId = share.createdBy,
                     action = "share.view", entityType = "guest_share", entityId = share.share.id,

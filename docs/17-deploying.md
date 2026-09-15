@@ -326,7 +326,11 @@ restart**, and that restart signs the tester out of every session they hold
 (audited as `auth.session_ended_not_allowlisted`); and a sign-in email that
 fails is **shown to the tester** ("We couldn't send the code") through
 `GET /api/v1/auth/otp/email/delivery/{requestId}`, which the reverse proxy must
-pass through like the other auth endpoints.
+pass through like the other auth endpoints — except when the provider refuses
+that one address, which is shown as sent (anything else would reveal who is
+listed) and logged as `ERROR SIGN-IN EMAIL REFUSED` for the operator to follow
+up. With a live email provider, `ALMIRA_ALPHA_EMAIL_DECOY_SINK` must be set
+(an address that discards mail) or the server refuses to start.
 [Doc 13 §5](13-providers-and-going-live.md) has the design and
 [Doc 18 §3](18-handover.md) the alpha sequence.
 

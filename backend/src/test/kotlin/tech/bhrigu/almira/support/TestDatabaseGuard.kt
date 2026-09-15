@@ -6,7 +6,15 @@ import org.springframework.core.env.Environment
 
 /**
  * Refuses to let any Spring application started from the test classpath reach a
- * database other than the test one — and refuses BEFORE anything connects.
+ * database other than the test one — before the application connects.
+ *
+ * What it does not cover: connections a test opens itself. Code in a
+ * @DynamicPropertySource method runs during context preparation, before this
+ * listener (AlphaAllowlistRemovalApiTest and AlphaAllowlistEndedAtStartupApiTest
+ * migrate and insert there), and DriverManager connections are not an
+ * application at all. Those all use TestInfra.dbUrl — the URL this compares
+ * against, so it could never refuse them — and the check in front of them is
+ * TestInfra's own, which runs on the first read of that URL.
  *
  * Why it exists: ProviderDisabledStartupTest once passed its database URL as
  * SpringApplicationBuilder.properties(), which are the lowest-precedence
@@ -45,7 +53,7 @@ class TestDatabaseGuard : ApplicationListener<ApplicationPreparedEvent> {
                 throw NotTheTestDatabase(
                     "Refusing to start: this application, started from the tests, would connect to " +
                         wrong.joinToString { (name, url) -> "$name=$url" } +
-                        " — not the test database (${TestInfra.dbUrl}). Nothing has connected yet. " +
+                        " — not the test database (${TestInfra.dbUrl}). The application has not connected yet. " +
                         "Pass the URL at a precedence that beats application.yml (command-line " +
                         "arguments or @DynamicPropertySource, not SpringApplicationBuilder.properties()).",
                 )

@@ -83,6 +83,24 @@ if curl -fsS -o /dev/null --max-time 3 "http://localhost:$PORT/health" 2>/dev/nu
   exit 3
 fi
 
+# The backend suite's scratch Postgres and Redis publish fixed loopback ports.
+# If something else already listens there, `docker run` fails to publish, and
+# the suite — which only knows the URL — would run against whatever that is:
+# dev-personal/README.md puts almira-personal-testpg and -testredis on exactly
+# these ports. Refused here, before anything is created. This script's own
+# containers from an earlier run are fine; they are replaced below.
+for scratch in "15432 almira-personal-verifypg" "16379 almira-personal-verifyredis"; do
+  read -r scratch_port scratch_name <<< "$scratch"
+  if (exec 3<>"/dev/tcp/127.0.0.1/$scratch_port") 2>/dev/null; then
+    if docker ps --filter "name=^${scratch_name}\$" --format '{{.Ports}}' 2>/dev/null \
+         | grep -q "127.0.0.1:${scratch_port}->"; then
+      ok "127.0.0.1:$scratch_port is this script's own $scratch_name, from an earlier run"
+    else
+      bad "something other than $scratch_name is listening on 127.0.0.1:$scratch_port — the backend suite would run against it"
+    fi
+  fi
+done
+
 if [ ${#FAILED[@]} -gt 0 ]; then
   echo; echo "${RED}${BOLD}Preflight failed. Fix the above and re-run; nothing was changed.${OFF}"
   printf '  · %s\n' "${FAILED[@]}"
@@ -204,18 +222,32 @@ step "Scratch services for the backend suite"
 # These two containers are the only things this script creates that it could
 # also remove, and it does not remove them unless you ask.
 docker rm -f almira-personal-verifypg almira-personal-verifyredis > /dev/null 2>&1 || true
-docker run -d --name almira-personal-verifypg -p 127.0.0.1:15432:5432 \
-  -e POSTGRES_DB=almira_verify -e POSTGRES_USER=almira -e POSTGRES_PASSWORD=dev \
-  postgres:16-alpine > /dev/null 2>&1 && ok "scratch Postgres on 127.0.0.1:15432" \
-  || bad "could not start the scratch Postgres"
-docker run -d --name almira-personal-verifyredis -p 127.0.0.1:16379:6379 \
-  redis:7-alpine > /dev/null 2>&1 && ok "scratch Redis on 127.0.0.1:16379" \
-  || bad "could not start the scratch Redis"
+# The backend suite runs only if these are this script's own containers, up and
+# answering: a `docker run -p` that succeeded owns the published port, and a
+# ready check inside that same container proves it is the one serving.
+SCRATCH_OK=1
+if docker run -d --name almira-personal-verifypg -p 127.0.0.1:15432:5432 \
+     -e POSTGRES_DB=almira_verify -e POSTGRES_USER=almira -e POSTGRES_PASSWORD=dev \
+     postgres:16-alpine > /dev/null 2>&1; then
+  ok "scratch Postgres on 127.0.0.1:15432"
+else
+  bad "could not start the scratch Postgres"; SCRATCH_OK=0
+fi
+if docker run -d --name almira-personal-verifyredis -p 127.0.0.1:16379:6379 \
+     redis:7-alpine > /dev/null 2>&1; then
+  ok "scratch Redis on 127.0.0.1:16379"
+else
+  bad "could not start the scratch Redis"; SCRATCH_OK=0
+fi
 
+PG_READY=0
 for _ in $(seq 1 30); do
-  docker exec almira-personal-verifypg pg_isready -U almira > /dev/null 2>&1 && break
+  docker exec almira-personal-verifypg pg_isready -U almira > /dev/null 2>&1 && { PG_READY=1; break; }
   sleep 1
 done
+[ "$PG_READY" = 1 ] || { bad "the scratch Postgres never became ready"; SCRATCH_OK=0; }
+docker exec almira-personal-verifyredis redis-cli ping 2>/dev/null | grep -q PONG \
+  || { bad "the scratch Redis does not answer"; SCRATCH_OK=0; }
 docker exec almira-personal-verifypg psql -U almira -d almira_verify -c \
   "create role almira_app login password 'app_dev_password';
    grant connect on database almira_verify to almira_app;
@@ -235,7 +267,9 @@ fi
 # -----------------------------------------------------------------------------
 step "Backend tests"
 # -----------------------------------------------------------------------------
-if ( cd "$REPO/backend" && \
+if [ "$SCRATCH_OK" != 1 ]; then
+  bad "backend suite NOT run: its scratch Postgres and Redis are not this script's own, running containers"
+elif ( cd "$REPO/backend" && \
      ALMIRA_TEST_DB_URL="jdbc:postgresql://localhost:15432/almira_verify" \
      ALMIRA_TEST_DB_OWNER_USER=almira ALMIRA_TEST_DB_OWNER_PASSWORD=dev \
      ALMIRA_TEST_DB_APP_USER=almira_app ALMIRA_TEST_DB_APP_PASSWORD=app_dev_password \

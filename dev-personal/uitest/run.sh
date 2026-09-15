@@ -47,18 +47,17 @@ done
 echo "${BOLD}Starting the bridge…${OFF}"
 pkill -f "uitest/bridge.py" 2>/dev/null || true
 # Take the port from whatever else is holding it, rather than starting a second
-# server that silently loses the bind and then answering from the wrong one.
-HOLDER=$(lsof -ti tcp:18099 2>/dev/null || true)
-if [ -n "$HOLDER" ]; then
-  echo "  ${DIM}port 18099 was held by pid(s) $HOLDER — stopping them${OFF}"
-  # shellcheck disable=SC2086
-  kill $HOLDER 2>/dev/null || true
-  sleep 1
-fi
+# server that silently loses the bind and then answering from the wrong one —
+# and confirm it is free BEFORE starting the bridge (claim-port.sh).
+"$HERE/claim-port.sh" 18099 || exit 1
 python3 "$HERE/bridge.py" > "$HERE/bridge.log" 2>&1 &
 BRIDGE=$!
 trap 'kill $BRIDGE 2>/dev/null || true' EXIT
 sleep 2
+# The bridge exits if it loses the bind; an answer on /health from anything else
+# must not count as this bridge answering.
+kill -0 "$BRIDGE" 2>/dev/null \
+  || { echo "the bridge exited (did it lose the bind?) — see $HERE/bridge.log" >&2; exit 1; }
 curl -fsS -o /dev/null "http://127.0.0.1:18099/health" \
   || { echo "the bridge did not answer on 18099 — see $HERE/bridge.log" >&2; exit 1; }
 

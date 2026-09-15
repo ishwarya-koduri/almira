@@ -189,6 +189,18 @@ class AlmiraApi(
         client.get("$baseUrl/api/v1/households/$householdId/dashboard?scope=$scope$member")
     }
 
+    // --- scores -------------------------------------------------------------
+
+    /** Show it through [Completeness.display], never as a bare number. */
+    suspend fun completeness(householdId: String): Completeness = request {
+        client.get("$baseUrl/api/v1/households/$householdId/reports/completeness")
+    }
+
+    /** Show it through [HandoverReadiness.display], never as a bare number. */
+    suspend fun readiness(householdId: String): HandoverReadiness = request {
+        client.get("$baseUrl/api/v1/households/$householdId/continuity/readiness")
+    }
+
     // --- capture ------------------------------------------------------------
 
     /**

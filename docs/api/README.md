@@ -92,15 +92,19 @@ is not `sending`:
 | `sending` | Ask again shortly. |
 | `sent` | Nothing more to say. |
 | `delayed` | Show the delayed sentence; resend is open now (`resendAfterSeconds: 0`). The code still works if it arrives. |
-| `failed` | Say **"We couldn't send the code."** with the sentence for `failure` (`otp_delivery_failed` · `otp_provider_unavailable` · `otp_service_unavailable`, the same advice as the phone codes); resend is open now. This request's code is gone; if it replaced an earlier code that is still live, that code works again, under either request id. |
+| `failed` | Say **"We couldn't send the code."** with the sentence for `failure` (`otp_provider_unavailable` · `otp_service_unavailable`, the same advice as the phone codes; keep handling `otp_delivery_failed` too, though sign-in no longer sends it — see below); resend is open now. This request's code is gone; if it replaced an earlier code that is still live, that code works again, under either request id. |
 
 Unknown or expired request ids are `404 otp_request_unknown`; treat that, a
 server without the endpoint, and any status you do not know as "stop asking".
 An address that is not allowed gets a status too, and it settles the way an
 allowed address's would with the email provider as it is — so a failing
-provider fails for both, and nothing here needs a branch either. Outcomes are
-applied on whole-second ticks from the request. What is still distinguishable,
-and when, is in [Doc 13 §5](../13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha).
+provider fails for both, and nothing here needs a branch either. Every outcome
+is applied at one moment after the request (the send timeout plus a second, six
+seconds by default), so expect `sending` for that long. When the provider
+refuses one address, the status says `sent`: only an allowed address can ever be
+refused, so reporting it would tell anyone who is listed. Every signal that was
+considered, and how each is classified, is in
+[Doc 13 §5](../13-providers-and-going-live.md#sign-in-codes-by-email--the-closed-alpha).
 
 **Taking an address off the allowlist signs that tester out.** Once a server
 runs without the address, the account's refresh token answers `401` and its
@@ -163,7 +167,11 @@ Aggregator (disabled by default: cut from v1) or the WhatsApp webhook — answer
 whatever the client offers for a provider reported as `DISABLED`. `mode: OFF`
 remains in the enum for compatibility and is never sent.
 `GET /api/v1/me/messages` lists the caller's own notifications, with `status`,
-`failure`, `attempts` and a ready-to-show `failureMessage`.
+`failure`, `attempts` and a ready-to-show `failureMessage`. `failure` is one of
+`timeout`, `unavailable`, `rejected`, `insufficient_balance`, `error` or
+`body_not_restored` (it was still queued when the server was restored from a
+backup, which does not carry message bodies, so it was never sent); show
+`failureMessage` rather than mapping these yourself.
 
 ### Step-up
 
@@ -387,8 +395,11 @@ carries the ids to fix, so offer one tap. The `score` is rounded down, so it is
 `scoreEarned` is `false` (nothing recorded that the caller can see) there is no
 number: `score` is 0 only because v1 requires an integer there. Render
 `scoreExplanation` and the `nextStep` inviting a first record, and no
-percentage — neither 0% nor 100%. (Before 2026-09-14 an empty household scored
-100 and `scoreEarned` did not exist; known-issues 19.)
+percentage — neither 0% nor 100%. Show a number only when `scoreEarned` is
+`true`. (Before 2026-09-14 an empty household scored 100 and `scoreEarned` did
+not exist; known-issues 19.) In the app, read either score only through
+`Completeness.display()` / `HandoverReadiness.display()`; `scripts/check-spec.py`
+fails otherwise.
 
 **"Not confirmed lately" on the dashboard is the "Still true?" clock.** The
 `not_verified` attention item counts the holdings `still-true` considers due

@@ -49,29 +49,12 @@ class LocalKeyManagement(props: AlmiraProperties) : KeyManagementService {
     override val kekId: String get() = kekIdentifier
 
     init {
-        val configured = props.encryption.masterKey.trim()
-        // Chosen, not defaulted: an unset ALMIRA_ENV used to count as development
-        // and silently generate a key here, in a deployment nobody had called
-        // development. Reproduced before the fix — the log said "Generated a
-        // development key-encryption key" on a run with no environment at all.
-        val isDevelopment = props.isDevelopment
-
-        val material: ByteArray = when {
-            configured.isNotEmpty() -> decode(configured)
-
-            // Outside development the key must be supplied deliberately. Falling
-            // back to a generated one would mean a deploy that "works" while
-            // protecting data with a key nobody chose, kept nowhere durable, and
-            // lost on the next container.
-            !isDevelopment -> throw IllegalArgumentException(
-                "ALMIRA_KMS_MASTER_KEY is not set. Outside development a key-encryption " +
-                    "key must be supplied before any sensitive field can be stored — " +
-                    "refusing to start rather than run without one." +
-                    if (props.environment.isBlank()) AlmiraProperties.MISSING_ENVIRONMENT_HINT else "",
-            )
-
-            else -> developmentKey(Path.of(props.encryption.devKeyFile))
-        }
+        // A configured key, or the refusal to start without one, is decided by
+        // [configuredKey] — which StartupSettingsCheck also runs before the
+        // application context exists, so a missing or mangled key is refused
+        // before the database is migrated, not after.
+        val material: ByteArray = configuredKey(props)
+            ?: developmentKey(Path.of(props.encryption.devKeyFile))
 
         require(material.size == 32) {
             "the key-encryption key must be 32 bytes (AES-256); got ${material.size}"
@@ -121,10 +104,6 @@ class LocalKeyManagement(props: AlmiraProperties) : KeyManagementService {
         return generated
     }
 
-    private fun decode(base64: String): ByteArray =
-        runCatching { Base64.getDecoder().decode(base64) }.getOrElse {
-            throw IllegalArgumentException("the key-encryption key must be base64-encoded")
-        }
 
     override fun wrap(dataKey: ByteArray): ByteArray {
         val iv = ByteArray(IV_BYTES).also(random::nextBytes)
@@ -146,9 +125,49 @@ class LocalKeyManagement(props: AlmiraProperties) : KeyManagementService {
         return cipher.doFinal(body)
     }
 
-    private companion object {
-        const val ALGORITHM = "AES/GCM/NoPadding"
-        const val IV_BYTES = 12
-        const val TAG_BITS = 128
+    companion object {
+        /**
+         * The configured key, checked; or null in development with none
+         * configured, where a per-install key is read or generated instead.
+         * Reads no file and writes none, so it can run before anything else.
+         */
+        fun configuredKey(props: AlmiraProperties): ByteArray? {
+            val configured = props.encryption.masterKey.trim()
+            // Chosen, not defaulted: an unset ALMIRA_ENV used to count as development
+            // and silently generate a key here, in a deployment nobody had called
+            // development. Reproduced before the fix — the log said "Generated a
+            // development key-encryption key" on a run with no environment at all.
+            val isDevelopment = props.isDevelopment
+
+            val material: ByteArray = when {
+                configured.isNotEmpty() -> decode(configured)
+
+                // Outside development the key must be supplied deliberately. Falling
+                // back to a generated one would mean a deploy that "works" while
+                // protecting data with a key nobody chose, kept nowhere durable, and
+                // lost on the next container.
+                !isDevelopment -> throw IllegalArgumentException(
+                    "ALMIRA_KMS_MASTER_KEY is not set. Outside development a key-encryption " +
+                        "key must be supplied before any sensitive field can be stored — " +
+                        "refusing to start rather than run without one." +
+                        if (props.environment.isBlank()) AlmiraProperties.MISSING_ENVIRONMENT_HINT else "",
+                )
+
+                else -> return null
+            }
+            require(material.size == 32) {
+                "the key-encryption key must be 32 bytes (AES-256); got ${material.size}"
+            }
+            return material
+        }
+
+        private fun decode(base64: String): ByteArray =
+            runCatching { Base64.getDecoder().decode(base64) }.getOrElse {
+                throw IllegalArgumentException("the key-encryption key must be base64-encoded")
+            }
+
+        private const val ALGORITHM = "AES/GCM/NoPadding"
+        private const val IV_BYTES = 12
+        private const val TAG_BITS = 128
     }
 }

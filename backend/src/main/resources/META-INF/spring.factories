@@ -10,4 +10,5 @@
 org.springframework.boot.env.EnvironmentPostProcessor=\
 tech.bhrigu.almira.provider.ProviderModeCheck,\
 tech.bhrigu.almira.ops.LogFormatSelector,\
-tech.bhrigu.almira.document.StorageProviderCheck
+tech.bhrigu.almira.document.StorageProviderCheck,\
+tech.bhrigu.almira.config.StartupSettingsCheck

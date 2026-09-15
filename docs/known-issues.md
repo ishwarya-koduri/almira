@@ -400,8 +400,8 @@ move. No notice is sent for this event; that remains a product suggestion.
 
 ## 15. A failed sign-in email is invisible to the tester, and costs them requests
 
-**Resolved, with named residual signals** (2026-09-13, "Allowlist and visible
-failure"). Kept as a stub.
+**Resolved** (2026-09-13, "Allowlist and visible failure"; residual signals
+classified and closed 2026-09-14, "Allowlist enumeration"). Kept as a stub.
 
 Owner's decision: a failed email send must not be silent. The email request
 still answers before sending, but the code step now polls
@@ -413,31 +413,29 @@ shows the delayed banner with resend open (`deliveryWhenAskingStops`,
 `EmailDelivery.whenAskingStops`). A failure now does what a reported phone failure
 does — challenge removed, cooldown lifted, the per-address count given back —
 so it no longer costs the tester requests. Decoys for unlisted addresses settle
-through the same code, replaying the last real send's outcome and latency, so a
-failing provider fails for both (`EmailSignInApiTest`, `EmailOtpTest`).
+through the same code, from their own provider call to the decoy sink
+(`ALMIRA_ALPHA_EMAIL_DECOY_SINK`), so a failing provider fails for both at the
+same moment (`EmailSignInApiTest`, `EmailOtpTest`).
 
-**What is still distinguishable** — the full list, with conditions, is in
-docs/13 §5:
+**The residual signals, classified** (2026-09-14, "Allowlist enumeration"). The
+owner's rule: a signal that only confirms an address someone already has is
+acceptable; one that lets someone discover addresses from a guessed list is
+not. Every signal that was listed here — a provider's **rejection** of one
+listed address, the window after a **provider state change**, **latency on a
+tick boundary**, a **fresh Redis** — and one that was not (a probe of a listed
+address rewrote what the next decoy reported) was not acceptable, and is
+closed: decoys make their own provider call, every outcome is applied at one
+moment after the request, and a rejection on the sign-in path is applied as
+sent in every probeable respect. The cost, stated plainly in docs/13 §5
+(Signal 1): a tester whose address the provider refuses is not told on screen;
+the operator gets `ERROR SIGN-IN EMAIL REFUSED` with the masked address.
 
-1. A synchronous **rejection** of one address is reported for a listed address
-   and never for an unlisted one: "couldn't deliver to that address" means
-   listed and undeliverable.
-2. After a **change in the provider's state**, decoys report the old state
-   until a listed address is next sent a code — however long that is. In that
-   window each probe is a clean listed/unlisted bit: a prober who knows of an
-   outage (a public status page) can rule out unlisted candidates and confirm
-   one listed address per provider transition; that confirming probe closes the
-   window.
-3. A real send whose latency **straddles a whole second** can settle one tick
-   away from a decoy.
-4. With **no real send in the last day** (or a fresh Redis), decoys assume a
-   healthy provider.
-
-**Risk if left** Each needs either a listed, undeliverable address or probing
-inside a provider transition (at most one listed address confirmed per
-transition), and every probe spends the prober's per-network allowance. The operator alerts still matter: the WARN
-`one-time code by email not confirmed sent` and the ERROR
-`PROVIDER ACCOUNT PROBLEM`.
+**Risk if left** None known from outside. Two conditions for the live email
+adapter, untestable until it exists (docs/13 §5, item 7): anything about one
+recipient must be classified `rejected`, never `unavailable`, and the sink must
+not be throttled per recipient. Each decoy is a billed send, bounded by the
+per-network cap. Operator alerts: WARN `one-time code by email not confirmed
+sent`, ERROR `PROVIDER ACCOUNT PROBLEM`, ERROR `SIGN-IN EMAIL REFUSED`.
 
 ---
 
@@ -582,14 +580,27 @@ Owner's decision: completeness never shows 100 while any gap exists.
 - **Nothing recorded is no number.** The response keeps `score` (v1 froze it as
   a required integer, and `OpenApiContractTest` refuses un-requiring it), sets it
   to 0, and adds `scoreEarned: false` and a `scoreExplanation` sentence. A client
-  shows the sentence and no percentage when `scoreEarned` is false. The web card
-  does (`static/app/completeness.js`, `scripts/check-completeness.js`). Before,
-  `score` was 100.
+  shows the sentence and no percentage unless `scoreEarned` is true. The web card
+  does (`static/app/completeness.js`, `scripts/check-completeness.js`); a
+  response without `scoreEarned` is no number there either, since the web client
+  is served by the server it talks to. Before, `score` was 100.
+- **Both clients.** The native app shows neither score yet. Its models
+  (`app/shared/.../api/Models.kt`: `Completeness`, `HandoverReadiness`) carry
+  `scoreEarned`/`scoreExplanation` now, with `scoreEarned` required, and keep
+  `score` private: a screen can only ask `display()`, which is a percentage or
+  the sentence (`ScoreDisplayTest`). `scripts/check-spec.py` ("SCORES") fails if
+  any web module other than `completeness.js`/`readiness.js`, or any native
+  source outside `Models.kt`, reads a `score`, or if those places stop reading
+  `scoreEarned` / the null first. Checked in a running server: a brand-new
+  household's Reports and For my family cards show the sentence and no "%".
 - **Everything done is 100**, with `scoreEarned: true`.
 
 Watched failing: rounding half up again (unit and API tests get 100 for one gap
 in a thousand), returning 100 for nothing recorded (three tests), and the web
-helper ignoring `scoreEarned` (it shows "0%").
+helper ignoring `scoreEarned` (it shows "0%"); the guard with a screen reading
+`score` directly (web and native), with the readiness null test removed, and
+with `Completeness.score` made public; `ScoreDisplayTest` with `display()`
+ignoring `scoreEarned` (it gets `Percent(0%)`) and with a default for it.
 
 **What is left, and deliberately not changed:**
 
@@ -726,7 +737,37 @@ gives back are exactly as before, and a failed request cannot reset or add
 guesses. Decoys go through the same scripts, so a decoy's failed resend falls
 back the way a real one does. Same for phone and email, sign-in and step-up.
 Proven by four tests in `OtpServiceTest` and three in `EmailOtpTest` (the
-`known-issues 22` sections), each watched failing.
+`known-issues 22` sections), each watched failing, and by the attempt-cap tests
+below.
+
+**The attempt cap on a restored code** (2026-09-14, "Restored-code attempt
+cap"; treated as security). Tests written first against de68d05 found a hole:
+a wrong code typed while the resend was in flight was counted only against the
+new challenge's own count, so with *k* attempts used on the earlier code the
+in-flight challenge still took the full `max-attempts` wrong codes — up to
+`2 × max-attempts − 1` judged per counted send, and the per-number count of a
+failed resend is given back. `FALL_BACK` did refuse to restore at the cap, but
+nothing proved it: disabling that check left every test green. Now
+`RECORD_MISS` counts the set-aside challenge's attempts too and removes both at
+the cap, and `CONSUME` refuses a challenge at its cap. With the shared count
+the `FALL_BACK` and `CONSUME` checks are no longer reachable through the API;
+they stay for a miss recorded without the shared count (an instance on the old
+script during a rolling deploy), and tests set that state in Redis directly so
+each check is proven on its own. Proven for phone and email, each watched
+failing against the unfixed code and against mutations (attempts reset on
+restore, the shared count removed, the `FALL_BACK` check disabled, the
+`CONSUME` check disabled, a fresh lifetime on restore, the count given back to
+zero, restored misses not counted for the network): attempts kept for every
+outright failure and every *k*; a
+guess-and-failing-resend loop run six times past the cap judges at most
+`max-attempts` wrong codes and then refuses the right one; a locked code is not
+brought back; no restore adds lifetime; parallel wrong codes racing a failing
+resend stay within the cap; the network wrong-code allowance and the per-number
+and per-network request allowances count across restores.
+
+One consequence: while a resend is in flight, its `attemptsRemaining` counts
+the earlier code's wrong codes too, so someone who typed wrong codes and then
+pressed resend has fewer tries at the new code until its send settles.
 
 **What is left, narrowed:**
 
@@ -1984,3 +2025,68 @@ rather than "try again later" (`api.js isUnreachable` counts 5xx as unreachable;
 `draft-ui.js isOffline` does not); such a save is now kept as a draft instead of
 being lost, but it is not resent on its own. Custom field definitions and the
 scoped member list are not part of a draft and are chosen again.
+
+---
+
+## 68. A guard runs before the action it guards
+
+**The rule** (owner, 2026-09-14): a check that refuses something runs *before*
+the action it exists to prevent — not after it, relying on a rollback, a
+clean-up or a message to undo it. And its test proves **the action did not
+happen** when the check refuses, not merely that the check refused; it is
+watched failing with the check moved back after the action.
+
+Why it is a rule and not a fix: it was broken twice before anyone swept for it.
+6b's teardown enforced its limit after the fact, and a test checked its
+database URL only after Flyway had migrated the wrong database
+(TestDatabaseGuard, `41aa94d`). A sweep then found the class elsewhere. A
+rollback undoes rows; it does not undo a migration already committed, a data
+key cached in memory, a file in storage, a provider call, a message queued, or
+a process already serving.
+
+**Moved in front** (each commit names its watched-failing run):
+
+| Guard | Used to run after | Now | Commit |
+|---|---|---|---|
+| Sign-in channels, key-encryption key, JWT secret, OTP and provider bounds | Flyway migrate (and, in development, writing a new key file) | `StartupSettingsCheck`, an EnvironmentPostProcessor, before any context | `c377840` |
+| Per-network OTP request cap | the per-number counter's INCR | network cap first | `4e69e8a` |
+| Write permission on document upload (and capture, DigiLocker import) | provisioning/caching a data key and `storage.put` | `HouseholdService.requireWriter` (app.can_write_household) first | `9bc6396` |
+| A cached data key matches the stored one | encrypting under it | checked on every use | `a9a71ca` |
+| Creator can see the account/loan; holder, owner and role validation on edits; a holding's values before its custom fields; a contact's link targets; a share's scope; write permission before encrypting an account number | the inserts/updates, audit and read-back ("Saved, but…") | before any write | `0fb4fd5` |
+| Admin check for DigiLocker complete and AA consent; writer check for both imports | redeeming the code, creating the consent, list/fetch | before the provider call | `d6dca3f` |
+| Removing a stored document file | only an insert failure | any rollback (afterCompletion) | `a274bd9` |
+| Download ticket single use | GET, then an unchecked DEL | GETDEL | `9bdf10b` |
+| Guest link expiry, revocation, view limit | a stale read; the count was unconditional | the count carries the check (V36) | `3dcc6d1` |
+| Reminder "notified" claim | queueing the notifications, unconditional | conditional claim first, released if queueing throws | `5a52174` |
+| Test database is not `almira` | (the check was in front, but `?sslmode=` slipped past it) | reads the database name | `ac118c1` |
+| up.sh runtime role does not bypass RLS | the app starting and serving | SQL check before `up -d app` | `784aa65` |
+| uitest bridge port is free | starting the bridge | `claim-port.sh` before it | `3bb4ace` |
+| verify.sh scratch services are its own | the backend suite | preflight, and the suite gated on them | `57df7e6` |
+
+**Still open:**
+
+- **Flyway itself does not depend on the checks** (infra session:
+  `config/DatabaseConfig.kt`). `StartupSettingsCheck` covers every
+  configuration refusal a bean makes today; a new bean constructor refusal
+  added later is behind Flyway again unless it is added there too.
+  `PageChecksumCheck` and `KeyEncryptionKeyCheck` are the infra session's to
+  judge.
+- **A setting supplied by `@DynamicPropertySource` is invisible to
+  `StartupSettingsCheck`** — it arrives after the check. The beans still check
+  it. Tests that switch email on must supply the allowlist the same way
+  (`OtpCodeNeverLeaksTest`).
+- **The application does not refuse, at startup, a runtime role that bypasses
+  RLS** — only dev-personal/up.sh does, and `/health` reports it afterwards.
+  `scripts/bootstrap-prod-db.sh` still tells the operator to start the
+  application and then check. Infra session.
+- **The reminder sweep is still one transaction over two pools.** The claim is
+  in front and released on a throw, but a throw on reminder N still rolls back
+  the queued rows of reminders 1…N−1, whose claims have committed. Not a check
+  after an action, so not moved here.
+- **A guest view is counted before its payload is built**, so a payload that
+  fails still uses a view. Deliberate in the code ("accounting first"); a
+  design decision, not reordered here.
+- **verify.sh's preflight port check was not watched failing** (the harness
+  covers the suite gate), and verify.sh still `docker rm -f`s its own two
+  containers by name at the start of a run, which its header says it never
+  does.

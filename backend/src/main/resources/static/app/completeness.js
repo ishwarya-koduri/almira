@@ -6,12 +6,16 @@
 
 /**
  * The percentage to show, or null when the records have not earned one.
- * `scoreEarned: false` means no number, whatever `score` holds: v1 keeps `score`
- * a required integer, so the server sends 0 there and says "no number" in
- * `scoreEarned`. A server from before that field existed sent only `score`,
- * and is shown as it was.
+ * A number only when `scoreEarned` is `true`: v1 keeps `score` a required
+ * integer, so for a household with nothing recorded the server sends 0 there
+ * and says "no number" in `scoreEarned`. Anything else — `false`, or a response
+ * without the field — is no number. This client is served by the server it
+ * talks to, so there is no older server to be generous to, and a bare 0% (or
+ * the 100% servers before 2026-09-14 sent for nothing recorded) is the one
+ * thing this card must never show. `scripts/check-spec.py` fails if any client
+ * code reads a completeness score without going through this.
  */
 export function completenessPercent(report) {
-  if (!report || report.scoreEarned === false || typeof report.score !== "number") return null;
+  if (!report || report.scoreEarned !== true || typeof report.score !== "number") return null;
   return `${report.score}%`;
 }

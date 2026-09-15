@@ -217,6 +217,7 @@ def main() -> None:
     check_recovery(doc, web)
     check_plaintext_location_retired()
     check_privacy_notice()
+    check_scores_are_earned()
 
     print()
     print(f"{CHECKS} checks")
@@ -445,6 +446,121 @@ def check_privacy_notice() -> None:
     want("the notice is reachable from Settings and from onboarding",
          "privacyLink()" in code_only(read("backend/src/main/resources/static/app/screens/settings.js"))
          and "privacyLink()" in code_only(read("backend/src/main/resources/static/app/screens/onboarding.js")))
+
+
+# ---------------------------------------------------------------------------
+# docs/18 §6, known-issues 19, docs/22 §1: never show a number the data did not
+# earn. A brand-new household's completeness is `score: 0, scoreEarned: false`,
+# and its readiness has no `score` at all. A client that reads `score` without
+# reading `scoreEarned` (or the null) tells a new user "0%". So in either client,
+# a completeness or readiness score may be read in exactly one place each, and
+# that place must read `scoreEarned` / test for the null first.
+# ---------------------------------------------------------------------------
+
+# A read of a field called `score`: property access, index by name, or a
+# destructuring that names it.
+SCORE_READ_JS = re.compile(
+    r"\.score\b(?!\w)|\[\s*[\"'`]score[\"'`]\s*\]|(?:const|let|var|\()\s*\{[^}]*\bscore\b[^}]*\}")
+SCORE_READ_KT = re.compile(r"\.score\b|[\"]score[\"]|\bscore\s*=|\$\{?score\b")
+
+WEB_APP = "backend/src/main/resources/static/app"
+WEB_SCORE_READERS = {f"{WEB_APP}/completeness.js", f"{WEB_APP}/readiness.js"}
+NATIVE_MODELS = "app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/api/Models.kt"
+
+
+def native_client_sources() -> list[Path]:
+    """Everything that ships in the app: shared, androidApp and iosApp, not tests."""
+    found = []
+    for base in ("app/shared/src", "app/androidApp/src", "app/iosApp"):
+        for path in sorted((ROOT / base).rglob("*")):
+            if path.suffix not in (".kt", ".swift") or "/build/" in str(path):
+                continue
+            relative = str(path.relative_to(ROOT))
+            if "Test" in relative.split("/src/")[-1].split("/")[0] or "UITests" in relative:
+                continue
+            found.append(path)
+    return found
+
+
+def check_scores_are_earned() -> None:
+    print()
+    print("SCORES — no client shows a completeness or readiness number the data did not earn")
+
+    # --- web ---------------------------------------------------------------
+    readers = []
+    for path in sorted((ROOT / WEB_APP).rglob("*.js")):
+        relative = str(path.relative_to(ROOT))
+        if SCORE_READ_JS.search(code_only(path.read_text())):
+            readers.append(relative)
+    stray = [r for r in readers if r not in WEB_SCORE_READERS]
+    want("web: only completeness.js and readiness.js read a score",
+         not stray, "read `score` through completenessPercent or readinessCard instead: " + ", ".join(stray))
+
+    want("web: the score-read pattern still sees the two places that are allowed to read it",
+         set(readers) == WEB_SCORE_READERS, f"saw {readers}")
+
+    completeness = code_only(read(f"{WEB_APP}/completeness.js"))
+    want("web: completenessPercent gives a number only when scoreEarned is true",
+         "report.scoreEarned !== true" in completeness
+         and completeness.index("report.scoreEarned !== true") < completeness.index("${report.score}%"))
+
+    readiness = code_only(read(f"{WEB_APP}/readiness.js"))
+    tested = 'const hasScore = typeof readiness.score === "number";'
+    shown = "${readiness.score}%"
+    want("web: the readiness card shows a number only when score is not null",
+         tested in readiness and shown in readiness
+         and readiness.count("readiness.score") == 2
+         and readiness.index(tested) < readiness.index("hasScore\n    ?") < readiness.index(shown))
+
+    for path in sorted((ROOT / WEB_APP).rglob("*.js")):
+        relative = str(path.relative_to(ROOT))
+        source = code_only(path.read_text())
+        if "api.completeness(" in source:
+            want(f"web: {relative} shows completeness through completenessPercent",
+                 "completenessPercent(" in source)
+        if "api.readiness(" in source:
+            want(f"web: {relative} fetching readiness is readiness.js, which draws the card",
+                 relative == f"{WEB_APP}/readiness.js")
+
+    # --- native ------------------------------------------------------------
+    stray = []
+    for path in native_client_sources():
+        relative = str(path.relative_to(ROOT))
+        if relative == NATIVE_MODELS:
+            continue
+        if SCORE_READ_KT.search(code_only(path.read_text())):
+            stray.append(relative)
+    want("native: nothing outside Models.kt reads a score; screens use display()",
+         not stray, "use Completeness.display() / HandoverReadiness.display(): " + ", ".join(stray))
+
+    models = code_only(read(NATIVE_MODELS))
+    want("native: the score-read pattern still sees Models.kt reading it",
+         SCORE_READ_KT.search(models) is not None and len(native_client_sources()) > 20)
+
+    def body(name: str) -> str:
+        start = models.find(f"data class {name}(")
+        if start < 0:
+            return ""
+        end = models.find("\n}\n", start)
+        return models[start:end if end > 0 else len(models)]
+
+    completeness_kt = body("Completeness")
+    want("native: Completeness carries scoreEarned (required) and scoreExplanation",
+         "\n    val scoreEarned: Boolean,\n" in completeness_kt
+         and "val scoreExplanation: String? = null," in completeness_kt)
+    want("native: Completeness.score is private, so a screen cannot show it bare",
+         "\n    private val score: Int,\n" in completeness_kt
+         and completeness_kt.count("$score%") == 1)
+    want("native: Completeness.display() gives a number only when scoreEarned",
+         re.search(r"if \(scoreEarned\) \{\s*ScoreDisplay\.Percent\(\"\$score%\"\)", completeness_kt) is not None)
+
+    readiness_kt = body("HandoverReadiness")
+    want("native: HandoverReadiness.score is private and nullable",
+         "\n    private val score: Int? = null,\n" in readiness_kt
+         and "val scoreExplanation: String," in readiness_kt)
+    want("native: HandoverReadiness.display() gives a number only when score is not null",
+         'score?.let { ScoreDisplay.Percent("$it%") } ?: ScoreDisplay.NoScore(scoreExplanation)' in readiness_kt
+         and readiness_kt.count("score") - readiness_kt.count("scoreExplanation") == 2)
 
 
 if __name__ == "__main__":

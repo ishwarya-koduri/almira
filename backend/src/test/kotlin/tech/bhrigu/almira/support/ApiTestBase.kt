@@ -27,7 +27,21 @@ import java.util.concurrent.atomic.AtomicLong
  * A test that bypasses the filter chain, or that shares a thread differently
  * from the real server, would prove nothing about the guarantee that matters.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    // Here and not in @DynamicPropertySource: StartupSettingsCheck refuses a
+    // non-development environment with the published JWT secret and no
+    // key-encryption key, and it runs before the context exists — where
+    // @DynamicPropertySource values are not yet visible, and these are.
+    //
+    // Chosen explicitly: the test databases are created without page
+    // checksums, and PageChecksumCheck relaxes only on a development
+    // environment that was set, never on one that was defaulted.
+    properties = [
+        "ALMIRA_ENV=development",
+        "almira.jwt.secret=test-only-secret-that-is-long-enough-for-hmac256-signing",
+    ],
+)
 abstract class ApiTestBase {
 
     @LocalServerPort protected var port: Int = 0
@@ -223,10 +237,6 @@ abstract class ApiTestBase {
             registry.add("spring.data.redis.host") { TestInfra.redisHost }
             registry.add("spring.data.redis.port") { TestInfra.redisPort }
             registry.add("almira.otp.provider") { "log" }
-            // Chosen explicitly: the test databases are created without page
-            // checksums, and PageChecksumCheck relaxes only on a development
-            // environment that was set, never on one that was defaulted.
-            registry.add("ALMIRA_ENV") { "development" }
             // Every test signs in from 127.0.0.1, so the per-IP hourly limit
             // (a real and wanted control) would throttle the suite itself.
             // Raised here, and exercised deliberately in auth/OtpServiceTest
@@ -243,6 +253,11 @@ abstract class ApiTestBase {
             // explicitly (and a queueing request still wakes its own worker), so the
             // poll is pushed out of the way rather than raced.
             registry.add("almira.outbox.poll-interval") { "PT1H" }
+            // Every cached context would otherwise poll the one test database and
+            // race the outbox tests' own workers; tests call drain() themselves.
+            // A class that needs the real background path sets
+            // almira.test.outbox-background=true with @TestPropertySource.
+            registry.add("almira.outbox.background") { "\${almira.test.outbox-background:false}" }
             // Retries really happen in the full-stack provider failure tests, and
             // the default half-second backoff would make each one sit through
             // it. The backoff itself is asserted in provider/ProviderCallsTest.

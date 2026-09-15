@@ -112,6 +112,13 @@ class EstateService(
         val id = input.id ?: UUID.randomUUID()
         contacts.find(householdId, id)?.let { return it }
 
+        // The far end of every link is checked before the contact is written.
+        // link() checks it again, because it is its own endpoint too.
+        input.links.forEach {
+            requireEntityType(it.entityType)
+            if (!entityVisible(householdId, it.entityType, it.entityId)) throw ApiException.notFound()
+        }
+
         contacts.insert(
             id = id, householdId = householdId, kind = input.kind, name = input.name.trim(),
             organisation = input.organisation, phone = input.phone, email = input.email,
@@ -202,14 +209,18 @@ class EstateService(
         val id = input.id ?: UUID.randomUUID()
         estates.find(householdId, id)?.let { return it }
 
+        // Validated before the document is written, not after.
+        val roles = input.roles.map(::validateRole)
+        val beneficiaries = input.beneficiaries.map(::validateBeneficiary)
+
         estates.insert(
             id = id, householdId = householdId, memberId = input.memberId, kind = input.kind,
             title = input.title.trim(), executedOn = input.executedOn,
             registered = input.registered, status = input.status, notes = input.notes,
             documentId = input.documentId, visibility = input.visibility, createdBy = userId,
         )
-        estates.replaceRoles(id, input.roles.map(::validateRole))
-        estates.replaceBeneficiaries(id, input.beneficiaries.map(::validateBeneficiary))
+        estates.replaceRoles(id, roles)
+        estates.replaceBeneficiaries(id, beneficiaries)
 
         audit.record(
             householdId = householdId, actorUserId = userId, action = "estate.create",
@@ -238,6 +249,9 @@ class EstateService(
         val current = getDocument(householdId, id)
         input.visibility?.let(::requireVisibility)
         input.status?.let(::requireStatus)
+        // Validated before the document is written, not after.
+        val roles = input.roles?.map(::validateRole)
+        val beneficiaries = input.beneficiaries?.map(::validateBeneficiary)
 
         val updated = estates.update(
             id = id, version = input.version, title = input.title?.trim(),
@@ -253,8 +267,8 @@ class EstateService(
             }
             throw staleWrite(current.version)
         }
-        input.roles?.let { estates.replaceRoles(id, it.map(::validateRole)) }
-        input.beneficiaries?.let { estates.replaceBeneficiaries(id, it.map(::validateBeneficiary)) }
+        roles?.let { estates.replaceRoles(id, it) }
+        beneficiaries?.let { estates.replaceBeneficiaries(id, it) }
 
         audit.record(
             householdId = householdId, actorUserId = userId, action = "estate.update",

@@ -89,6 +89,19 @@ data class OutboxDrainResult(
  * [DeliveryDirectory] — their number, their address, their devices — and words
  * the message with [MessageTemplates], which adds why it came. A live channel
  * with no address for the person records `skipped`, `no_recipient`.
+ *
+ * **A body is only ever read to send it, and only kept until the outcome is.**
+ * `outbound_message_bodies` is read by [claim] and nothing else, and a row's body
+ * is deleted in the same statement that records the row as finished — never in a
+ * second statement a stopped worker could fall between. Anything left over anyway
+ * (a row finished before that was so) is swept at the start of every claim.
+ *
+ * **A backup does not carry bodies** (docs/17 §6): the table's data is left out
+ * of the dump, the same way Redis is. So after a restore a queued row can have no
+ * body. It cannot be sent — there are no words, and an empty or stand-in message
+ * would be worse than none — and it will never get one, so it is not left queued
+ * either: it is recorded `failed` with `failure = body_not_restored`, once, with a
+ * WARN naming only the message id and the channel.
  */
 @Component
 class NotificationOutbox(
@@ -120,17 +133,25 @@ class NotificationOutbox(
      */
     @Volatile internal var beforeSendStarts: ((UUID) -> Unit)? = null
 
+    /**
+     * Test seam: runs right after a send's outcome is written. A test throws from it to be the
+     * worker that stopped straight after recording, and looks for a body left behind.
+     */
+    @Volatile internal var afterRecord: ((UUID) -> Unit)? = null
+
     /** The poll: picks up whatever a wake missed, and rows left by a stopped worker. */
     @Scheduled(
         initialDelayString = "\${almira.outbox.poll-interval:PT2S}",
         fixedDelayString = "\${almira.outbox.poll-interval:PT2S}",
     )
     fun scheduled() {
+        if (!props.outbox.background) return
         runCatching { drain() }.onFailure { log.warn("notification outbox drain failed: {}", it.javaClass.simpleName) }
     }
 
     /** Asks for a drain soon, on the worker's own thread. Many wakes while one is pending are one drain. */
     fun wake() {
+        if (!props.outbox.background) return
         if (!wakePending.compareAndSet(false, true)) return
         runCatching {
             waker.execute {
@@ -186,6 +207,15 @@ class NotificationOutbox(
      * A claim does not mark a row as started; [send] does that for each row just before its own call.
      */
     private fun claim(): Pair<OutboxDrainResult, List<Claimed>> = transactions.execute {
+        // A body outlives its message only if something went wrong; it goes now, not never.
+        jdbc.update(
+            """
+            delete from outbound_message_bodies b
+             using outbound_messages o
+             where o.id = b.message_id and o.status <> 'queued'
+            """.trimIndent(),
+            emptyMap<String, Any>(),
+        )
         val candidates = jdbc.query(
             """
             select o.id, o.household_id, o.user_id, o.channel, o.template, o.title, o.idempotency_key,
@@ -229,8 +259,9 @@ class NotificationOutbox(
             val stopped = if (row.started) null else stoppedFor(row)
             // A row already started is past pacing (and past the stops above): it was allowed once,
             // and whatever happens to it now is the idempotency rule's, not the calendar's.
-            // A stopped row is not paced either, so it cannot take the day's one message.
-            val decision = if (sender == null || row.started || stopped != null) {
+            // A stopped row is not paced either, so it cannot take the day's one message; nor is a
+            // row whose body a restore did not bring back, which is failed below, once, not deferred.
+            val decision = if (sender == null || row.started || stopped != null || row.body == null) {
                 DeliveryPacing.Decision.Send
             } else {
                 pacing.decide(
@@ -275,7 +306,14 @@ class NotificationOutbox(
                     finished += OutboxDrainResult(unconfirmed = 1)
                 }
                 row.body == null -> {
-                    finishUnsent(row.id, "failed", RecordingNotifier.UNCLASSIFIED, addAttempt = false)
+                    // Its body was not in the backup this database was restored from. Never sent
+                    // without one, and never left queued waiting for one that cannot come.
+                    finishUnsent(row.id, "failed", BODY_NOT_RESTORED, addAttempt = false)
+                    log.warn(
+                        "outbox: a queued {} message has no body (a restore does not bring bodies back); " +
+                            "marked failed as {}, not sent (message {})",
+                        row.channel, BODY_NOT_RESTORED, row.id,
+                    )
                     finished += OutboxDrainResult(failed = 1)
                 }
                 else -> {
@@ -366,7 +404,7 @@ class NotificationOutbox(
             failure = RecordingNotifier.UNCLASSIFIED
         }
         afterSendBeforeRecord?.invoke(row.id)
-        val recorded = jdbc.update(
+        val recorded = finishAndDropBody(
             """
             update outbound_messages
                set status = :status, provider = :provider, failure = :failure,
@@ -377,7 +415,10 @@ class NotificationOutbox(
                 .addValue("status", status).addValue("provider", provider).addValue("failure", failure)
                 .addValue("attempts", attempts).addValue("id", row.id).addValue("token", row.token),
         )
-        if (recorded == 1) dropBody(row.id)
+        afterRecord?.invoke(row.id)
+        // Not ours any more: a worker that took the row over has recorded (or will record) its outcome.
+        // This worker's send is not written down, and not counted, a second time.
+        if (recorded != 1) return OutboxDrainResult()
         val resent = if (row.resend) 1 else 0
         return when (status) {
             "sent" -> OutboxDrainResult(sent = 1, resent = resent)
@@ -448,10 +489,12 @@ class NotificationOutbox(
     )
 
     private fun finishUnsent(id: UUID, status: String, failure: String?, addAttempt: Boolean) {
-        jdbc.update(
+        finishAndDropBody(
             """
             update outbound_messages
                set status = :status, failure = :failure, finished_at = now(), claimed_until = null,
+                   -- finished here, so no earlier claim on it can still record an outcome over this one
+                   claim_token = null,
                    attempts = attempts + case when :add then 1 else 0 end
              where id = :id
             """.trimIndent(),
@@ -459,13 +502,24 @@ class NotificationOutbox(
                 .addValue("status", status).addValue("failure", failure)
                 .addValue("add", addAttempt).addValue("id", id),
         )
-        dropBody(id)
     }
 
-    /** The body is only kept while the message is on its way. */
-    private fun dropBody(id: UUID) {
-        jdbc.update("delete from outbound_message_bodies where message_id = :id", mapOf("id" to id))
-    }
+    /**
+     * Runs [update] — an `update outbound_messages … where id = :id …` — and deletes the body of
+     * the row it finished, in one statement. The body is only kept while the message is on its way,
+     * and there is no moment between "recorded" and "body gone" for a stopped worker to leave one
+     * behind. Returns how many rows the update touched; a body goes only with a row that did.
+     */
+    private fun finishAndDropBody(update: String, params: MapSqlParameterSource): Int =
+        jdbc.queryForObject(
+            """
+            with finished as ($update returning id),
+                 dropped as (delete from outbound_message_bodies where message_id in (select id from finished))
+            select count(*) from finished
+            """.trimIndent(),
+            params,
+            Int::class.java,
+        )!!
 
     /**
      * Longer than the provider's whole retry budget. It is set at claim time and
@@ -496,12 +550,14 @@ class NotificationOutbox(
         waker.shutdownNow()
     }
 
-    private companion object {
-        const val MAX_ROUNDS = 100
+    companion object {
+        /** A queued message whose body a restore did not bring back. Stored in outbound_messages.failure. */
+        const val BODY_NOT_RESTORED = "body_not_restored"
+        private const val MAX_ROUNDS = 100
         /** A message that belongs to no household is paced in India's time. */
-        val DEFAULT_ZONE: java.time.ZoneId = java.time.ZoneId.of("Asia/Kolkata")
-        val LEASE_MARGIN: Duration = Duration.ofMinutes(1)
-        const val NOTIFICATIONS_STOPPED = "notifications_stopped"
-        const val CONSENT_WITHDRAWN = "consent_withdrawn"
+        private val DEFAULT_ZONE: java.time.ZoneId = java.time.ZoneId.of("Asia/Kolkata")
+        private val LEASE_MARGIN: Duration = Duration.ofMinutes(1)
+        private const val NOTIFICATIONS_STOPPED = "notifications_stopped"
+        private const val CONSENT_WITHDRAWN = "consent_withdrawn"
     }
 }

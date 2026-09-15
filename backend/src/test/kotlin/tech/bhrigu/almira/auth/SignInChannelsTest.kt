@@ -30,11 +30,12 @@ class SignInChannelsTest {
         channels: List<String>,
         allowlist: List<String> = emptyList(),
         emailMode: String = "sandbox",
+        decoySink: String = "",
     ) = AlmiraProperties(
         db = AlmiraProperties.Db("jdbc:postgresql://x/y", "u", "p", "u2", "p2"),
         jwt = AlmiraProperties.Jwt("test-only-secret-that-is-long-enough-for-hmac256-signing"),
         otp = AlmiraProperties.Otp(),
-        auth = AlmiraProperties.Auth(channels, allowlist),
+        auth = AlmiraProperties.Auth(channels, allowlist, decoySink),
         providers = AlmiraProperties.Providers(email = AlmiraProperties.Provider(mode = emailMode)),
     )
 
@@ -59,6 +60,7 @@ class SignInChannelsTest {
         val auth = packaged()
         assertThat(auth.signInChannels).containsExactly("phone")
         assertThat(auth.emailAllowlist).isEmpty()
+        assertThat(auth.emailDecoySink).isEmpty()
         assertThat(SignInChannels(props(auth.signInChannels, auth.emailAllowlist)).enabled)
             .containsExactly(OtpChannel.PHONE)
     }
@@ -67,7 +69,7 @@ class SignInChannelsTest {
     fun `both variables are named in application yml and in the production example`() {
         val yml = ClassPathResource("application.yml").inputStream.readAllBytes().decodeToString()
         val example = Files.readString(Path.of("..", ".env.production.example"))
-        listOf("ALMIRA_SIGN_IN_CHANNELS", "ALMIRA_ALPHA_EMAIL_ALLOWLIST").forEach {
+        listOf("ALMIRA_SIGN_IN_CHANNELS", "ALMIRA_ALPHA_EMAIL_ALLOWLIST", "ALMIRA_ALPHA_EMAIL_DECOY_SINK").forEach {
             assertThat(yml).describedAs("application.yml").contains("\${$it:")
             assertThat(example).describedAs(".env.production.example").contains("# $it=")
         }
@@ -119,11 +121,36 @@ class SignInChannelsTest {
         // Email disabled on its own is a normal state: a phone-only server starts.
         assertThat(SignInChannels(props(listOf("phone"), emailMode = "disabled")).enabled)
             .containsExactly(OtpChannel.PHONE)
-        // And email sign-in with the provider on starts, sandbox or live.
+        // And email sign-in with the provider on starts, sandbox or live (live with its decoy sink).
         listOf("sandbox", "live").forEach { mode ->
-            assertThat(SignInChannels(props(listOf("email"), listOf("a@b.co"), emailMode = mode)).enabled)
+            assertThat(SignInChannels(props(listOf("email"), listOf("a@b.co"), emailMode = mode, decoySink = "sink@b.co")).enabled)
                 .containsExactly(OtpChannel.EMAIL)
         }
+    }
+
+    /**
+     * An unlisted address's email goes to the decoy sink, so that its answer
+     * follows the provider as it is at that moment (docs/13 §5, Signal 2). A
+     * live provider with nowhere to send decoys would leave them guessing.
+     */
+    @Test
+    fun `email sign-in on a live provider without a decoy sink refuses, naming the variable`() {
+        listOf("", "  ").forEach { sink ->
+            assertThatThrownBy { SignInChannels(props(listOf("email"), listOf("a@b.co"), emailMode = "live", decoySink = sink)) }
+                .isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining("ALMIRA_ALPHA_EMAIL_DECOY_SINK")
+        }
+        // The sandbox delivers nothing, so it has a placeholder; phone alone needs nothing.
+        SignInChannels(props(listOf("email"), listOf("a@b.co"), emailMode = "sandbox"))
+        SignInChannels(props(listOf("phone"), emailMode = "live"))
+    }
+
+    @Test
+    fun `a decoy sink that is not an address, or is a tester's, refuses`() {
+        assertThatThrownBy { SignInChannels(props(listOf("email"), listOf("a@b.co"), emailMode = "live", decoySink = "sink-at-b.co")) }
+            .hasMessageContaining("not an email address")
+        assertThatThrownBy { SignInChannels(props(listOf("email"), listOf("a@b.co"), emailMode = "live", decoySink = " A@B.co ")) }
+            .hasMessageContaining("also on the email allowlist")
     }
 
     @Test

@@ -24,7 +24,7 @@
 // does (backend/build.gradle.kts, known-issues 3). Bumping the number by hand
 // is still allowed and no longer required. Old caches are removed on activate,
 // so the version is the only bookkeeping.
-const VERSION = "almira-v40";
+const VERSION = "almira-v41";
 const SHELL = `${VERSION}-shell`;
 
 // The libraries under /app/vendor are pinned and their paths carry their

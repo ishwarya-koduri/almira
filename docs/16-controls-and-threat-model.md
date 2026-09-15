@@ -163,7 +163,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | DP-1 | Masking by default; full numbers only on opt-in, then encrypted and step-up gated |
 | DP-2 | Documents encrypted before storage; single-use, short-lived download tickets |
 | DP-3 | Exports scoped by the caller's own visibility — `reports/ExportService.kt` |
-| DP-4 | Notification bodies never logged or stored — `provider/Delivery.kt` |
+| DP-4 | Notification bodies never logged; held only while queued, in a table the runtime role cannot read and a backup leaves out — `provider/Delivery.kt`, `provider/NotificationOutbox.kt` |
 | DP-5 | IP addresses hashed where recorded at all — `sharing/ShareController.kt` |
 | DP-6 | A protected statement is opened and a photo read in the browser; the server receives only the rows or words kept — `app/pdf-text.js`, `app/ocr.js` |
 | DP-7 | The opt-in offline copy: allowlisted fields, AES-GCM under a non-extractable key held apart, deleted on sign-out and after 30 days — `app/offline-store.js` |

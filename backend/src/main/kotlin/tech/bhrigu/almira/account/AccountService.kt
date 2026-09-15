@@ -78,6 +78,15 @@ class AccountService(
         val visibility = resolveVisibility(input.visibility, household.defaultVisibility, userId)
         val grants = resolveGrants(householdId, visibility, input.visibleToMemberIds, holders)
 
+        // Both before the number is encrypted and before anything is written.
+        // Encrypting can provision and cache the household's first data key,
+        // which the insert policy's refusal would not take back; and a record
+        // its creator could not see used to be written in full, audited, read
+        // back, and only then refused — with every write rolled back behind a
+        // message that said "Saved".
+        households.requireWriter(householdId)
+        requireVisibleToCreator(household.myMemberId, visibility, holders.map { it.first }, grants)
+
         val masked = input.number?.let(::mask)
         val encrypted = if (input.storeFullNumber && !input.number.isNullOrBlank()) {
             cipher.encrypt(householdId, numberField, input.number.trim())
@@ -104,8 +113,11 @@ class AccountService(
                 "visibility" to visibility, "fullNumberStored" to (encrypted != null),
             ),
         )
+        // Unreachable while requireVisibleToCreator mirrors app.can_read_record;
+        // kept so that a drift between the two refuses rather than returns
+        // nothing. A throw here rolls the save back, so it does not say "Saved".
         return repo.find(householdId, id)
-            ?: throw ApiException.forbidden("Saved, but it's private to its holders.")
+            ?: throw ApiException.forbidden(NOT_VISIBLE_TO_CREATOR)
     }
 
     @Transactional(readOnly = true)
@@ -126,9 +138,17 @@ class AccountService(
         val household = households.get(householdId)
         val current = get(householdId, id)
 
+        // Checked before the row is written, not after.
+        val holders = input.holders?.let { resolveHolders(householdId, household.myMemberId, it) }
+
         val masked = input.number?.let(::mask)
         val storeFull = input.storeFullNumber ?: false
         val encrypted = if (storeFull && !input.number.isNullOrBlank()) {
+            // Before encrypting, which can provision and cache the household's
+            // first data key: the update's policy would refuse a viewer only
+            // after that. Only when there is something to encrypt, so any other
+            // refused or stale edit is answered by the update, as before.
+            households.requireWriter(householdId)
             cipher.encrypt(householdId, numberField, input.number.trim())
         } else {
             null
@@ -160,9 +180,7 @@ class AccountService(
             )
         }
 
-        input.holders?.let {
-            repo.replaceHolders(id, resolveHolders(householdId, household.myMemberId, it))
-        }
+        holders?.let { repo.replaceHolders(id, it) }
         audit.record(
             householdId = householdId, actorUserId = userId, action = "account.update",
             entityType = "account", entityId = id,
@@ -297,6 +315,24 @@ class AccountService(
         return requested.map { it.memberId to (if (requested.size > 1) "joint" else it.holderType) }
     }
 
+    /**
+     * Refuses a record its creator would not be able to see, before it is
+     * written. Mirrors app.can_read_record for a member who may write (an
+     * advisor or a guest may not): visible when it is household-wide, when the
+     * creator holds it, or when it is scoped and shared with them — grants
+     * already include every holder.
+     */
+    private fun requireVisibleToCreator(
+        me: UUID?,
+        visibility: String,
+        holders: List<UUID>,
+        grants: List<UUID>,
+    ) {
+        val visible = visibility == "household" ||
+            (me != null && (me in holders || (visibility == "scoped" && me in grants)))
+        if (!visible) throw ApiException.forbidden(NOT_VISIBLE_TO_CREATOR)
+    }
+
     private fun resolveVisibility(requested: String?, householdDefault: String, userId: UUID): String {
         if (requested != null) {
             if (requested !in visibilities) {
@@ -328,5 +364,11 @@ class AccountService(
             }
         }
         return (requested + holders.map { it.first }).distinct()
+    }
+
+    private companion object {
+        const val NOT_VISIBLE_TO_CREATOR =
+            "You wouldn't be able to see this once it was saved, so it hasn't been. " +
+                "Add yourself as a holder, or share it with yourself or the household."
     }
 }

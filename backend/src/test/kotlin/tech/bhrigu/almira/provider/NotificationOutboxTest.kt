@@ -398,6 +398,214 @@ class NotificationOutboxTest : ApiTestBase() {
     }
 
     @Test
+    fun `a worker that sent and was taken over before recording leaves the outcome the takeover recorded`() {
+        val calledWith = ConcurrentLinkedQueue<Pair<String, String>>()
+        val counted = channels.map { Counting(it, calledWith) }
+        val late = NotificationOutbox(ownerDataSource, counted, calls, props)
+        val takeover = NotificationOutbox(ownerDataSource, counted, calls, props)
+
+        val lateSent = LinkedBlockingQueue<UUID>()
+        val lateGo = LinkedBlockingQueue<Unit>()
+        late.afterSendBeforeRecord = { id -> lateSent.put(id); lateGo.poll(20, TimeUnit.SECONDS) }
+
+        data class Outcome(
+            val status: String, val provider: String?, val failure: String?, val attempts: Int,
+            val finishedAt: java.sql.Timestamp?,
+        )
+        fun outcome(id: UUID) = db.queryForObject(
+            "select status, provider, failure, attempts, finished_at from outbound_messages where id = ?",
+            { rs, _ -> Outcome(rs.getString(1), rs.getString(2), rs.getString(3), rs.getInt(4), rs.getTimestamp(5)) },
+            id,
+        )!!
+
+        val threads = Executors.newSingleThreadExecutor()
+        var lateResult: OutboxDrainResult? = null
+        val recordedByTakeover = mutableMapOf<String, Outcome>()
+        try {
+            outbox.whilePaused {
+                queueDirectly()
+                val channelOf = rows().associate { UUID.fromString(it.id) to it.channel }
+
+                // The late worker claims the whole batch; for each row it stamps, sends, and stops before recording.
+                val lateRun = threads.submit<OutboxDrainResult> { late.drain() }
+                repeat(3) { i ->
+                    val id = lateSent.poll(20, TimeUnit.SECONDS)
+                        ?: throw AssertionError("timed out waiting for the late worker to send row ${i + 1}")
+                    val channel = channelOf.getValue(id)
+                    assertThat(db.queryForObject("select status from outbound_messages where id = ?", String::class.java, id))
+                        .describedAs("$channel: sent, not yet recorded").isEqualTo("queued")
+
+                    // Its claim on that row runs out, and another worker takes it and records an outcome.
+                    db.update("update outbound_messages set claimed_until = now() - interval '1 second' where id = ?", id)
+                    takeover.drain()
+                    val taken = outcome(id)
+                    assertThat(taken.status).describedAs("$channel: the takeover recorded it").isNotEqualTo("queued")
+                    recordedByTakeover[channel] = taken
+
+                    // Now the late worker writes down what it saw.
+                    lateGo.put(Unit)
+                    if (i == 2) lateResult = lateRun.get(20, TimeUnit.SECONDS)
+                }
+            }
+        } finally {
+            threads.shutdownNow()
+            late.close()
+            takeover.close()
+        }
+
+        val after = byChannel()
+        for (channel in listOf("sms", "email", "push")) {
+            assertThat(outcome(UUID.fromString(after[channel]!!.id)))
+                .describedAs("$channel: the outcome is the takeover's, untouched by the worker that lost the claim")
+                .isEqualTo(recordedByTakeover[channel])
+        }
+        for (channel in listOf("sms", "email")) {
+            assertThat(after[channel]!!).extracting("status", "failure", "attempts")
+                .describedAs("$channel: re-sent by the takeover with the same key; the late send counted once, not twice")
+                .containsExactly("sent", null, 2)
+        }
+        assertThat(after["push"]!!).extracting("status", "failure", "attempts")
+            .describedAs("push cannot de-duplicate: the takeover marks it unconfirmed, and the late worker cannot turn that into sent")
+            .containsExactly("failed", "timeout", 1)
+        assertThat(calledWith.count { it == "push" to after["push"]!!.key!! })
+            .describedAs("push: called once, by the late worker, never again").isEqualTo(1)
+        assertThat(push.deliveries.times(after["push"]!!.key!!)).isEqualTo(1)
+        assertThat(lateResult!!.touched).describedAs("the late worker recorded nothing, so it reports nothing").isZero()
+    }
+
+    private fun uuids(ids: List<String>) = ids.joinToString(",", "{", "}")
+
+    /** WARN lines the worker writes while [block] runs, formatted. */
+    private fun <T> outboxWarnings(block: () -> T): Pair<T, List<String>> {
+        val logger = (org.slf4j.LoggerFactory.getILoggerFactory() as ch.qos.logback.classic.LoggerContext)
+            .getLogger(NotificationOutbox::class.java)
+        val warnings = ConcurrentLinkedQueue<String>()
+        val capture = object : ch.qos.logback.core.AppenderBase<ch.qos.logback.classic.spi.ILoggingEvent>() {
+            override fun append(e: ch.qos.logback.classic.spi.ILoggingEvent) {
+                if (e.level.isGreaterOrEqual(ch.qos.logback.classic.Level.WARN)) warnings += e.formattedMessage
+            }
+        }.apply { start() }
+        logger.addAppender(capture)
+        return try {
+            block() to warnings.toList()
+        } finally {
+            logger.detachAppender(capture)
+        }
+    }
+
+    @Test
+    fun `a queued message whose body a restore did not bring back is failed once, never sent, and named by id only`() {
+        val calledWith = ConcurrentLinkedQueue<Pair<String, String>>()
+        val worker = NotificationOutbox(ownerDataSource, channels.map { Counting(it, calledWith) }, calls, props)
+        val body = "Nothing changes today."
+        val title = "You've been named as an emergency contact"
+
+        val (results, warnings) = outboxWarnings {
+            outbox.whilePaused {
+                queueDirectly()
+                val queued = rows().filter { it.channel != "in_app" }
+                assertThat(queued.map { it.status }).containsOnly("queued").hasSize(3)
+                // What a restore from a backup that leaves out outbound_message_bodies looks like:
+                // the queued rows are there, their bodies are not. sms is one whose send had started
+                // (sms honours keys, so it would otherwise be sent again).
+                db.update("delete from outbound_message_bodies where message_id = any(?::uuid[])", uuids(queued.map { it.id }))
+                db.update("update outbound_messages set send_started_at = now() where id = ?::uuid", byChannel().getValue("sms").id)
+                listOf(worker.drain(), worker.drain())
+            }
+        }
+        worker.close()
+
+        val after = byChannel()
+        for (channel in listOf("sms", "email", "push")) {
+            val row = after.getValue(channel)
+            assertThat(row).extracting("status", "failure")
+                .describedAs("$channel: no body, so not sent, and not left queued for a body that cannot come")
+                .containsExactly("failed", "body_not_restored")
+            assertThat(calledWith.map { it.second }).describedAs("$channel: no provider was called").doesNotContain(row.key)
+            assertThat(warnings.filter { row.id in it })
+                .describedAs("$channel: one WARN names the message").hasSize(1)
+                .allSatisfy { assertThat(it).contains("body_not_restored").contains(channel) }
+        }
+        assertThat(push.deliveries.times(after.getValue("push").key!!)).isZero()
+        assertThat(sms.deliveries.times(after.getValue("sms").key!!)).isZero()
+        assertThat(email.deliveries.times(after.getValue("email").key!!)).isZero()
+        assertThat(results[0]).describedAs("the first drain finishes all three").extracting("failed", "sent").containsExactly(3, 0)
+        assertThat(results[1].touched).describedAs("and none of them is tried again").isZero()
+        assertThat(warnings).describedAs("a WARN carries ids, never the words")
+            .noneSatisfy { assertThat(it).containsAnyOf(body, title, ownerUserId, householdId) }
+
+        val listed = get("/api/v1/me/messages", owner).json()
+            .filter { it.path("template").asText() == "emergency.named" && it.path("channel").asText() != "in_app" }
+        assertThat(listed).hasSize(3).allSatisfy {
+            assertThat(it.path("failure").asText()).isEqualTo("body_not_restored")
+            assertThat(it.path("failureMessage").asText()).contains("restored from a backup")
+        }
+    }
+
+    @Test
+    fun `a worker that stops straight after recording a send leaves no body behind`() {
+        val dying = NotificationOutbox(ownerDataSource, channels, calls, props).apply {
+            afterRecord = { throw Crash() }
+        }
+        outbox.whilePaused {
+            queueDirectly()
+            assertThat(runCatching { dying.drain() }.exceptionOrNull()).isInstanceOf(Crash::class.java)
+            val recorded = rows().filter { it.channel != "in_app" && it.status != "queued" }
+            assertThat(recorded).describedAs("one send was recorded before the worker stopped").hasSize(1)
+            assertThat(bodiesFor(recorded.map { it.id }))
+                .describedAs("its body went in the same statement that recorded it").isZero()
+        }
+        dying.close()
+        db.update(
+            "update outbound_messages set claimed_until = now() - interval '1 second' where household_id = ?::uuid and status = 'queued'",
+            householdId,
+        )
+        outbox.drain()
+        assertThat(bodiesFor(rows().filter { it.channel != "in_app" }.map { it.id })).isZero()
+    }
+
+    @Test
+    fun `a body left behind by a message that already finished is gone at the next claim`() {
+        outbox.whilePaused {
+            queueDirectly()
+            // A row finished by an earlier version, which recorded and deleted in two statements
+            // and stopped in between.
+            val leftover = byChannel().getValue("email")
+            db.update("update outbound_messages set status = 'sent', provider = 'sandbox', finished_at = now() where id = ?::uuid", leftover.id)
+            db.update("delete from outbound_message_bodies where message_id <> ?::uuid and message_id = any(?::uuid[])",
+                leftover.id, uuids(rows().filter { it.channel != "in_app" }.map { it.id }))
+            assertThat(bodiesFor(listOf(leftover.id))).isEqualTo(1)
+
+            // Nothing is queued with a body, so nothing is sent: only the sweep can remove it.
+            db.update("update outbound_messages set status = 'skipped', finished_at = now() where household_id = ?::uuid and status = 'queued'", householdId)
+            outbox.drain()
+            assertThat(bodiesFor(listOf(leftover.id))).describedAs("a finished message keeps no body").isZero()
+        }
+    }
+
+    @Test
+    fun `nothing but the outbox worker reads a queued body`() {
+        val root = java.nio.file.Path.of("..")
+        fun code(path: java.nio.file.Path): List<String> = String(java.nio.file.Files.readAllBytes(path), Charsets.ISO_8859_1).lines().filter { line ->
+            val t = line.trim()
+            "outbound_message_bodies" in t && !t.startsWith("*") && !t.startsWith("//") && !t.startsWith("/**") && !t.startsWith("--")
+        }
+        val kotlin = java.nio.file.Files.walk(root.resolve("backend/src/main")).use { paths ->
+            paths.filter { java.nio.file.Files.isRegularFile(it) }.toList()
+        }.associateWith { code(it) }.filterValues { it.isNotEmpty() }
+        assertThat(kotlin.keys.map { it.fileName.toString() })
+            .describedAs("application code that names outbound_message_bodies outside a comment")
+            .containsExactly("NotificationOutbox.kt")
+
+        val sql = java.nio.file.Files.walk(root.resolve("db")).use { paths ->
+            paths.filter { java.nio.file.Files.isRegularFile(it) }.toList()
+        }.associateWith { code(it) }.filterValues { it.isNotEmpty() }
+        assertThat(sql.keys.map { it.fileName.toString() }).containsExactly("V32__notification_outbox.sql")
+        assertThat(sql.values.single().map { it.trim() }).describedAs("the schema creates it, locks it, and the enqueue function writes it; nothing selects from it")
+            .allSatisfy { assertThat(it).doesNotContainIgnoringCase("select").doesNotContainIgnoringCase("join") }
+    }
+
+    @Test
     fun `recording a notification that was recorded does not warn that it could not be`() {
         val logger = (org.slf4j.LoggerFactory.getILoggerFactory() as ch.qos.logback.classic.LoggerContext)
             .getLogger(RecordingNotifier::class.java)

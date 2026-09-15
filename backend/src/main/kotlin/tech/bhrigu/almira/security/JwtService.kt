@@ -20,28 +20,10 @@ class JwtService(props: AlmiraProperties) {
     private val jwt = props.jwt
 
     init {
-        // The same refusal the key-encryption key already makes, for the same
-        // reason. A deployment that starts with the development signing secret
-        // looks entirely healthy and will mint tokens anybody who has read this
-        // repository can forge — which is worse than not starting, because
-        // nothing about it looks wrong.
-        //
-        // "Development" means chosen, not defaulted. Until this was fixed a
-        // missing ALMIRA_ENV resolved to development and both checks below were
-        // skipped — a real hole, reproduced: a token signed with the published
-        // secret for a session the server never issued was accepted as a real
-        // user. docs/17 §3.
-        val isDevelopment = props.isDevelopment
-        val hint = if (props.environment.isBlank()) AlmiraProperties.MISSING_ENVIRONMENT_HINT else ""
-        require(isDevelopment || jwt.secret != AlmiraProperties.DEVELOPMENT_JWT_SECRET) {
-            "ALMIRA_JWT_SECRET is still the development default. Outside development " +
-                "a signing secret must be supplied deliberately — refusing to start " +
-                "rather than sign sessions with a public value." + hint
-        }
-        require(isDevelopment || jwt.secret.length >= 32) {
-            "ALMIRA_JWT_SECRET is too short to sign anything with: use at least 32 " +
-                "characters (openssl rand -base64 48)." + hint
-        }
+        // Also run by StartupSettingsCheck, before the application context and
+        // so before the database is migrated; kept here for anything that
+        // builds this class directly.
+        checkSecret(props)
     }
 
     private val algorithm: Algorithm = Algorithm.HMAC256(jwt.secret)
@@ -92,4 +74,32 @@ class JwtService(props: AlmiraProperties) {
         MessageDigest.getInstance("SHA-256")
             .digest(token.toByteArray())
             .joinToString("") { "%02x".format(it) }
+
+    companion object {
+        /** The signing-secret refusals. See StartupSettingsCheck. */
+        fun checkSecret(props: AlmiraProperties) {
+            // The same refusal the key-encryption key already makes, for the same
+            // reason. A deployment that starts with the development signing secret
+            // looks entirely healthy and will mint tokens anybody who has read this
+            // repository can forge — which is worse than not starting, because
+            // nothing about it looks wrong.
+            //
+            // "Development" means chosen, not defaulted. Until this was fixed a
+            // missing ALMIRA_ENV resolved to development and both checks below were
+            // skipped — a real hole, reproduced: a token signed with the published
+            // secret for a session the server never issued was accepted as a real
+            // user. docs/17 §3.
+            val isDevelopment = props.isDevelopment
+            val hint = if (props.environment.isBlank()) AlmiraProperties.MISSING_ENVIRONMENT_HINT else ""
+            require(isDevelopment || props.jwt.secret != AlmiraProperties.DEVELOPMENT_JWT_SECRET) {
+                "ALMIRA_JWT_SECRET is still the development default. Outside development " +
+                    "a signing secret must be supplied deliberately — refusing to start " +
+                    "rather than sign sessions with a public value." + hint
+            }
+            require(isDevelopment || props.jwt.secret.length >= 32) {
+                "ALMIRA_JWT_SECRET is too short to sign anything with: use at least 32 " +
+                    "characters (openssl rand -base64 48)." + hint
+            }
+        }
+    }
 }

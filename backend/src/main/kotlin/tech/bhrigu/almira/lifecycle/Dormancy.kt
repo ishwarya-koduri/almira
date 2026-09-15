@@ -50,6 +50,12 @@ data class DormancyView(
     val youAreAskedFirst: Boolean = false,
     /** You may decline, which opens it to the other adults in the household. */
     val canDecline: Boolean = false,
+    /**
+     * Nobody took it on for 90 days after it was open to everyone, so it can no longer be
+     * taken on in the app: only an operator, on a documented request, and after telling
+     * everyone here (docs/05 §12.7, V147). Null otherwise.
+     */
+    val handedToOperatorsAt: Instant? = null,
 )
 
 /**
@@ -110,6 +116,7 @@ class DormancyService(
                 "household_not_dormant" in text -> notDormant(household)
                 "dormancy_not_yet" in text -> ApiException.conflict("dormancy_not_yet", WAIT_EXPLANATION)
                 "dormancy_successor_first" in text -> successorFirst(current.view.askedFirstUntil)
+                "dormancy_routed_to_repair" in text -> handedToOperators(household)
                 else -> ApiException(HttpStatus.FORBIDDEN, "ownership_not_eligible", NOT_ELIGIBLE)
             }
         }
@@ -162,13 +169,22 @@ class DormancyService(
             (until?.let { ", until ${day(it)}" } ?: "") + ". If they decline, you'll be told.",
     )
 
+    private fun handedToOperators(household: HouseholdRow) = ApiException.conflict(
+        "dormancy_routed_to_repair",
+        "Nobody took ${household.name} on in the app for 90 days, so it can't be taken on here any more. " +
+            "Almira's operators act only on a documented request, and tell everyone here before they do anything.",
+    )
+
     private fun refusal(decision: Decision) = when {
+        decision.routed != null -> ApiException.conflict("dormancy_routed_to_repair", decision.view.explanation ?: "")
         decision.waiting -> ApiException.conflict("dormancy_not_yet", WAIT_EXPLANATION)
         decision.reserved -> successorFirst(decision.view.askedFirstUntil)
         else -> ApiException(HttpStatus.FORBIDDEN, "ownership_not_eligible", decision.view.explanation ?: NOT_ELIGIBLE)
     }
 
-    private data class Decision(val view: DormancyView, val waiting: Boolean, val reserved: Boolean = false)
+    private data class Decision(
+        val view: DormancyView, val waiting: Boolean, val reserved: Boolean = false, val routed: Instant? = null,
+    )
 
     private fun decide(household: HouseholdRow, userId: UUID): Decision {
         val open = jdbc.query(
@@ -193,6 +209,25 @@ class DormancyService(
         ) { rs, _ -> rs.getTimestamp("asked_first_until")?.toInstant() to rs.getBoolean("you_are_asked_first") }
             .firstOrNull() ?: (null to false)
         val (askedFirstUntil, youAreAskedFirst) = order
+
+        // Handed to operators (V147): nobody may take it on here, whoever they are.
+        val routed = jdbc.queryForObject(
+            "select app.dormancy_routed_to_repair(:hid)", mapOf("hid" to household.id), java.sql.Timestamp::class.java,
+        )?.toInstant()
+        if (routed != null) {
+            return Decision(
+                DormancyView(
+                    dormant = true, since = open.startedAt, reason = open.reason,
+                    ownerName = open.ownerName.takeIf { open.ownerUserId != null }, acceptFrom = open.acceptFrom,
+                    canAccept = false,
+                    explanation = "Nobody took ${household.name} on in the app for 90 days, so it can't be taken on " +
+                        "here any more. Almira's operators act only on a documented request, and tell everyone here " +
+                        "before they do anything. Private records stay private.",
+                    handedToOperatorsAt = routed,
+                ),
+                waiting = false, routed = routed,
+            )
+        }
 
         val why = eligibility(household, userId, open)
         val waiting = why == null && Instant.now().isBefore(open.acceptFrom)
@@ -460,6 +495,25 @@ class DormancyNotices(
         }
     }
 
+    /**
+     * Handed to operators (V147): everyone in the household with a login, and the
+     * owner whose going made it dormant if they still have an account, are told that
+     * it can no longer be taken on in the app. Once per dormancy.
+     */
+    fun routedToRepair(dormancyId: UUID, on: NamedParameterJdbcTemplate) {
+        val row = load(dormancyId, on) ?: return
+        val people = recipients(on, row.householdId, null, everyone = true) + listOfNotNull(row.ownerUserId)
+        people.distinct().forEach { person ->
+            tell(
+                person, row.householdId, "lifecycle.household.routed_to_repair", "household.routed_to_repair:$dormancyId",
+                "${row.householdName} can no longer be taken on in the app",
+                "Nobody took ${row.householdName} on for 90 days, so it has been handed to Almira's operators. They " +
+                    "act only on a documented request, and will tell everyone here before they do anything. " +
+                    "Nothing has been erased, and private records stay private.",
+            )
+        }
+    }
+
     private data class Opened(
         val householdId: UUID, val ownerUserId: UUID?, val reason: String, val acceptFrom: Instant,
         val householdName: String, val who: String, val successorUserId: UUID?,
@@ -526,6 +580,42 @@ class DormancyOffers(
         ) { rs, _ -> rs.getObject("id", UUID::class.java) }
         opened.forEach { notices.openedToOthers(it, jdbc) }
         return opened.size
+    }
+
+    private val log = org.slf4j.LoggerFactory.getLogger(javaClass)
+
+    /**
+     * Owner's decision, 2026-09-15 (V147): *after 90 days with nobody accepting,
+     * route to operator repair rather than leaving it claimable forever — "dormant
+     * forever" should be a decision, never something reached by drift.* Stamps each
+     * such dormancy, tells its household, and raises one operator alert each.
+     */
+    fun routeStaleToRepair(): Int {
+        val routed = jdbc.query(
+            "select dormancy_id, household_id, dormant_since, open_since from app.route_stale_dormancies_to_repair()",
+            emptyMap<String, Any>(),
+        ) { rs, _ ->
+            listOf(
+                rs.getObject("dormancy_id", UUID::class.java), rs.getObject("household_id", UUID::class.java),
+                rs.getTimestamp("dormant_since").toInstant(), rs.getTimestamp("open_since").toInstant(),
+            )
+        }
+        routed.forEach { (dormancyId, householdId, since, openSince) ->
+            runCatching { notices.routedToRepair(dormancyId as UUID, jdbc) }
+                .onFailure { log.warn("telling a household it was handed to operators failed: {}", it.javaClass.simpleName) }
+            log.error(
+                "{}: household {} has been dormant since {} and open to everyone since {} with nobody taking it on; " +
+                    "it can no longer be taken on in the app. Decide: a documented repair " +
+                    "(scripts/dormancy-repair.sh list), or leave it dormant on purpose (docs/05 §12.7).",
+                ROUTED_ALERT, householdId, since, openSince,
+            )
+        }
+        return routed.size
+    }
+
+    companion object {
+        /** The operator alert's event name (docs/17 §8). Carries a household id, never a name or a record. */
+        const val ROUTED_ALERT = "DORMANT HOUSEHOLD NEEDS AN OPERATOR"
     }
 }
 

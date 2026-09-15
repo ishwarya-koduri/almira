@@ -19,6 +19,8 @@ data class LifecycleSweepResult(
     val householdsLeftDormant: Int = 0,
     /** Dormant households whose successor's window passed (or who declined), opened to everyone eligible (V135). */
     val dormanciesOpenedToOthers: Int = 0,
+    /** Dormant households nobody took on for 90 days after they were open to everyone: now an operator's (V147). */
+    val dormanciesRoutedToRepair: Int = 0,
 )
 
 /**
@@ -76,9 +78,13 @@ class LifecycleSweep(
         val openedToOthers = runCatching { offers.openExpired() }
             .onFailure { log.warn("opening dormant households to others failed: {}", it.javaClass.simpleName) }
             .getOrDefault(0)
+        val routed = runCatching { offers.routeStaleToRepair() }
+            .onFailure { log.warn("handing stale dormant households to operators failed: {}", it.javaClass.simpleName) }
+            .getOrDefault(0)
         return LifecycleSweepResult(
             accountsErased = erased, departuresCompleted = departed, comingOfAgeNotices = noticed,
             householdsLeftDormant = leftDormant, dormanciesOpenedToOthers = openedToOthers,
+            dormanciesRoutedToRepair = routed,
         )
     }
 

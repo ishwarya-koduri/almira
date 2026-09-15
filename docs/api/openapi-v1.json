@@ -2639,6 +2639,10 @@
           "explanation": {
             "type": "string"
           },
+          "handedToOperatorsAt": {
+            "format": "date-time",
+            "type": "string"
+          },
           "ownerName": {
             "type": "string"
           },

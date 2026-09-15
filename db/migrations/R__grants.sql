@@ -141,6 +141,14 @@ begin
     execute 'revoke execute on function app.tell_household_of_repair(uuid, text, text, text) from almira_app, public';
   end if;
 
+  -- A dormancy handed to operators after 90 days, and a repair's clock (V147):
+  -- the sweep's and the ops functions' alone. Whether one's own household is an
+  -- operator's (app.dormancy_routed_to_repair) stays the member's to ask.
+  if to_regprocedure('app.route_stale_dormancies_to_repair()') is not null then
+    execute 'revoke execute on function app.route_stale_dormancies_to_repair() from almira_app, public';
+    execute 'revoke execute on function app.dormancy_repair_notice_sent_at(uuid) from almira_app, public';
+  end if;
+
   -- Anything a later migration creates inherits these defaults automatically.
   execute 'alter default privileges in schema public '
           'grant select, insert, update, delete on tables to almira_app';

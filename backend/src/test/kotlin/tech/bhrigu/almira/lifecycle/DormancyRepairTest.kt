@@ -6,23 +6,27 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import tech.bhrigu.almira.provider.NotificationOutbox
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
 /**
- * The owner's answer (D8b, docs/05 §12.7, V137): a dormant household with
- * nobody who may take it on gets an operator path — only on a documented
- * request, audited, telling the household before anything is done and after,
- * with a wait between.
+ * The owner's answers (D8b, V137; and 2026-09-15, V147): a dormant household
+ * with nobody who may take it on gets an operator path — only on a documented
+ * request that records what evidence was seen and by whom (never the document),
+ * audited, telling the household before anything is done and after, with a wait
+ * that starts when the notice is actually sent, and designed for two operators
+ * with a single-operator mode that states its reason.
  *
  * The functions are called as the operator script calls them, as the schema
  * owner. Each refusal is proven by the role that did not change.
  */
-@DisplayName("An operator repair: a request, a notice, a wait, then the change, and a notice after")
+@DisplayName("An operator repair: evidence seen, a notice sent, a wait, a second operator, then the change")
 class DormancyRepairTest : LifecycleTestSupport() {
 
     @Autowired private lateinit var sweep: LifecycleSweep
+    @Autowired private lateinit var outbox: NotificationOutbox
 
     private lateinit var advisor: String
     private lateinit var teen: String
@@ -31,6 +35,7 @@ class DormancyRepairTest : LifecycleTestSupport() {
 
     @BeforeEach
     fun setUp() {
+        outbox.drain()
         val owner = signIn()
         advisor = signIn()
         teen = signIn()
@@ -52,14 +57,30 @@ class DormancyRepairTest : LifecycleTestSupport() {
 
     private fun role() = household(advisor, householdId).path("myRole").asText()
 
-    private fun request(wait: String = "14 days", reason: String = "The family's lawyer asks for the CA to run it until probate.") =
-        db.queryForObject(
-            "select ops.request_dormancy_repair(?::uuid, ?::uuid, 'support-1', ?, 'Suresh Rao', 'brother of the late owner', 'ticket 2231', ?::interval)",
-            UUID::class.java, householdId, advisorMemberId, reason, wait,
-        )!!
+    private fun request(
+        wait: String = "14 days",
+        reason: String = "The family's lawyer asks for the CA to run it until probate.",
+        kind: String = "written_request_from_legal_representative",
+        seenBy: String = "support-1",
+    ) = db.queryForObject(
+        "select ops.request_dormancy_repair(?::uuid, ?::uuid, 'support-1', ?, 'Suresh Rao', 'brother of the owner', ?, ?, 'ticket 2231', ?::interval)",
+        UUID::class.java, householdId, advisorMemberId, reason, kind, seenBy, wait,
+    )!!
 
-    private fun carryOut(requestId: UUID): String =
-        db.queryForObject("select ops.carry_out_dormancy_repair(?::uuid, 'support-2')", String::class.java, requestId)!!
+    private fun carryOut(requestId: UUID, alone: String? = null): String =
+        db.queryForObject("select ops.carry_out_dormancy_repair(?::uuid, 'support-2', ?)", String::class.java, requestId, alone)!!
+
+    private fun approve(requestId: UUID, operator: String) =
+        db.queryForList("select ops.approve_dormancy_repair(?::uuid, ?)", requestId, operator)
+
+    /** The before-notice really goes out: the worker sends the queued messages (sandbox providers). */
+    private fun sendNotices() = outbox.drain()
+
+    /** The wait has passed since the notice was sent. */
+    private fun waitOver(requestId: UUID) = db.update(
+        "update dormancy_repair_requests set notified_before_at = now() - interval '15 days', act_after = now() - interval '1 day' where id = ?::uuid",
+        requestId,
+    )
 
     private fun notices(template: String, inApp: Boolean) = count(
         "select count(*) from outbound_messages where household_id = ?::uuid and template = ? and (channel = 'in_app') = ?",
@@ -88,38 +109,63 @@ class DormancyRepairTest : LifecycleTestSupport() {
         assertThat(notices("lifecycle.household.repair_requested", inApp = true)).isZero()
     }
 
+    /** Owner's decision (V147): the evidence that fits the trigger, recorded as seen and by whom — never stored. */
     @Test
-    fun `the household is told before, nothing is done during the wait, and it is told after`() {
-        val requestId = request()
+    fun `the evidence must fit what made it dormant, and who saw it is recorded`() {
+        assertThatThrownBy { request(kind = "death_certificate_or_equivalent") }
+            .describedAs("dormant because of a closure, not a death").hasMessageContaining("not a death")
+        assertThatThrownBy { request(kind = "a scan") }.hasMessageContaining("name the evidence seen")
+        assertThatThrownBy { request(seenBy = "") }.hasMessageContaining("who saw the evidence")
+        assertThat(count("select count(*) from dormancy_repair_requests where household_id = ?::uuid", householdId))
+            .describedAs("each refused before anything was written or anyone told").isZero()
+        assertThat(notices("lifecycle.household.repair_requested", inApp = true)).isZero()
 
-        // Before: the request is recorded, audited, and everyone with a login is told —
-        // in the app and at their addresses, whether or not they said yes to messages.
+        val requestId = request()
         val row = db.queryForMap(
-            "select requester_name, requester_relationship, evidence_reference, notified_before_at is not null as told, " +
-                "act_after > now() + interval '13 days' as waits from dormancy_repair_requests where id = ?::uuid",
+            "select evidence_kind, evidence_seen_by, evidence_seen_at is not null as seen, evidence_reference from dormancy_repair_requests where id = ?::uuid",
             requestId,
         )
-        assertThat(row).containsEntry("requester_name", "Suresh Rao").containsEntry("evidence_reference", "ticket 2231")
-            .containsEntry("told", true).containsEntry("waits", true)
+        assertThat(row).containsEntry("evidence_kind", "written_request_from_legal_representative")
+            .containsEntry("evidence_seen_by", "support-1").containsEntry("seen", true).containsEntry("evidence_reference", "ticket 2231")
+    }
+
+    @Test
+    fun `the household is told before, the wait starts when the notice is sent, a second operator approves, and it is told after`() {
+        val requestId = request()
+
+        // Filed and queued, but not yet sent: no clock, nothing to carry out.
+        assertThat(
+            db.queryForMap("select notified_before_at, act_after, before_notice_queued_at is not null as queued from dormancy_repair_requests where id = ?::uuid", requestId),
+        ).containsEntry("notified_before_at", null).containsEntry("act_after", null).containsEntry("queued", true)
         assertThat(count("select count(*) from activity_log where action = 'ops.dormancy_repair.request' and household_id = ?::uuid and diff ->> 'operator' = 'support-1'", householdId))
             .isEqualTo(1)
         assertThat(notices("lifecycle.household.repair_requested", inApp = true)).isEqualTo(2)
         assertThat(notices("lifecycle.household.repair_requested", inApp = false)).isGreaterThanOrEqualTo(2)
-        assertThat(get("/api/v1/households/$householdId/dormancy", teen).json().path("dormant").asBoolean()).isTrue()
+        assertThat(carryOut(requestId)).describedAs("the wait has not started").isEqualTo("not_told_before")
+        assertThat(role()).isEqualTo("advisor")
 
-        // During the wait: refused, audited, nothing changed, nobody told it was done.
+        // Sent: the clock starts from the moment it went, not from filing.
+        sendNotices()
         assertThat(carryOut(requestId)).isEqualTo("waiting")
+        assertThat(
+            db.queryForMap(
+                "select notified_before_at is not null as told, act_after > now() + interval '13 days' as waits, " +
+                    "notified_before_at >= before_notice_queued_at as after_queued from dormancy_repair_requests where id = ?::uuid",
+                requestId,
+            ),
+        ).containsEntry("told", true).containsEntry("waits", true).containsEntry("after_queued", true)
         assertThat(attempts("waiting")).isEqualTo(1)
         assertThat(role()).isEqualTo("advisor")
-        assertThat(count("select count(*) from household_dormancies where household_id = ?::uuid and ended_at is null", householdId)).isEqualTo(1)
-        assertThat(count("select count(*) from dormancy_repair_requests where id = ?::uuid and carried_out_at is null", requestId)).isEqualTo(1)
         assertThat(notices("lifecycle.household.repair_done", inApp = true)).isZero()
 
-        // The wait is over.
-        db.update(
-            "update dormancy_repair_requests set created_at = now() - interval '15 days', act_after = now() - interval '1 day' where id = ?::uuid",
-            requestId,
-        )
+        // The wait is over, but one operator alone may not act without saying why.
+        waitOver(requestId)
+        assertThat(carryOut(requestId)).isEqualTo("needs_second_operator")
+        assertThat(role()).isEqualTo("advisor")
+        assertThatThrownBy { approve(requestId, "support-1") }.describedAs("not the one who asked")
+            .hasMessageContaining("someone other than the one who asked")
+        approve(requestId, "support-3")
+
         assertThat(carryOut(requestId)).isEqualTo("done")
         assertThat(attempts("done")).isEqualTo(1)
         assertThat(role()).isEqualTo("owner")
@@ -129,8 +175,13 @@ class DormancyRepairTest : LifecycleTestSupport() {
                 householdId,
             ),
         ).containsEntry("ended_reason", "transferred").containsEntry("to", userId(advisor))
-        assertThat(count("select count(*) from dormancy_repair_requests where id = ?::uuid and carried_out_by_operator = 'support-2' and notified_after_at is not null", requestId))
-            .isEqualTo(1)
+        assertThat(
+            count(
+                "select count(*) from dormancy_repair_requests where id = ?::uuid and carried_out_by_operator = 'support-2' " +
+                    "and approved_by_operator = 'support-3' and single_operator_reason is null and notified_after_at is not null",
+                requestId,
+            ),
+        ).isEqualTo(1)
         assertThat(notices("lifecycle.household.repair_done", inApp = true)).isEqualTo(2)
         assertThat(notices("lifecycle.household.repair_done", inApp = false)).isGreaterThanOrEqualTo(2)
 
@@ -138,14 +189,32 @@ class DormancyRepairTest : LifecycleTestSupport() {
         assertThat(carryOut(requestId)).isEqualTo("already_done")
     }
 
+    /** One operator today: allowed, with the reason stored and audited — not a rule broken silently. */
+    @Test
+    fun `a single operator may act alone only with a reason, which is kept`() {
+        val requestId = request()
+        sendNotices()
+        waitOver(requestId)
+        assertThat(carryOut(requestId, alone = "short")).describedAs("a reason is a sentence").isEqualTo("needs_second_operator")
+        assertThat(role()).isEqualTo("advisor")
+
+        val why = "Only one operator exists today; the request and evidence were checked twice."
+        assertThat(carryOut(requestId, alone = why)).isEqualTo("done")
+        assertThat(role()).isEqualTo("owner")
+        assertThat(db.queryForObject("select single_operator_reason from dormancy_repair_requests where id = ?::uuid", String::class.java, requestId))
+            .isEqualTo(why)
+        assertThat(
+            count("select count(*) from activity_log where action = 'ops.dormancy_repair.carry_out' and entity_id = ?::uuid and diff ->> 'singleOperatorReason' = ?", requestId, why),
+        ).isEqualTo(1)
+    }
+
     @Test
     fun `a withdrawn request is never carried out`() {
         val requestId = request()
+        sendNotices()
         db.queryForList("select ops.withdraw_dormancy_repair(?::uuid, 'support-1', 'the family found the will')", requestId)
-        db.update(
-            "update dormancy_repair_requests set created_at = now() - interval '15 days', act_after = now() - interval '1 day' where id = ?::uuid",
-            requestId,
-        )
+        waitOver(requestId)
+        assertThatThrownBy { approve(requestId, "support-3") }.hasMessageContaining("no open repair request")
         assertThat(carryOut(requestId)).isEqualTo("withdrawn")
         assertThat(role()).isEqualTo("advisor")
     }

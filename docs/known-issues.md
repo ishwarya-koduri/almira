@@ -2553,6 +2553,19 @@ private: private records are erased in both cases.
 
 ## 82. An operator repair records where the evidence is, and nothing checks it
 
+**Resolved in part** (2026-09-15, V147), by the owner's answers. A request now
+records the *kind* of evidence seen and who saw it and when — a death certificate
+or equivalent when the trigger is a death, otherwise a written request from a
+member or a legal representative, refused when it does not fit the trigger — and
+never the document. It is designed for two operators (a second one, not the
+requester, approves), with a single-operator mode that stores and audits its
+reason. The wait starts when the before-notice is actually sent. What remains
+true: the database cannot check that the evidence exists or says what the
+operator believes, and a household whose members never sign in or have no
+reachable address may not see the notice — in which case, now, nothing can be
+carried out at all, because the clock never starts. The entry is kept below as it
+was found.
+
 **Where** `dormancy_repair_requests.evidence_reference` (V137),
 `scripts/dormancy-repair.sh`, docs/05 §12.7.
 
@@ -2576,6 +2589,15 @@ credentials plus the environment switch are needed.
 ---
 
 ## 83. Marking someone as passed away through the admin door, and a date of birth, are frozen with membership
+
+**Resolved** (2026-09-15, V147), by the owner's answer: *confirm the freeze lasting
+the whole dormancy — during dormancy nobody holds authority — but narrow it:
+freezing edits to OTHER people's date of birth or login is right; freezing a
+member's edit of their OWN login is not.* `app.members_frozen_while_dormant` now
+lets a member change the login on their own row; another person's login, anyone's
+date of birth and removal stay frozen. `DormancyRoutingTest` proves both, and that
+a phone-number change mid-dormancy keeps the member in the household, watched
+failing with the exemption removed. The entry is kept below as it was found.
 
 **Where** `member_memorials_insert`, `members_insert`/`members_delete` policies,
 `app.members_frozen_while_dormant` (V135), `HouseholdService.addMember`,

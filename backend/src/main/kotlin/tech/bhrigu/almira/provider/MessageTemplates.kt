@@ -101,6 +101,9 @@ object MessageTemplates {
         // You came of age (V146): what is held in your name is yours to manage now.
         // Sent only to the young adult, whose rights are the ones changing.
         "lifecycle.coming_of_age.you",
+        // Nobody took your household on in the app for 90 days, so only an operator can now
+        // (V147): the right to take it on ends for everyone told.
+        "lifecycle.household.routed_to_repair",
     )
 
     /** Essential, and about the person's place in a household rather than their account (V140, V143, V144, V146). */
@@ -109,7 +112,7 @@ object MessageTemplates {
         "lifecycle.household.dormant", "lifecycle.household.dormant.you", "lifecycle.household.running_again",
         "lifecycle.household.ownership_accepted", "lifecycle.household.asked_first",
         "lifecycle.household.repair_requested", "lifecycle.household.repair_done",
-        "lifecycle.coming_of_age.you",
+        "lifecycle.coming_of_age.you", "lifecycle.household.routed_to_repair",
     )
 
     fun isEssential(template: String): Boolean = template in ESSENTIAL_TEMPLATES

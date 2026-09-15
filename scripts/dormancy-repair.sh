@@ -5,16 +5,26 @@
 #
 #   ./scripts/dormancy-repair.sh --env-file .env.production --operator "support-1" list
 #   ./scripts/dormancy-repair.sh … request <household-id> <member-id> "<reason>" \
-#       "<requester name>" "<relationship>" "<evidence reference>" [wait, e.g. "21 days"]
-#   ./scripts/dormancy-repair.sh … carry-out <request-id>
+#       "<requester name>" "<relationship>" <evidence kind> "<evidence seen by>" \
+#       "<where the note of seeing it is kept>" [wait, e.g. "21 days"]
+#   ./scripts/dormancy-repair.sh … approve <request-id>          (a second operator)
+#   ./scripts/dormancy-repair.sh … carry-out <request-id> [--alone "<why one operator acts alone>"]
 #   ./scripts/dormancy-repair.sh … withdraw <request-id> "<reason>"
+#
+# Evidence kind (owner's decision, 2026-09-15, V147): death_certificate_or_equivalent
+# when the household is dormant because its owner passed away; otherwise
+# written_request_from_member or written_request_from_legal_representative. Record
+# that it was seen and by whom — never store the document, and never put it in the
+# reference: Almira is not a custodian of death certificates.
 #
 # Refuses unless ALMIRA_OPS_DORMANCY_REPAIR=enabled in that environment: it is
 # off unless someone turns it on for the case in hand. `request` records the
-# documented request and tells the household, in the app and at the addresses on
-# their accounts, before anything is done; `carry-out` does it only after the
-# wait (seven days at least, fourteen by default), and tells them again. Every
-# step, and every refused attempt, is in the audit log with your name.
+# documented request and queues the notice to the household, in the app and at the
+# addresses on their accounts; the wait (seven days at least, fourteen by default)
+# starts only when that notice is actually sent. `carry-out` does it only after the
+# wait, and only when a second operator — not the one who asked — has approved, or
+# with --alone and a reason, which is stored and audited. It tells them again.
+# Every step, and every refused attempt, is in the audit log with your name.
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -27,7 +37,7 @@ if [ "${ALMIRA_OPS_DORMANCY_REPAIR:-}" != "enabled" ]; then
   exit 3
 fi
 
-usage() { sed -n '2,19p' "$0"; exit 2; }
+usage() { sed -n '2,30p' "$0"; exit 2; }
 [ "${#ARGS[@]}" -ge 1 ] || usage
 
 # Passed as psql variables and quoted by psql (:'name'), never spliced into SQL.
@@ -38,19 +48,33 @@ select * from ops.dormant_households_nobody_may_take_on();
 SQL
     ;;
   request)
-    [ "${#ARGS[@]}" -ge 7 ] || usage
+    [ "${#ARGS[@]}" -ge 9 ] || usage
     psql "$OWNER_URL" -v ON_ERROR_STOP=1 -q -x \
       -v household="${ARGS[1]}" -v member="${ARGS[2]}" -v operator="$OPERATOR" -v reason="${ARGS[3]}" \
-      -v requester="${ARGS[4]}" -v relationship="${ARGS[5]}" -v evidence="${ARGS[6]}" \
-      -v wait="${ARGS[7]:-14 days}" <<'SQL'
+      -v requester="${ARGS[4]}" -v relationship="${ARGS[5]}" -v kind="${ARGS[6]}" -v seen_by="${ARGS[7]}" \
+      -v evidence="${ARGS[8]}" -v wait="${ARGS[9]:-14 days}" <<'SQL'
 select ops.request_dormancy_repair(:'household'::uuid, :'member'::uuid, :'operator', :'reason',
-                                   :'requester', :'relationship', :'evidence', :'wait'::interval) as request_id;
+                                   :'requester', :'relationship', :'kind', :'seen_by', :'evidence',
+                                   :'wait'::interval) as request_id;
+SQL
+    echo "The wait starts when the notice to the household is actually sent; 'list' shows whether it has."
+    ;;
+  approve)
+    [ "${#ARGS[@]}" -eq 2 ] || usage
+    psql "$OWNER_URL" -v ON_ERROR_STOP=1 -q -v request="${ARGS[1]}" -v operator="$OPERATOR" <<'SQL'
+select ops.approve_dormancy_repair(:'request'::uuid, :'operator');
 SQL
     ;;
   carry-out)
-    [ "${#ARGS[@]}" -eq 2 ] || usage
-    psql "$OWNER_URL" -v ON_ERROR_STOP=1 -q -x -v request="${ARGS[1]}" -v operator="$OPERATOR" <<'SQL'
-select ops.carry_out_dormancy_repair(:'request'::uuid, :'operator') as outcome;
+    if [ "${#ARGS[@]}" -eq 2 ]; then
+      ALONE=""
+    elif [ "${#ARGS[@]}" -eq 4 ] && [ "${ARGS[2]}" = "--alone" ]; then
+      ALONE="${ARGS[3]}"
+    else
+      usage
+    fi
+    psql "$OWNER_URL" -v ON_ERROR_STOP=1 -q -x -v request="${ARGS[1]}" -v operator="$OPERATOR" -v alone="$ALONE" <<'SQL'
+select ops.carry_out_dormancy_repair(:'request'::uuid, :'operator', nullif(:'alone', '')) as outcome;
 SQL
     ;;
   withdraw)

@@ -96,7 +96,7 @@ class PlanReadOnlyGuard(
             null to Regex("^/departures(/.*)?$"),
             null to Regex("^/successor(/.*)?$"),
             // Taking on a household whose last owner has gone (docs/05 §12.7).
-            "POST" to Regex("^/dormancy/accept$"),
+            "POST" to Regex("^/dormancy/(accept|decline)$"),
             "PATCH" to Regex("^/members/$ID$"),
             "DELETE" to Regex("^/members/$ID$"),
             // A death, a child coming of age, and consent for a minor.

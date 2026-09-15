@@ -21,6 +21,8 @@ data class HouseholdRow(
     val readOnly: Boolean = false,
     /** Nobody runs the household at the moment: its last owner has gone (docs/05 §12.7, V120). */
     val dormant: Boolean = false,
+    /** The caller is the owner whose going made it dormant: they administer nothing meanwhile (V135). */
+    val dormantBecauseOfMe: Boolean = false,
 )
 
 data class MemberRow(
@@ -203,6 +205,9 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
             select h.id, h.name, h.base_currency, h.default_visibility, h.version,
                    hm.role as my_role, app.is_memorialised_in(h.id) as read_only,
                    app.household_is_dormant(h.id) as dormant,
+                   exists (select 1 from household_dormancies d
+                            where d.household_id = h.id and d.ended_at is null
+                              and d.owner_user_id = :userId) as dormant_because_of_me,
                    (select m.id from members m
                      where m.household_id = h.id and m.user_id = :userId
                        and m.deleted_at is null limit 1) as my_member_id,
@@ -239,6 +244,7 @@ class HouseholdRepository(private val jdbc: NamedParameterJdbcTemplate) {
             version = rs.getInt("version"),
             readOnly = rs.getBoolean("read_only"),
             dormant = rs.getBoolean("dormant"),
+            dormantBecauseOfMe = rs.getBoolean("dormant_because_of_me"),
         )
     }
 

@@ -124,6 +124,46 @@ internal class LifecycleRecords(private val jdbc: NamedParameterJdbcTemplate) {
         ) { rs, _ -> HeldRecord(rs.getString("type"), rs.getObject("id", UUID::class.java), rs.getString("title")) }
     }
 
+    /**
+     * Of these records, the ones private to their holders (docs/05 §3.1): what
+     * nobody but the person could see. Everything else was shared with the
+     * household or with named people, and belongs to them too.
+     */
+    fun privateOnes(records: List<HeldRecord>): List<HeldRecord> {
+        if (records.isEmpty()) return emptyList()
+        val private = mutableSetOf<UUID>()
+        records.groupBy { it.type }.forEach { (type, rows) ->
+            val table = RECORD_TABLES[type] ?: return@forEach
+            private += jdbc.query(
+                "select id from $table where id in (:ids) and visibility = 'private'",
+                mapOf("ids" to rows.map { it.id }),
+            ) { rs, _ -> rs.getObject("id", UUID::class.java) }
+        }
+        return records.filter { it.id in private }
+    }
+
+    /**
+     * Documents that go with erased private records when what else the person
+     * held stays with the household: uploaded by the person, attached to nothing
+     * that stays, and either private or attached to something erased. A paper
+     * shared with the household and attached to nothing is the household's.
+     */
+    fun documentsFollowingPrivate(householdId: UUID, userId: UUID, erased: List<HeldRecord>): List<HeldRecord> {
+        val ids = erased.map { it.id }.ifEmpty { listOf(NOBODY) }
+        return jdbc.query(
+            """
+            select 'document' as type, d.id, d.file_name as title from documents d
+             where d.household_id = :hid and d.uploaded_by = :uid
+               and not exists (select 1 from document_links dl
+                               where dl.document_id = d.id and dl.entity_id not in (:ids))
+               and (d.visibility = 'private'
+                    or exists (select 1 from document_links dl where dl.document_id = d.id))
+            order by d.file_name
+            """.trimIndent(),
+            mapOf("hid" to householdId, "uid" to userId, "ids" to ids),
+        ) { rs, _ -> HeldRecord(rs.getString("type"), rs.getObject("id", UUID::class.java), rs.getString("title")) }
+    }
+
     /** Other people who hold a joint record, by name, for "your share passes to …". */
     fun otherHolders(type: String, recordId: UUID, memberIds: List<UUID>): List<String> {
         val (table, column) = holderTable(type)
@@ -258,5 +298,11 @@ internal class LifecycleRecords(private val jdbc: NamedParameterJdbcTemplate) {
     companion object {
         /** Stands in for an empty list, which `in ()` cannot take. Matches no row. */
         val NOBODY: UUID = UUID(0, 0)
+
+        private val RECORD_TABLES = mapOf(
+            "investment" to "investments", "liability" to "liabilities", "account" to "accounts",
+            "goal" to "goals", "estate_document" to "estate_documents", "contact" to "contacts",
+            "document" to "documents",
+        )
     }
 }

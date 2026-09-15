@@ -100,17 +100,32 @@ class AccountClosureService(
                 return@forEach
             }
 
+            // The last owner of a household with records: it goes dormant, and what they
+            // shared with it stays under a former member (docs/05 §12.7, V136). The same
+            // question the purge asks, from what the owner can ask about their own household.
+            val next = if (household.myRole == "owner") records.nextOwner(hid, userId) else null
+            val leftDormant = next is LifecycleRecords.Handover.To && holdsRecords(hid)
+
             val sole = records.solelyHeld(hid, userId, mine)
-            sole.forEach { erased += LifecycleLine(hid, household.name, lineKind(it.type), it.id, it.title) }
-            records.documentsFollowing(hid, userId, sole).forEach {
-                erased += LifecycleLine(hid, household.name, "document", it.id, it.title)
+            val goes = if (leftDormant) records.privateOnes(sole) else sole
+            goes.forEach { erased += LifecycleLine(hid, household.name, lineKind(it.type), it.id, it.title) }
+            (if (leftDormant) records.documentsFollowingPrivate(hid, userId, goes) else records.documentsFollowing(hid, userId, sole))
+                .forEach { erased += LifecycleLine(hid, household.name, "document", it.id, it.title) }
+            if (leftDormant) {
+                (sole - goes.toSet()).forEach {
+                    stays += LifecycleLine(
+                        hid, household.name, lineKind(it.type), it.id, it.title,
+                        "You shared this, so it stays with ${household.name}, held by \"Former member\" — not your name.",
+                    )
+                }
             }
 
             records.jointlyHeld(hid, mine).forEach {
                 val holders = records.otherHolders(it.type, it.id, mine)
                 stays += LifecycleLine(
                     hid, household.name, lineKind(it.type), it.id, it.title,
-                    "Your part passes to ${holders.joinToString(" and ")}.",
+                    if (leftDormant) "Your part stays with it, held by \"Former member\"; ${holders.joinToString(" and ")} keep theirs."
+                    else "Your part passes to ${holders.joinToString(" and ")}.",
                 )
             }
             stays += LifecycleLine(
@@ -118,17 +133,18 @@ class AccountClosureService(
                 "The household carries on without you. What you added for other people stays with " +
                     "them, without your name on it.",
             )
-            if (household.myRole == "owner") {
-                when (val next = records.nextOwner(hid, userId)) {
-                    is LifecycleRecords.Handover.To -> stays += if (holdsRecords(hid)) {
-                        // V120: the last owner of a household with records is never purged
-                        // before someone has taken it on.
+            if (next != null) {
+                when (next) {
+                    is LifecycleRecords.Handover.To -> stays += if (leftDormant) {
+                        // V135: asked, never made owner by the sweep; the named successor first.
                         LifecycleLine(
-                            hid, household.name, "people", null, "${next.name} is asked to take it on",
-                            (if (next.named) "You named them to carry the household on. " else "They are an admin here. ") +
-                                "When your thirty days are up, ${household.name} waits until they or another " +
-                                "adult here accepts. Until then nothing of yours in it is erased, and your " +
-                                "account stays open.",
+                            hid, household.name, "people", null,
+                            if (next.named) "${next.name} is asked first to take it on" else "${next.name} is asked to take it on",
+                            (if (next.named) "You named them to carry the household on, so they're asked first. " +
+                                "If they decline, the other adults here are asked. "
+                            else "They or another adult here can take it on. ") +
+                                "Until someone does, nobody can join or be removed. Your account is still erased " +
+                                "on the day.",
                         )
                     } else {
                         LifecycleLine(

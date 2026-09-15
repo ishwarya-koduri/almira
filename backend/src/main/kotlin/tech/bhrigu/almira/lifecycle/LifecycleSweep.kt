@@ -12,14 +12,19 @@ data class LifecycleSweepResult(
     val accountsErased: Int = 0,
     val departuresCompleted: Int = 0,
     val comingOfAgeNotices: Int = 0,
-    /** Closures that could not finish because a household they own is dormant (docs/05 §12.7). */
-    val closuresHeld: Int = 0,
+    /**
+     * Households a purge left dormant: their last owner was erased on schedule and
+     * what they held for the household stayed with it (docs/05 §12.7, V136).
+     */
+    val householdsLeftDormant: Int = 0,
+    /** Dormant households whose successor's window passed (or who declined), opened to everyone eligible (V135). */
+    val dormanciesOpenedToOthers: Int = 0,
 )
 
 /**
  * The clock behind every waiting period in docs/05 §12: closures whose thirty
- * days are up, departures whose seven days are up, and the month a managed child
- * turns eighteen.
+ * days are up, departures whose seven days are up, the month a managed child
+ * turns eighteen, and a named successor's window on a dormant household.
  *
  * Each piece takes the OWNER connection by explicit qualifier (see its class),
  * and each item is its own transaction: one closure that fails is logged and
@@ -34,6 +39,7 @@ class LifecycleSweep(
     private val purge: AccountPurge,
     private val departures: DepartureCompletion,
     private val comingOfAge: ComingOfAgeNotices,
+    private val offers: DormancyOffers,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -47,14 +53,13 @@ class LifecycleSweep(
         runCatching { purge.pendingDeletions.deleteQueued() }
             .onFailure { log.warn("retrying stored document deletions failed: {}", it.javaClass.simpleName) }
         var erased = 0
-        var held = 0
+        var leftDormant = 0
         purge.due(asOf).forEach { closure ->
             runCatching { purge.purge(closure, asOf) }
                 .onSuccess {
-                    when {
-                        it == null -> Unit
-                        it.householdsHeld > 0 -> held++
-                        else -> erased++
+                    if (it != null) {
+                        erased++
+                        leftDormant += it.householdsLeftDormant
                     }
                 }
                 .onFailure { log.warn("account purge {} failed: {}", closure, it.javaClass.simpleName) }
@@ -68,8 +73,12 @@ class LifecycleSweep(
         val noticed = runCatching { comingOfAge.run(LocalDate.ofInstant(asOf, INDIA)) }
             .onFailure { log.warn("coming-of-age notices failed: {}", it.javaClass.simpleName) }
             .getOrDefault(0)
+        val openedToOthers = runCatching { offers.openExpired() }
+            .onFailure { log.warn("opening dormant households to others failed: {}", it.javaClass.simpleName) }
+            .getOrDefault(0)
         return LifecycleSweepResult(
-            accountsErased = erased, departuresCompleted = departed, comingOfAgeNotices = noticed, closuresHeld = held,
+            accountsErased = erased, departuresCompleted = departed, comingOfAgeNotices = noticed,
+            householdsLeftDormant = leftDormant, dormanciesOpenedToOthers = openedToOthers,
         )
     }
 

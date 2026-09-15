@@ -2615,7 +2615,14 @@
             "format": "date-time",
             "type": "string"
           },
+          "askedFirstUntil": {
+            "format": "date-time",
+            "type": "string"
+          },
           "canAccept": {
+            "type": "boolean"
+          },
+          "canDecline": {
             "type": "boolean"
           },
           "dormant": {
@@ -2633,11 +2640,16 @@
           "since": {
             "format": "date-time",
             "type": "string"
+          },
+          "youAreAskedFirst": {
+            "type": "boolean"
           }
         },
         "required": [
           "canAccept",
-          "dormant"
+          "canDecline",
+          "dormant",
+          "youAreAskedFirst"
         ],
         "type": "object"
       },
@@ -13373,6 +13385,37 @@
     "/api/v1/households/{householdId}/dormancy/accept": {
       "post": {
         "operationId": "takeOnDormantHousehold",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "householdId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DormancyView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "dormancy-controller"
+        ]
+      }
+    },
+    "/api/v1/households/{householdId}/dormancy/decline": {
+      "post": {
+        "operationId": "declineDormantHousehold",
         "parameters": [
           {
             "in": "path",

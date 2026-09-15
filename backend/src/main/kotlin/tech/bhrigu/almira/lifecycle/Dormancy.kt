@@ -40,23 +40,37 @@ data class DormancyView(
     val canAccept: Boolean = false,
     /** What this means for you, in words. */
     val explanation: String? = null,
+    /**
+     * Someone the departed owner named is asked first, alone, until then; nobody
+     * else may take it on before it. Who, only when it is you. Null when nobody
+     * is asked first (docs/05 §12.7, V135).
+     */
+    val askedFirstUntil: Instant? = null,
+    /** You are the successor asked first. */
+    val youAreAskedFirst: Boolean = false,
+    /** You may decline, which opens it to the other adults in the household. */
+    val canDecline: Boolean = false,
 )
 
 /**
- * A household whose last owner goes while it holds records (docs/05 §12.7, V120).
+ * A household whose last owner goes while it holds records (docs/05 §12.7,
+ * V120, V135).
  *
- * The owner's decision: never purge the last owner while the household holds
- * records; move it to dormant, tell the remaining members, and require an
- * explicit transfer first. So the sweep asks [DormancyRecords.leavesOwnerless] before it
- * carries out a closure or a departure, and a memorial on the last owner opens
- * one in the database. While it is dormant nothing that needs an owner or admin
- * can be done (the capability functions say so), everyone keeps exactly the
- * sight they had, and the handbook and Download everything work as before.
+ * The owner's decisions: never leave the household's records unreachable
+ * because of an account rule; move it to dormant, tell the members, and require
+ * an explicit transfer. So the sweep asks [DormancyRecords.leavesOwnerless]
+ * before it carries out a closure or a departure, and a memorial on the last
+ * owner opens one in the database. While it is dormant, who is in the household
+ * and with what role is frozen; everything else stays as it was, and everyone
+ * keeps exactly the sight they had.
  *
- * It ends one of two ways, both in the database: an adult member with a login
- * takes it on here, or the owner comes back — cancels the closure or the
- * departure, or says "I'm here". A household with nobody who may take it on
- * stays dormant; it is never erased for that.
+ * The offer is ordered, never automated: the successor the owner named, if they
+ * may take it on, is asked first and alone, for the configured window
+ * ([DormancyProperties]); they accept or decline; on a decline or when the
+ * window passes, every adult member with a login may, and is told then
+ * ([DormancyOffers]). It ends when someone takes it on, or the owner comes back.
+ * A household with nobody who may take it on stays dormant until an operator
+ * repair on a documented request (V137, scripts/dormancy-repair.sh).
  */
 @Service
 class DormancyService(
@@ -95,6 +109,7 @@ class DormancyService(
                 "dormancy_not_found" in text -> ApiException.notFound("We couldn't find that household.")
                 "household_not_dormant" in text -> notDormant(household)
                 "dormancy_not_yet" in text -> ApiException.conflict("dormancy_not_yet", WAIT_EXPLANATION)
+                "dormancy_successor_first" in text -> successorFirst(current.view.askedFirstUntil)
                 else -> ApiException(HttpStatus.FORBIDDEN, "ownership_not_eligible", NOT_ELIGIBLE)
             }
         }
@@ -104,14 +119,56 @@ class DormancyService(
         return decide(households.get(householdId), userId).view
     }
 
+    /**
+     * The successor asked first says no. Audited in the database, and from then
+     * every adult member may take it on — and is told so now. No step-up: saying
+     * no gives nothing to anyone, and the successor may still take it on later
+     * the way everyone else may.
+     */
+    @Transactional
+    fun decline(householdId: UUID): DormancyView {
+        val userId = userContext.require()
+        val household = households.get(householdId)
+        val current = decide(household, userId)
+        if (!current.view.dormant) throw notDormant(household)
+        if (!current.view.canDecline) throw notAsked()
+        val dormancyId = try {
+            jdbc.queryForObject(
+                "select app.decline_household_ownership(:hid)", mapOf("hid" to householdId), UUID::class.java,
+            )!!
+        } catch (e: DataAccessException) {
+            val text = e.mostSpecificCause.message ?: ""
+            throw when {
+                "dormancy_not_found" in text -> ApiException.notFound("We couldn't find that household.")
+                "household_not_dormant" in text -> notDormant(household)
+                else -> notAsked()
+            }
+        }
+        notices.openedToOthers(dormancyId, jdbc, except = userId)
+        return decide(households.get(householdId), userId).view
+    }
+
     private fun notDormant(household: HouseholdRow) =
         ApiException.conflict("household_not_dormant", "${household.name} already has someone running it.")
 
-    private fun refusal(decision: Decision) =
-        if (decision.waiting) ApiException.conflict("dormancy_not_yet", WAIT_EXPLANATION)
-        else ApiException(HttpStatus.FORBIDDEN, "ownership_not_eligible", decision.view.explanation ?: NOT_ELIGIBLE)
+    private fun notAsked() = ApiException(
+        HttpStatus.FORBIDDEN, "dormancy_not_asked",
+        "Only the person named to carry the household on can decline, while they're the one asked.",
+    )
 
-    private data class Decision(val view: DormancyView, val waiting: Boolean)
+    private fun successorFirst(until: Instant?) = ApiException.conflict(
+        "dormancy_successor_first",
+        "The person named to carry the household on is asked first" +
+            (until?.let { ", until ${day(it)}" } ?: "") + ". If they decline, you'll be told.",
+    )
+
+    private fun refusal(decision: Decision) = when {
+        decision.waiting -> ApiException.conflict("dormancy_not_yet", WAIT_EXPLANATION)
+        decision.reserved -> successorFirst(decision.view.askedFirstUntil)
+        else -> ApiException(HttpStatus.FORBIDDEN, "ownership_not_eligible", decision.view.explanation ?: NOT_ELIGIBLE)
+    }
+
+    private data class Decision(val view: DormancyView, val waiting: Boolean, val reserved: Boolean = false)
 
     private fun decide(household: HouseholdRow, userId: UUID): Decision {
         val open = jdbc.query(
@@ -130,23 +187,44 @@ class DormancyService(
             )
         }.firstOrNull() ?: return Decision(DormancyView(dormant = false), waiting = false)
 
+        val order = jdbc.query(
+            "select asked_first_until, you_are_asked_first from app.dormancy_order_for_me(:hid)",
+            mapOf("hid" to household.id),
+        ) { rs, _ -> rs.getTimestamp("asked_first_until")?.toInstant() to rs.getBoolean("you_are_asked_first") }
+            .firstOrNull() ?: (null to false)
+        val (askedFirstUntil, youAreAskedFirst) = order
+
         val why = eligibility(household, userId, open)
         val waiting = why == null && Instant.now().isBefore(open.acceptFrom)
+        val reserved = why == null && askedFirstUntil != null && !youAreAskedFirst
         val view = DormancyView(
             dormant = true,
             since = open.startedAt,
             reason = open.reason,
-            ownerName = open.ownerName,
+            // Once the purge has erased them, the row is a former member's: no name to give.
+            ownerName = open.ownerName.takeIf { open.ownerUserId != null },
             acceptFrom = open.acceptFrom,
-            canAccept = why == null && !waiting,
+            canAccept = why == null && !waiting && !reserved,
             explanation = when {
                 why != null -> why
+                youAreAskedFirst && waiting -> "You were named to carry ${household.name} on, so you're asked " +
+                    "first. A week after a memorial, so it can be corrected if it's wrong; then until " +
+                    "${day(askedFirstUntil!!)} only you can take it on."
                 waiting -> WAIT_EXPLANATION
+                youAreAskedFirst -> "You were named to carry ${household.name} on, so you're asked first: until " +
+                    "${day(askedFirstUntil!!)} only you can take it on. If you decline, the other adults here " +
+                    "are asked. Private records stay private."
+                reserved -> "The person named to carry ${household.name} on is asked first, until " +
+                    "${day(askedFirstUntil!!)}. If they decline or don't answer by then, you'll be told and can " +
+                    "take it on."
                 else -> "Nobody runs ${household.name} at the moment. You can take it on. Private records " +
                     "stay private."
             },
+            askedFirstUntil = askedFirstUntil,
+            youAreAskedFirst = youAreAskedFirst,
+            canDecline = youAreAskedFirst,
         )
-        return Decision(view, waiting)
+        return Decision(view, waiting, reserved)
     }
 
     /** Null when the caller may take it on; otherwise why not, in words. Same rules as V120. */
@@ -194,6 +272,9 @@ class DormancyService(
         val ownerUserId: UUID?, val ownerName: String?,
     )
 
+    private fun day(instant: Instant) =
+        LocalDate.ofInstant(instant, ZoneId.of("Asia/Kolkata")).format(DateTimeFormatter.ofPattern("d MMMM", Locale.ENGLISH))
+
     private companion object {
         const val NOT_ELIGIBLE =
             "An adult in the household with their own login — an admin, an editor or a viewer — can take it on."
@@ -215,39 +296,28 @@ class DormancyNotices(
 ) {
 
     /**
-     * Told when a dormancy opens: every other member with a login who could take
-     * it on (admins, editors, viewers), and the owner whose going caused it, who
-     * learns their closure or departure is waiting. Idempotent per dormancy.
+     * Told when a dormancy opens. When a successor is asked first, only they
+     * are told they are asked, and when; the other adults are told when the
+     * offer opens to them ([openedToOthers]). Otherwise every other member with
+     * a login who could take it on (admins, editors, viewers) is told now. The
+     * owner whose departure is held learns it is waiting. Idempotent per dormancy.
      */
     fun opened(dormancyId: UUID, systemJdbc: NamedParameterJdbcTemplate) {
-        val row = systemJdbc.query(
-            """
-            select d.household_id, d.owner_user_id, d.reason, d.accept_from, h.name, m.display_name
-              from household_dormancies d
-              join households h on h.id = d.household_id
-              left join members m on m.id = d.owner_member_id
-             where d.id = :id
-            """.trimIndent(),
-            mapOf("id" to dormancyId),
-        ) { rs, _ ->
-            Opened(
-                rs.getObject("household_id", UUID::class.java), rs.getObject("owner_user_id", UUID::class.java),
-                rs.getString("reason"), rs.getTimestamp("accept_from").toInstant(), rs.getString("name"),
-                rs.getString("display_name") ?: "The owner",
-            )
-        }.firstOrNull() ?: return
+        val row = load(dormancyId, systemJdbc) ?: return
 
-        val from = if (Instant.now().isBefore(row.acceptFrom)) " from ${day(row.acceptFrom)}" else ""
-        recipients(systemJdbc, row.householdId, row.ownerUserId).forEach { other ->
+        if (row.successorUserId != null && row.successorUntil != null) {
+            val from = if (Instant.now().isBefore(row.acceptFrom)) "From ${day(row.acceptFrom)} until" else "Until"
             tell(
-                other, row.householdId, "lifecycle.household.dormant", "household.dormant:$dormancyId",
-                "${row.householdName} needs someone to run it",
-                "${row.ownerName} no longer runs ${row.householdName}. Nothing has been erased, and private " +
-                    "records stay private. An adult in the household can take it on$from, on the Family screen. " +
-                    "Until then, nobody can invite or remove people.",
+                row.successorUserId, row.householdId, "lifecycle.household.asked_first", "household.asked_first:$dormancyId",
+                "You're asked first to take on ${row.householdName}",
+                "${row.who} no longer runs ${row.householdName}, and you were named to carry it on. " +
+                    "$from ${day(row.successorUntil)} only you can take it on, on the Family screen, or decline. " +
+                    "Nothing has been erased, and private records stay private.",
             )
+        } else {
+            openedToOthers(dormancyId, systemJdbc)
         }
-        if (row.reason != "owner_passed_away" && row.ownerUserId != null) {
+        if (row.reason == "owner_leaving" && row.ownerUserId != null) {
             tell(
                 row.ownerUserId, row.householdId, "lifecycle.household.dormant.you", "household.dormant:$dormancyId",
                 "${row.householdName} is waiting for someone to take it on",
@@ -256,6 +326,55 @@ class DormancyNotices(
             )
         }
     }
+
+    /**
+     * The offer is open to every adult member with a login: nobody was asked
+     * first, the successor declined, or their window passed. They are told now,
+     * once per dormancy.
+     */
+    fun openedToOthers(dormancyId: UUID, on: NamedParameterJdbcTemplate, except: UUID? = null) {
+        val row = load(dormancyId, on) ?: return
+        val from = if (Instant.now().isBefore(row.acceptFrom)) " from ${day(row.acceptFrom)}" else ""
+        recipients(on, row.householdId, row.ownerUserId)
+            .filter { it != except && it != row.successorUserIdEvenIfPassed }
+            .forEach { other ->
+                tell(
+                    other, row.householdId, "lifecycle.household.dormant", "household.dormant:$dormancyId",
+                    "${row.householdName} needs someone to run it",
+                    "${row.who} no longer runs ${row.householdName}. Nothing has been erased, and private " +
+                        "records stay private. An adult in the household can take it on$from, on the Family " +
+                        "screen. Until then, nobody can join or be removed.",
+                )
+            }
+    }
+
+    private fun load(dormancyId: UUID, on: NamedParameterJdbcTemplate): Opened? = on.query(
+        """
+        select d.household_id, d.owner_user_id, d.reason, d.accept_from, d.successor_until, h.name,
+               m.display_name, s.user_id as successor_user_id,
+               (d.successor_declined_at is null and d.successor_until > now()) as successor_still_asked
+          from household_dormancies d
+          join households h on h.id = d.household_id
+          left join members m on m.id = d.owner_member_id
+          left join members s on s.id = d.successor_member_id
+         where d.id = :id
+        """.trimIndent(),
+        mapOf("id" to dormancyId),
+    ) { rs, _ ->
+        val owner = rs.getObject("owner_user_id", UUID::class.java)
+        val successor = rs.getObject("successor_user_id", UUID::class.java)
+        val still = rs.getBoolean("successor_still_asked")
+        Opened(
+            householdId = rs.getObject("household_id", UUID::class.java), ownerUserId = owner,
+            reason = rs.getString("reason"), acceptFrom = rs.getTimestamp("accept_from").toInstant(),
+            householdName = rs.getString("name"),
+            // A person erased by the purge has no name here any more (V136).
+            who = if (owner != null) rs.getString("display_name") ?: "The owner" else "The person who ran it",
+            successorUserId = successor.takeIf { still },
+            successorUserIdEvenIfPassed = successor,
+            successorUntil = rs.getTimestamp("successor_until")?.toInstant(),
+        )
+    }.firstOrNull()
 
     /**
      * The open dormancies this closure, departure or memorial caused, asked
@@ -343,7 +462,8 @@ class DormancyNotices(
 
     private data class Opened(
         val householdId: UUID, val ownerUserId: UUID?, val reason: String, val acceptFrom: Instant,
-        val householdName: String, val ownerName: String,
+        val householdName: String, val who: String, val successorUserId: UUID?,
+        val successorUserIdEvenIfPassed: UUID?, val successorUntil: Instant?,
     )
 
     private fun day(instant: Instant) =
@@ -374,6 +494,41 @@ internal class DormancyRecords(private val jdbc: NamedParameterJdbcTemplate) {
         )
 }
 
+/**
+ * The sweep's part in the order (V135): a successor's window that has passed,
+ * or a successor who can no longer take it on, opens the offer to every adult
+ * member, who are told then. On the OWNER connection, with no user.
+ */
+@Component
+class DormancyOffers(
+    @org.springframework.beans.factory.annotation.Qualifier("ownerDataSource") ownerDataSource: javax.sql.DataSource,
+    private val notices: DormancyNotices,
+) {
+    private val jdbc = NamedParameterJdbcTemplate(ownerDataSource)
+
+    /**
+     * The dormancies opened to others by this run. Counted against the
+     * database's clock, as the accept function counts it, not the sweep's
+     * `asOf`: a window must close for the sweep exactly when it closes for
+     * the person who would take the household on.
+     */
+    fun openExpired(): Int {
+        val opened = jdbc.query(
+            """
+            update household_dormancies d set opened_to_others_at = now()
+             where d.ended_at is null and d.opened_to_others_at is null
+               and d.successor_member_id is not null
+               and (d.successor_declined_at is not null or d.successor_until <= now()
+                    or app.dormancy_asks_first(d.id) is null)
+            returning d.id
+            """.trimIndent(),
+            emptyMap<String, Any>(),
+        ) { rs, _ -> rs.getObject("id", UUID::class.java) }
+        opened.forEach { notices.openedToOthers(it, jdbc) }
+        return opened.size
+    }
+}
+
 @RestController
 @RequestMapping("/api/v1/households/{householdId}/dormancy")
 class DormancyController(private val service: DormancyService) {
@@ -384,11 +539,21 @@ class DormancyController(private val service: DormancyService) {
 
     /**
      * Take the household on as its owner. An adult member with a login (admin,
-     * editor or viewer); a week after a memorial (409 dormancy_not_yet); not while
+     * editor or viewer); a week after a memorial (409 dormancy_not_yet); while the
+     * successor the departed owner named is asked first, only them (409
+     * dormancy_successor_first); not while
      * you are closing your account or leaving (403 ownership_not_eligible). Needs a
      * recent step-up (403 step_up_required). Opens none of the departed owner's
      * private records.
      */
     @PostMapping("/accept")
     fun takeOnDormantHousehold(@PathVariable householdId: UUID): DormancyView = service.accept(householdId)
+
+    /**
+     * Decline, as the successor the departed owner named, while you are the one
+     * asked first (403 dormancy_not_asked otherwise). Every adult member may then
+     * take it on, and is told. Audited.
+     */
+    @PostMapping("/decline")
+    fun declineDormantHousehold(@PathVariable householdId: UUID): DormancyView = service.decline(householdId)
 }

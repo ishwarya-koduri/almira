@@ -2321,6 +2321,52 @@ end $$;
 select pg_temp.assert(app.can_administer_household((select v from t where k='dh')),
   'before: the admin administers');
 
+-- V135: the owner names the admin to carry the household on, so the admin is asked first.
+select pg_temp.as_user('dh_owner');
+insert into household_successors (household_id, named_by, successor_member_id)
+  values ((select v from t where k='dh'), app.current_user_id(), :'dh_adminm_id');
+select pg_temp.as_user('dh_admin');
+
+do $$
+declare blocked boolean;
+begin
+  blocked := false;
+  begin
+    perform 1 from dormancy_settings;
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the successor''s window is not the runtime role''s to read');
+
+  blocked := false;
+  begin
+    update dormancy_settings set successor_window = interval '1 day';
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor to shorten');
+
+  blocked := false;
+  begin
+    perform app.may_take_on_household((select v from t where k='dh'), (select v from t where k='dh_teen'));
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'whether a named person may take a household on is not the runtime role''s to ask');
+
+  blocked := false;
+  begin
+    perform app.dormancy_asks_first(gen_random_uuid());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nor who is asked first');
+
+  blocked := false;
+  begin
+    update members set former_since = now()
+     where household_id = (select v from t where k='dh') and display_name = 'Chintu';
+  exception when others then blocked := sqlerrm = 'only the erasure makes a former member';
+  end;
+  perform pg_temp.assert(blocked, 'nobody but the erasure makes a former member (V136)');
+end $$;
+
 -- The admin marks the owner as passed away: the trigger makes it dormant.
 insert into member_memorials (household_id, member_id, user_id, marked_by, basis)
   values ((select v from t where k='dh'), (select v from t where k='dh_m_owner'),
@@ -2332,11 +2378,62 @@ select pg_temp.assert((select count(*) from household_dormancies
   'a memorial on the last owner makes the household dormant, for a week before anyone may take it on');
 select pg_temp.assert(app.household_is_dormant((select v from t where k='dh')),
   'the household can see it is dormant');
-select pg_temp.assert(not app.can_administer_household((select v from t where k='dh'))
+select pg_temp.assert((select count(*) from household_dormancies
+                        where household_id = (select v from t where k='dh') and ended_at is null
+                          and successor_member_id is not null
+                          and successor_until = accept_from + interval '14 days'
+                          and opened_to_others_at is null) = 1,
+  'the named successor is asked first, for fourteen days after the week');
+select pg_temp.assert((select you_are_asked_first and asked_first_until is not null
+                         from app.dormancy_order_for_me((select v from t where k='dh'))),
+  'and knows it');
+select pg_temp.assert(app.can_administer_household((select v from t where k='dh'))
                       and app.can_write_household((select v from t where k='dh')),
-  'while dormant the admin administers nothing, and can still write what is theirs');
+  'while dormant the admin still administers what is not membership (V135), and writes what is theirs');
 select pg_temp.assert(not pg_temp.sees('dh_fd'),
   'and dormancy opens none of the owner''s private records');
+
+-- Membership is frozen, in the policies themselves.
+do $$
+declare blocked boolean; n int;
+begin
+  blocked := false;
+  begin
+    insert into members (household_id, display_name) values ((select v from t where k='dh'), 'Cousin');
+  exception when others then blocked := sqlerrm like '%row-level security%';
+  end;
+  perform pg_temp.assert(blocked, 'while dormant nobody adds a person');
+
+  delete from members where household_id = (select v from t where k='dh') and display_name = 'The CA';
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor removes one');
+
+  blocked := false;
+  begin
+    update members set date_of_birth = date '1990-01-01'
+     where household_id = (select v from t where k='dh') and display_name = 'Chintu';
+  exception when others then blocked := sqlerrm = 'household_dormant';
+  end;
+  perform pg_temp.assert(blocked, 'nor changes the date of birth that decides who may take it on');
+
+  update household_memberships set role = 'admin'
+   where household_id = (select v from t where k='dh') and user_id = (select v from t where k='dh_teen');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor changes anyone''s role');
+
+  blocked := false;
+  begin
+    insert into household_departures (household_id, member_id, user_id, started_by, started_by_admin, effective_at)
+      select m.household_id, m.id, m.user_id, app.current_user_id(), true, now() + interval '7 days'
+        from members m where m.household_id = (select v from t where k='dh') and m.display_name = 'Chintu';
+  exception when others then blocked := sqlerrm like '%row-level security%';
+  end;
+  perform pg_temp.assert(blocked, 'nor asks anyone to leave');
+
+  update households set name = 'Dormant, renamed' where id = (select v from t where k='dh');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 1, 'but renaming the household is not membership, and stays open');
+end $$;
 
 do $$
 declare blocked boolean; n int;
@@ -2386,7 +2483,17 @@ begin
   exception when others then blocked := sqlerrm = 'ownership_not_eligible';
   end;
   perform pg_temp.assert(blocked, 'a minor cannot take a household on');
+
+  blocked := false;
+  begin
+    perform app.decline_household_ownership((select v from t where k='dh'));
+  exception when others then blocked := sqlerrm = 'dormancy_not_asked';
+  end;
+  perform pg_temp.assert(blocked, 'nor decline for the successor');
 end $$;
+select pg_temp.assert((select not you_are_asked_first and asked_first_until is not null
+                         from app.dormancy_order_for_me((select v from t where k='dh'))),
+  'the others see that someone is asked first, and until when, but not that it is them');
 
 select pg_temp.as_user('dh_adv');
 do $$

@@ -2206,6 +2206,17 @@ begin
   perform pg_temp.assert(app.message_is_essential('auth.new_sign_in')
                          and not app.message_is_essential('reminder.maturity'),
     'a sign-in notice is essential and a reminder is not');
+  -- V140: a notice that changes your own rights or obligations is essential;
+  -- someone else joining or leaving is household news, under consent.
+  perform pg_temp.assert(app.message_is_essential('emergency.named')
+                         and app.message_is_essential('lifecycle.departure.completed.you')
+                         and app.message_is_essential('lifecycle.memorial.reversed')
+                         and app.message_is_essential('lifecycle.successor.named'),
+    'being named, leaving, a memorial reversed and a successor named are essential (V140)');
+  perform pg_temp.assert(not app.message_is_essential('lifecycle.departure.completed')
+                         and not app.message_is_essential('lifecycle.departure.started')
+                         and not app.message_is_essential('lifecycle.coming_of_age.welcomed'),
+    'someone else joining or leaving is not essential (V140)');
 end $$;
 
 insert into messages_consent_asks (user_id) values ((select v from t where k='ish'));

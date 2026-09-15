@@ -87,9 +87,24 @@ class MessagesConsentTest : ApiTestBase() {
     /** Everything sent outside the app that is not an essential notice. */
     private val nonEssential = listOf(
         "reminder.maturity", "reminder.premium_due", "reminder.emi", "still_true.digest",
-        "continuity.reachable", "continuity.key_holder_ask", "emergency.named",
-        "lifecycle.coming_of_age.welcomed", "lifecycle.departure.started", "household.member_removal_blocked",
+        "continuity.reachable", "continuity.key_holder_ask",
+        "lifecycle.coming_of_age.welcomed", "lifecycle.coming_of_age.guardian", "lifecycle.departure.started",
+        "lifecycle.departure.completed", "lifecycle.departure.cancelled", "household.member_removal_blocked",
         "something.added_later",
+    )
+
+    /**
+     * The owner's test (V140): "does it change YOUR rights or obligations?" These do,
+     * for the one person each is sent to.
+     */
+    private val changesYourRights = listOf(
+        "emergency.named", "lifecycle.departure.completed.you", "lifecycle.memorial.reversed", "lifecycle.successor.named",
+    )
+
+    /** Someone else joined or left: household news, and under consent. */
+    private val householdNews = listOf(
+        "lifecycle.departure.started", "lifecycle.departure.completed", "lifecycle.departure.cancelled",
+        "lifecycle.coming_of_age.welcomed",
     )
 
     @Test
@@ -118,6 +133,29 @@ class MessagesConsentTest : ApiTestBase() {
         outbox.drain()
         keys.forEach { (template, key) ->
             assertThat(delivered(key)).describedAs(template).containsEntry("sms", 1).containsEntry("email", 1)
+        }
+    }
+
+    @Test
+    fun `a notice that changes your own rights goes outside the app without consent, household news does not`() {
+        val yours = changesYourRights.associateWith { tell(it) }
+        val news = householdNews.associateWith { tell(it) }
+
+        yours.forEach { (template, key) ->
+            assertThat(MessageTemplates.isEssential(template)).describedAs(template).isTrue()
+            assertThat(outside(key)).describedAs("$template: queued on every channel, never asked").containsExactly("email", "push", "sms")
+        }
+        news.forEach { (template, key) ->
+            assertThat(MessageTemplates.isEssential(template)).describedAs(template).isFalse()
+            assertThat(outside(key)).describedAs("$template: nothing queued without a yes").isEmpty()
+            assertThat(inApp(key)).describedAs("$template: still in the app").isEqualTo(1)
+        }
+        outbox.drain()
+        yours.forEach { (template, key) ->
+            assertThat(delivered(key)).describedAs(template).containsEntry("sms", 1).containsEntry("email", 1)
+        }
+        news.forEach { (template, key) ->
+            assertThat(delivered(key).values).describedAs(template).containsOnly(0)
         }
     }
 

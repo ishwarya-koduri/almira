@@ -73,9 +73,11 @@ Almira asks separately for each thing it does with your data: keeping your
 records and showing them to the people you choose, and sending you reminders
 outside the app, by email, SMS or push. Nothing is sent outside the app until
 you say yes, and we ask when a reminder would first help. Notices that protect
-your account come either way: a sign-in code, a new sign-in, a changed phone
-number or sign-in method, a request for emergency access you can stop, and your
-account being closed or taken over. You can withdraw either consent in one tap
+your account, or change what you may or must do, come either way: a sign-in
+code, a new sign-in, a changed phone number or sign-in method, a request for
+emergency access you can stop, being named someone's emergency contact or the
+person to carry a household on, leaving a household, and your account being
+closed or taken over. You can withdraw either consent in one tap
 on Your data rights, the same way you gave it. Withdrawing the first means
 closing your account. Every choice is kept as a dated line you can see.
 
@@ -183,10 +185,13 @@ loan with an EMI day (`static/app/message-consent.js`):
 - In-app reminders and notices are the same whatever the answer.
 
 **Notices that protect your account.** These are not under consent to messages
-— the person needs them to protect their account, or to stop something being
-done to them or in their name — and they are not held by quiet hours or the
-daily limit. Exactly these, and nothing else (`app.message_is_essential`, V125,
-and `MessageTemplates.ESSENTIAL_TEMPLATES`; one list, pinned together by
+— the person needs them to protect their account, to stop something being done
+to them or in their name, or because the notice changes their own rights or
+obligations — and they are not held by quiet hours or the daily limit. The last
+kind is the owner's test (V140), asked of the person the notice is sent to:
+*does it change YOUR rights or obligations?* Exactly these, and nothing else
+(`app.message_is_essential`, V125 and V140, and
+`MessageTemplates.ESSENTIAL_TEMPLATES`; one list, pinned together by
 `MessagesConsentTest`):
 
 | Notice | Template |
@@ -204,14 +209,28 @@ and `MessageTemplates.ESSENTIAL_TEMPLATES`; one list, pinned together by
 | You were marked as passed away | `lifecycle.memorial.marked` |
 | Someone has taken over as owner of your household | `lifecycle.successor.claimed` |
 | You have been asked to leave a household | `lifecycle.departure.asked` |
+| You were named someone's emergency contact — a duty placed on you (V140) | `emergency.named` |
+| You've left a household — your access changed (V140) | `lifecycle.departure.completed.you` |
+| The passed-away label you gave someone was taken away — a major change of state (V140) | `lifecycle.memorial.reversed` |
+| You were named to carry a household on — sent to the successor only (V140) | `lifecycle.successor.named` |
 
 A sign-in code by SMS is sent at sign-in, not as a notification, and is not
 under consent either. Everything else sent outside the app is: reminders, the
-Still true? digest, being named an emergency contact or a successor, a
-key-holder question, a child coming of age, someone else joining, leaving or
-signing back in, and any kind of message added later until it is deliberately
-put on the list above. There is no dormancy notice today; when there is one, it
-belongs on the list.
+Still true? digest, a key-holder question, **household news** — someone else
+joining, leaving, staying after all or signing in for the first time as an adult
+(`lifecycle.departure.started`, `.completed`, `.cancelled`,
+`lifecycle.coming_of_age.welcomed`) — the note to the adults who run a household
+that a child turns 18 (`lifecycle.coming_of_age.guardian`), and any kind of
+message added later until it is deliberately put on the list above.
+
+A child coming of age changes *that child's* rights, so it is essential to the
+child. No message about it reaches the child today: a child is noticed only
+while they have no login of their own, and is welcomed in the app when they
+first sign in ("These are yours now"). The dormancy notices added with V120
+(`lifecycle.household.dormant`, `.dormant.you`, `.running_again`,
+`.ownership_accepted`) are not on the list; whether the owner's test puts them
+there is recorded in known issues ("Consent to messages is asked for on the web
+only, and some reminders are never asked about").
 
 **Children.** Family → Add someone with a date of birth under 18 opens
 "Adding Aarav's records" before anything is saved: parent or lawful

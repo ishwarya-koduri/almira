@@ -791,8 +791,11 @@ came.** `DeliveryPacing` keeps it as the worker claims each row:
    queueing, the worker's re-check and pacing; `MessageTemplates.ESSENTIAL_TEMPLATES`
    is the same list for the wording, and `MessagesConsentTest` fails if the two
    differ. A template that is on neither list — a new kind of message — is not
-   essential. Being named an emergency contact, a child coming of age and other
-   notes about the household are not on it.
+   essential. A notice that changes the recipient's own rights or obligations is
+   on it (V140: being named an emergency contact or a successor, having left a
+   household, a memorial reversed), so it also skips quiet hours and the daily
+   limit; household news — someone else joining or leaving — and a child coming
+   of age told to the adults are not.
 2. **A switched-off channel is skipped** — `skipped`, `turned_off` — in every
    mode. Preferences: `GET`/`PUT /api/v1/me/notification-preferences`
    (`smsEnabled`, `emailEnabled`, `pushEnabled`, `quietFrom`, `quietUntil` as

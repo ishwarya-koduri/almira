@@ -29,24 +29,28 @@ package tech.bhrigu.almira.provider
 object MessageTemplates {
 
     /** The kinds of message, by what the person is being told about. */
-    enum class Kind { REMINDER, STILL_TRUE, EMERGENCY, ACCOUNT, OTHER }
+    enum class Kind { REMINDER, STILL_TRUE, EMERGENCY, ACCOUNT, YOUR_PLACE, OTHER }
 
     /**
-     * The essential notices: messages a person needs to protect their account, or
-     * to stop something being done to them or in their name (docs/23 "What you
-     * agree to", docs/13 "Pacing"). Exactly these, and nothing by prefix — a new
+     * The essential notices: messages a person needs to protect their account, to
+     * stop something being done to them or in their name, or that change their own
+     * rights or obligations (docs/23 "Notices that protect your account", docs/13
+     * "Pacing"). The owner's test for the last kind is asked of the person who
+     * receives it: "does it change YOUR rights or obligations?" Being named an
+     * emergency contact does (a duty); someone else joining or leaving does not
+     * (household news, under consent). Exactly these, and nothing by prefix — a new
      * kind of message is not essential until someone decides it is, in review.
      *
      * An essential notice is **not under consent to messages**, is not paced by
      * quiet hours or the daily limit, and is not stopped by a switched-off
      * channel — the same way a bank's security alert is not. Everything else
      * sent outside the app (a reminder, the Still true? digest, a note that
-     * someone named you, a household change) goes only to someone who said yes.
+     * someone else joined or left, a child came of age) goes only to someone who said yes.
      *
-     * **One list.** `app.message_is_essential` (V125) is the same list in the
+     * **One list.** `app.message_is_essential` (V125, V140) is the same list in the
      * database, and it is the one the gates ask: queueing, the worker's re-check
      * before a send, and pacing. This copy is for the wording ([kindOf]) and for
-     * reading. EssentialMessagesTest fails if the two ever differ.
+     * reading. MessagesConsentTest fails if the two ever differ.
      */
     val ESSENTIAL_TEMPLATES: Set<String> = setOf(
         // A sign-in code by email (auth/EmailOtpSender.kt), sent at sign-in rather
@@ -67,27 +71,41 @@ object MessageTemplates {
         "emergency.requested",
         "emergency.raised",
         "emergency.vetoed",
+        // You were named the person who may ask for someone's records: a duty (V140).
+        "emergency.named",
         // Your account, or your place in a household, is being ended or taken.
         "lifecycle.closure.requested",
         "lifecycle.closure.cancelled",
         "lifecycle.memorial.marked",
         "lifecycle.successor.claimed",
         "lifecycle.departure.asked",
+        // Your place in a household changed (V140): you left it, the passed-away
+        // label you gave was taken away, or you were named to carry it on. Each is
+        // sent only to the person whose place it is.
+        "lifecycle.departure.completed.you",
+        "lifecycle.memorial.reversed",
+        "lifecycle.successor.named",
+    )
+
+    /** Essential, and about the person's place in a household rather than their account (V140). */
+    private val YOUR_PLACE_TEMPLATES = setOf(
+        "lifecycle.departure.completed.you", "lifecycle.memorial.reversed", "lifecycle.successor.named",
     )
 
     fun isEssential(template: String): Boolean = template in ESSENTIAL_TEMPLATES
 
     /**
      * Why a message came. Only an essential notice is worded as one that "always
-     * comes": a note that you were named an emergency contact, or that a child
-     * came of age, is under consent like a reminder, and says so no differently
-     * from anything else from the household.
+     * comes": a note that someone else left, or that a child came of age, is under
+     * consent like a reminder, and says so no differently from anything else from
+     * the household.
      */
     fun kindOf(template: String): Kind = when {
         template.startsWith("reminder.") -> Kind.REMINDER
         template.startsWith("still_true.") -> Kind.STILL_TRUE
         !isEssential(template) -> Kind.OTHER
         template.startsWith("emergency.") -> Kind.EMERGENCY
+        template in YOUR_PLACE_TEMPLATES -> Kind.YOUR_PLACE
         else -> Kind.ACCOUNT
     }
 
@@ -117,6 +135,7 @@ object MessageTemplates {
             Kind.EMERGENCY to "You're getting this because it's about who can reach your family's records if someone can't. " +
                 "Messages like this always come, even in quiet hours.",
             Kind.ACCOUNT to "You're getting this because it's about your own Almira account. Messages like this always come.",
+            Kind.YOUR_PLACE to "You're getting this because it changes your own place in an Almira household. Messages like this always come.",
             Kind.OTHER to "You're getting this because of something in your Almira household.",
         ),
         whyShort = mapOf(
@@ -124,6 +143,7 @@ object MessageTemplates {
             Kind.STILL_TRUE to "Yours, not confirmed lately.",
             Kind.EMERGENCY to "About emergency access.",
             Kind.ACCOUNT to "About your account.",
+            Kind.YOUR_PLACE to "About your place in a household.",
             Kind.OTHER to "From your household.",
         ),
         promise = "Our quiet promise: at most one reminder a day, never a sales message, and every message says why it came. " +
@@ -141,6 +161,7 @@ object MessageTemplates {
             Kind.EMERGENCY to "ఎవరైనా అందుబాటులో లేనప్పుడు మీ కుటుంబ నమోదులను ఎవరు చూడగలరో దీని గురించి. " +
                 "ఇలాంటి సందేశాలు నిశ్శబ్ద సమయంలో కూడా వస్తాయి.",
             Kind.ACCOUNT to "ఇది మీ స్వంత Almira ఖాతా గురించి. ఇలాంటి సందేశాలు ఎప్పుడూ వస్తాయి.",
+            Kind.YOUR_PLACE to "ఇది Almira కుటుంబంలో మీ స్వంత స్థానాన్ని మారుస్తుంది. ఇలాంటి సందేశాలు ఎప్పుడూ వస్తాయి.",
             Kind.OTHER to "మీ Almira కుటుంబంలో జరిగిన దాని వల్ల ఈ సందేశం.",
         ),
         whyShort = mapOf(
@@ -148,6 +169,7 @@ object MessageTemplates {
             Kind.STILL_TRUE to "మీవి, ఈమధ్య ధృవీకరించలేదు.",
             Kind.EMERGENCY to "అత్యవసర ప్రాప్తి గురించి.",
             Kind.ACCOUNT to "మీ ఖాతా గురించి.",
+            Kind.YOUR_PLACE to "కుటుంబంలో మీ స్థానం గురించి.",
             Kind.OTHER to "మీ కుటుంబం నుండి.",
         ),
         promise = "మా నిశ్శబ్ద హామీ: రోజుకు ఒక్క రిమైండర్ మించదు, అమ్మకాల సందేశాలు ఎప్పుడూ ఉండవు, ప్రతి సందేశం ఎందుకు వచ్చిందో చెబుతుంది. " +
@@ -165,6 +187,7 @@ object MessageTemplates {
             Kind.EMERGENCY to "यह इस बारे में है कि किसी के न होने पर आपके परिवार के रिकॉर्ड तक कौन पहुँच सकता है। " +
                 "ऐसे संदेश शांत समय में भी आते हैं।",
             Kind.ACCOUNT to "यह आपके अपने Almira खाते के बारे में है। ऐसे संदेश हमेशा आते हैं।",
+            Kind.YOUR_PLACE to "यह Almira परिवार में आपकी अपनी जगह बदलता है। ऐसे संदेश हमेशा आते हैं।",
             Kind.OTHER to "आपके Almira परिवार में हुई किसी बात की वजह से यह संदेश आया है।",
         ),
         whyShort = mapOf(
@@ -172,6 +195,7 @@ object MessageTemplates {
             Kind.STILL_TRUE to "आपके, हाल में पुष्टि नहीं हुई।",
             Kind.EMERGENCY to "आपातकालीन पहुँच के बारे में।",
             Kind.ACCOUNT to "आपके खाते के बारे में।",
+            Kind.YOUR_PLACE to "परिवार में आपकी जगह के बारे में।",
             Kind.OTHER to "आपके परिवार से।",
         ),
         promise = "हमारा शांत वादा: दिन में एक से ज़्यादा रिमाइंडर नहीं, कभी बिक्री का संदेश नहीं, और हर संदेश बताता है कि वह क्यों आया। " +

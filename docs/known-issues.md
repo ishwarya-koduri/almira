@@ -2434,6 +2434,16 @@ surface.
 
 ## 78. Backups carry queued sign-in email addresses
 
+**Resolved** (2026-09-15), by the owner's answer: *exclude — more firmly than the
+reminder bodies; a backup holding them is a credential store*. `backup.sh` leaves
+out the rows of `public.sign_in_code_email_bodies` as well as
+`public.outbound_message_bodies`, lists both in `excluded_table_data`, and refuses
+before dumping when any table whose name contains `bod` is not one of the two.
+`scripts/tests/backup-checks-before-dumping.sh` proves the rows are absent from
+the dump and that an unknown bodies table refuses with nothing written, watched
+failing with the refusal turned into a message. The entry is kept below as it
+was found.
+
 **Where** `scripts/backup.sh`, `sign_in_code_email_bodies` (V110).
 
 **What** `backup.sh` leaves out the rows of `outbound_message_bodies` only, and

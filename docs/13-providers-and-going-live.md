@@ -902,8 +902,8 @@ week, "Ask me later", and never on a family birthday or death anniversary
 ### After a restore: `body_not_restored`
 
 A backup does not carry queued bodies. `scripts/backup.sh` leaves the data of
-`outbound_message_bodies` out of the dump, the same way Redis is left out (the
-table itself is in it, empty), so a backup taken mid-drain holds no rendered
+`outbound_message_bodies` and `sign_in_code_email_bodies` out of the dump, the
+same way Redis is left out (the tables themselves are in it, empty), so a backup taken mid-drain holds no rendered
 message in plaintext (docs/17 §6). The cost is on the restored server: a row
 that was `queued` when the backup was taken comes back with no body.
 

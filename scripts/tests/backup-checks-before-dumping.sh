@@ -42,6 +42,8 @@ create table outbound_messages (id int primary key, status text);
 insert into outbound_messages values (1, 'queued');
 create table outbound_message_bodies (message_id int primary key, body text, address text);
 insert into outbound_message_bodies values (1, 'SECRET-BODY-your code is 481516', '+919000000001');
+create table sign_in_code_email_bodies (message_id int primary key, address text, purpose text, request_id text, code_length int);
+insert into sign_in_code_email_bodies values (1, 'SECRET-SIGNIN-tester@example.com', 'login', 'SECRET-REQUEST-0001', 6);
 SQL
 
 backup() { # → $STATUS, output in $WORK/out, backups under $OUT
@@ -72,6 +74,16 @@ check "and nothing was written" nothing_written
 check "and pg_dump never ran" not_called pg_dump
 owner_sql "alter table outbound_message_bodies_v2 rename to outbound_message_bodies"
 
+# 2b · A third bodies table the exclusion does not know about.
+owner_sql "create table push_message_bodies (message_id int primary key, body text)"
+: > "$CALLS"
+backup third-bodies
+check "an unknown bodies table refuses, naming it (exit $STATUS)" \
+  bash -c "[ $STATUS != 0 ] && grep -q 'public.push_message_bodies' '$WORK/out'"
+check "and nothing was written" nothing_written
+check "and pg_dump never ran" not_called pg_dump
+owner_sql "drop table push_message_bodies"
+
 # 3 · A normal backup.
 : > "$CALLS"
 backup normal
@@ -82,13 +94,18 @@ check "a normal backup succeeds (exit $STATUS)" bash -c "[ $STATUS = 0 ] && [ -f
 check "the dump has the bodies table itself, so a restore has somewhere to queue" \
   grep -Eq 'TABLE public outbound_message_bodies ' "$WORK/toc"
 check "but no TABLE DATA for it" bash -c "! grep -q 'TABLE DATA public outbound_message_bodies ' '$WORK/toc'"
+check "the queued sign-in emails' table is there too, with no TABLE DATA" \
+  bash -c "grep -Eq 'TABLE public sign_in_code_email_bodies ' '$WORK/toc' && ! grep -q 'TABLE DATA public sign_in_code_email_bodies ' '$WORK/toc'"
+check "and no sign-in address or request id anywhere in the dump" \
+  bash -c "! grep -q 'SECRET-SIGNIN\|SECRET-REQUEST' '$WORK/data' && ! LC_ALL=C grep -aq 'SECRET-SIGNIN' '$DEST/database.dump'"
 check "and no body text anywhere in the dump's data" bash -c "! grep -q 'SECRET-BODY' '$WORK/data' && ! LC_ALL=C grep -aq 'SECRET-BODY' '$DEST/database.dump'"
 check "while every other table's data is there" grep -q 'TABLE DATA public households ' "$WORK/toc"
 check "the manifest names what was left out, and counts no rows for it" python3 -c '
 import json, sys
 m = json.load(open(sys.argv[1]))
-assert m["excluded_table_data"] == ["public.outbound_message_bodies"], m.get("excluded_table_data")
+assert m["excluded_table_data"] == ["public.outbound_message_bodies", "public.sign_in_code_email_bodies"], m.get("excluded_table_data")
 assert "public.outbound_message_bodies" not in m["row_counts"], m["row_counts"]
+assert "public.sign_in_code_email_bodies" not in m["row_counts"], m["row_counts"]
 assert m["row_counts"]["public.households"] == 2, m["row_counts"]
 ' "$DEST/manifest.json"
 check "and says the documents are in it" python3 -c '

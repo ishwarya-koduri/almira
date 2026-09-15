@@ -429,13 +429,15 @@ leaves nothing behind. On a deployment whose documents are in object storage it
 refuses unless told, explicitly, that they are not in this backup ("Documents
 in object storage", below).
 
-**Queued message bodies are deliberately not in the backup.** The dump has the
-`outbound_message_bodies` table but none of its rows (`pg_dump
---exclude-table-data`), so a backup taken while a one-time code or reminder was
-waiting to go holds no rendered message in plaintext; the manifest lists it under
-`excluded_table_data`. Because that exclusion matches by name and is silent when
-it matches nothing, `backup.sh` refuses if a bodies table exists under any other
-name. On the restored server a message that was still queued is recorded failed,
+**Queued bodies are deliberately not in the backup.** The dump has the
+`outbound_message_bodies` and `sign_in_code_email_bodies` tables but none of their
+rows (`pg_dump --exclude-table-data`), so a backup taken while a reminder or a
+sign-in email was waiting to go holds no rendered message and no queued sign-in
+(address and request id, from which the server derives a live code). A backup
+holding them would be a credential store (owner's decision, 2026-09-15). The
+manifest lists both under `excluded_table_data`. Because the exclusion matches
+by name and is silent when it matches nothing, `backup.sh` refuses if any table
+whose name contains `bod` is not one of the two it knows. On the restored server a message that was still queued is recorded failed,
 once, as `body_not_restored` and is not sent ([Doc 13](13-providers-and-going-live.md),
 "After a restore").
 

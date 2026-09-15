@@ -12,12 +12,14 @@
 #   manifest.json   sha256 of both files, row counts per table AS THEY ARE IN
 #                   THE DUMP, the migration version, and the server settings
 #
-# WHAT IS NOT IN IT, ON PURPOSE: the rows of outbound_message_bodies — the
-# rendered text of messages still waiting to be sent, one-time codes among them.
-# The table is in the dump, empty. A message still queued when the backup was
-# taken comes back without its body and is recorded failed, once, as
+# WHAT IS NOT IN IT, ON PURPOSE: the rows of the two tables that hold what is
+# still waiting to be sent — outbound_message_bodies (rendered messages) and
+# sign_in_code_email_bodies (queued sign-in emails, from which a live code can be
+# derived). A backup holding them would be a credential store (owner's decision,
+# 2026-09-15). The tables are in the dump, empty. A message still queued when the
+# backup was taken comes back without its body and is recorded failed, once, as
 # body_not_restored instead of being sent (docs/13 "After a restore"). The
-# manifest lists the table under excluded_table_data.
+# manifest lists both tables under excluded_table_data.
 #
 # DOCUMENTS IN OBJECT STORAGE (ALMIRA_STORAGE_PROVIDER=s3 in the env file) are
 # not in it either, and this script will not pretend otherwise: it refuses to
@@ -96,20 +98,23 @@ if [ "$DOCS_EXTERNAL" = 0 ]; then
   docker volume inspect "$DOCS_VOLUME" >/dev/null 2>&1 || die "Documents volume $DOCS_VOLUME does not exist."
 fi
 
-# The table whose rows are left out. --exclude-table-data matches by name and
-# says nothing when it matches no table, so a renamed or second bodies table
-# would be dumped in full without a word. Refuse unless the only table that
-# looks like one is this one. (A database from before V32 has none, and nothing
-# to leave out.)
-BODIES_TABLE="public.outbound_message_bodies"
-BODIES_LIKE=$(sql "select coalesce(string_agg(n.nspname || '.' || c.relname, ', ' order by 1), '')
-                     from pg_class c join pg_namespace n on n.oid = c.relnamespace
-                    where c.relkind in ('r', 'p') and c.relname ilike '%message%bod%'
-                      and n.nspname not in ('pg_catalog', 'information_schema')")
-case "$BODIES_LIKE" in
-  ""|"$BODIES_TABLE") ;;
-  *) die "Refusing to back up: the message bodies are expected in $BODIES_TABLE alone, but this database has: $BODIES_LIKE. Their rows would be dumped in full. Update BODIES_TABLE in this script to match the schema.";;
-esac
+# The tables whose rows are left out. --exclude-table-data matches by name and
+# says nothing when it matches no table, so a renamed or third bodies table
+# would be dumped in full without a word. Refuse unless every table that looks
+# like one is one of these. (An older database has fewer, or none: only the ones
+# that exist are left out.)
+BODIES_KNOWN="public.outbound_message_bodies public.sign_in_code_email_bodies"
+BODIES_FOUND=$(sql "select coalesce(string_agg(n.nspname || '.' || c.relname, ' ' order by n.nspname, c.relname), '')
+                      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                     where c.relkind in ('r', 'p') and c.relname ilike '%bod%'
+                       and n.nspname not in ('pg_catalog', 'information_schema')")
+BODIES_TABLES=""
+for t in $BODIES_FOUND; do
+  case " $BODIES_KNOWN " in
+    *" $t "*) BODIES_TABLES="${BODIES_TABLES:+$BODIES_TABLES }$t";;
+    *) die "Refusing to back up: queued bodies are expected only in $BODIES_KNOWN, but this database also has $t. Its rows would be dumped in full. Update BODIES_KNOWN in this script to match the schema.";;
+  esac
+done
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 DEST="$OUT/almira-$STAMP"
@@ -125,8 +130,10 @@ if [ "$DOCS_EXTERNAL" = 1 ]; then
   echo "  ${DIM}(acknowledged with ALMIRA_BACKUP_DOCUMENTS=external; the manifest says the same)${OFF}"
 fi
 
-echo "  database… ${DIM}(without the rows of $BODIES_TABLE)${OFF}"
-dc exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --exclude-table-data="$1"' sh "$BODIES_TABLE" > "$DEST/database.dump"
+echo "  database… ${DIM}(without the rows of ${BODIES_TABLES:-no bodies tables})${OFF}"
+EXCLUDES=()
+for t in $BODIES_TABLES; do EXCLUDES+=("--exclude-table-data=$t"); done
+dc exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc "$@"' sh ${EXCLUDES[@]+"${EXCLUDES[@]}"} > "$DEST/database.dump"
 
 MIGRATION=$(sql "select version from flyway_schema_history where success and version is not null order by installed_rank desc limit 1")
 CHECKSUMS=$(sql "show data_checksums")
@@ -161,7 +168,7 @@ for line in sys.stdin:
 json.dump(counts, open(sys.argv[1], "w"), indent=1, sort_keys=True)
 ' "$DEST/.counts.json"
 
-python3 - "$DEST" "$PROJECT" "$MIGRATION" "$CHECKSUMS" "$SERVER" "$(sed -n 's/^ALMIRA_IMAGE_TAG=//p' "$ENV_FILE")" "$BODIES_TABLE" \
+python3 - "$DEST" "$PROJECT" "$MIGRATION" "$CHECKSUMS" "$SERVER" "$(sed -n 's/^ALMIRA_IMAGE_TAG=//p' "$ENV_FILE")" "$BODIES_TABLES" \
   "$(python3 scripts/lib/backup_documents.py manifest-block "$ENV_FILE")" <<'PY'
 import hashlib, json, os, sys, datetime
 dest, project, migration, checksums, server, tag, bodies, documents = sys.argv[1:9]
@@ -191,7 +198,7 @@ manifest = {
     "row_counts": counts,
     # Rows deliberately not in the dump; the tables themselves are. Not counted
     # above, so a restore's row-count check does not expect them.
-    "excluded_table_data": [bodies],
+    "excluded_table_data": sorted(bodies.split()),
     "not_included": "ALMIRA_KMS_MASTER_KEY — kept separately, never with a backup (docs/17 §4)",
 }
 json.dump(manifest, open(os.path.join(dest, "manifest.json"), "w"), indent=2, sort_keys=True)

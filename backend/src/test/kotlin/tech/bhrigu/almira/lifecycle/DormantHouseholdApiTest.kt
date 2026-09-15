@@ -87,6 +87,10 @@ class DormantHouseholdApiTest : LifecycleTestSupport() {
         val solo = createHousehold(ishwarya, "Just me", "private", "Ishwarya").path("id").asText()
         capture(ishwarya, solo, "gold_physical", "Solo gold", BigDecimal(1))
         val herId = userId(ishwarya)
+        // The dormancy notice is not on the essential list, so it goes beyond the app
+        // only to people who said yes to messages (V125).
+        consentToMessages(ravi)
+        consentToMessages(meera)
         requestClosure(ishwarya)
 
         val result = sweep.run(later)

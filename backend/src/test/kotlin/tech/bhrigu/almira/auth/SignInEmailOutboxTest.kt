@@ -18,6 +18,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+import org.springframework.test.annotation.DirtiesContext
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import tech.bhrigu.almira.config.AlmiraProperties
@@ -37,6 +38,9 @@ import javax.sql.DataSource
  * outlives the record of how its message ended. The request path that fills
  * the queue is EmailOtpTest and EmailSignInApiTest.
  */
+// Closed after the class: one more cached server holding pools took the shared
+// test database past max_connections for the suites after it.
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("The sign-in email outbox")
 @Import(SignInEmailOutboxTest.Recording::class)
 class SignInEmailOutboxTest : ApiTestBase() {

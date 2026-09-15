@@ -1295,6 +1295,20 @@ are kept. Nothing about them is personal, and the switch is one screen away.
 
 ## 41. With `ALMIRA_STORAGE_PROVIDER=s3`, backups do not include the documents
 
+**Resolved** (2026-09-15, `014e2e9`), by the owner's answer rather than by
+putting the bucket in the backup: *neither refuse nor warn — require explicit
+acknowledgement*. `backup.sh` refuses an `s3` deployment unless run with
+`ALMIRA_BACKUP_DOCUMENTS=external`, and then says in its output and in
+`manifest.json` (`documents.in_this_backup: false`, with the bucket and never a
+credential) that the documents are not in it; the flag with the filesystem
+provider is refused as a contradiction. `restore.sh`, `restore-drill-local.sh
+--from` and `drill.py verify --manifest` require the same acknowledgement for
+such a backup, refuse it for a filesystem target, and treat a manifest without
+the field per the target's provider — all before they write anything
+(docs/17 §6 "Documents in object storage"). What brings the documents back is
+still the provider's versioning or replication, which is the deployment's to
+turn on. Kept below as it was, so the number means something where it is cited.
+
 **Where** `scripts/backup.sh`, `scripts/restore.sh`, `document/S3DocumentStorage.kt`.
 
 **What** `backup.sh` tars the documents **volume**. With the S3 provider the
@@ -2068,6 +2082,8 @@ a process already serving.
 | backup.sh documents volume exists; bodies table is the one excluded | `pg_dump` writing the dump | before the backup directory is created | `850d8e3` |
 | restore.sh documents volume is empty | the runtime role and `pg_restore` | step 2, with the other target checks | `7700220` |
 | restore-row.sh backup copy intact (sweep rules, digest); live row exists | the UPDATE over the live row | before the UPDATE, in the same transaction | `7700220` |
+| backup.sh: documents in S3 acknowledged (`ALMIRA_BACKUP_DOCUMENTS=external`), and not claimed for the filesystem | — (new) | before the database is asked whether it is up, let alone dumped | `014e2e9` |
+| restore.sh, restore-drill-local.sh --from, drill.py verify: the same acknowledgement for a backup whose documents are external | — (new) | step 0, before `compose up`, a container or a request | `014e2e9` |
 | freeze-api-spec.sh fetched spec is complete | emptying the frozen file | into a temporary file, renamed over it only when valid | `713b64e` |
 | smoke-prod.sh deployment checks (up, database, rlsEnforced, not owner) | requesting codes, signing in, creating a household | stops before the first write | `6f6847d` |
 | A sign-in email's address is on the allowlist | a provider call (to the decoy sink) for every unlisted address | `SignInEmailOutbox` asks the list before stamping the send, deriving a code or calling a provider | `03c9508` |
@@ -2076,6 +2092,10 @@ a process already serving.
 The scripts' tests are in `scripts/tests/` and run the real scripts against
 throwaway containers and volumes, or with a stub `curl`; each was watched failing
 against the script as it was before its commit.
+
+**Decided, no change** (owner, 2026-09-15): the runtime-role refusal keeps
+CREATEROLE, although PostgreSQL 16 narrowed what CREATEROLE allows. Recorded in
+docs/16 AC-2 and docs/17 §3.
 
 **Still open:**
 
@@ -2127,8 +2147,9 @@ proves the dump has the table, none of its rows and no body text.
 
 **What is still open** Backups taken before this commit contain the bodies of
 whatever was queued when they were taken; they age out with the retention
-period. Documents in S3 are still not in a backup at all (entry 41, an owner's
-decision).
+period. Documents in S3 are still not in a backup, but a backup now refuses to
+be taken without saying so (entry 41, resolved). The sign-in email queue's
+bodies are dumped in full ("Backups carry queued sign-in email addresses").
 
 ---
 
@@ -2189,7 +2210,22 @@ unknown-id answers identical throughout. No residual difference found.
   Asking again works.
 - The worker's decision is visible in the database (`sign_in_code_emails.status`,
   `sent` against `dropped`) to anyone with the owner connection. Not to the
-  runtime role or any client.
+  runtime role or any client. **Kept, 30 days** (owner's decision, 2026-09-15:
+  no change): the owner connection already holds the allowlist, and the records
+  are what tell a dropped send from a provider failure when a tester says the
+  code never came (docs/13 §5).
+
+**The operator is not left in the dark** (owner's decision, 2026-09-15: *a stuck
+tester is fine seeing "sent"; nobody noticing is not*; `1039412`, `22d0060`).
+Every non-sent end of a listed address's message — provider failure or refusal,
+unconfirmed, expired, dropped because email sign-in was switched off — raises an
+operator alert: an ERROR line `SIGN-IN EMAIL NOT DELIVERED` with no address or
+code, `operator_alert` on the record (V130), and a count on `/health` behind
+`ALMIRA_OPS_HEALTH_TOKEN` that `check-health.sh --ops-token-file` fails on. An
+unlisted address and a tester removed while queued raise nothing. Nothing a
+client can reach changes (`SignInEmailOutboxTest`; phase D of the timing
+harness). What is left is entry "The operator alert for an undelivered sign-in
+email is only as loud as what watches it".
 
 ---
 
@@ -2344,3 +2380,67 @@ English sentences from the server, as the other lifecycle ones are.
 
 **Risk if left** A native-only family must use the web to take a dormant
 household on.
+
+---
+
+## 77. The operator alert for an undelivered sign-in email is only as loud as what watches it
+
+**Where** `auth/SignInCodeOutbox.kt`, `auth/SignInEmailAlerts.kt`,
+`config/HealthController.kt`, `scripts/check-health.sh`, docs/17 §8.
+
+**What** The alert (entry "Sign-in emails go through an outbox, and an unlisted
+address's is dropped there") is pulled, not pushed: an ERROR log line, which
+needs a log collector with a rule on `SIGN-IN EMAIL NOT DELIVERED`, and a count
+on `/health`, which needs `ALMIRA_OPS_HEALTH_TOKEN` set and
+`check-health.sh --ops-token-file` in a cron with `--alert-cmd`. Neither exists on
+any deployment yet, because there is no deployment. Also:
+
+- the count covers the last hour, so a check that runs less often than hourly
+  can miss one, and one that runs every minute alerts every minute for an hour;
+- a message whose body a restore did not bring back (`body_not_restored`) is not
+  alerted, because nothing is left to say whether its address was listed;
+- a tester dropped because email sign-in was switched off *and* the allowlist
+  was emptied in the same restart is indistinguishable from a removal, and is
+  not alerted;
+- phase D of `scripts/measure-sign-in-timing.py` has been run once at 100 / 10
+  pairs, not at the 1,000 / 500 of the original measurement.
+
+**Why not fixed** Pushing needs a channel the owner chooses (mail, SMS, chat),
+and nothing is network-enabled by default. A full-size timing run is an hour of
+a quiet machine.
+
+**When to fix** With the first deployment: set the token, add the cron line,
+and point the log collector at the event name (docs/17 §8). Run phase D at full
+size before the alpha opens.
+
+**Risk if left** A tester stuck on "sent" goes unnoticed until they say so —
+the outcome the owner ruled out — on any deployment that has not wired either
+surface.
+
+---
+
+## 78. Backups carry queued sign-in email addresses
+
+**Where** `scripts/backup.sh`, `sign_in_code_email_bodies` (V110).
+
+**What** `backup.sh` leaves out the rows of `outbound_message_bodies` only, and
+refuses when a table matching `%message%bod%` is anything else.
+`sign_in_code_email_bodies` does not match that pattern and is dumped in full, so
+a backup taken while a sign-in email waits holds its address, purpose and
+request id — for an unlisted address as much as a listed one. It holds no code
+(the code is derived with a key the backup does not contain), and a body lives
+only until the worker gets to it, normally within the poll interval (2 s). The
+worker already handles a restored message with no body (`body_not_restored`),
+so leaving the rows out would change nothing on restore.
+
+**Why not fixed** Found while working on backups in another change; the exclusion
+check's pattern and its test are the place to extend, and it deserves its own
+watched-failing run.
+
+**When to fix** Before the email alpha is backed up in earnest: exclude
+`public.sign_in_code_email_bodies` the way the notification bodies are, list it
+in `excluded_table_data`, and widen the refusal to any table whose name ends in
+`bodies`.
+
+**Risk if left** A stolen backup names the few addresses whose sign-in email was
+in flight at that second.

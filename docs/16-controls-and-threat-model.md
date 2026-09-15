@@ -122,7 +122,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | | |
 |---|---|
 | AC-1 | Per-record visibility enforced in PostgreSQL — `db/migrations/V4__rls_privacy.sql` |
-| AC-2 | Application connects as a non-owner role, and refuses to start — before migrating, in every environment — if that role is a superuser, has BYPASSRLS or CREATEROLE, owns a table under RLS, or can SET ROLE to such a role — `config/DatabaseConfig.kt`, `config/RuntimeRoleCheck.kt`, `deploy/bootstrap-db.sql` |
+| AC-2 | Application connects as a non-owner role, and refuses to start — before migrating, in every environment — if that role is a superuser, has BYPASSRLS or CREATEROLE, owns a table under RLS, or can SET ROLE to such a role — `config/DatabaseConfig.kt`, `config/RuntimeRoleCheck.kt`, `deploy/bootstrap-db.sql`. CREATEROLE stays refused although PostgreSQL 16 narrowed what it allows (owner's decision, 2026-09-15; reasons in Doc 17 §3) |
 | AC-3 | Transaction-scoped identity, discarded at commit — `config/RlsTransactionManager.kt` |
 | AC-4 | Capability (role) checks separated from visibility — `app.can_write_household`, `app.can_read_record` |
 | AC-5 | Only a record's holder may grant visibility — `V8__generalise_visibility_grants.sql` |
@@ -167,6 +167,8 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | DP-5 | IP addresses hashed where recorded at all — `sharing/ShareController.kt` |
 | DP-6 | A protected statement is opened and a photo read in the browser; the server receives only the rows or words kept — `app/pdf-text.js`, `app/ocr.js` |
 | DP-7 | The opt-in offline copy: allowlisted fields, AES-GCM under a non-extractable key held apart, deleted on sign-out and after 30 days — `app/offline-store.js` |
+| DP-8 | A sign-in email's record keeps its outcome (sent, dropped, failed, unconfirmed, expired) and no address or code, owner connection only, for 30 days. Sent-against-dropped is kept on purpose (owner's decision, 2026-09-15): the owner connection already holds the allowlist, and it is what tells a dropped send from a provider failure — `auth/SignInCodeOutbox.kt`, V110, Doc 13 §5 |
+| DP-9 | A backup of a deployment with documents in object storage needs `ALMIRA_BACKUP_DOCUMENTS=external`, and says in its output and manifest that they are not in it; restores and drills require the same before writing — `scripts/lib/backup_documents.py`, Doc 17 §6 |
 
 ### Audit
 | | |
@@ -174,6 +176,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | AU-1 | Append-only activity log; INSERT-only grant — `R__grants.sql` |
 | AU-2 | Every share, emergency transition and provider import audited |
 | AU-3 | Outbound messages recorded with outcome, never content |
+| AU-4 | A sign-in email an allowlisted address did not get raises an operator alert — an ERROR line with no address or code, a flag on its record, a count on `/health` behind `ALMIRA_OPS_HEALTH_TOKEN` — and changes nothing a client sees — `auth/SignInCodeOutbox.kt`, `auth/SignInEmailAlerts.kt`, V130, `scripts/check-health.sh` |
 
 ### Software supply chain
 | | |

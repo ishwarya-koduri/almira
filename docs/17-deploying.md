@@ -106,7 +106,16 @@ application refuses to start if any of them
   owner, which is the rest of this list);
 - owns a table with row-level security enabled;
 
-or if `ALMIRA_DB_APP_USER` is `ALMIRA_DB_OWNER_USER`. The refusal names the role
+or if `ALMIRA_DB_APP_USER` is `ALMIRA_DB_OWNER_USER`.
+
+**CREATEROLE stays a refusal** (owner's decision, 2026-09-15). On PostgreSQL
+16 CREATEROLE alone no longer lets a role grant itself membership of arbitrary
+roles, so there the refusal is stricter than the attack it was written for
+strictly needs. It is kept: the compose image is 16 but a managed database may
+be older, a role that can create roles can make ones this check would then have
+to chase, and the runtime role has no reason to create anybody. A provider that insists on CREATEROLE for the
+application role is a provider to give a different role, not a reason to relax
+this. No code changed with the decision. The refusal names the role
 and the attribute — `the runtime database role 'almira_app' (ALMIRA_DB_APP_USER)
 has BYPASSRLS`, or `… is a member of 'almira' (so can SET ROLE to it), which is a
 SUPERUSER`. A catalogue it cannot read refuses too.
@@ -416,7 +425,9 @@ because documents are only ever added or soft-deleted, so every document row in
 the dump has its file in a tarball taken just after. It checks everything it
 needs — the database answering, the documents volume existing, the bodies table
 being where it expects — **before** it writes the dump, so a refused backup
-leaves nothing behind.
+leaves nothing behind. On a deployment whose documents are in object storage it
+refuses unless told, explicitly, that they are not in this backup ("Documents
+in object storage", below).
 
 **Queued message bodies are deliberately not in the backup.** The dump has the
 `outbound_message_bodies` table but none of its rows (`pg_dump
@@ -586,6 +597,36 @@ tables with RLS on and 201 policies identical, 70 privacy assertions passed.
 It does not take the documents volume, start the application or check the KMS
 key; `backup.sh`, `restore.sh` and `deploy/restore/drill/` above do.
 
+`--from <backup>` drills a backup `backup.sh` took, instead of a fresh dump: it
+checks where the backup's documents are (above) and that `database.dump` matches
+its manifest before starting anything, restores the dump into one throwaway
+container, and requires the manifest's row counts, the privacy suite and the
+sweep to hold. The source-comparison of policies and the seeded-people check
+have nothing to compare with and say so.
+
+**The backup on the developer machine, replaced** (2026-09-15). The only backup
+set there was the deploy session's drill of 13 Sep (`almira-20260913T094311Z`:
+migration 31, 55 tables and 239 rows of synthetic data, one document). It was
+removed, and a new one taken from current code the way this section says: the
+production image built from `22d0060` with `deploy/Dockerfile`, the production
+compose file with the drill overlay under the throwaway project
+`ws-signin-backup-ops-source` and its own env file (filesystem documents),
+db-bootstrap, `drill.py seed` (two members, a private holding, a revealable
+account number, a 4,118-byte document, three sealed values), then
+`scripts/backup.sh`. It is `almira-20260915T044027Z`: migration 130, PostgreSQL
+16.14 with checksums on, 100 tables and 286 rows in the dump, `documents.tgz`
+with the one document, `documents.in_this_backup: true`, and
+`outbound_message_bodies` left out. Proven three ways before both stacks were
+removed: `restore.sh` into an empty second project (sha256, empty target, 100
+tables and 286 rows equal, sweep 0 defects, 5 digests match), the restored app
+started with the same KMS key and `drill.py verify --manifest` read every piece
+back through the API (RLS totals, account number, document byte for byte, all
+three sealed values opened), and `restore-drill-local.sh --from` (rows equal, 96
+tables with RLS and 338 policies, 298 privacy assertions, no defective
+ciphertext). On the same stack, `ALMIRA_BACKUP_DOCUMENTS=external` was refused by
+`backup.sh` and by `restore.sh --verify-only` with nothing written. It is kept
+outside git with its KMS key in a separate directory; both are synthetic.
+
 ### Documents in object storage
 
 `ALMIRA_STORAGE_PROVIDER=s3` stores documents in S3 or anything S3-compatible
@@ -601,11 +642,54 @@ empty to use the SDK's default chain (an instance role). Most S3-compatible
 stores want `ALMIRA_S3_PATH_STYLE=true`. Keys are `ALMIRA_S3_PREFIX`
 (`documents/`) + `<household>/<document>`.
 
-**The bucket is not in `backup.sh`**, which tars the documents volume. With `s3`,
-turn on the provider's object versioning or replication and include the bucket in
-the restore drill by hand; a database restored without its documents leaves every
-holding pointing at a missing scan. Proven by `S3DocumentStorageTest` and
-`S3DocumentApiTest` against MinIO; not yet run against a real provider.
+Proven by `S3DocumentStorageTest` and `S3DocumentApiTest` against MinIO; not yet
+run against a real provider.
+
+**The bucket is not in `backup.sh`, and a backup says so rather than let anyone
+assume** (owner's decision, 2026-09-15: *neither refuse nor warn — require
+explicit acknowledgement*). With `ALMIRA_STORAGE_PROVIDER=s3` in the env file,
+`backup.sh` refuses to run — before it so much as asks the database whether it
+is up — unless the command is run with `ALMIRA_BACKUP_DOCUMENTS=external`:
+
+```bash
+ALMIRA_BACKUP_DOCUMENTS=external ./scripts/backup.sh --project almira-prod --env-file .env.production --out /srv/backups
+```
+
+With it, the backup takes no `documents.tgz`, prints `DOCUMENTS ARE NOT IN THIS
+BACKUP. They live in S3 bucket '…' under prefix '…'` at the start and the end,
+and writes the same into `manifest.json`:
+
+```json
+"documents": {"in_this_backup": false, "provider": "s3", "bucket": "almira-docs",
+              "prefix": "documents/", "region": "ap-south-1", "endpoint": "",
+              "acknowledged_with": "ALMIRA_BACKUP_DOCUMENTS=external", "note": "Documents are NOT in this backup. …"}
+```
+
+The bucket, prefix, region and endpoint are named; no key is, and an endpoint
+is cut to scheme, host and port so a user, password or signed query in it
+never reaches a backup. A filesystem backup records
+`{"in_this_backup": true, "provider": "filesystem", "file": "documents.tgz"}`
+and behaves exactly as before; `ALMIRA_BACKUP_DOCUMENTS=external` with the
+filesystem provider is a contradiction and refused, and so is any value of it
+but `external`. The flag is read from the command's environment, not the env
+file, so it is a decision made per invocation (a cron line says it in plain
+sight).
+
+`restore.sh` applies the same rule as its step 0, from the files alone and
+before anything is started or written (`--verify-only` included): a manifest
+that says the documents are not in the backup needs the same flag and says, at
+the start, at step 5 and at the end, that the documents are not restored; a
+backup that holds its documents refuses the flag; a backup whose documents are
+in a bucket refuses a target on the filesystem provider, where every document
+would be missing; and a manifest from before the field is treated per the
+target env file's provider. `restore-drill-local.sh --from` and `drill.py verify
+--manifest` refuse the same way before they start a container or ask the
+server anything. The one implementation is `scripts/lib/backup_documents.py`;
+`scripts/tests/backup-checks-before-dumping.sh` and
+`restore-checks-before-writing.sh` prove every refusal leaves nothing behind
+(watched failing with each check moved after its action). Turn on the
+provider's object versioning or replication: that, not these backups, is what
+brings documents back.
 
 ### The single small VPS this assumes
 
@@ -639,6 +723,9 @@ marker on each. What matters at deploy time, beyond the four secrets in §1:
   `ALMIRA_PROVIDER_*_MAX_ATTEMPTS` / `_RETRY_BACKOFF`, the
   `ALMIRA_PROVIDER_EMAIL_*` group, `ALMIRA_OTP_SEND_TIMEOUT` (default `5s`, must
   be >0 and ≤15s) and `ALMIRA_OUTBOX_POLL_INTERVAL` (default `PT2S`).
+- **Optional, off unless set:** `ALMIRA_OPS_HEALTH_TOKEN` (at least 32
+  characters; a shorter one refuses to start), the operator's view of `/health`
+  (§8).
 - **Before 13 May 2027, not optional in practice:** `ALMIRA_GRIEVANCE_NAME`
   and `ALMIRA_GRIEVANCE_EMAIL`, the grievance contact every rights reply names
   (docs/23 "Your data rights"). Unset, the server starts and the page says no
@@ -716,7 +803,7 @@ Three probes, none of which needs a session or carries household data:
 |---|---|---|
 | `/health/live` | `200 {"status":"alive"}` while the process serves HTTP; touches nothing else | a restart policy. Never make it depend on the database: that restarts a healthy app in a loop through a database outage |
 | `/health/ready` | `200` when the database answers as the runtime role **with RLS in force** and Redis answers; `503` naming which is false | the load balancer and the compose healthcheck |
-| `/health` | the role name, `rlsEnforced` and the environment | a human, and the outside check below |
+| `/health` | the role name, `rlsEnforced` and the environment; with the operator token, also `signInEmailNotDelivered` (below) | a human, and the outside check below |
 
 **The outside check.** `./scripts/check-health.sh --base https://<host>` probes all
 three and prints one line; it fails when the app is down, not ready, not enforcing
@@ -724,6 +811,20 @@ RLS, or running with development settings. Run it every minute from somewhere
 that is **not the host** (a cron on another box, or any uptime monitor pointed at
 `/health/ready`), with `--alert-cmd` set to your own mail, SMS or chat command. It
 sends nothing anywhere by itself.
+
+**The operator's view.** Set `ALMIRA_OPS_HEALTH_TOKEN` (`openssl rand -hex 32`) and
+`/health` requested with `X-Almira-Ops-Token: <it>` also answers
+`"signInEmailNotDelivered": {"lastHour": N, "newest": "<time>"}` — how many sign-in
+emails an address **on the allowlist** did not get in the last hour. Put the same
+token in a file only the checking user can read and add
+`--ops-token-file <file>`: the check then fails, and runs `--alert-cmd`, while N is
+above zero, and also when the view is missing (a wrong token, or none set on the
+server), so a broken check is not a quiet one. The token goes as a header read
+from a private temporary file, never on a command line. Without the header, or
+with a wrong one, `/health` is byte-for-byte what everybody else gets: a public
+count would tell someone who had just asked for a code whether that address is
+listed ([Doc 13](13-providers-and-going-live.md) §5). It is not on
+`/health/ready`, so an alert never takes a server out of rotation.
 
 **Logs.** The production compose file sets `ALMIRA_LOG_FORMAT=json`: one object
 per line, `ts`, `level`, `logger`, `thread`, `message`, and for an error `error`
@@ -749,6 +850,7 @@ Alert on these, most urgent first. Each has the first thing to look at.
 | `ready` is 503 with `database:false` or `redis:false` | nobody can sign in | Postgres or Redis container health, disk space (`df -h`), memory (§6 "single small VPS") |
 | any `"level":"ERROR"` line | an unhandled server fault, answered `500 internal_error` | the `logger`, `error` and `frames` fields; the request that caused it is not logged by design, so reproduce from the route |
 | repeated `one-time code by sms failed` or `… by email failed` (WARN) | sign-in codes are not being delivered | the provider's status page and balance; the `Providers:` line at startup says which mode each is in |
+| `SIGN-IN EMAIL NOT DELIVERED` (ERROR), or `check-health.sh --ops-token-file` failing on it | a tester on the email allowlist was shown their code as sent and did not get it: the provider failed or refused it, a stopped worker left it unconfirmed, it expired in the queue, or email sign-in was switched off while it waited. The line has the outcome and the failure kind, never the address. Unlisted addresses never raise it | the provider (`WARN PROVIDER CALL FAILED`, `ERROR PROVIDER ACCOUNT PROBLEM`, `ERROR SIGN-IN EMAIL REFUSED` with the masked address); then, on the owner connection, `select status, failure, finished_at from sign_in_code_emails where operator_alert order by finished_at desc`. Tell the tester to ask again once it is fixed |
 | `notification outbox drain failed` (WARN) more than a few times an hour | reminders are queuing, not sending | database health, then the provider |
 | the newest backup directory is older than 26 hours | backups have stopped | the cron that runs `backup.sh`, disk space |
 | `/health` says `"environment":"development"` | development settings in production (codes echoed, checks relaxed) | set `ALMIRA_ENV=production` and restart |

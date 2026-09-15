@@ -164,6 +164,9 @@ services:
       ALMIRA_WEBAUTHN_RP_NAME:
       ALMIRA_WEBAUTHN_ORIGINS:
       ALMIRA_OUTBOX_POLL_INTERVAL:
+      # The operator's view of /health: how many sign-in emails a listed
+      # address did not get (docs/17 §8). Off unless set.
+      ALMIRA_OPS_HEALTH_TOKEN:
       # The public address one-tap continuity links point at (docs/27 §2).
       ALMIRA_PUBLIC_URL:
       ALMIRA_PROVIDER_SMS_MODE:
@@ -191,6 +194,10 @@ services:
       ALMIRA_S3_ENDPOINT:
       ALMIRA_S3_ACCESS_KEY_ID:
       ALMIRA_S3_SECRET_ACCESS_KEY:
+      # Read by scripts/backup.sh's manifest too, so what it names is what the
+      # application uses.
+      ALMIRA_S3_PATH_STYLE:
+      ALMIRA_S3_PREFIX:
       # One JSON object per line for a log collector, with no MDC and no
       # exception messages (docs/17 §8). `text` for reading by eye.
       ALMIRA_LOG_FORMAT: ${ALMIRA_LOG_FORMAT:-json}

@@ -19,6 +19,14 @@ What is seeded, and which layer each one proves survived:
   including an empty one            passphrase, in a real implementation of the client
                                     (ZkEnvelope.java, checked against docs/12's vector)
 
+verify --manifest BACKUP/manifest.json: before anything is asked of the server,
+where the backup's documents are, by the rule restore.sh uses
+(scripts/lib/backup_documents.py): a manifest that says they are NOT in the
+backup needs ALMIRA_BACKUP_DOCUMENTS=external, and the document check then says
+the bytes came from the bucket, not the backup; the flag with a backup that
+holds its documents is refused. A manifest without the field is treated per the
+provider in the --env-file named in --compose-args.
+
 Sign-in codes: taken from the response if the server echoes them, otherwise from
 the application log via `docker compose logs`. Drill stacks only — it writes.
 """
@@ -174,10 +182,29 @@ def seed(a):
     verify(a, state, (A, B))
 
 
+def documents_decision(a):
+    """Where the restored backup's documents are; refuses (exit 2) before any call to the server."""
+    if not a.manifest:
+        return None
+    sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "scripts", "lib"))
+    import backup_documents
+    args = shlex.split(a.compose_args)
+    env_file = args[args.index("--env-file") + 1] if "--env-file" in args[:-1] else None
+    try:
+        return backup_documents.restore_decision(a.manifest, env_file, check_target=env_file is not None)
+    except backup_documents.Refused as e:
+        print(f"Stopped before verifying: {e}", file=sys.stderr)
+        sys.exit(2)
+
+
 def verify(a, state=None, sessions=None):
+    documents = documents_decision(a) if getattr(a, "manifest", None) else None
     state = state or json.load(open(a.state))
     hid = state["household"]
     print(f"Verifying household {hid} at {a.base}")
+    if documents and documents["DOCS_EXTERNAL"] == "1":
+        print(f"  DOCUMENTS ARE NOT IN THIS BACKUP: {documents['DOCS_WHERE']}. "
+              "The document check below reads them from the bucket (acknowledged with ALMIRA_BACKUP_DOCUMENTS=external).")
     A, B = sessions or (sign_in(a.base, state["phone_a"], a.compose_args),
                         sign_in(a.base, state["phone_b"], a.compose_args))
 
@@ -193,7 +220,8 @@ def verify(a, state=None, sessions=None):
     status, ticket = jcall(a.base, "POST", f"/api/v1/households/{hid}/documents/{state['document']}/access", token=A)
     if status == 200:
         s2, content, _ = call(a.base, "GET", f"/api/v1/documents/download?token={ticket['token']}")
-        check("the document downloads byte for byte", s2 == 200 and hashlib.sha256(content).hexdigest() == state["document_sha256"],
+        check("the document downloads byte for byte" + (" (from the bucket, not the backup)"
+              if documents and documents["DOCS_EXTERNAL"] == "1" else ""), s2 == 200 and hashlib.sha256(content).hexdigest() == state["document_sha256"],
               f"{s2} sha256 {hashlib.sha256(content).hexdigest()}")
     else:
         check("the document downloads byte for byte", False, f"ticket {status} {ticket}")
@@ -218,5 +246,6 @@ p.add_argument("command", choices=["seed", "verify"])
 p.add_argument("--base", required=True)
 p.add_argument("--compose-args", required=True, help="-p … -f … --env-file …, for reading sign-in codes from logs")
 p.add_argument("--state", required=True)
+p.add_argument("--manifest", help="verify: the restored backup's manifest.json, to check where its documents are first")
 a = p.parse_args()
 seed(a) if a.command == "seed" else verify(a)

@@ -5,7 +5,10 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RestController
+import tech.bhrigu.almira.auth.SignInEmailAlerts
+import java.security.MessageDigest
 import javax.sql.DataSource
 
 @RestController
@@ -14,6 +17,7 @@ class HealthController(
     private val dataSource: DataSource,
     private val properties: AlmiraProperties,
     private val redis: StringRedisTemplate,
+    private val signInEmailAlerts: SignInEmailAlerts,
 ) {
     /**
      * Reports which database role serves requests. If this ever says `almira`
@@ -28,20 +32,43 @@ class HealthController(
      * checks relaxed. Both misconfigurations are now visible from outside,
      * without signing in.
      *
+     * **The operator's view.** With `ALMIRA_OPS_HEALTH_TOKEN` set and the same
+     * value in `X-Almira-Ops-Token`, the body also carries
+     * `signInEmailNotDelivered`: how many sign-in emails an address on the
+     * allowlist did not get in the last hour, and when the newest was — never
+     * which address (owner's decision, 2026-09-15; docs/17 §8). Without the
+     * token configured, without the header, or with a wrong one, the answer is
+     * exactly the one everybody gets, so nobody can tell whether the view
+     * exists. Behind a token because a count that anyone could read would tell
+     * someone who had just asked for a code for an address whether it is listed.
+     *
      * Deliberately outside the OpenAPI contract — springdoc matches only paths
      * under /api/v1 — because this is an operational endpoint and no client
      * should be built against it.
      */
     @GetMapping("/health")
-    fun health(): Map<String, Any> {
+    fun health(@RequestHeader(OPS_TOKEN_HEADER, required = false) opsToken: String? = null): Map<String, Any> {
         val role = jdbc.jdbcTemplate.queryForObject("select current_user", String::class.java)
-        return mapOf(
+        val body = mapOf(
             "status" to "ok",
             "database" to "up",
             "dbRole" to (role ?: "unknown"),
             "rlsEnforced" to (role != properties.db.ownerUser),
             "environment" to properties.environment,
         )
+        if (!isOperator(opsToken)) return body
+        val recent = signInEmailAlerts.within()
+        return body + ("signInEmailNotDelivered" to mapOf(
+            "lastHour" to recent.count,
+            "newest" to (recent.newest?.toString() ?: ""),
+        ))
+    }
+
+    /** Constant time, and false whenever the view is off: an empty token opens nothing. */
+    private fun isOperator(presented: String?): Boolean {
+        val configured = properties.ops.healthToken
+        if (configured.isEmpty() || presented.isNullOrEmpty()) return false
+        return MessageDigest.isEqual(configured.toByteArray(Charsets.UTF_8), presented.toByteArray(Charsets.UTF_8))
     }
 
     /**
@@ -90,5 +117,9 @@ class HealthController(
             "redis" to redisUp,
         )
         return ResponseEntity.status(if (ready) HttpStatus.OK else HttpStatus.SERVICE_UNAVAILABLE).body(body)
+    }
+
+    companion object {
+        const val OPS_TOKEN_HEADER = "X-Almira-Ops-Token"
     }
 }

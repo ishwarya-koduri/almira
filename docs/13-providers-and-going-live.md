@@ -334,6 +334,19 @@ ALMIRA_SUPPORT_CHANNEL=whatsapp        # and ALMIRA_SUPPORT_ADDRESS: "Contact us
   the code's lifetime is `expired`. Finished records keep status and failure
   only, no address, for 30 days.
 
+  **Why 30 days of `sent` against `dropped` are kept** (owner's decision,
+  2026-09-15: *no change*). The records say, for each request, whether the
+  worker sent the email, dropped it, or saw it fail — and so, to someone with
+  the owner connection, which requests were for a listed address. That person
+  already holds everything, the allowlist included, so the records disclose
+  nothing new to them; no client and not the runtime role can read them. What
+  they buy is the one question the operator is asked in the alpha: *a tester
+  says the code never came* — was it dropped (the address was not on the list
+  as typed, or email was off), or did the provider fail? Without the records
+  those look the same, and the operator alert below says only that something
+  failed. Thirty days covers a tester who mentions it at the end of a week and
+  a fortnight of back-and-forth. The records carry no address and no code.
+
   **The queue holds no code.** The code of a queued email is an HMAC, under a
   key of its own derived from the JWT secret, of purpose, address and request
   id, reduced to the code's length (`QueuedEmailCodes`). The request path
@@ -362,13 +375,52 @@ ALMIRA_SUPPORT_CHANNEL=whatsapp        # and ALMIRA_SUPPORT_ADDRESS: "Contact us
   the same words without a link when none is set). The operator has the
   lines: `ERROR SIGN-IN EMAIL REFUSED` with the masked address when the
   provider refuses a listed address, ProviderCalls' `WARN PROVIDER CALL FAILED` and
-  `ERROR PROVIDER ACCOUNT PROBLEM` for an outage or an account problem, and
-  the `failed` records. The web client says the line in English, Telugu and
+  `ERROR PROVIDER ACCOUNT PROBLEM` for an outage or an account problem, the
+  `failed` records, and — for every one of these — the operator alert below.
+  The web client says the line in English, Telugu and
   Hindi (drafts); the native app does not have it yet (known-issues, *The
   native sign-in code step has no "Didn't arrive in two minutes? Contact us"
   line*). Step-up by email still
   reports every failure in its response: the caller is signed in and already
   owns the address.
+
+- **When a listed address's code is not delivered, the operator is alerted**
+  (owner's decision, 2026-09-15: *a stuck tester is fine seeing "sent"; nobody
+  noticing is not*). Every way the worker can end a message other than `sent`
+  raises one alert when the address is on the allowlist as the worker decides:
+  the provider failed or refused it (`failed`), a stopped worker left it
+  `unconfirmed`, it `expired` in the queue, or it was `dropped` because the
+  server no longer offers email sign-in (recorded with failure
+  `channel_disabled`). **Not** alerted, because they are intended: an unlisted
+  address's message, however it ends, and a tester taken off the list while
+  their message waited. A message whose body a restore did not bring back
+  (`body_not_restored`) has no address left to ask about and is not alerted
+  either; the restore is the operator's own act. The alert is:
+
+  - an `ERROR` log line starting `SIGN-IN EMAIL NOT DELIVERED`, with the
+    outcome, the failure kind and the message id — **no address and no code** —
+    written after the record commits, on the worker's thread;
+  - `sign_in_code_emails.operator_alert`, set in the statement that records the
+    outcome (V130; the owner connection's alone, like the rest of the record);
+  - a count in the operator's view of `/health`: with `ALMIRA_OPS_HEALTH_TOKEN`
+    set and sent back in `X-Almira-Ops-Token`, `/health` also carries
+    `signInEmailNotDelivered: {lastHour, newest}`, and
+    `scripts/check-health.sh --ops-token-file` fails, running its
+    `--alert-cmd`, while `lastHour` is above zero (docs/17 §8).
+
+  **The alert changes nothing a client can reach.** The view is behind a token
+  because a public count would be a signal: ask for a code for an address,
+  watch the count, and during an outage it moves only for a listed address.
+  Without the token — or with a wrong one, or with none configured —
+  `/health` is byte-for-byte what it was, and `/health/ready` is untouched, so
+  an alert never takes a server out of its load balancer. Nothing on the
+  request path or the delivery status reads the flag. `SignInEmailOutboxTest`
+  proves an alert, a flag and one count for each listed case and none for each
+  intended drop, and that the request answer, the delivery status and `/health`
+  without or with a wrong token are identical for a failing listed address and
+  an unlisted one (watched failing with the listed condition removed). Phase D
+  of `scripts/measure-sign-in-timing.py` checks the same against a running jar
+  (below).
 
   **The enumeration rule** (owner, 2026-09): *acceptable* — a signal that only
   confirms membership to someone who already knows the exact address;
@@ -452,6 +504,22 @@ ALMIRA_SUPPORT_CHANNEL=whatsapp        # and ALMIRA_SUPPORT_ADDRESS: "Contact us
   No residual difference was found, so nothing was added. Re-run with
   `python3 scripts/measure-sign-in-timing.py` (exit 0 when no timing test is
   below p 0.01 and no field differs).
+
+  **Phase D, the operator alert** (2026-09-15, added with it). On a restart with
+  the caps lifted and `ALMIRA_OPS_HEALTH_TOKEN` set, the SMTP sink refuses five
+  further listed addresses at `RCPT`, so every one of their sends fails and
+  alerts; they are compared with the unlisted addresses through the request
+  path (as A) and the delivery status (as B). It also requires `/health`
+  without the token and with a wrong one to be unchanged from before, exactly
+  one flagged record and one `SIGN-IN EMAIL NOT DELIVERED` line per refused
+  send, no address in either or in the operator view, and the view's count to
+  equal the refused sends. **Run once, small** (100 request pairs, 10 status
+  pairs, on a shared laptop — a smoke run, not the 1,000-pair measurement
+  above): request latency median 4.09 / 4.20 ms, Mann-Whitney p 0.22, KS p
+  0.34; first `sent` 1205.89 / 1204.76 ms, p 0.43 / 0.68; no field difference in
+  either; 130 refused sends, 130 flags, 130 alert lines, none naming an
+  address; the view said `lastHour: 130`. A full-size run is the owner's to
+  schedule (`--failing-pairs`, `--failing-status-pairs`).
 
 - **Taking a tester off the list ends their access** (owner's decision,
   2026-09). The list is configuration, so removal is a restart with the

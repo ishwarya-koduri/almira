@@ -8,6 +8,13 @@
 #
 # In order, stopping at the first thing that is wrong:
 #
+#   0. Where the documents are. A backup whose manifest says they are NOT in
+#      it (documents in S3) restores only with ALMIRA_BACKUP_DOCUMENTS=external
+#      set, only into a target that uses object storage, and says so; the flag
+#      with a backup that holds its documents is refused as a contradiction. A
+#      manifest from before the field is treated per the target env file's
+#      provider (scripts/lib/backup_documents.py). Checked from the files alone,
+#      before anything is started or written — --verify-only included.
 #   1. The backup files match the sha256 in their manifest.
 #   2. The target is EMPTY and protected: the database has no table and has
 #      page checksums on, and the documents volume is empty. It refuses a
@@ -21,7 +28,8 @@
 #   3. The runtime role is created (the same bootstrap as a fresh install), so
 #      the privileges in the dump have a role to land on.
 #   4. pg_restore, stopping on the first error.
-#   5. The documents, extracted into the volume checked in step 2.
+#   5. The documents, extracted into the volume checked in step 2 — or, when
+#      they are external, not: the script says they must already be in the bucket.
 #   6. VERIFY:
 #        a. row counts per table equal the counts in the dump (straight after
 #           pg_restore only — skipped by --verify-only, since a running
@@ -53,7 +61,7 @@ while [ $# -gt 0 ]; do
     --from)     FROM="$2"; shift 2;;
     --compose-override) OVERRIDE="$2"; shift 2;;
     --verify-only) VERIFY_ONLY=1; shift;;
-    -h|--help)  sed -n '2,34p' "$0"; exit 0;;
+    -h|--help)  sed -n '2,42p' "$0"; exit 0;;
     *) die "unknown option: $1";;
   esac
 done
@@ -66,6 +74,12 @@ case "$PROJECT" in
   almira|almira-personal) die "'$PROJECT' is a development stack's project name.";;
 esac
 
+# --- 0 · where the documents are: from the files alone, before anything else ---
+# (docs/known-issues.md, "A guard runs before the action it guards")
+DOCS_DECISION=$(python3 scripts/lib/backup_documents.py restore "$FROM/manifest.json" "$ENV_FILE" 2>&1) \
+  || die "$DOCS_DECISION"
+eval "$DOCS_DECISION"
+
 dc() {
   docker compose -p "$PROJECT" -f deploy/docker-compose.prod.yml ${OVERRIDE:+-f "$OVERRIDE"} \
     --env-file "$ENV_FILE" "$@"
@@ -74,6 +88,10 @@ sql() { dc exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAq -v 
 psql_file() { dc exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -X -q -v ON_ERROR_STOP=1 -f -' < "$1"; }
 
 echo "${BOLD}Restore into project $PROJECT from $FROM${OFF}"
+if [ "$DOCS_EXTERNAL" = 1 ]; then
+  echo "${RED}${BOLD}  DOCUMENTS ARE NOT RESTORED BY THIS SCRIPT:${OFF}${RED} $DOCS_WHERE.${OFF}"
+  echo "  ${DIM}(acknowledged with ALMIRA_BACKUP_DOCUMENTS=external)${OFF}"
+fi
 
 if [ "$VERIFY_ONLY" = 0 ]; then
   step "1 · The backup is the backup that was taken"
@@ -124,10 +142,14 @@ PY
   ok "pg_restore finished without error"
 
   step "5 · The documents"
-  docker volume create "$DOCS_VOLUME" >/dev/null
-  docker run --rm -v "$DOCS_VOLUME":/dst -v "$(cd "$FROM" && pwd)":/in:ro alpine:latest \
-    sh -c 'tar xzf /in/documents.tgz -C /dst && chown -R 10001:10001 /dst'
-  ok "extracted into $DOCS_VOLUME"
+  if [ "$DOCS_EXTERNAL" = 1 ]; then
+    echo "  ${RED}not restored${OFF}: $DOCS_WHERE. Every document must already be in that bucket."
+  else
+    docker volume create "$DOCS_VOLUME" >/dev/null
+    docker run --rm -v "$DOCS_VOLUME":/dst -v "$(cd "$FROM" && pwd)":/in:ro alpine:latest \
+      sh -c 'tar xzf /in/documents.tgz -C /dst && chown -R 10001:10001 /dst'
+    ok "extracted into $DOCS_VOLUME"
+  fi
 fi
 
 step "6a · Every table has the rows the dump had"
@@ -169,6 +191,9 @@ fi
 
 echo
 echo "${GREEN}${BOLD}Restore verified.${OFF}"
+if [ "$DOCS_EXTERNAL" = 1 ]; then
+  echo "  ${RED}${BOLD}Documents were not part of it:${OFF}${RED} $DOCS_WHERE.${OFF}"
+fi
 echo "  Next: start the application with the KMS key from when the backup was taken,"
 echo "  ${DIM}docker compose -p $PROJECT -f deploy/docker-compose.prod.yml${OVERRIDE:+ -f $OVERRIDE} --env-file $ENV_FILE up -d app${OFF}"
 echo "  then: curl -fsS http://127.0.0.1:<port>/health/ready  and  ./scripts/smoke-prod.sh"

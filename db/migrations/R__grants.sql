@@ -93,7 +93,8 @@ begin
   -- Queued sign-in emails (V110). Written only through
   -- app.enqueue_sign_in_code_email and read only by the worker on the owner
   -- connection; where a sign-in email goes, and how it ended, is not the
-  -- runtime role's to read.
+  -- runtime role's to read — nor is V130's operator_alert, which says the
+  -- address was on the allowlist.
   if to_regclass('public.sign_in_code_emails') is not null then
     execute 'revoke all on sign_in_code_emails from almira_app';
     execute 'revoke all on sign_in_code_email_bodies from almira_app';

@@ -39,7 +39,20 @@ Five addresses are listed and five are not, as in the alpha. Three phases:
      after the lock, an unknown request id, a malformed address — each compared
      listed against unlisted.
 
-For A and B it reports the median, p95 and p99 of each group, the difference of
+  D. A listed address whose code is NOT delivered, against an unlisted one
+     (owner's decision, 2026-09-15: the operator is alerted, the client sees
+     nothing different). On a server restarted with the caps lifted and
+     ALMIRA_OPS_HEALTH_TOKEN set, the SMTP sink refuses five more listed
+     addresses at RCPT, so every one of their sends fails and raises the
+     operator alert. --failing-pairs pairs through the request path (as A) and
+     --failing-status-pairs through the delivery status (as B), then: /health
+     without the token and with a wrong one is byte-for-byte what it was
+     before; with the token it counts the alerts and names no address; the
+     records flag exactly the refused listed sends and no unlisted one; and the
+     server log has one `SIGN-IN EMAIL NOT DELIVERED` line per refused send,
+     none naming an address.
+
+For A, B and D it reports the median, p95 and p99 of each group, the difference of
 medians, a Mann-Whitney U test and a two-sample Kolmogorov-Smirnov test with
 their p-values, and whether any non-timing field ever differed. The raw samples
 are written as JSON next to --out.
@@ -77,6 +90,8 @@ class SmtpSink(socketserver.ThreadingTCPServer):
 
     def __init__(self):
         self.recipients = []
+        self.refuse = set()
+        self.refused = []
         self.lock = threading.Lock()
         super().__init__(("127.0.0.1", 0), SmtpHandler)
 
@@ -101,8 +116,13 @@ class SmtpHandler(socketserver.StreamRequestHandler):
             elif upper.startswith("RCPT TO:"):
                 address = line.split(":", 1)[1].strip().strip("<>").lower()
                 with self.server.lock:
-                    self.server.recipients.append(address)
-                self.say("250 OK")
+                    if address in self.server.refuse:
+                        self.server.refused.append(address)
+                        refuse = True
+                    else:
+                        self.server.recipients.append(address)
+                        refuse = False
+                self.say("550 5.1.1 no such user here" if refuse else "250 OK")
             elif upper == "DATA":
                 self.say("354 go ahead")
                 while True:
@@ -208,10 +228,10 @@ def sh(*args, check=True, capture=True):
 
 
 class Stack:
-    def __init__(self, run, jar, workdir):
+    def __init__(self, run, jar, workdir, prefix=PREFIX):
         self.run, self.jar, self.workdir = run, jar, workdir
-        self.pg = f"{PREFIX}-pg-{run}"
-        self.redis = f"{PREFIX}-redis-{run}"
+        self.pg = f"{prefix}-pg-{run}"
+        self.redis = f"{prefix}-redis-{run}"
         self.pg_port, self.redis_port = free_port(), free_port()
         self.server = None
         self.log = None
@@ -234,7 +254,7 @@ class Stack:
             time.sleep(1)
         raise SystemExit("postgres did not become ready")
 
-    def start_server(self, port, smtp_port, allowlist, extra_args, settle_timeout):
+    def start_server(self, port, smtp_port, allowlist, extra_args, settle_timeout, extra_env=None):
         env = dict(os.environ)
         env.update({
             "ALMIRA_ENV": "development",
@@ -254,6 +274,7 @@ class Stack:
             "ALMIRA_OTP_SEND_TIMEOUT": settle_timeout,
             "ALMIRA_MEASUREMENT_ENABLED": "false",
         })
+        env.update(extra_env or {})
         env.pop("ALMIRA_TEST_DB_URL", None)
         self.log = open(os.path.join(self.workdir, f"server-{port}.log"), "w")
         self.server = subprocess.Popen(
@@ -446,15 +467,63 @@ def phase_c(client, listed, unlisted):
     return results
 
 
+def health_shape(port, token=None):
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    c.request("GET", "/health", headers={"X-Almira-Ops-Token": token} if token else {})
+    r = c.getresponse()
+    data = r.read()
+    c.close()
+    return shape(r.status, r.getheaders(), data), data
+
+
+def phase_d(stack, port, sink, listed_fail, unlisted, pairs, status_pairs, warmup, settle_ms, token, log_path):
+    """A listed address whose sends all fail, against an unlisted one: nothing a client sees may differ."""
+    health_before, _ = health_shape(port)
+    wrong_before, _ = health_shape(port, "x" * len(token))
+    client = Client(port)
+    a, a_shapes, a_sizes, a_status = phase_a(client, listed_fail, unlisted, pairs, warmup)
+    fs, ls, polls, b_shapes = phase_b(client, listed_fail, unlisted, status_pairs, settle_ms)
+    time.sleep(3)
+    health_after, _ = health_shape(port)
+    wrong_after, _ = health_shape(port, "x" * len(token))
+    _, operator = health_shape(port, token)
+    operator = json.loads(operator)
+    with open(log_path, errors="replace") as f:
+        log = f.read()
+    alert_lines = [l for l in log.splitlines() if "SIGN-IN EMAIL NOT DELIVERED" in l]
+    return {
+        "latency": summary("request latency, failing listed vs unlisted (ms)", a["listed"], a["unlisted"]),
+        "field_differences": differences(a_shapes["listed"], a_shapes["unlisted"]),
+        "statuses": {k: sorted(v) for k, v in a_status.items()},
+        "first_seen_sent": summary("first poll seeing sent, failing listed vs unlisted", fs["listed"], fs["unlisted"]),
+        "status_field_differences": differences(b_shapes["listed"], b_shapes["unlisted"]),
+        "health_unchanged_without_token": health_before == health_after,
+        "health_unchanged_with_wrong_token": wrong_before == wrong_after == health_after,
+        "operator_view": operator.get("signInEmailNotDelivered"),
+        "operator_view_names_no_address": not any(x.split("@")[0] in json.dumps(operator) for x in listed_fail + unlisted),
+        "refused_sends": len(sink.refused),
+        "emails_to_unlisted": sum(1 for r in sink.recipients if r in unlisted),
+        "records_flagged": int(stack.owner_sql("select count(*) from sign_in_code_emails where operator_alert")),
+        "records_failed": int(stack.owner_sql("select count(*) from sign_in_code_emails where status = 'failed'")),
+        "records_flagged_not_failed": int(stack.owner_sql(
+            "select count(*) from sign_in_code_emails where operator_alert and status <> 'failed'")),
+        "alert_lines": len(alert_lines),
+        "alert_lines_name_an_address": any(x.split("@")[0] in l for l in alert_lines for x in listed_fail + unlisted),
+    }
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--pairs", type=int, default=500)
     ap.add_argument("--status-pairs", type=int, default=500)
     ap.add_argument("--warmup", type=int, default=100)
+    ap.add_argument("--failing-pairs", type=int, default=200)
+    ap.add_argument("--failing-status-pairs", type=int, default=50)
     ap.add_argument("--send-timeout-ms", type=int, default=200)
     ap.add_argument("--jar", default=None)
     ap.add_argument("--out", default=os.path.join(tempfile.gettempdir(), "sign-in-timing.json"))
     ap.add_argument("--keep", action="store_true", help="leave the containers running")
+    ap.add_argument("--prefix", default=PREFIX, help="container name prefix (default %(default)s)")
     args = ap.parse_args()
 
     if not shutil.which("docker") or not shutil.which("java"):
@@ -471,12 +540,14 @@ def main():
 
     run = f"{int(time.time())}-{random.randint(1000, 9999)}"
     workdir = tempfile.mkdtemp(prefix="sign-in-timing-")
-    stack = Stack(run, os.path.abspath(jar), workdir)
+    stack = Stack(run, os.path.abspath(jar), workdir, args.prefix)
     sink = SmtpSink()
     threading.Thread(target=sink.serve_forever, daemon=True).start()
     listed = [f"alpha.tester{i}@example.test" for i in range(5)]
     unlisted = [f"stranger{i}@example.test" for i in range(5)]
     listed_c, unlisted_c = "alpha.fresh@example.test", "stranger.fresh@example.test"
+    listed_fail = [f"alpha.bounces{i}@example.test" for i in range(5)]
+    token = "measure-ops-token-" + "".join(random.choice("0123456789abcdef") for _ in range(32))
     settle_ms = args.send_timeout_ms + 1000
     report = {"run": run, "config": vars(args), "settle_ms": settle_ms}
     try:
@@ -531,6 +602,22 @@ def main():
         report["C"] = phase_c(Client(port), listed_c, unlisted_c)
         stack.stop_server()
 
+        port = free_port()
+        print(f"phase D: restarted on 127.0.0.1:{port}, caps lifted, operator token set, the sink refusing 5 listed addresses")
+        flagged_before = int(stack.owner_sql("select count(*) from sign_in_code_emails where operator_alert"))
+        failed_before = int(stack.owner_sql("select count(*) from sign_in_code_emails where status = 'failed'"))
+        with sink.lock:
+            sink.refuse.update(listed_fail)
+        stack.start_server(port, sink.server_address[1], listed + [listed_c] + listed_fail, [
+            "--almira.otp.resend-cooldown=0s", "--almira.otp.max-per-hour=1000000",
+            "--almira.otp.max-per-ip-per-hour=1000000",
+        ], f"{args.send_timeout_ms}ms", {"ALMIRA_OPS_HEALTH_TOKEN": token})
+        report["D"] = phase_d(stack, port, sink, listed_fail, unlisted, args.failing_pairs, args.failing_status_pairs,
+                              min(args.warmup, 20), settle_ms, token, stack.log.name)
+        report["D"]["records_flagged_before"] = flagged_before
+        report["D"]["records_failed_before"] = failed_before
+        stack.stop_server()
+
         rc, out = stack.rls_suite()
         report["rls_suite"] = {"exit": rc, "passed": "ALL PRIVACY ASSERTIONS PASSED" in out,
                                "tail": out.strip().splitlines()[-5:]}
@@ -557,7 +644,8 @@ def main():
     print()
     print("| measure (listed / unlisted) | median | p95 | p99 | Mann-Whitney p | KS D / p |")
     print("|---|---|---|---|---|---|")
-    for s in (report["A"]["latency"], report["B"]["first_seen_sent"], report["B"]["last_seen_sending"], report["B"]["polls"]):
+    for s in (report["A"]["latency"], report["B"]["first_seen_sent"], report["B"]["last_seen_sending"], report["B"]["polls"],
+              report["D"]["latency"], report["D"]["first_seen_sent"]):
         print(row(s))
     print()
     print("A field differences:", report["A"]["field_differences"] or "none",
@@ -567,13 +655,35 @@ def main():
           "| distinct poll shapes", report["B"]["distinct_poll_shapes"])
     print("worker:", report["worker"])
     print("C:", "all equal" if all(r["equal"] for r in report["C"]) else [r for r in report["C"] if not r["equal"]])
+    d = report["D"]
+    print("D field differences:", d["field_differences"] or "none", "| status field differences:",
+          d["status_field_differences"] or "none", "| statuses", d["statuses"])
+    print("D /health unchanged without the token:", d["health_unchanged_without_token"],
+          "| with a wrong token:", d["health_unchanged_with_wrong_token"])
+    print("D operator view:", d["operator_view"], "| names no address:", d["operator_view_names_no_address"])
+    print("D refused sends:", d["refused_sends"], "| records flagged:", d["records_flagged_before"], "->", d["records_flagged"],
+          "| failed:", d["records_failed_before"], "->", d["records_failed"], "| flagged but not failed:",
+          d["records_flagged_not_failed"], "| alert lines:", d["alert_lines"], "| naming an address:",
+          d["alert_lines_name_an_address"])
     print("RLS suite:", report["rls_suite"])
     print("samples:", samples_path)
 
     timing_ps = [report["A"]["latency"]["mann_whitney"]["p"], report["A"]["latency"]["ks"]["p"],
-                 report["B"]["first_seen_sent"]["mann_whitney"]["p"], report["B"]["first_seen_sent"]["ks"]["p"]]
+                 report["B"]["first_seen_sent"]["mann_whitney"]["p"], report["B"]["first_seen_sent"]["ks"]["p"],
+                 d["latency"]["mann_whitney"]["p"], d["latency"]["ks"]["p"],
+                 d["first_seen_sent"]["mann_whitney"]["p"], d["first_seen_sent"]["ks"]["p"]]
+    new_flags = d["records_flagged"] - d["records_flagged_before"]
+    new_failed = d["records_failed"] - d["records_failed_before"]
+    alert_clean = (d["health_unchanged_without_token"] and d["health_unchanged_with_wrong_token"]
+                   and not d["field_differences"] and not d["status_field_differences"]
+                   and d["refused_sends"] > 0 and new_flags == d["refused_sends"] == new_failed
+                   and d["records_flagged_not_failed"] == 0 and d["alert_lines"] == d["refused_sends"]
+                   and not d["alert_lines_name_an_address"] and d["operator_view_names_no_address"]
+                   and isinstance(d["operator_view"], dict) and d["operator_view"]["lastHour"] == d["refused_sends"]
+                   and d["emails_to_unlisted"] == 0)
+    print("D alert raised for every refused listed send, and for nothing else; nothing client-visible changed:", alert_clean)
     clean = (min(timing_ps) >= 0.01 and not report["A"]["field_differences"] and not report["B"]["field_differences"]
-             and all(r["equal"] for r in report["C"]) and report["worker"]["emails_to_unlisted"] == 0)
+             and all(r["equal"] for r in report["C"]) and report["worker"]["emails_to_unlisted"] == 0 and alert_clean)
     return 0 if clean else 1
 
 

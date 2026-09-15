@@ -14,6 +14,7 @@ data class AlmiraProperties(
     val auth: Auth = Auth(),
     val outbox: Outbox = Outbox(),
     val webauthn: WebAuthn = WebAuthn(),
+    val ops: Ops = Ops(),
     /**
      * Gates the checks that must not be bypassable by forgetting a flag:
      * anything other than exactly "development" makes them strict.
@@ -149,6 +150,35 @@ data class AlmiraProperties(
          */
         val background: Boolean = true,
     )
+
+    /**
+     * What only the operator sees (docs/17 §8).
+     *
+     * [healthToken] (`ALMIRA_OPS_HEALTH_TOKEN`): empty by default, and then
+     * nothing here exists. Set, a request to `/health` carrying it in
+     * `X-Almira-Ops-Token` is also told how many sign-in emails a listed
+     * address did not get in the last hour (auth/SignInEmailAlerts.kt). It is
+     * behind a token because a count anyone could read would say, to someone
+     * who had just asked for a code for an address, whether that address is on
+     * the allowlist. Without it, or with a wrong one, `/health` answers exactly
+     * as it always has.
+     */
+    data class Ops(val healthToken: String = "") {
+        init {
+            require(healthToken.isEmpty() || healthToken.length >= MIN_TOKEN_LENGTH) {
+                "almira.ops.health-token (ALMIRA_OPS_HEALTH_TOKEN) is ${healthToken.length} characters; " +
+                    "it must be at least $MIN_TOKEN_LENGTH (openssl rand -hex 32), or empty to switch the " +
+                    "operator's view of /health off."
+            }
+        }
+
+        /** Never print the token, wherever these properties are logged. */
+        override fun toString() = "Ops(healthToken=${if (healthToken.isEmpty()) "unset" else "set"})"
+
+        companion object {
+            const val MIN_TOKEN_LENGTH = 32
+        }
+    }
 
     /**
      * Passkeys (auth/PasskeyService.kt). Off unless [rpId] and [origins] are

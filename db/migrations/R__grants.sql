@@ -83,6 +83,18 @@ begin
     execute 'revoke all on pending_storage_deletions from almira_app';
   end if;
 
+  -- Dormant households (V120). The household reads its state through RLS; only
+  -- the sweep, the triggers and app.accept_household_ownership write it. The
+  -- helpers that open and end one, or answer the rule for a person the caller
+  -- names, are the sweep's and those functions' alone.
+  if to_regclass('public.household_dormancies') is not null then
+    execute 'revoke insert, update, delete, truncate on household_dormancies from almira_app';
+    execute 'revoke execute on function app.household_holds_records(uuid) from almira_app, public';
+    execute 'revoke execute on function app.going_leaves_household_ownerless(uuid, uuid) from almira_app, public';
+    execute 'revoke execute on function app.open_household_dormancy(uuid, uuid, text, uuid, uuid, uuid, timestamptz) from almira_app, public';
+    execute 'revoke execute on function app.end_household_dormancy(uuid, text, uuid) from almira_app, public';
+  end if;
+
   -- Anything a later migration creates inherits these defaults automatically.
   execute 'alter default privileges in schema public '
           'grant select, insert, update, delete on tables to almira_app';

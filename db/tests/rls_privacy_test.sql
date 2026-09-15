@@ -1066,8 +1066,9 @@ select pg_temp.assert((select count(*) from user_totp_factors) + (select count(*
 do $$ begin raise notice '--- data rights and parental consent (V45) ---'; end $$;
 
 select pg_temp.as_user('ish');
-insert into consent_events (user_id, purpose, action, notice_version)
-  values ((select v from t where k='ish'), 'messages', 'given', app.current_privacy_notice_version());
+-- A yes to messages names its channels (V125; required for new rows since V142).
+insert into consent_events (user_id, purpose, action, notice_version, channels)
+  values ((select v from t where k='ish'), 'messages', 'given', app.current_privacy_notice_version(), array['email']);
 insert into consent_events (user_id, purpose, action, notice_version)
   values ((select v from t where k='ish'), 'messages', 'withdrawn', app.current_privacy_notice_version());
 insert into privacy_notice_acceptances (user_id, notice_version)
@@ -1169,9 +1170,10 @@ begin
   get diagnostics n = row_count;
   perform pg_temp.assert(n = 0, 'an admin cannot revoke another member''s nominee');
   begin
-    insert into consent_events (user_id, purpose, action, notice_version)
-      values ((select v from t where k='ish'), 'messages', 'given', app.current_privacy_notice_version());
-  exception when others then blocked := true;
+    -- With channels, so it is row-level security that refuses it, not V142's check.
+    insert into consent_events (user_id, purpose, action, notice_version, channels)
+      values ((select v from t where k='ish'), 'messages', 'given', app.current_privacy_notice_version(), array['email']);
+  exception when insufficient_privilege then blocked := true;
   end;
   perform pg_temp.assert(blocked, 'nobody gives consent in someone else''s name');
 end $$;
@@ -2218,6 +2220,17 @@ begin
   perform pg_temp.assert(app.message_is_essential('auth.new_sign_in')
                          and not app.message_is_essential('reminder.maturity'),
     'a sign-in notice is essential and a reminder is not');
+  -- V140: a notice that changes your own rights or obligations is essential;
+  -- someone else joining or leaving is household news, under consent.
+  perform pg_temp.assert(app.message_is_essential('emergency.named')
+                         and app.message_is_essential('lifecycle.departure.completed.you')
+                         and app.message_is_essential('lifecycle.memorial.reversed')
+                         and app.message_is_essential('lifecycle.successor.named'),
+    'being named, leaving, a memorial reversed and a successor named are essential (V140)');
+  perform pg_temp.assert(not app.message_is_essential('lifecycle.departure.completed')
+                         and not app.message_is_essential('lifecycle.departure.started')
+                         and not app.message_is_essential('lifecycle.coming_of_age.welcomed'),
+    'someone else joining or leaving is not essential (V140)');
 end $$;
 
 insert into messages_consent_asks (user_id) values ((select v from t where k='ish'));
@@ -2252,6 +2265,93 @@ begin
   perform pg_temp.assert(blocked, 'nobody says "not now" in someone else''s name');
 end $$;
 select pg_temp.as_user('ish');
+
+-- V141. "Not now" beside one holding, or beside the Still true? digest, is kept
+-- per context: your own rows, never anyone else's, never deleted by the app.
+do $$ begin raise notice '--- "not now" is kept per holding and for the digest (V141) ---'; end $$;
+
+insert into messages_consent_ask_contexts (user_id, context_type, context_id)
+  values ((select v from t where k='ish'), 'investment', gen_random_uuid()),
+         ((select v from t where k='ish'), 'investment', gen_random_uuid()),
+         ((select v from t where k='ish'), 'still_true_digest', null);
+select pg_temp.assert((select count(*) from messages_consent_ask_contexts) = 3,
+  'a person sees their own "not now" for each holding and the digest');
+
+do $$
+declare blocked boolean;
+begin
+  blocked := false;
+  begin
+    insert into messages_consent_ask_contexts (user_id, context_type, context_id)
+      values ((select v from t where k='ish'), 'still_true_digest', null);
+  exception when unique_violation then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'the digest is one context per person');
+
+  blocked := false;
+  begin
+    insert into messages_consent_ask_contexts (user_id, context_type, context_id)
+      values ((select v from t where k='ish'), 'investment', null);
+  exception when check_violation then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a holding''s "not now" names the holding');
+
+  blocked := false;
+  begin
+    insert into messages_consent_ask_contexts (user_id, context_type, context_id)
+      values ((select v from t where k='ish'), 'a_banner', gen_random_uuid());
+  exception when check_violation then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'only the contexts that exist');
+
+  blocked := false;
+  begin
+    delete from messages_consent_ask_contexts;
+  exception when insufficient_privilege then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'a "not now" beside a holding is not deleted by the application');
+end $$;
+
+select pg_temp.as_user('ravi');
+select pg_temp.assert((select count(*) from messages_consent_ask_contexts) = 0,
+  'an admin sees nothing of another member''s "not now" beside a holding');
+do $$
+declare n int; blocked boolean := false;
+begin
+  update messages_consent_ask_contexts set not_now_at = now() - interval '1 year'
+   where user_id = (select v from t where k='ish');
+  get diagnostics n = row_count;
+  perform pg_temp.assert(n = 0, 'nor moves it on');
+  begin
+    insert into messages_consent_ask_contexts (user_id, context_type, context_id)
+      values ((select v from t where k='ish'), 'liability', gen_random_uuid());
+  exception when others then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'nobody says "not now" beside a holding in someone else''s name');
+end $$;
+select pg_temp.as_user('ish');
+
+-- V142. A yes names its channels from here, and a yes from before channels were
+-- chosen is not consent to anything.
+do $$ begin raise notice '--- a yes from before channels is asked again (V142) ---'; end $$;
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into consent_events (user_id, purpose, action, notice_version)
+      values ((select v from t where k='ish'), 'messages', 'given', app.current_privacy_notice_version());
+  exception when check_violation then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'no new yes to messages is written without channels (V142)');
+
+  blocked := false;
+  begin
+    insert into consent_events (user_id, purpose, action, notice_version, asked_again)
+      values ((select v from t where k='ish'), 'records', 'given', app.current_privacy_notice_version(), true);
+  exception when check_violation then blocked := true;
+  end;
+  perform pg_temp.assert(blocked, 'only an answer about messages is marked as asked again');
+end $$;
 
 -- -------------------------------------------------------- dormant households --
 -- V120. A household whose last owner goes while it holds records is dormant:

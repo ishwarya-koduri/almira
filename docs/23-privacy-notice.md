@@ -73,9 +73,11 @@ Almira asks separately for each thing it does with your data: keeping your
 records and showing them to the people you choose, and sending you reminders
 outside the app, by email, SMS or push. Nothing is sent outside the app until
 you say yes, and we ask when a reminder would first help. Notices that protect
-your account come either way: a sign-in code, a new sign-in, a changed phone
-number or sign-in method, a request for emergency access you can stop, and your
-account being closed or taken over. You can withdraw either consent in one tap
+your account, or change what you may or must do, come either way: a sign-in
+code, a new sign-in, a changed phone number or sign-in method, a request for
+emergency access you can stop, being named someone's emergency contact or the
+person to carry a household on, leaving a household, and your account being
+closed or taken over. You can withdraw either consent in one tap
 on Your data rights, the same way you gave it. Withdrawing the first means
 closing your account. Every choice is kept as a dated line you can see.
 
@@ -140,7 +142,9 @@ Below the cards:
   same place. Give opens the same question as below ("Want a reminder when this
   is due?"), with no channel ticked; a yes shows as "Given on 15 Sept 2026 · By
   email, SMS". Until then it says "Not given: nothing is sent outside the app
-  until you say yes". Below it, the notice version in force, whether you
+  until you say yes". A yes from before channels could be chosen shows as
+  "Asked again: you said yes on …, before you could choose how we reach you"
+  (V142, below), and Give opens the question with that line at the top. Below it, the notice version in force, whether you
   accepted it, and "a draft, not yet legally reviewed" while that is true.
 - **Who can act for you**: your emergency contact beside your nominees, with the
   one sentence that tells them apart — *your emergency contact is someone in
@@ -169,24 +173,58 @@ loan with an EMI day (`static/app/message-consent.js`):
 - **Yes** records a `given` event with the channels ticked, `asked_in =
   in_context` (or `settings` from Your data rights) and the notice version in
   force (`POST /api/v1/me/privacy/consents` with `channels`, `askedIn`; audited
-  as `privacy.consent_give`). A yes covers only those channels. A yes recorded
-  before V125 names no channels; its button said "Reminders by email or text",
-  so it covers email and SMS.
-- **Not now** records **no consent**. It keeps the question away for 90 days,
-  on every device (`POST /api/v1/me/privacy/messages-ask/not-now`,
-  `messages_consent_asks`, audited as `privacy.messages_not_now`). Closing the
-  sheet records nothing, and the question comes back on the next visit.
+  as `privacy.consent_give`). A yes covers only those channels. A client that
+  names no channels (its button said "Reminders by email or text") is recorded
+  as email and SMS, with the event; no new yes is stored without channels (V142).
+- **Not now** records **no consent**, and is about **what was asked** (V141,
+  the owner's decision: *keep 90 days, but make the trigger context, not a
+  timer*). The question is never asked again about the **same** holding or loan
+  sooner than 90 days after "Not now" to it; a **different** holding's first
+  due date may ask again, even inside those 90 days. The Still true? digest is a
+  context of its own. Kept per person per context, on every device
+  (`POST /api/v1/me/privacy/messages-ask/not-now` with `{contextType,
+  contextId}`; `messages_consent_ask_contexts`, RLS own rows, never deleted by
+  the application; audited as `privacy.messages_not_now` with the record it
+  was said beside). The same call also moves on the person's last "Not now"
+  anywhere (`messages_consent_asks`), which is what a client that names no
+  context is answered from. Closing the sheet records nothing. The web asks at
+  most once a visit per record.
 - **Whether to ask** is the server's answer (`GET
-  /api/v1/me/privacy/messages-ask`): only someone who has never answered, on a
-  server that offers a channel, and not within 90 days of a "Not now". A
-  withdrawal is an answer: someone who said no is not asked again.
+  /api/v1/me/privacy/messages-ask?contextType=&contextId=`): only someone who
+  has not answered (or whose yes is from before channels, below), on a server
+  that offers a channel, with no "Not now" to that same context in 90 days,
+  and when the moment has come — the holding or loan has a live reminder, or
+  something is due in the caller's own Still true? list. A record the caller
+  cannot see is a 404, before anything is written. With no context, any "Not
+  now" in the last 90 days keeps it away, as V125 froze the call. A withdrawal
+  is an answer: someone who said no is not asked again.
+- **Before the first Still true? digest.** The digest goes outside the app only
+  with consent, like any reminder. Before it would first be queued — whenever
+  Home's To review card has Still true? questions and the server says to ask
+  about `still_true_digest` — the card shows the same calm ask: "Want these
+  questions by email, SMS or a notification too?" with **Choose how** (the same
+  sheet, worded for the digest, nothing ticked) and **Not now** (kept for the
+  digest only). Only people the digest would reach are asked: the view is the
+  sweep's own, `still_true_items`, through the caller's RLS.
+- **A yes from before V125 is asked again** (V142, the owner's decision:
+  inherited consent is ruled out). A `given` event that names no channels was a
+  tap before channels could be chosen; it is **not** a valid consent to
+  anything non-essential outside the app. `app.messages_consent_given` is false
+  for it, so nothing is queued and a message already waiting is not sent
+  (`no_consent`). Its history is kept. The person is asked again at the next
+  useful moment and on Your data rights, with a line saying the choices
+  changed; their answer is a new event marked `asked_again` (a yes names exactly
+  the channels ticked; a no is a withdrawal).
 - In-app reminders and notices are the same whatever the answer.
 
 **Notices that protect your account.** These are not under consent to messages
-— the person needs them to protect their account, or to stop something being
-done to them or in their name — and they are not held by quiet hours or the
-daily limit. Exactly these, and nothing else (`app.message_is_essential`, V125,
-and `MessageTemplates.ESSENTIAL_TEMPLATES`; one list, pinned together by
+— the person needs them to protect their account, to stop something being done
+to them or in their name, or because the notice changes their own rights or
+obligations — and they are not held by quiet hours or the daily limit. The last
+kind is the owner's test (V140), asked of the person the notice is sent to:
+*does it change YOUR rights or obligations?* Exactly these, and nothing else
+(`app.message_is_essential`, V125 and V140, and
+`MessageTemplates.ESSENTIAL_TEMPLATES`; one list, pinned together by
 `MessagesConsentTest`):
 
 | Notice | Template |
@@ -204,14 +242,29 @@ and `MessageTemplates.ESSENTIAL_TEMPLATES`; one list, pinned together by
 | You were marked as passed away | `lifecycle.memorial.marked` |
 | Someone has taken over as owner of your household | `lifecycle.successor.claimed` |
 | You have been asked to leave a household | `lifecycle.departure.asked` |
+| You were named someone's emergency contact — a duty placed on you (V140) | `emergency.named` |
+| You've left a household — your access changed (V140) | `lifecycle.departure.completed.you` |
+| The passed-away label you gave someone was taken away — a major change of state (V140) | `lifecycle.memorial.reversed` |
+| You were named to carry a household on — sent to the successor only (V140) | `lifecycle.successor.named` |
 
 A sign-in code by SMS is sent at sign-in, not as a notification, and is not
 under consent either. Everything else sent outside the app is: reminders, the
-Still true? digest, being named an emergency contact or a successor, a
-key-holder question, a child coming of age, someone else joining, leaving or
-signing back in, and any kind of message added later until it is deliberately
-put on the list above. There is no dormancy notice today; when there is one, it
-belongs on the list.
+Still true? digest, a key-holder question, **household news** — someone else
+joining, leaving, staying after all or signing in for the first time as an adult
+(`lifecycle.departure.started`, `.completed`, `.cancelled`,
+`lifecycle.coming_of_age.welcomed`) — the note to the adults who run a household
+that a child turns 18 (`lifecycle.coming_of_age.guardian`), and any kind of
+message added later until it is deliberately put on the list above.
+
+A child coming of age changes *that child's* rights, so it is essential to the
+child. No message about it reaches the child today: a child is noticed only
+while they have no login of their own, and is welcomed in the app when they
+first sign in ("These are yours now"). The dormancy notices added with V120
+(`lifecycle.household.dormant`, `.dormant.you`, `.running_again`,
+`.ownership_accepted`) are not on the list; whether the owner's test puts them
+there is recorded in known issues ("The dormancy notices have not been put to
+the owner's test"); so is the missing notice to the child ("No message tells a
+child they have come of age").
 
 **Children.** Family → Add someone with a date of birth under 18 opens
 "Adding Aarav's records" before anything is saved: parent or lawful

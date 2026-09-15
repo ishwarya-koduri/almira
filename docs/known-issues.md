@@ -2252,8 +2252,9 @@ catalogue, English first.
 
 ## 72. Consent to messages is asked for on the web only, and some reminders are never asked about
 
-**Where** `static/app/message-consent.js` (the ask), `screens/capture.js` and
-`screens/liabilities.js` (where it is asked), V125, docs/23 "Asked when it helps".
+**Where** `static/app/message-consent.js` (the ask), `screens/capture.js`,
+`screens/liabilities.js` and `review.js` (where it is asked), V125, V141, V142,
+docs/23 "Asked when it helps".
 
 **What** Since V125 nobody gets a reminder outside the app without a yes
 ("Consent to messages is assumed until someone withdraws it", resolved). What
@@ -2262,30 +2263,29 @@ is not finished is *asking*:
 - **The native app never asks.** It has no Your data rights screen and no
   prompt, so someone who only uses the phone app gets in-app reminders and
   nothing else until they say yes on the web. Nothing is sent wrongly; the
-  phone app just cannot say yes yet.
+  phone app just cannot say yes yet. Nor can it pass a context, so a native
+  "Not now", when there is one, should send `{contextType, contextId}` (V141).
 - **Not every reminder is asked about in context.** The web asks after adding a
-  holding with a maturity, premium, renewal or SIP date, and a loan with an EMI
-  day. It does not ask after editing an existing record to add a date, after a
-  CSV or statement import, after a queued offline save goes through, or before
-  the first Still true? digest (the digest is made for anyone with records, not
-  by something the person creates). Those people are asked the next time they
-  add something dated, or can say yes on Your data rights.
-- **Telugu and Hindi** for the question, the channel names and the changed
-  notice paragraph are machine drafts (`i18n-te.js`, `i18n-hi.js`), not reviewed.
-- **Informational notices lost their "always".** Being named an emergency
-  contact, a child coming of age, someone else's departure, a memorial reversed
-  and a successor named used to ride on the `emergency.`/`lifecycle.` prefixes
-  as essential. They are now under consent and paced like a reminder. That
-  follows the owner's rule, but whether any of them should be essential after
-  all (`emergency.named` and `lifecycle.departure.completed.you` are the
-  closest calls) is the owner's to say.
-- **A yes from before V125 names no channels.** It was a tap on "Reminders by
-  email or text", so it covers email and SMS and not push. Nobody on a live
-  server has one yet (there was no live provider), but a development database
-  may.
+  holding with a maturity, premium, renewal or SIP date, a loan with an EMI
+  day, and on Home before the first Still true? digest. It does not ask after
+  editing an existing record to add a date, after a CSV or statement import, or
+  after a queued offline save goes through. Those people are asked the next
+  time they add something dated, on Home when a Still true? question is
+  waiting, or can say yes on Your data rights.
+- **Telugu and Hindi** for the question, the channel names, the digest and
+  asked-again wording and the changed notice paragraph are machine drafts
+  (`i18n-te.js`, `i18n-hi.js`), not reviewed; so are the server's
+  `YOUR_PLACE` reasons in `MessageTemplates`.
+
+Answered by the owner and closed here (2026-09-15): which informational notices
+are essential (V140: "does it change YOUR rights or obligations?"), how long
+"Not now" lasts and what it is about (V141: 90 days, per holding and for the
+digest), and a yes from before channels (V142: not inherited, asked again). Two
+edges of the first answer are still open: "No message tells a child they have
+come of age" and "The dormancy notices have not been put to the owner's test".
 
 **Why it is still here** The native screens and the other entry points are
-separate pieces of work; the classification question is a product decision.
+separate pieces of work.
 
 **When to fix** The native prompt before the phone app is given to anyone who
 does not also use the web. The rest when the screens involved are next opened.
@@ -2293,7 +2293,6 @@ does not also use the web. The rest when the screens involved are next opened.
 **Risk if left** Nothing is sent without consent. The risk is the opposite one:
 people who would want reminders outside the app are not asked at the moment
 they would say yes.
-
 ---
 
 ## 73. A dormant household with nobody who may take it on waits for good
@@ -2444,3 +2443,52 @@ in `excluded_table_data`, and widen the refusal to any table whose name ends in
 
 **Risk if left** A stolen backup names the few addresses whose sign-in email was
 in flight at that second.
+
+---
+
+## 79. No message tells a child they have come of age
+
+**Where** `lifecycle/ComingOfAge.kt` (`ComingOfAgeNotices`), V140,
+`provider/MessageTemplates.kt`, docs/23 "Notices that protect your account".
+
+**What** The owner's answer (V140): a child coming of age changes that child's
+rights, so the notice is essential **to the child**. No such message exists.
+The monthly sweep notices only a child with no login of their own, and tells
+the adults who run the household (`lifecycle.coming_of_age.guardian`), who are
+not the child and so stay under consent; the child is welcomed in the app when
+they first sign in. A minor who already has their own login is not noticed at
+all, so nothing reaches them either.
+
+**Why not fixed** Adding a notice to the child means widening who the sweep
+notices and what the welcome flow does for someone already signed in, which is
+lifecycle behaviour beyond the consent work. The classification is ready: a
+template sent only to the child (for example `lifecycle.coming_of_age.you`)
+goes on `app.message_is_essential` and `ESSENTIAL_TEMPLATES` together.
+
+**Risk if left** A young adult with their own login is not told outside the app
+that what is held in their name is now theirs to manage; they see it when they
+next open the household.
+
+---
+
+## 80. The dormancy notices have not been put to the owner's test
+
+**Where** `lifecycle/Dormancy.kt`, V120, V140, docs/23 "Notices that protect
+your account".
+
+**What** V140 applied the owner's test ("does it change YOUR rights or
+obligations?") to the notices the owner named. The dormancy notices added with
+V120 were not among them and are still under consent:
+`lifecycle.household.dormant` (nobody can invite or remove people until an
+adult takes it on — arguably a change to your access), `.dormant.you`,
+`.running_again` and `.ownership_accepted` (someone else now runs your
+household — close to `lifecycle.successor.claimed`, which is essential). Read
+strictly, the test would put some or all of them on the list; the answer named
+only "someone else joined or left" as household news. Until the owner says, the
+safe direction is kept: nothing more goes without consent.
+
+**Why not fixed** It widens what is sent without a yes, which is the owner's
+decision, not an inference.
+
+**Risk if left** A member who has not said yes to messages learns that their
+household is dormant, or who runs it now, only in the app.

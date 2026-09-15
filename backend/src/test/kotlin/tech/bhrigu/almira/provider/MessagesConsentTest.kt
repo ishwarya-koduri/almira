@@ -87,9 +87,24 @@ class MessagesConsentTest : ApiTestBase() {
     /** Everything sent outside the app that is not an essential notice. */
     private val nonEssential = listOf(
         "reminder.maturity", "reminder.premium_due", "reminder.emi", "still_true.digest",
-        "continuity.reachable", "continuity.key_holder_ask", "emergency.named",
-        "lifecycle.coming_of_age.welcomed", "lifecycle.departure.started", "household.member_removal_blocked",
+        "continuity.reachable", "continuity.key_holder_ask",
+        "lifecycle.coming_of_age.welcomed", "lifecycle.coming_of_age.guardian", "lifecycle.departure.started",
+        "lifecycle.departure.completed", "lifecycle.departure.cancelled", "household.member_removal_blocked",
         "something.added_later",
+    )
+
+    /**
+     * The owner's test (V140): "does it change YOUR rights or obligations?" These do,
+     * for the one person each is sent to.
+     */
+    private val changesYourRights = listOf(
+        "emergency.named", "lifecycle.departure.completed.you", "lifecycle.memorial.reversed", "lifecycle.successor.named",
+    )
+
+    /** Someone else joined or left: household news, and under consent. */
+    private val householdNews = listOf(
+        "lifecycle.departure.started", "lifecycle.departure.completed", "lifecycle.departure.cancelled",
+        "lifecycle.coming_of_age.welcomed",
     )
 
     @Test
@@ -122,6 +137,146 @@ class MessagesConsentTest : ApiTestBase() {
     }
 
     @Test
+    fun `a notice that changes your own rights goes outside the app without consent, household news does not`() {
+        val yours = changesYourRights.associateWith { tell(it) }
+        val news = householdNews.associateWith { tell(it) }
+
+        yours.forEach { (template, key) ->
+            assertThat(MessageTemplates.isEssential(template)).describedAs(template).isTrue()
+            assertThat(outside(key)).describedAs("$template: queued on every channel, never asked").containsExactly("email", "push", "sms")
+        }
+        news.forEach { (template, key) ->
+            assertThat(MessageTemplates.isEssential(template)).describedAs(template).isFalse()
+            assertThat(outside(key)).describedAs("$template: nothing queued without a yes").isEmpty()
+            assertThat(inApp(key)).describedAs("$template: still in the app").isEqualTo(1)
+        }
+        outbox.drain()
+        yours.forEach { (template, key) ->
+            assertThat(delivered(key)).describedAs(template).containsEntry("sms", 1).containsEntry("email", 1)
+        }
+        news.forEach { (template, key) ->
+            assertThat(delivered(key).values).describedAs(template).containsOnly(0)
+        }
+    }
+
+    // --- a yes from before channels were chosen (V142) ------------------------------
+
+    /**
+     * A `given` event with no channels, as a tap on "Give" before V125 wrote. V142 refuses
+     * new ones, so the fixture lifts that check for its own insert and puts it back in the
+     * same transaction: no other session ever sees the table without it.
+     */
+    private fun yesFromBeforeChannels() {
+        db.execute(org.springframework.jdbc.core.ConnectionCallback { connection ->
+            val autoCommit = connection.autoCommit
+            connection.autoCommit = false
+            try {
+                connection.createStatement().use { statement ->
+                    statement.execute("alter table consent_events drop constraint consent_events_messages_yes_names_channels")
+                    statement.execute(
+                        "insert into consent_events (user_id, purpose, action, notice_version, created_at) " +
+                            "values ('$userId', 'messages', 'given', app.current_privacy_notice_version(), now() - interval '1 year')",
+                    )
+                    statement.execute(
+                        "alter table consent_events add constraint consent_events_messages_yes_names_channels " +
+                            "check (purpose <> 'messages' or action <> 'given' or channels is not null) not valid",
+                    )
+                }
+                connection.commit()
+            } catch (e: Exception) {
+                connection.rollback()
+                throw e
+            } finally {
+                connection.autoCommit = autoCommit
+            }
+        })
+    }
+
+    @Test
+    fun `a yes from before channels were chosen sends nothing until it is given again`() {
+        yesFromBeforeChannels()
+
+        val keys = listOf("reminder.maturity", "still_true.digest", "continuity.reachable").associateWith { tell(it) }
+        keys.forEach { (template, key) ->
+            assertThat(outside(key)).describedAs("$template: not queued on email, text or push").isEmpty()
+            assertThat(inApp(key)).describedAs("$template: in the app as ever").isEqualTo(1)
+        }
+        outbox.drain()
+        keys.forEach { (template, key) ->
+            assertThat(delivered(key).values).describedAs("$template: no provider was called").containsOnly(0)
+        }
+        // An essential notice still goes: it never needed the yes.
+        assertThat(outside(tell("auth.new_sign_in"))).containsExactly("email", "push", "sms")
+
+        val messages = get("/api/v1/me/privacy", owner).json().path("consents")[1]
+        assertThat(messages.path("given").let { it.isNull || it.isMissingNode }).describedAs("not shown as given").isTrue()
+        assertThat(messages.path("askingAgain").asBoolean()).isTrue()
+        assertThat(messages.path("changedAt").asText()).describedAs("when they said it is kept").isNotEmpty()
+        val ask = get("/api/v1/me/privacy/messages-ask", owner).json()
+        assertThat(ask.path("ask").asBoolean()).describedAs("asked again").isTrue()
+        assertThat(ask.path("askingAgain").asBoolean()).describedAs("and told why").isTrue()
+        val history = get("/api/v1/me/privacy/history", owner).json()
+        assertThat(history.map { it.path("action").asText() }).describedAs("the old yes is not deleted").containsExactly("given")
+        assertThat(history[0].path("channels").let { it.isNull || it.isMissingNode }).describedAs("and claims no channels").isTrue()
+    }
+
+    @Test
+    fun `given again with channels, exactly those channels are sent on, and the answer is a new event`() {
+        yesFromBeforeChannels()
+        val notNow = post("/api/v1/me/privacy/messages-ask/not-now", owner)
+        assertThat(notNow.json().path("askingAgain").asBoolean()).isTrue()
+        assertThat(outside(tell("reminder.maturity"))).describedAs("not now is not a yes").isEmpty()
+
+        val given = post(
+            "/api/v1/me/privacy/consents", owner,
+            mapOf("purpose" to "messages", "given" to true, "channels" to listOf("email"), "askedIn" to "in_context"),
+        )
+        assertThat(given.json().path("consents")[1].path("channels").map { it.asText() }).containsExactly("email")
+        assertThat(given.json().path("consents")[1].path("askingAgain").asBoolean()).isFalse()
+
+        val key = tell("reminder.maturity")
+        assertThat(outside(key)).containsExactly("email")
+        outbox.drain()
+        assertThat(delivered(key)).containsExactlyInAnyOrderEntriesOf(mapOf("sms" to 0, "email" to 1, "push" to 0))
+
+        val history = get("/api/v1/me/privacy/history", owner).json()
+        assertThat(history.map { it.path("action").asText() }).containsExactly("given", "given")
+        assertThat(history.map { it.path("askedAgain").asBoolean() }).describedAs("the new answer is marked").containsExactly(true, false)
+        assertThat(get("/api/v1/me/privacy/messages-ask", owner).json().path("askingAgain").asBoolean()).isFalse()
+        assertThat(
+            db.queryForObject(
+                "select diff::text from activity_log where actor_user_id = ?::uuid and action = 'privacy.consent_give'",
+                String::class.java, userId,
+            ),
+        ).contains("askedAgain")
+    }
+
+    @Test
+    fun `a message waiting on a yes that is replaced by one from before channels is not sent`() {
+        consentToMessages(owner, listOf("email"))
+        val waiting = outbox.whilePaused {
+            tell("reminder.maturity").also {
+                assertThat(outside(it)).containsExactly("email")
+                yesFromBeforeChannels()
+            }
+        }
+        outbox.drain()
+        assertThat(delivered(waiting).values).containsOnly(0)
+    }
+
+    @Test
+    fun `no new yes is written without channels`() {
+        val blocked = runCatching {
+            db.update(
+                "insert into consent_events (user_id, purpose, action, notice_version) " +
+                    "values (?::uuid, 'messages', 'given', app.current_privacy_notice_version())",
+                userId.toString(),
+            )
+        }
+        assertThat(blocked.exceptionOrNull()).describedAs("V142 refuses it").isNotNull()
+    }
+
+    @Test
     fun `a yes covers the channels ticked and no others`() {
         consentToMessages(owner, listOf("email"))
         val key = tell("reminder.maturity")
@@ -134,6 +289,11 @@ class MessagesConsentTest : ApiTestBase() {
     fun `a yes from a client that named no channels covers email and text, what its button said`() {
         val given = post("/api/v1/me/privacy/consents", owner, mapOf("purpose" to "messages", "given" to true))
         assertThat(given.json().path("consents")[1].path("channels").map { it.asText() }).containsExactly("email", "sms")
+        assertThat(
+            db.queryForObject(
+                "select array_to_string(channels, ',') from consent_events where user_id = ?::uuid", String::class.java, userId.toString(),
+            ),
+        ).describedAs("recorded with the event, never assumed later (V142)").isEqualTo("email,sms")
         assertThat(outside(tell("reminder.maturity"))).containsExactly("email", "sms")
     }
 

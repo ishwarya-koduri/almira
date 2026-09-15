@@ -843,8 +843,10 @@ came.** `DeliveryPacing` keeps it as the worker claims each row:
 0. **Nothing is queued without consent** (V125). `app.enqueue_outbound_message`
    writes a row for a non-essential message only when the person's latest
    `messages` consent is `given` and names that channel; with no consent at all
-   — everyone who was never asked — only the in-app row is written. Consent is
-   opt-in and asked for in the app (Doc 23 "Asked when it helps").
+   — everyone who was never asked — only the in-app row is written. A yes from
+   before V125 names no channels and counts for nothing (V142): the person is
+   asked again. Consent is opt-in and asked for in the app, about the holding or
+   the Still true? digest in front of the person (Doc 23 "Asked when it helps").
    **A stop made while it waited holds.** Before pacing, the worker asks again
    what queueing asked: a person since marked as passed away (`skipped`,
    `notifications_stopped`, except the warnings V103 lets through), or a
@@ -859,8 +861,11 @@ came.** `DeliveryPacing` keeps it as the worker claims each row:
    queueing, the worker's re-check and pacing; `MessageTemplates.ESSENTIAL_TEMPLATES`
    is the same list for the wording, and `MessagesConsentTest` fails if the two
    differ. A template that is on neither list — a new kind of message — is not
-   essential. Being named an emergency contact, a child coming of age and other
-   notes about the household are not on it.
+   essential. A notice that changes the recipient's own rights or obligations is
+   on it (V140: being named an emergency contact or a successor, having left a
+   household, a memorial reversed), so it also skips quiet hours and the daily
+   limit; household news — someone else joining or leaving — and a child coming
+   of age told to the adults are not.
 2. **A switched-off channel is skipped** — `skipped`, `turned_off` — in every
    mode. Preferences: `GET`/`PUT /api/v1/me/notification-preferences`
    (`smsEnabled`, `emailEnabled`, `pushEnabled`, `quietFrom`, `quietUntil` as

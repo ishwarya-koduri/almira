@@ -1256,6 +1256,9 @@
           "action": {
             "type": "string"
           },
+          "askedAgain": {
+            "type": "boolean"
+          },
           "at": {
             "format": "date-time",
             "type": "string"
@@ -1281,6 +1284,7 @@
         },
         "required": [
           "action",
+          "askedAgain",
           "at",
           "kind"
         ],
@@ -1288,6 +1292,9 @@
       },
       "ConsentState": {
         "properties": {
+          "askingAgain": {
+            "type": "boolean"
+          },
           "changedAt": {
             "format": "date-time",
             "type": "string"
@@ -1309,6 +1316,7 @@
           }
         },
         "required": [
+          "askingAgain",
           "purpose",
           "required"
         ],
@@ -5932,6 +5940,9 @@
           "ask": {
             "type": "boolean"
           },
+          "askingAgain": {
+            "type": "boolean"
+          },
           "channels": {
             "items": {
               "type": "string"
@@ -5948,9 +5959,22 @@
         },
         "required": [
           "ask",
+          "askingAgain",
           "channels",
           "noticeVersion"
         ],
+        "type": "object"
+      },
+      "MessagesAskContextBody": {
+        "properties": {
+          "contextId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contextType": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "MissingProof": {
@@ -20460,6 +20484,25 @@
     "/api/v1/me/privacy/messages-ask": {
       "get": {
         "operationId": "privacyMessagesAsk",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "contextType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "contextId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -20480,6 +20523,15 @@
     "/api/v1/me/privacy/messages-ask/not-now": {
       "post": {
         "operationId": "privacyMessagesNotNow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessagesAskContextBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

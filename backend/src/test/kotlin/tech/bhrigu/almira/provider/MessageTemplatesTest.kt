@@ -14,7 +14,7 @@ class MessageTemplatesTest {
 
     private val templates = listOf(
         "reminder.maturity", "reminder.premium_due", "still_true.digest",
-        "emergency.named", "emergency.requested", "lifecycle.memorial.marked", "something.new",
+        "emergency.named", "emergency.requested", "lifecycle.memorial.marked", "lifecycle.successor.named", "something.new",
     )
     private val body = "₹2,40,000 at SBI\nTwo Lakh Forty Thousand Rupees"
 
@@ -67,10 +67,16 @@ class MessageTemplatesTest {
         assertThat(MessageTemplates.isEssential("lifecycle.closure.requested")).isTrue()
         assertThat(MessageTemplates.isEssential("reminder.maturity")).isFalse()
         assertThat(MessageTemplates.isEssential("still_true.digest")).isFalse()
-        // Informational, and under consent: being named, a child coming of age, a new auth.* nobody classified.
-        listOf("emergency.named", "lifecycle.coming_of_age.welcomed", "auth.something_new").forEach {
+        // Household news, and under consent: someone else left, a child came of age, a new auth.* nobody classified.
+        listOf("lifecycle.departure.completed", "lifecycle.coming_of_age.welcomed", "auth.something_new").forEach {
             assertThat(MessageTemplates.isEssential(it)).describedAs(it).isFalse()
             assertThat(MessageTemplates.kindOf(it)).describedAs(it).isEqualTo(MessageTemplates.Kind.OTHER)
+        }
+        // It changes your own rights or obligations (V140): essential, and worded as always coming.
+        assertThat(MessageTemplates.kindOf("emergency.named")).isEqualTo(MessageTemplates.Kind.EMERGENCY)
+        listOf("lifecycle.departure.completed.you", "lifecycle.memorial.reversed", "lifecycle.successor.named").forEach {
+            assertThat(MessageTemplates.isEssential(it)).describedAs(it).isTrue()
+            assertThat(MessageTemplates.kindOf(it)).describedAs(it).isEqualTo(MessageTemplates.Kind.YOUR_PLACE)
         }
         assertThat(MessageTemplates.kindOf("emergency.requested")).isEqualTo(MessageTemplates.Kind.EMERGENCY)
         assertThat(MessageTemplates.kindOf("auth.phone_changed")).isEqualTo(MessageTemplates.Kind.ACCOUNT)

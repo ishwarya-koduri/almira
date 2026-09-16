@@ -9,7 +9,11 @@ import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import platform.CoreFoundation.CFDictionaryAddValue
 import platform.CoreFoundation.CFDictionaryCreateMutable
 import platform.CoreFoundation.CFDictionaryRef
@@ -21,6 +25,7 @@ import platform.CoreFoundation.kCFBooleanTrue
 import platform.Foundation.CFBridgingRelease
 import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSData
+import platform.Foundation.NSLog
 import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.create
@@ -77,6 +82,21 @@ private const val SERVICE = "tech.bhrigu.almira.session"
  * from necessity: they make "locked" drop what the process is holding, so the
  * next read goes back through the system. Without them the app would still be
  * correct and would simply ask the Keychain on every request.
+ *
+ * ### Off the caller's thread, and one at a time
+ *
+ * Every Keychain call here is synchronous C that can block on the system
+ * keychain daemon, and [accessToken] sits on the path of every single API
+ * request — so the work leaves the caller's thread, which on iOS is the one
+ * drawing the screen. Android's store says `Dispatchers.IO`; Kotlin/Native does
+ * not publish that dispatcher, so this is `Dispatchers.Default`, and the
+ * difference does not bite: the [Mutex] below already allows one Keychain call
+ * at a time, so this can never occupy more than a single pool thread.
+ *
+ * The lock does the other half. Without it a token refresh writing three items
+ * could interleave with a read that sees the marker gone and calls the session
+ * over. It is taken only by the `TokenStore` overrides; the private helpers
+ * assume it is already held, so nothing here can wait on itself.
  */
 private object KeychainTokenStore : TokenStore {
 
@@ -90,34 +110,104 @@ private object KeychainTokenStore : TokenStore {
      */
     private const val MARKER = "present"
 
+    /** `errSecSuccess`, which the Security bindings do not hand over as a constant. */
+    private const val OK = 0
+
+    /** `errSecItemNotFound`: the end state [delete] wants, not a failure. */
+    private const val NOT_FOUND = -25300
+
+    /** `errSecParam`, borrowed for the one failure that never reaches Security. */
+    private const val BAD_PARAM = -50
+
     private var cachedAccess: String? = null
     private var cachedRefresh: String? = null
 
-    override suspend fun hasSession(): Boolean = read(MARKER) != null
+    /** See the class note: one Keychain conversation at a time, off the caller's thread. */
+    private val gate = Mutex()
 
-    override suspend fun accessToken(): String? =
+    override suspend fun hasSession(): Boolean = onKeychain { read(MARKER) != null }
+
+    override suspend fun accessToken(): String? = onKeychain {
         cachedAccess ?: read(ACCESS)?.also { cachedAccess = it }
-
-    override suspend fun refreshToken(): String? =
-        cachedRefresh ?: read(REFRESH)?.also { cachedRefresh = it }
-
-    override suspend fun save(access: String, refresh: String) {
-        write(ACCESS, access)
-        write(REFRESH, refresh)
-        write(MARKER, "1")
-        cachedAccess = access
-        cachedRefresh = refresh
     }
 
-    override suspend fun clear() {
-        listOf(ACCESS, REFRESH, MARKER).forEach(::delete)
+    override suspend fun refreshToken(): String? = onKeychain {
+        cachedRefresh ?: read(REFRESH)?.also { cachedRefresh = it }
+    }
+
+    /**
+     * All three items or none of them, with the marker written last.
+     *
+     * `SecItemAdd` returns an `OSStatus` that nobody is obliged to read, and the
+     * version of this that did not read it reported success no matter what the
+     * Keychain did. Because [write] deletes the old item before adding the new
+     * one, a failed add did not leave the previous value alone — it destroyed
+     * it, so a refresh-token rotation that failed here ended the session at the
+     * next cold start with nothing anywhere saying why.
+     *
+     * The marker goes down last and comes back up first because it is what
+     * [hasSession] reads: a marker standing over a missing refresh token is a
+     * returning person sent to a lock screen with nothing behind it. If any of
+     * the three fails, all three are removed and the store is honestly empty.
+     *
+     * Does not throw, for the same reason Android's does not: a token that
+     * cannot be stored is a session that will not survive a restart, which is a
+     * smaller problem than an exception surfacing as "couldn't reach Almira".
+     */
+    override suspend fun save(access: String, refresh: String): Unit = onKeychain {
+        // Held whatever the Keychain does below. These tokens are sound - the
+        // server issued them a moment ago - and only their durability is at
+        // stake, so a storage failure must not end a session that is working.
+        // `forget` still drops them the moment the app backgrounds.
+        cachedAccess = access
+        cachedRefresh = refresh
+
+        for ((account, value) in listOf(ACCESS to access, REFRESH to refresh, MARKER to "1")) {
+            val status = write(account, value)
+            if (status == OK) continue
+
+            report("could not store $account", status)
+            listOf(ACCESS, REFRESH, MARKER).forEach { rollback ->
+                val undo = delete(rollback)
+                if (undo != OK && undo != NOT_FOUND) report("could not roll back $rollback", undo)
+            }
+            return@onKeychain
+        }
+    }
+
+    override suspend fun clear(): Unit = onKeychain {
+        listOf(ACCESS, REFRESH, MARKER).forEach { account ->
+            val status = delete(account)
+            // Absent is what was wanted. Anything else means a sign-out that
+            // did not take, which is the one failure worth saying out loud.
+            if (status != OK && status != NOT_FOUND) report("could not clear $account", status)
+        }
         cachedAccess = null
         cachedRefresh = null
     }
 
     override suspend fun forget() {
-        cachedAccess = null
-        cachedRefresh = null
+        // No Keychain work, so no dispatch: only the cache, which the lock
+        // still guards against a read landing halfway through.
+        gate.withLock {
+            cachedAccess = null
+            cachedRefresh = null
+        }
+    }
+
+    /**
+     * The one way in: off the caller's thread and behind the lock.
+     *
+     * Never call this from inside itself. `Mutex` is not reentrant, and the
+     * public surface is arranged so that nothing needs it to be — the helpers
+     * below are private and lock-free.
+     */
+    private suspend fun <T> onKeychain(block: () -> T): T =
+        withContext(Dispatchers.Default) { gate.withLock { block() } }
+
+    /** Says what went wrong and never what was being stored. */
+    private fun report(what: String, status: Int) {
+        NSLog("almira keychain: $what (OSStatus $status)")
     }
 
     private fun read(account: String): String? = memScoped {
@@ -133,15 +223,17 @@ private object KeychainTokenStore : TokenStore {
         NSString.create(data = data, encoding = NSUTF8StringEncoding) as String?
     }
 
-    private fun write(account: String, value: String) {
+    /** Returns the `OSStatus` from `SecItemAdd`. [OK] and nothing else means stored. */
+    private fun write(account: String, value: String): Int {
         // Replace rather than update: an add over an existing item fails with
         // errSecDuplicateItem, and a half-written session is worse than none.
         delete(account)
         @Suppress("CAST_NEVER_SUCCEEDS")
-        val data = (value as NSString).dataUsingEncoding(NSUTF8StringEncoding) ?: return
+        val data = (value as NSString).dataUsingEncoding(NSUTF8StringEncoding)
+            ?: return BAD_PARAM
         val bridged = CFBridgingRetain(data)
         try {
-            withQuery(
+            return withQuery(
                 account,
                 kSecValueData to bridged,
                 kSecAttrAccessible to kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
@@ -151,10 +243,14 @@ private object KeychainTokenStore : TokenStore {
         }
     }
 
-    /** Not-found is the desired end state here, not a failure, so nothing is reported. */
-    private fun delete(account: String) {
+    /**
+     * Returns the `OSStatus` from `SecItemDelete`. [NOT_FOUND] is the desired
+     * end state rather than a failure, so callers treat it as success; they
+     * decide what anything else means, because it differs between rolling a
+     * failed save back and signing out for good.
+     */
+    private fun delete(account: String): Int =
         withQuery(account) { query -> SecItemDelete(query) }
-    }
 
     /**
      * Builds a Keychain query dictionary, runs one call against it, and tears
@@ -230,14 +326,12 @@ private object LocalAuthenticationLock : AppLock {
             context.evaluatePolicy(LAPolicyDeviceOwnerAuthentication, subtitle) { succeeded, error ->
                 if (!continuation.isActive) return@evaluatePolicy
                 continuation.resume(
-                    when {
-                        succeeded -> UnlockResult.Unlocked
-                        // -2 is userCancel and -4 systemCancel: a decision not
-                        // to answer, not a failure to. Neither is worth showing
-                        // an error for, exactly as on Android.
-                        error == null || error.code == -2L || error.code == -4L ->
-                            UnlockResult.Cancelled
-                        else -> UnlockResult.Failed(error.localizedDescription)
+                    if (succeeded) {
+                        UnlockResult.Unlocked
+                    } else {
+                        // Which LAError means what is pure, so it lives in
+                        // AppleUnlockOutcome.kt where a test can reach it.
+                        appleUnlockOutcome(error?.code, error?.localizedDescription)
                     },
                 )
             }

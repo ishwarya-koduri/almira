@@ -2674,7 +2674,6 @@ token.
 
 ---
 
-<<<<<<< HEAD
 ## 85. After a wrong code, the app's code field loses focus
 
 **Where** `app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/signin/SignInScreen.kt`,
@@ -2740,8 +2739,10 @@ right answer; it is only the readable-but-not-writable case that misleads.
 **Risk if left** A viewer or an advisor deleting a contact is told the contact is
 gone from under them rather than that it is not theirs to remove, and reloads to
 find it still listed. No data is at risk either way.
-=======
-## 85. A rate-limited guest link reads as a gone one
+
+---
+
+## 88. A rate-limited guest link reads as a gone one
 
 **Where** `static/app/guest.js` (`load`, `failed`), `sharing/ShareService.rateLimit`.
 
@@ -2760,4 +2761,3 @@ does is a script.
 **Risk if left** A CA who somehow met the cap would be told the link is gone and
 would ask for a new one, rather than waiting. Nothing is lost, and the old link
 still works.
->>>>>>> worktree-agent-a2fa0fd8eeb7d75f4

@@ -241,6 +241,18 @@ private object LocalAuthenticationLock : AppLock {
                     },
                 )
             }
+
+            // The counterpart of Android's `prompt.cancelAuthentication()`, and
+            // needed for the same reason: `attemptUnlock` runs inside a
+            // `LaunchedEffect`, so backgrounding cancels it. Without this the
+            // Face ID sheet stays up over an app that is no longer asking, and
+            // the next foreground raises a second one behind the first.
+            //
+            // It also keeps `context` alive. `evaluatePolicy` does not retain
+            // its receiver, and the local would otherwise be the only reference
+            // — released as soon as this lambda returns, which dismisses the
+            // prompt and means the callback never arrives at all.
+            continuation.invokeOnCancellation { context.invalidate() }
         }
     }
 }

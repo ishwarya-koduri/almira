@@ -51,6 +51,16 @@ globalThis.document = {
   addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); },
   removeEventListener(type, fn) { this.listeners[type] = (this.listeners[type] || []).filter((f) => f !== fn); },
 };
+globalThis.location = { hash: "#/settings" };
+globalThis.window = {
+  listeners: {},
+  addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); },
+};
+/** As a browser does: the hash is already the new one when the event is dispatched. */
+function goTo(hash) {
+  globalThis.location.hash = hash;
+  for (const fn of [...(window.listeners.hashchange || [])]) fn();
+}
 function press(key) {
   const event = { key, shiftKey: false, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
   // As a browser does: every listener registered when dispatch began is called.
@@ -91,6 +101,32 @@ log("\nClosing a lower sheet by its button leaves the top one working");
   press("Escape");
   expect("Escape then closes the top sheet", closed, ["lower", "upper"]);
   expect("and the page scrolls again", body.style.overflow, "");
+}
+
+log("\nLeaving the screen closes what was open over it");
+{
+  const closed = [];
+  sheet({ title: "Close my account", body: [], onClose: () => closed.push("closure") });
+  const help = sheet({ title: "What happens to what I share?", body: [], onClose: () => closed.push("help") });
+  expect("both open on the settings screen", [closed, body.style.overflow], [[], "hidden"]);
+
+  // Back, with both still open: the screen under them has changed.
+  goTo("#/home");
+  expect("both closed, the top one first", closed, ["help", "closure"]);
+  expect("the page scrolls again", body.style.overflow, "");
+  expect("no listener is left behind", (document.listeners.keydown || []).length, 0);
+  expect("and nothing is left on the page", help.panel.isConnected, false);
+}
+
+log("\nA sheet the new screen opens is not closed by the change that brought it");
+{
+  const closed = [];
+  // As the router does it: the hash is already the new one when the screen draws.
+  goTo("#/holdings");
+  const detail = sheet({ title: "SBI five year FD", body: [], onClose: () => closed.push("detail") });
+  for (const fn of [...(window.listeners.hashchange || [])]) fn();
+  expect("it stays open", [closed, detail.panel.isConnected], [[], true]);
+  detail.close();
 }
 
 if (failures > 0) {

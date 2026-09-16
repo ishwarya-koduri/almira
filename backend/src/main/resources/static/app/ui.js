@@ -277,6 +277,10 @@ export function sheet({ title, body, footer, onClose, wide = false }) {
   );
 
   panel.returnTo = returnTo;
+  // Which screen it belongs to, so a route change can tell a sheet that was
+  // already open from one this screen has just opened (see below).
+  panel.openedAt = typeof location === "undefined" ? "" : location.hash;
+  panel.closeSheet = close;
 
   const scrim = el("div.scrim", {
     onclick: (event) => { if (event.target === scrim) close(); },
@@ -289,6 +293,26 @@ export function sheet({ title, body, footer, onClose, wide = false }) {
   panel.querySelector("input, select, textarea, button")?.focus();
 
   return { close, panel };
+}
+
+/* A route change closes what was open over it.
+
+   Back is a route change, and on a phone it is the main way out of anything. A
+   sheet left on top of a screen that has already changed underneath is a trap:
+   what it was about is gone, and the scrim it sits on hides the way back. So
+   every sheet that belonged to the screen we have just left is closed, in
+   stacking order, exactly as if each had been closed by its own button.
+
+   Only those: a sheet is closed when the route it was opened on is no longer
+   the route we are on, so a screen that opens one as it draws keeps it, whatever
+   order the listeners run in. */
+if (typeof window !== "undefined") {
+  window.addEventListener("hashchange", () => {
+    const now = location.hash;
+    [...openSheets].reverse().forEach((panel) => {
+      if (panel.openedAt !== now) panel.closeSheet?.();
+    });
+  });
 }
 
 /* -----------------------------------------------------------------------------

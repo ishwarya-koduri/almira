@@ -141,7 +141,7 @@ is "the household still has exactly 3 people" "$(echo "$MEMBERS" | count)" "3"
 section "Taxonomy"
 TAX=$(api "$ISH" GET "/api/v1/households/$HID/taxonomy")
 CATS=$(echo "$TAX" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))')
-is "12 categories are seeded" "$CATS" "12"
+is "13 categories are seeded" "$CATS" "13"   # 12, plus Held Abroad (V65)
 TYPE_FD=$(echo "$TAX" | python3 -c '
 import sys,json
 for c in json.load(sys.stdin):

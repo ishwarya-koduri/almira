@@ -2534,13 +2534,15 @@ papers erased, what was shared and their part of joint records kept under a
 former member — and `AccountClosureService.closurePreview` promises the same.
 `AccountClosureApiTest` proves it in a household that is not dormant, watched
 failing against the old path; the names others' records kept are now unlinked
-with no contact-card link (flagged for counsel, Doc 23). What remains: (2) as
-written; (3) as written, now for every erasure; and a departure's *download, then
-erase* choice still erases everything solely held whatever its visibility, as
-its *take* choice still moves it — a departure keeps the person's account and
-disposes of their records by their choice, so whether the household's claim on
-shared records applies there too is a separate call for the owner. The entry is
-kept below as it was found.
+with no contact-card link (flagged for counsel, Doc 23). Departures were settled the next day
+(2026-09-16), by the owner: *leaving isn't erasure — don't apply the rule ... the
+household keeps the shared records, because they're shared. Same "Former member"
+label.* So a departure now moves or erases only what was private to the person
+alone, leaves what they shared held by a former member, and gives a person who is
+taking their records a full-size private copy of each such holding;
+`DepartureApiTest` proves both choices, watched failing against the old rule.
+What remains: (2) as written; and (3) as written, now for every erasure. The
+entry is kept below as it was found.
 
 **Where** `lifecycle/AccountPurge.kt`, `lifecycle/DepartureCompletion.kt`,
 `LifecycleWrites.becomeFormerMember` (V136), docs/05 §12.1, §12.7.

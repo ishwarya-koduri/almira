@@ -157,8 +157,8 @@ class DepartureCompletion(
             departure.userId, result.destinationHouseholdId ?: departure.householdId, "lifecycle.departure.completed.you",
             "departure.completed:${departure.id}",
             "You've left ${departure.householdName}",
-            if (taking) "What was yours is in your own household now, set to private."
-            else "What was only yours has been erased from it.",
+            if (taking) "What was private to you is in your own household now, set to private, with a copy of what you shared."
+            else "What was private to you has been erased from it. What you shared stays with them.",
         )
         householdUsers(departure.householdId).forEach { other ->
             tell(
@@ -259,7 +259,14 @@ class DepartureCompletion(
         }
 
         val sole = records.solelyHeld(hid, uid, mine)
-        val documents = records.documentsFollowing(hid, uid, sole)
+        // Owner's decision (2026-09-16): leaving is not an erasure — the person keeps
+        // their account and takes a copy of what is theirs — but what they shared with
+        // the household stays with it, held by the same "Former member" as an erasure
+        // leaves behind, "because they're shared: other members contributed to them and
+        // depend on them". Only what was private to them alone goes with them or is erased.
+        val goes = records.privateOnes(sole)
+        val sharedStays = sole - goes.toSet()
+        val documents = records.documentsFollowingPrivate(hid, uid, goes)
         val joint = records.jointlyHeld(hid, mine)
         val decisions = owner.query(
             "select record_type, record_id, decision from departure_joint_decisions where departure_id = :id",
@@ -270,16 +277,23 @@ class DepartureCompletion(
         var copies = 0
         val oldKeys: List<String>
         if (prepared != null) {
-            move(hid, mine, sole, documents, prepared)
+            move(hid, mine, goes, documents, prepared)
             joint.filter { decisions[it.type to it.id] == "take_my_share" }.forEach {
                 if (copyShare(hid, it, mine, prepared)) copies++
             }
+            // What stays is still theirs to have a copy of: the whole of it, since
+            // they held all of it. The household's record is untouched.
+            sharedStays.forEach { if (copyShare(hid, it, mine, prepared, ofMyPart = false)) copies++ }
             oldKeys = documents.mapNotNull { prepared.documents[it.id]?.first }
         } else {
-            oldKeys = writes.erase(sole, documents)
+            oldKeys = writes.erase(goes, documents)
         }
         joint.forEach { records.passShare(it.type, it.id, mine) }
 
+        // Whatever of theirs the household keeps is held from here by a former member,
+        // exactly as an erasure leaves it (V136). Their member rows stay, soft-deleted,
+        // because the departure's own history points at them.
+        val former = writes.moveHoldingsToFormerMember(hid, mine)
         writes.keepNamesOnOthersRecords(mine)
         writes.detachPerson(hid, uid)
         val m = mapOf("mids" to mine)
@@ -305,8 +319,8 @@ class DepartureCompletion(
 
         val result = DepartureResult(
             departure.id,
-            moved = if (prepared != null) sole.size + documents.size else 0,
-            erased = if (prepared == null) sole.size + documents.size else 0,
+            moved = if (prepared != null) goes.size + documents.size else 0,
+            erased = if (prepared == null) goes.size + documents.size else 0,
             sharesPassedOn = joint.size, copiesTaken = copies,
             destinationHouseholdId = prepared?.destination,
         )
@@ -315,6 +329,7 @@ class DepartureCompletion(
             mapOf(
                 "privateRecords" to departure.privateRecords, "moved" to result.moved, "erased" to result.erased,
                 "sharesPassedOn" to result.sharesPassedOn, "copiesTaken" to copies,
+                "recordsKeptForHousehold" to sharedStays.size, "formerMember" to former,
             ),
         )
         prepared?.let {
@@ -574,8 +589,18 @@ class DepartureCompletion(
      * joint record itself stays whole with the others. No documents, no history:
      * those belong to the record that stays.
      */
-    private fun copyShare(hid: UUID, record: HeldRecord, mine: List<UUID>, to: Prepared): Boolean {
-        val p = mapOf("id" to record.id, "mids" to mine, "dest" to to.destination, "member" to to.destinationMember, "uid" to null)
+    /**
+     * A copy of the person's part of a record that stays, in their own household,
+     * private. [ofMyPart] is false for a record they held alone and shared with the
+     * household: the copy is the whole of it, under its own name, because all of it
+     * was theirs (owner's decision, 2026-09-16).
+     */
+    private fun copyShare(hid: UUID, record: HeldRecord, mine: List<UUID>, to: Prepared, ofMyPart: Boolean = true): Boolean {
+        val p = mapOf(
+            "id" to record.id, "mids" to mine, "dest" to to.destination, "member" to to.destinationMember,
+            "uid" to null, "suffix" to if (ofMyPart) " (my part)" else "",
+            "note" to if (ofMyPart) "Your part, when you left" else "Your copy, when you left",
+        )
         return when (record.type) {
             "investment" -> {
                 val share = owner.queryForObject(
@@ -593,7 +618,7 @@ class DepartureCompletion(
                     insert into investments (id, household_id, type_id, title, status, invested_amount, currency, quantity,
                                              unit, cost_basis_method, start_date, maturity_date, attributes, notes,
                                              is_in_continuity, visibility)
-                    select :newId, :dest, type_id, title || ' (my part)', status, invested_amount * :fraction, currency,
+                    select :newId, :dest, type_id, title || cast(:suffix as text), status, invested_amount * :fraction, currency,
                            quantity * :fraction, unit, cost_basis_method, start_date, maturity_date, attributes, notes,
                            is_in_continuity, 'private'
                       from investments where id = :id
@@ -613,7 +638,7 @@ class DepartureCompletion(
                     """
                     insert into valuations (investment_id, as_of_date, value, quantity, source, note,
                                             price_source, unit_price, instrument)
-                    select :newId, as_of_date, value * :fraction, quantity * :fraction, source, 'Your part, when you left',
+                    select :newId, as_of_date, value * :fraction, quantity * :fraction, source, cast(:note as text),
                            -- A price-fed figure keeps its labels (V66 price_feed_valuation_is_labelled):
                            -- the price per unit is the same, only the units held are his part.
                            price_source, unit_price, instrument
@@ -635,7 +660,7 @@ class DepartureCompletion(
                     insert into liabilities (id, household_id, kind, title, principal, outstanding, interest_rate,
                                              emi_amount, emi_day, start_date, end_date, status, attributes, notes,
                                              visibility, is_in_continuity)
-                    select :newId, :dest, kind, title || ' (my part)', principal * :fraction, outstanding * :fraction,
+                    select :newId, :dest, kind, title || cast(:suffix as text), principal * :fraction, outstanding * :fraction,
                            interest_rate, emi_amount * :fraction, emi_day, start_date, end_date, status, attributes, notes,
                            'private', is_in_continuity
                       from liabilities where id = :id

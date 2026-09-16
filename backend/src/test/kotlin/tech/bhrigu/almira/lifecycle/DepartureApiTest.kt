@@ -59,6 +59,10 @@ class DepartureApiTest : LifecycleTestSupport() {
             ),
         )
         val hers = capture(ishwarya, householdId, "gold_physical", "Ishwarya's gold", BigDecimal(300_000))
+        // His alone, but shared with the household: the family's emergency fund.
+        val shared = capture(
+            ravi, householdId, "gold_physical", "Emergency fund gold", BigDecimal(500_000), visibility = "household",
+        )
         val account = post(
             "/api/v1/households/$householdId/accounts", ravi,
             mapOf("label" to "Ravi's savings", "accountKind" to "savings", "number" to "998877665544", "storeFullNumber" to true),
@@ -67,6 +71,7 @@ class DepartureApiTest : LifecycleTestSupport() {
         return mapOf(
             "gold" to gold.path("id").asText(), "joint" to joint.path("id").asText(),
             "hers" to hers.path("id").asText(), "account" to account.path("id").asText(),
+            "shared" to shared.path("id").asText(),
         )
     }
 
@@ -98,7 +103,10 @@ class DepartureApiTest : LifecycleTestSupport() {
         val preview = get("/api/v1/households/$householdId/departures/preview", ravi).json()
         assertThat(preview.path("goesWithYou").map { it.path("title").asText() })
             .contains("Ravi's gold", "Ravi's savings", "locker.txt")
-            .doesNotContain("Joint gold", "Ishwarya's gold")
+            .doesNotContain("Joint gold", "Ishwarya's gold", "Emergency fund gold")
+        // Owner's decision (2026-09-16): he shared it, so it stays — and he takes a copy.
+        val kept = preview.path("staysWithHousehold").first { it.path("title").asText() == "Emergency fund gold" }
+        assertThat(kept.path("detail").asText()).contains("Former member").contains("copy")
         val joint = preview.path("joint").single()
         assertThat(joint.path("title").asText()).isEqualTo("Joint gold")
         assertThat(joint.path("otherHolders").map { it.asText() }).containsExactly("Ishwarya")
@@ -163,7 +171,7 @@ class DepartureApiTest : LifecycleTestSupport() {
 
         assertThat(completion.complete(UUID.fromString(id), Instant.now().plus(Duration.ofDays(6)))).isNull()
         val result = completion.complete(UUID.fromString(id), Instant.now().plus(Duration.ofDays(8)))!!
-        assertThat(result.copiesTaken).isEqualTo(1)
+        assertThat(result.copiesTaken).describedAs("his part of the joint gold, and a copy of what he shared").isEqualTo(2)
         val newHousehold = result.destinationHouseholdId.toString()
 
         // His view: a household of his own, with his things, set to private.
@@ -222,7 +230,7 @@ class DepartureApiTest : LifecycleTestSupport() {
         assertThat(decided.status()).describedAs(decided.body).isEqualTo(HttpStatus.OK)
 
         val result = completion.complete(UUID.fromString(id), Instant.now().plus(Duration.ofDays(8)))!!
-        assertThat(result.copiesTaken).isEqualTo(1)
+        assertThat(result.copiesTaken).describedAs("his part of the joint gold, and a copy of what he shared").isEqualTo(2)
         assertThat(members(ishwarya, householdId).map { it.path("id").asText() }).doesNotContain(raviMemberId)
 
         val copy = db.queryForMap(
@@ -238,6 +246,77 @@ class DepartureApiTest : LifecycleTestSupport() {
         assertThat(copy["price_source"]).isEqualTo("amfi")
         assertThat(copy["unit_price"] as BigDecimal).isEqualByComparingTo("12000")
         assertThat(copy["instrument"]).isEqualTo("122639")
+    }
+
+    /**
+     * Owner's decision (2026-09-16): *leaving isn't erasure — don't apply the rule.
+     * Someone who leaves keeps their account and takes a copy of what's theirs. The
+     * household keeps the shared records, because they're shared: other members
+     * contributed to them and depend on them. Same "Former member" label.*
+     */
+    @Test
+    fun `what he shared with the household stays there under Former member, and he takes a copy`() {
+        val ids = seed()
+        stepUp(ravi)
+        leave(ravi)
+        val result = completion.complete(UUID.fromString(departureId(ravi)), Instant.now().plus(Duration.ofDays(8)))!!
+        val destination = result.destinationHouseholdId!!
+
+        // The household's record is where it was, held by a former member with no name.
+        val held = db.queryForMap(
+            """
+            select i.household_id::text as household, i.visibility, m.display_name, m.former_since is not null as former,
+                   m.user_id is null as unlinked, o.share_pct
+              from investments i join investment_ownerships o on o.investment_id = i.id
+              join members m on m.id = o.member_id
+             where i.id = ?::uuid
+            """.trimIndent(),
+            UUID.fromString(ids.getValue("shared")),
+        )
+        assertThat(held).containsEntry("household", householdId).containsEntry("visibility", "household")
+            .containsEntry("display_name", "Former member").containsEntry("former", true).containsEntry("unlinked", true)
+        assertThat(held["share_pct"] as BigDecimal).isEqualByComparingTo("100")
+        assertThat(get("/api/v1/households/$householdId/investments", ishwarya).json().map { it.path("title").asText() })
+            .describedAs("Ishwarya still has the fund the family depends on").contains("Emergency fund gold")
+
+        // And he has his copy, private, in his own household, at full size.
+        val copy = db.queryForMap(
+            "select title, visibility, invested_amount from investments where household_id = ?::uuid and title like 'Emergency fund%'",
+            destination,
+        )
+        assertThat(copy).containsEntry("title", "Emergency fund gold").containsEntry("visibility", "private")
+        assertThat(copy["invested_amount"] as BigDecimal).isEqualByComparingTo("500000")
+        assertThat(result.copiesTaken).describedAs("the copy he takes of what stays").isGreaterThanOrEqualTo(1)
+
+        // His own private gold went with him, as it always did.
+        assertThat(
+            db.queryForObject(
+                "select household_id::text from investments where id = ?::uuid", String::class.java,
+                UUID.fromString(ids.getValue("gold")),
+            ),
+        ).isEqualTo(destination.toString())
+    }
+
+    @Test
+    fun `choosing to erase leaves what he shared with the household, and erases only what was private`() {
+        val ids = seed()
+        stepUp(ravi)
+        leave(ravi, mapOf("privateRecords" to "export_and_erase"))
+        completion.complete(UUID.fromString(departureId(ravi)), Instant.now().plus(Duration.ofDays(8)))
+        assertThat(
+            db.queryForObject("select count(*) from investments where id = ?::uuid", Int::class.java, UUID.fromString(ids.getValue("gold"))),
+        ).describedAs("private to him").isZero()
+        assertThat(
+            db.queryForMap(
+                """
+                select m.display_name, m.former_since is not null as former from investments i
+                  join investment_ownerships o on o.investment_id = i.id join members m on m.id = o.member_id
+                 where i.id = ?::uuid
+                """.trimIndent(),
+                UUID.fromString(ids.getValue("shared")),
+            ),
+        ).describedAs("shared with them, so theirs").containsEntry("display_name", "Former member")
+            .containsEntry("former", true)
     }
 
     @Test

@@ -56,9 +56,9 @@ data class JointRecordLine(
 data class DeparturePreview(
     val householdId: UUID,
     val householdName: String,
-    /** What is solely yours. It goes with you, or is erased once you have your copy. */
+    /** What was private to you alone. It goes with you, or is erased once you have your copy. */
     val goesWithYou: List<LifecycleLine>,
-    /** What stays: records you hold with someone, and the household itself. */
+    /** What stays: what you shared with the household, records you hold with someone, and the household itself. */
     val staysWithHousehold: List<LifecycleLine>,
     /** Joint records, each needing a decision. Only ever the leaver's own. */
     val joint: List<JointRecordLine>,
@@ -90,9 +90,11 @@ data class DepartureView(
  *
  * Anyone can leave, and an admin can ask someone to. Either way nothing moves for
  * seven days, and both sides are told in words that say who and when and nothing
- * else. What is solely the person's goes with them into a household of their
- * own, or is erased once they have downloaded their copy — their choice, and only
- * theirs. Records they hold with someone else are listed for them to decide
+ * else. What was **private to the person alone** goes with them into a household
+ * of their own, or is erased once they have downloaded their copy — their choice,
+ * and only theirs. What they **shared** with the household stays with it, held by
+ * "Former member", and a copy goes with them: leaving is not an erasure, but the
+ * household's records are the household's (owner's decision, 2026-09-16). Records they hold with someone else are listed for them to decide
  * about; the decision is visible to the other holders, who can already see the
  * record, and to nobody else. An admin who asked them to go never sees what goes.
  *
@@ -117,7 +119,12 @@ class DepartureService(
         val household = households.get(householdId)
         val mine = records.memberIds(householdId, userId)
         val sole = records.solelyHeld(householdId, userId, mine)
-        val documents = records.documentsFollowing(householdId, userId, sole)
+        // What was private to you alone goes with you (or is erased); what you shared
+        // with the household stays with it, held by "Former member", and you take a
+        // copy (owner's decision, 2026-09-16 — the same split an erasure makes).
+        val goes = records.privateOnes(sole)
+        val sharedStays = sole - goes.toSet()
+        val documents = records.documentsFollowingPrivate(householdId, userId, goes)
         val pending = pendingFor(householdId, userId)
         val decided = pending?.let { decisionsOf(it) }?.associateBy { it.recordType to it.recordId } ?: emptyMap()
 
@@ -132,6 +139,12 @@ class DepartureService(
                 householdId, household.name, AccountClosureService.lineKind(it.recordType), it.recordId, it.title,
                 "Stays with ${it.otherHolders.joinToString(" and ")}. You can take a copy of your part.",
             )
+        } + sharedStays.map {
+            LifecycleLine(
+                householdId, household.name, AccountClosureService.lineKind(it.type), it.id, it.title,
+                "You shared this with ${household.name}, so it stays, held by \"Former member\" — not your name. " +
+                    "You take a copy of it.",
+            )
         } + LifecycleLine(
             householdId, household.name, "household", householdId, household.name,
             "Everything else stays: what other people hold, and what you added for them.",
@@ -139,13 +152,13 @@ class DepartureService(
 
         val sealed = if (sole.isEmpty()) 0 else jdbc.queryForObject(
             "select count(*) from sealed_values where record_id in (:ids)",
-            mapOf("ids" to sole.map { it.id }), Int::class.java,
+            mapOf("ids" to goes.map { it.id }.ifEmpty { listOf(LifecycleRecords.NOBODY) }), Int::class.java,
         ) ?: 0
 
         return DeparturePreview(
             householdId = householdId,
             householdName = household.name,
-            goesWithYou = sole.map { LifecycleLine(householdId, household.name, AccountClosureService.lineKind(it.type), it.id, it.title) } +
+            goesWithYou = goes.map { LifecycleLine(householdId, household.name, AccountClosureService.lineKind(it.type), it.id, it.title) } +
                 documents.map { LifecycleLine(householdId, household.name, "document", it.id, it.title) },
             staysWithHousehold = stays,
             joint = joint,

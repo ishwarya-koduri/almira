@@ -203,6 +203,28 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
      * nothing that stays.
      */
     fun becomeFormerMember(householdId: UUID, memberIds: List<UUID>): UUID? {
+        val former = moveHoldingsToFormerMember(householdId, memberIds)
+        keepNamesOnOthersRecords(memberIds)
+        if (memberIds.isNotEmpty()) jdbc.update("delete from members where id in (:mids)", mapOf("mids" to memberIds))
+        return former
+    }
+
+    /**
+     * The holder rows themselves: what these members still hold in this household
+     * becomes a **former member's** — one row named "Former member", marked
+     * `former_since`, carrying no name, date or login, and never able to get one
+     * (a trigger and a check, V136). Returns its id, or null when they hold
+     * nothing that stays.
+     *
+     * Used by both ways a person's name leaves a household while what they held
+     * for it stays: an erasure ([becomeFormerMember], which then takes the member
+     * rows with it) and a departure, which keeps its member rows for the history
+     * of the departure and only soft-deletes them. Owner's decision (2026-09-16):
+     * *the household keeps the shared records, because they're shared: other
+     * members contributed to them and depend on them. Same "Former member" label.
+     * Building a second model here would give you two lifecycles to keep in step.*
+     */
+    fun moveHoldingsToFormerMember(householdId: UUID, memberIds: List<UUID>): UUID? {
         if (memberIds.isEmpty()) return null
         val p = mapOf("mids" to memberIds)
         val holds = jdbc.queryForObject(
@@ -216,25 +238,18 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
             """.trimIndent(),
             p, Boolean::class.java,
         ) == true
-        var former: UUID? = null
-        if (holds) {
-            former = jdbc.queryForObject(
-                """
-                insert into members (household_id, display_name, former_since)
-                values (:hid, 'Former member', now()) returning id
-                """.trimIndent(),
-                mapOf("hid" to householdId), UUID::class.java,
-            )
-            val moved = mapOf("mids" to memberIds, "former" to former)
-            listOf(
-                "investment_ownerships", "liability_holders", "account_holders", "goals", "estate_documents",
-                "lost_money_checks",
-            ).forEach { table ->
-                jdbc.update("update $table set member_id = :former where member_id in (:mids)", moved)
-            }
+        if (!holds) return null
+        val former = jdbc.queryForObject(
+            """
+            insert into members (household_id, display_name, former_since)
+            values (:hid, 'Former member', now()) returning id
+            """.trimIndent(),
+            mapOf("hid" to householdId), UUID::class.java,
+        )
+        val moved = mapOf("mids" to memberIds, "former" to former)
+        HOLDER_TABLES.forEach { table ->
+            jdbc.update("update $table set member_id = :former where member_id in (:mids)", moved)
         }
-        keepNamesOnOthersRecords(memberIds)
-        jdbc.update("delete from members where id in (:mids)", p)
         return former
     }
 
@@ -283,6 +298,12 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
     }
 
     private companion object {
+        /** Where a member row is named as holding something that can stay with the household. */
+        val HOLDER_TABLES = listOf(
+            "investment_ownerships", "liability_holders", "account_holders", "goals", "estate_documents",
+            "lost_money_checks",
+        )
+
         /** Free text another person wrote on a record about someone, with the row's own name column. */
         val NAMED_TEXT = listOf(
             Triple("investment_nominees", "n", listOf("relationship")),

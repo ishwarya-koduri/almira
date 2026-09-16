@@ -116,6 +116,15 @@ fun App(
         if (!stored || availability == LockAvailability.None) lockState.unlocked()
     }
 
+    // Signing in is the moment a session starts existing, and the lock is gated
+    // on there being one. Without this the flag keeps the answer from launch —
+    // false, because nothing was stored yet — and the app would not lock again
+    // until it was next started cold: background it right after signing in and
+    // it came back to the records with nothing asked.
+    LaunchedEffect(state.signedIn) {
+        if (state.signedIn != null) haveSession = true
+    }
+
     // Locking has to reach the store, not just the screen. Dropping the
     // in-memory data key is what makes the lock a lock: after this, reading the
     // session needs the device's own authentication again.

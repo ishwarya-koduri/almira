@@ -504,11 +504,14 @@ class OtpService(
                 "otp_locked",
                 "Too many tries. Ask for a new code to continue.",
             )
-            else -> throw ApiException.badRequest(
-                "otp_invalid",
-                "That code doesn't match. ${cfg.maxAttempts - attempts} tries left.",
-                mapOf("attemptsRemaining" to (cfg.maxAttempts - attempts).toInt()),
-            )
+            else -> {
+                val remaining = cfg.maxAttempts - attempts
+                throw ApiException.badRequest(
+                    "otp_invalid",
+                    "That code doesn't match. $remaining ${if (remaining == 1L) "try" else "tries"} left.",
+                    mapOf("attemptsRemaining" to remaining.toInt()),
+                )
+            }
         }
     }
 

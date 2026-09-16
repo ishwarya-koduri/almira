@@ -200,6 +200,14 @@ class OtpServiceTest {
             "otp_invalid", "otp_invalid", "otp_invalid", "otp_invalid", "otp_locked",
         )
         assertThat(codes[0].details["attemptsRemaining"]).isEqualTo(4)
+        // The count is read out, so the last one before the lock has to say
+        // "1 try left" rather than "1 tries left".
+        assertThat(codes.map { it.message }).startsWith(
+            "That code doesn't match. 4 tries left.",
+            "That code doesn't match. 3 tries left.",
+            "That code doesn't match. 2 tries left.",
+            "That code doesn't match. 1 try left.",
+        )
         assertThat(refusal { service.verify(number, code, null) }.code).isEqualTo("otp_expired")
     }
 

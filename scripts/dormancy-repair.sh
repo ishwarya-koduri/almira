@@ -7,6 +7,8 @@
 #   ./scripts/dormancy-repair.sh … request <household-id> <member-id> "<reason>" \
 #       "<requester name>" "<relationship>" <evidence kind> "<evidence seen by>" \
 #       "<where the note of seeing it is kept>" [wait, e.g. "21 days"]
+#   ./scripts/dormancy-repair.sh … notice-given <request-id> <post|phone|in_person> \
+#       "<what was done>" ["<when, e.g. 2026-09-10 11:00+05:30>"]
 #   ./scripts/dormancy-repair.sh … approve <request-id>          (a second operator)
 #   ./scripts/dormancy-repair.sh … carry-out <request-id> [--alone "<why one operator acts alone>"]
 #   ./scripts/dormancy-repair.sh … withdraw <request-id> "<reason>"
@@ -24,6 +26,11 @@
 # starts only when that notice is actually sent. `carry-out` does it only after the
 # wait, and only when a second operator — not the one who asked — has approved, or
 # with --alone and a reason, which is stored and audited. It tells them again.
+#
+# When the household has no address a notice can reach, `notice-given` records
+# that one was given by post, phone or in person — what was done, and when — and
+# the wait runs from the moment it was given (owner's decision, 2026-09-16, V148).
+# The bar is then higher, not lower: two operators, and --alone is refused.
 # Every step, and every refused attempt, is in the audit log with your name.
 # =============================================================================
 set -euo pipefail
@@ -37,7 +44,7 @@ if [ "${ALMIRA_OPS_DORMANCY_REPAIR:-}" != "enabled" ]; then
   exit 3
 fi
 
-usage() { sed -n '2,30p' "$0"; exit 2; }
+usage() { sed -n '2,38p' "$0"; exit 2; }
 [ "${#ARGS[@]}" -ge 1 ] || usage
 
 # Passed as psql variables and quoted by psql (:'name'), never spliced into SQL.
@@ -58,6 +65,17 @@ select ops.request_dormancy_repair(:'household'::uuid, :'member'::uuid, :'operat
                                    :'wait'::interval) as request_id;
 SQL
     echo "The wait starts when the notice to the household is actually sent; 'list' shows whether it has."
+    ;;
+  notice-given)
+    [ "${#ARGS[@]}" -ge 4 ] || usage
+    psql "$OWNER_URL" -v ON_ERROR_STOP=1 -q -x \
+      -v request="${ARGS[1]}" -v operator="$OPERATOR" -v method="${ARGS[2]}" -v what="${ARGS[3]}" \
+      -v given="${ARGS[4]:-}" <<'SQL'
+select ops.record_dormancy_repair_notice_given(
+         :'request'::uuid, :'operator', :'method', :'what',
+         coalesce(nullif(:'given', '')::timestamptz, now())) as act_after;
+SQL
+    echo "Two operators are required for this request: --alone will be refused."
     ;;
   approve)
     [ "${#ARGS[@]}" -eq 2 ] || usage

@@ -208,6 +208,89 @@ class DormancyRepairTest : LifecycleTestSupport() {
         ).isEqualTo(1)
     }
 
+    private fun noticeGiven(
+        requestId: UUID, operator: String = "support-1", method: String = "post",
+        what: String = "Posted the notice to the Rao house in Guntur, speed post EK1234, receipt on ticket 2231.",
+        whenGiven: String = "now() - interval '15 days'",
+    ) = db.queryForObject(
+        "select ops.record_dormancy_repair_notice_given(?::uuid, ?, ?, ?, $whenGiven)",
+        java.sql.Timestamp::class.java, requestId, operator, method, what,
+    )
+
+    /**
+     * Owner's decision (2026-09-16, V148): *a household frozen permanently because
+     * an email bounced is "dormant forever by drift" wearing a different hat.* The
+     * notice can be given another way — and the bar goes up, not down.
+     */
+    @Test
+    fun `a notice given by post starts the clock, and then nobody acts alone`() {
+        val requestId = request()
+        // Nothing was sent: these members have no address a notice can reach.
+        assertThat(carryOut(requestId)).isEqualTo("not_told_before")
+        val why = "Only one operator exists today; the request and evidence were checked twice."
+        assertThat(carryOut(requestId, alone = why)).describedAs("not even with a reason").isEqualTo("not_told_before")
+
+        assertThatThrownBy { noticeGiven(requestId, method = "carrier pigeon") }.hasMessageContaining("post, phone or in_person")
+        assertThatThrownBy { noticeGiven(requestId, what = "posted it") }.hasMessageContaining("what was done")
+        assertThatThrownBy { noticeGiven(requestId, whenGiven = "now() + interval '1 day'") }.hasMessageContaining("cannot be in the future")
+        assertThat(
+            count("select count(*) from dormancy_repair_requests where id = ?::uuid and notified_before_at is null", requestId),
+        ).describedAs("each refused before anything was written").isEqualTo(1)
+
+        assertThat(noticeGiven(requestId)).describedAs("the wait runs from when it was given").isNotNull()
+        assertThat(
+            db.queryForMap(
+                """
+                select notice_given_method, notice_given_recorded_by, notice_given_detail,
+                       notified_before_at = notice_given_another_way_at as clock_from_it,
+                       act_after < now() as wait_over
+                  from dormancy_repair_requests where id = ?::uuid
+                """.trimIndent(),
+                requestId,
+            ),
+        ).containsEntry("notice_given_method", "post").containsEntry("notice_given_recorded_by", "support-1")
+            .containsEntry("clock_from_it", true).containsEntry("wait_over", true)
+        assertThat(
+            count(
+                "select count(*) from activity_log where action = 'ops.dormancy_repair.notice_given' and entity_id = ?::uuid " +
+                    "and diff ->> 'method' = 'post'",
+                requestId,
+            ),
+        ).isEqualTo(1)
+
+        // The higher bar: a reason no longer buys a single operator the change.
+        assertThat(carryOut(requestId, alone = why)).isEqualTo("needs_second_operator")
+        assertThat(role()).isEqualTo("advisor")
+        approve(requestId, "support-3")
+        assertThat(carryOut(requestId, alone = why)).isEqualTo("done")
+        assertThat(role()).isEqualTo("owner")
+        assertThat(
+            count(
+                "select count(*) from dormancy_repair_requests where id = ?::uuid and approved_by_operator = 'support-3' " +
+                    "and single_operator_reason is null",
+                requestId,
+            ),
+        ).describedAs("two operators, and no reason stored for acting alone").isEqualTo(1)
+    }
+
+    /** A notice that did go out is the record; an operator's account does not replace it. */
+    @Test
+    fun `when the notice was sent, recording one given another way changes nothing`() {
+        val requestId = request()
+        sendNotices()
+        val sentClock = db.queryForObject(
+            "select ops.dormancy_repair_start_clock(?::uuid)", java.sql.Timestamp::class.java, requestId,
+        )
+        assertThat(sentClock).describedAs("the sent notice started it").isNotNull()
+        assertThat(noticeGiven(requestId)).isEqualTo(sentClock)
+        assertThat(
+            count("select count(*) from dormancy_repair_requests where id = ?::uuid and notice_given_another_way_at is null", requestId),
+        ).isEqualTo(1)
+        waitOver(requestId)
+        assertThat(carryOut(requestId, alone = "Only one operator exists today; both checks were done twice."))
+            .describedAs("the ordinary path still allows it").isEqualTo("done")
+    }
+
     @Test
     fun `a withdrawn request is never carried out`() {
         val requestId = request()

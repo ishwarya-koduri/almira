@@ -2569,18 +2569,20 @@ private: private records are erased in both cases.
 
 ## 82. An operator repair records where the evidence is, and nothing checks it
 
-**Resolved in part** (2026-09-15, V147), by the owner's answers. A request now
+**Resolved in part** (2026-09-15, V147; 2026-09-16, V148), by the owner's answers. A request now
 records the *kind* of evidence seen and who saw it and when — a death certificate
 or equivalent when the trigger is a death, otherwise a written request from a
 member or a legal representative, refused when it does not fit the trigger — and
 never the document. It is designed for two operators (a second one, not the
 requester, approves), with a single-operator mode that stores and audits its
-reason. The wait starts when the before-notice is actually sent. What remains
-true: the database cannot check that the evidence exists or says what the
-operator believes, and a household whose members never sign in or have no
-reachable address may not see the notice — in which case, now, nothing can be
-carried out at all, because the clock never starts. The entry is kept below as it
-was found.
+reason. The wait starts when the before-notice is actually sent. A household with no
+reachable address is no longer stuck (V148): an operator records that the notice
+was given by post, phone or in person, with what was done and when, and the wait
+runs from then — with two operators required and no acting alone, proven by
+`DormancyRepairTest` watched failing with the guard removed. What remains true:
+the database cannot check that the evidence exists or says what the operator
+believes, and it cannot check that a notice an operator says was posted was
+posted. The entry is kept below as it was found.
 
 **Where** `dormancy_repair_requests.evidence_reference` (V137),
 `scripts/dormancy-repair.sh`, docs/05 §12.7.

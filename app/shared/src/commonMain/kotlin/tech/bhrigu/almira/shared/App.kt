@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -305,7 +306,9 @@ private fun SignedIn(
     }
 
     when {
-        problem != null -> Message(problem!!, colors.caution)
+        // Both of these are dead ends otherwise: the only Sign out in the app
+        // is the one on the dashboard, and neither of these screens is it.
+        problem != null -> Message(problem!!, colors.caution, onSignOut)
 
         households == null -> Box(
             Modifier.fillMaxSize().background(colors.canvas),
@@ -315,6 +318,7 @@ private fun SignedIn(
         household == null -> Message(
             "No household yet. The web client can create one.",
             colors.inkMuted,
+            onSignOut,
         )
 
         else -> {
@@ -333,8 +337,24 @@ private fun SignedIn(
     }
 }
 
+/**
+ * A screen that is only a sentence, and the way off it.
+ *
+ * The way out matters as much as the words. Both screens that use this are
+ * reached by signing in successfully — a number with no household, or a
+ * households call that failed — and neither of them is the dashboard, which is
+ * where the app's only other Sign out lives. Without this, someone who signs in
+ * with a number that has no household is on a screen with one sentence, no
+ * controls, and nothing a relaunch changes: the app has to be deleted. The lock
+ * screen already treats "a way out without uninstalling the app" as the rule
+ * (LockScreen.kt); this is the same rule, in the place it was missing.
+ */
 @Composable
-private fun Message(text: String, color: androidx.compose.ui.graphics.Color) {
+private fun Message(
+    text: String,
+    color: androidx.compose.ui.graphics.Color,
+    onSignOut: (() -> Unit)? = null,
+) {
     Box(
         Modifier
             .fillMaxSize()
@@ -343,7 +363,21 @@ private fun Message(text: String, color: androidx.compose.ui.graphics.Color) {
             .padding(AlmiraTheme.spacing.x6),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = AlmiraTheme.typography.small, color = color)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(AlmiraTheme.spacing.x3),
+        ) {
+            Text(text, style = AlmiraTheme.typography.small, color = color)
+            onSignOut?.let {
+                TextButton(onClick = it) {
+                    Text(
+                        "Sign out",
+                        style = AlmiraTheme.typography.small,
+                        color = AlmiraTheme.colors.accent,
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -139,6 +139,11 @@ class TaxService(
 
     @Transactional(readOnly = true)
     fun deductions(householdId: UUID, memberId: UUID?, fy: FinancialYear): List<DeductionMeter> {
+        // Membership first. Row-level security keeps a stranger's figures at
+        // zero, so this endpoint answered 200 with an empty 80C to someone who
+        // is not in the household — and to a household id that does not exist.
+        // Its five siblings on this controller all said 404; now so does it.
+        households.get(householdId)
         val holdings = qualifyingHoldings(householdId, memberId, fy)
 
         val meters = DeductionRules.SECTIONS.map { section ->
@@ -268,8 +273,10 @@ class TaxService(
     // --- capital gains --------------------------------------------------------
 
     @Transactional(readOnly = true)
-    fun capitalGains(householdId: UUID, memberId: UUID?, fy: FinancialYear): CapitalGains =
-        capitalGains(householdId, memberId, fy, statements.schedule(householdId, memberId, fy))
+    fun capitalGains(householdId: UUID, memberId: UUID?, fy: FinancialYear): CapitalGains {
+        households.get(householdId)
+        return capitalGains(householdId, memberId, fy, statements.schedule(householdId, memberId, fy))
+    }
 
     /**
      * Short and long are taken from the lot-by-lot statement rather than from
@@ -352,6 +359,7 @@ class TaxService(
 
     @Transactional(readOnly = true)
     fun interestIncome(householdId: UUID, memberId: UUID?, fy: FinancialYear): InterestIncome {
+        households.get(householdId)
         val rows = jdbc.query(
             """
             select i.id, i.title, sum(t.amount) as total

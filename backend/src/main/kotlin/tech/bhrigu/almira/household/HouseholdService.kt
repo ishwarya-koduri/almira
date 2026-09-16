@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.common.SensibleDates
 import tech.bhrigu.almira.reminder.Notifier
 import tech.bhrigu.almira.reminder.OutboundNotification
 import tech.bhrigu.almira.security.RequestUserContext
@@ -103,9 +104,7 @@ class HouseholdService(
         if (displayName.isBlank()) {
             throw ApiException.badRequest("name_required", "Give this person a name.")
         }
-        if (dateOfBirth != null && dateOfBirth.isAfter(LocalDate.now())) {
-            throw ApiException.badRequest("dob_future", "That date of birth is in the future.")
-        }
+        checkDateOfBirth(dateOfBirth)
         checkDiedOn(diedOn, dateOfBirth)
 
         val memberId = repo.addMember(householdId, displayName.trim(), relationship, dateOfBirth, notes, diedOn)
@@ -137,6 +136,7 @@ class HouseholdService(
         // membership (V135). The name is not, and stays editable.
         if (dateOfBirth != null && dateOfBirth != member.dateOfBirth) refuseWhileDormant(household)
 
+        checkDateOfBirth(dateOfBirth)
         checkDiedOn(diedOn, dateOfBirth ?: member.dateOfBirth)
         val updated = repo.updateMember(
             memberId, displayName, relationship, dateOfBirth, version ?: member.version, diedOn,
@@ -303,6 +303,24 @@ class HouseholdService(
             throw ApiException.badRequest(
                 "visibility_invalid",
                 "Choose either private or household.",
+            )
+        }
+    }
+
+    /**
+     * A date of birth is optional; when given it is a date someone could have
+     * been born on. The future was already refused; 1700 was not, and a date of
+     * birth decides who is a minor and who may take a dormant household on.
+     */
+    private fun checkDateOfBirth(dateOfBirth: LocalDate?) {
+        if (dateOfBirth == null) return
+        if (dateOfBirth.isAfter(LocalDate.now())) {
+            throw ApiException.badRequest("dob_future", "That date of birth is in the future.")
+        }
+        if (dateOfBirth.isBefore(SensibleDates.EARLIEST)) {
+            throw ApiException.badRequest(
+                "dob_too_early",
+                "That date of birth is too far back. Use a year from ${SensibleDates.EARLIEST.year}.",
             )
         }
     }

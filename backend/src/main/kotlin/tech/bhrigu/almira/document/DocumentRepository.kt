@@ -108,6 +108,26 @@ class DocumentRepository(private val jdbc: NamedParameterJdbcTemplate) {
         withLinks(jdbc.query("$SELECT and d.id = :id", mapOf("hid" to householdId, "id" to id), mapper))
             .firstOrNull()
 
+    /**
+     * The `documents_update` / `documents_delete` policy, stated again here so
+     * the service can refuse before it acts (docs/05 §3.6). Documents have no
+     * `app.can_modify_*` helper of their own; the rule is that only the person
+     * who uploaded a document, and only while they may still write to the
+     * household, may change or remove it.
+     */
+    fun canModify(householdId: UUID, id: UUID): Boolean = jdbc.queryForObject(
+        """
+        select exists (
+          select 1 from documents d
+          where d.id = :id and d.household_id = :hid and d.deleted_at is null
+            and app.can_write_household(d.household_id)
+            and d.uploaded_by = app.current_user_id()
+        )
+        """.trimIndent(),
+        mapOf("id" to id, "hid" to householdId),
+        Boolean::class.java,
+    ) == true
+
     fun softDelete(householdId: UUID, id: UUID): Int = jdbc.update(
         """
         update documents set deleted_at = now()

@@ -266,6 +266,13 @@ class DocumentService(
         val userId = userContext.require()
         households.get(householdId)
         get(householdId, id)
+        // The same predicate documents_delete uses, asked before the delete
+        // rather than inferred from its row count (docs/05 §3.6): a refused
+        // delete is filtered to zero rows, not raised, and used to answer 204
+        // over a document that was still there.
+        if (!repo.canModify(householdId, id)) {
+            throw ApiException.forbidden("You can read this, but it isn't yours to change.")
+        }
         repo.softDelete(householdId, id)
         audit.record(
             householdId = householdId, actorUserId = userId, action = "document.delete",

@@ -12,6 +12,7 @@ import tech.bhrigu.almira.catalog.CatalogService
 import tech.bhrigu.almira.catalog.CustomFieldRow
 import tech.bhrigu.almira.catalog.FieldOption
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.common.SensibleDates
 import tech.bhrigu.almira.e2e.RetiredPlaintextLocation
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.security.RequestUserContext
@@ -154,6 +155,7 @@ class InvestmentService(
         if (input.title.isBlank()) {
             throw ApiException.badRequest("title_required", "Give this a name you'll recognise.")
         }
+        requireSensibleDates(input.startDate, input.maturityDate)
 
         val currency = resolveCurrency(input.currency, household.baseCurrency, type.schema)
 
@@ -366,7 +368,11 @@ class InvestmentService(
         val household = households.get(householdId)
         RetiredPlaintextLocation.refuseIfSent("storageLocation", input.storageLocation)
         val current = get(householdId, id)
+        // Permission is settled here, before anything is written, so that a
+        // refusal below can only mean the version moved (docs/05 §3.6).
+        requireWritable(id)
         input.status?.let(::requireStatus)
+        requireSensibleDates(input.startDate, input.maturityDate)
 
         val attributes = RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes)?.let {
             val type = catalog.type(householdId, current.typeId)
@@ -386,19 +392,12 @@ class InvestmentService(
             status = input.status, isInContinuity = input.isInContinuity,
         )
         if (updated == 0) {
-            // Nothing was written for one of two very different reasons, and
-            // saying the wrong one is worse than unhelpful: a viewer or an
-            // advisor told "someone else changed this" will reload, try again,
-            // and see the same thing forever. If the version they sent is still
-            // the current one, nobody changed anything — the write was refused.
-            if (input.version == current.version) {
-                throw ApiException.forbidden("You can read this, but it isn't yours to change.")
-            }
-            throw ApiException.conflict(
-                "stale_write",
-                "Someone else changed this while you were editing. Reload and try again.",
-                mapOf("currentVersion" to current.version),
-            )
+            // Permission was settled before the write, so this can only be the
+            // version. Comparing against the version read at the top of this
+            // method would be wrong under contention: a writer that committed
+            // in between moved the row after we read it, and the loser would be
+            // told "not yours" for a record that is its own. Read it again.
+            throw staleWrite(householdId, id)
         }
 
         owners?.let { repo.replaceOwners(id, it, "primary") }
@@ -426,6 +425,7 @@ class InvestmentService(
         val userId = userContext.require()
         households.get(householdId)
         val current = get(householdId, id)
+        requireWritable(id)
         requireVisibility(visibility)
 
         val grants =
@@ -456,6 +456,7 @@ class InvestmentService(
         val userId = userContext.require()
         households.get(householdId)
         get(householdId, id)
+        requireWritable(id)
         if (input.value.signum() < 0) {
             throw ApiException.badRequest("value_negative", "A value can't be negative.")
         }
@@ -491,6 +492,7 @@ class InvestmentService(
         val userId = userContext.require()
         households.get(householdId)
         get(householdId, id)
+        requireWritable(id)
 
         if (nominees.isEmpty()) {
             repo.replaceNominees(id, emptyList())
@@ -543,6 +545,7 @@ class InvestmentService(
         val userId = userContext.require()
         households.get(householdId)
         get(householdId, id)
+        requireWritable(id)
         repo.softDelete(id)
         audit.record(
             householdId = householdId, actorUserId = userId, action = "investment.delete",
@@ -566,6 +569,45 @@ class InvestmentService(
             entityType = "investment", entityId = id,
         )
         return get(householdId, id)
+    }
+
+    // --- guards ---------------------------------------------------------------
+
+    /**
+     * The service layer's half of docs/05 §3.6: the same predicate the write
+     * policy uses, asked before the write instead of read back from it.
+     *
+     * Row-level security does not raise on a refused UPDATE or DELETE — it
+     * filters the row out, and the statement reports nothing changed. A viewer
+     * deleting a holding therefore got 204 and a record that was still there.
+     * Called after [get], so a record the caller cannot even read is already a
+     * 404 and this never turns into a "yes, it exists" for a stranger.
+     */
+    private fun requireWritable(id: UUID) {
+        if (!repo.canModify(id)) {
+            throw ApiException.forbidden("You can read this, but it isn't yours to change.")
+        }
+    }
+
+    /**
+     * Why the row is read again rather than compared with the copy from the top
+     * of the method: under contention the copy is out of date by construction.
+     * Two writers read version n, both send n, one commits n+1 — and the loser,
+     * comparing n against its own stale n, would conclude nobody had changed
+     * anything and answer "not yours to change" for its own record.
+     */
+    private fun staleWrite(householdId: UUID, id: UUID): ApiException {
+        val latest = repo.find(householdId, id) ?: return ApiException.notFound()
+        return ApiException.conflict(
+            "stale_write",
+            "Someone else changed this while you were editing. Reload and try again.",
+            mapOf("currentVersion" to latest.version),
+        )
+    }
+
+    private fun requireSensibleDates(startDate: LocalDate?, maturityDate: LocalDate?) {
+        SensibleDates.require(startDate, "startDate", "The start date")
+        SensibleDates.require(maturityDate, "maturityDate", "The maturity date")
     }
 
     // --- resolution helpers ---------------------------------------------------

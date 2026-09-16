@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
 import tech.bhrigu.almira.common.IndianNumbers
+import tech.bhrigu.almira.common.SensibleDates
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.investment.InvestmentService
 import tech.bhrigu.almira.security.RequestUserContext
@@ -76,6 +77,7 @@ class GoalService(
         if (priority !in 1..3) {
             throw ApiException.badRequest("priority_invalid", "Priority runs from 1 to 3.")
         }
+        SensibleDates.require(targetDate, "targetDate", "The target date")
         memberId?.let { target ->
             if (households.members(householdId).none { it.id == target }) {
                 throw ApiException.badRequest("member_unknown", "That person isn't in this household.")
@@ -128,24 +130,21 @@ class GoalService(
     ): GoalRow {
         val userId = userContext.require()
         households.get(householdId)
-        val current = get(householdId, id)
+        get(householdId, id)
+        // Permission is settled here, before anything is written, so that a
+        // refusal below can only mean the version moved (docs/05 §3.6).
+        requireWritable(id)
         status?.let {
             if (it !in statuses) {
                 throw ApiException.badRequest("status_invalid", "Choose one of: ${statuses.joinToString()}.")
             }
         }
+        SensibleDates.require(targetDate, "targetDate", "The target date")
         if (repo.update(id, version, name?.trim(), targetAmount, targetDate, priority, notes, status) == 0) {
-            // A refusal and a race look identical from here — zero rows — and
-            // telling someone "reload and try again" when the answer is "not
-            // yours to change" sends them round the same loop forever.
-            if (version == current.version) {
-                throw ApiException.forbidden("You can read this, but it isn't yours to change.")
-            }
-            throw ApiException.conflict(
-                "stale_write",
-                "Someone else changed this while you were editing. Reload and try again.",
-                mapOf("currentVersion" to current.version),
-            )
+            // Permission was settled before the write, so this can only be the
+            // version — and it has to be read again rather than compared with
+            // the copy above, which a concurrent writer has already moved past.
+            throw staleWrite(householdId, id)
         }
         audit.record(
             householdId = householdId, actorUserId = userId, action = "goal.update",
@@ -227,6 +226,7 @@ class GoalService(
         val userId = userContext.require()
         households.get(householdId)
         val current = get(householdId, id)
+        requireWritable(id)
         if (visibility !in visibilities) {
             throw ApiException.badRequest(
                 "visibility_invalid", "Visibility must be private, household or scoped.",
@@ -264,6 +264,7 @@ class GoalService(
         val userId = userContext.require()
         households.get(householdId)
         get(householdId, id)
+        requireWritable(id)
         repo.softDelete(householdId, id)
         audit.record(
             householdId = householdId, actorUserId = userId, action = "goal.delete",
@@ -342,6 +343,29 @@ class GoalService(
             monthlyToClose = monthlyToClose,
             onTrack = onTrack,
             note = note,
+        )
+    }
+
+    // --- guards ---------------------------------------------------------------
+
+    /**
+     * The same predicate the write policy uses, asked before the write rather
+     * than inferred from it (docs/05 §3.6). Row-level security filters a
+     * refused UPDATE or DELETE to zero rows instead of raising it.
+     */
+    private fun requireWritable(id: UUID) {
+        if (!repo.canModify(id)) {
+            throw ApiException.forbidden("You can read this, but it isn't yours to change.")
+        }
+    }
+
+    /** See InvestmentService.staleWrite: the row is re-read, never remembered. */
+    private fun staleWrite(householdId: UUID, id: UUID): ApiException {
+        val latest = repo.find(householdId, id) ?: return ApiException.notFound()
+        return ApiException.conflict(
+            "stale_write",
+            "Someone else changed this while you were editing. Reload and try again.",
+            mapOf("currentVersion" to latest.version),
         )
     }
 }

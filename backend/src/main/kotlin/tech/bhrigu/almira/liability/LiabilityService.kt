@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.common.SensibleDates
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.security.RequestUserContext
 import java.math.BigDecimal
@@ -89,6 +90,9 @@ class LiabilityService(
         if (input.emiDay != null && input.emiDay !in 1..31) {
             throw ApiException.badRequest("emi_day_invalid", "Pick a day between 1 and 31.")
         }
+        requireSensibleRate(input.interestRate)
+        SensibleDates.require(input.startDate, "startDate", "The start date")
+        SensibleDates.require(input.endDate, "endDate", "The end date")
 
         val id = input.id ?: UUID.randomUUID()
         repo.find(householdId, id)?.let { return it }   // idempotent retry
@@ -151,12 +155,17 @@ class LiabilityService(
     fun update(householdId: UUID, id: UUID, input: UpdateLiability): LiabilityRow {
         val userId = userContext.require()
         val household = households.get(householdId)
-        val current = get(householdId, id)
+        get(householdId, id)
+        // Permission is settled here, before anything is written, so that a
+        // refusal below can only mean the version moved (docs/05 §3.6).
+        requireWritable(id)
         input.status?.let {
             if (it !in setOf("active", "closed")) {
                 throw ApiException.badRequest("status_invalid", "A loan is either active or closed.")
             }
         }
+        requireSensibleRate(input.interestRate)
+        SensibleDates.require(input.endDate, "endDate", "The end date")
         // Checked before the row is written, not after.
         val holders = input.holders?.let { resolveHolders(householdId, household.myMemberId, it) }
 
@@ -168,19 +177,10 @@ class LiabilityService(
             attributes = input.attributes, notes = input.notes, status = input.status,
         )
         if (updated == 0) {
-            // Nothing was written for one of two very different reasons, and
-            // saying the wrong one is worse than unhelpful: a viewer or an
-            // advisor told "someone else changed this" will reload, try again,
-            // and see the same thing forever. If the version they sent is still
-            // the current one, nobody changed anything — the write was refused.
-            if (input.version == current.version) {
-                throw ApiException.forbidden("You can read this, but it isn't yours to change.")
-            }
-            throw ApiException.conflict(
-                "stale_write",
-                "Someone else changed this while you were editing. Reload and try again.",
-                mapOf("currentVersion" to current.version),
-            )
+            // Permission was settled before the write, so this can only be the
+            // version — and it has to be read again rather than compared with
+            // the copy above, which a concurrent writer has already moved past.
+            throw staleWrite(householdId, id)
         }
         holders?.let { repo.replaceHolders(id, it) }
         audit.record(
@@ -233,6 +233,7 @@ class LiabilityService(
         val userId = userContext.require()
         households.get(householdId)
         val current = get(householdId, id)
+        requireWritable(id)
         if (visibility !in visibilities) {
             throw ApiException.badRequest(
                 "visibility_invalid", "Visibility must be private, household or scoped.",
@@ -294,11 +295,45 @@ class LiabilityService(
         val userId = userContext.require()
         households.get(householdId)
         get(householdId, id)
+        requireWritable(id)
         repo.softDelete(id)
         audit.record(
             householdId = householdId, actorUserId = userId, action = "liability.delete",
             entityType = "liability", entityId = id,
         )
+    }
+
+    // --- guards ---------------------------------------------------------------
+
+    /**
+     * The same predicate the write policy uses, asked before the write rather
+     * than inferred from it (docs/05 §3.6). A refused UPDATE or DELETE is
+     * filtered to zero rows by row-level security, not raised — so a service
+     * that only counts rows cannot tell "refused" from "nothing to do".
+     */
+    private fun requireWritable(id: UUID) {
+        if (!repo.canModify(id)) {
+            throw ApiException.forbidden("You can read this, but it isn't yours to change.")
+        }
+    }
+
+    /** See InvestmentService.staleWrite: the row is re-read, never remembered. */
+    private fun staleWrite(householdId: UUID, id: UUID): ApiException {
+        val latest = repo.find(householdId, id) ?: return ApiException.notFound()
+        return ApiException.conflict(
+            "stale_write",
+            "Someone else changed this while you were editing. Reload and try again.",
+            mapOf("currentVersion" to latest.version),
+        )
+    }
+
+    /** A loan at minus five percent pays you to borrow; it is a typed minus sign. */
+    private fun requireSensibleRate(rate: BigDecimal?) {
+        if (rate != null && rate.signum() < 0) {
+            throw ApiException.badRequest(
+                "interest_rate_negative", "An interest rate can't be negative.",
+            )
+        }
     }
 
     // --- helpers --------------------------------------------------------------

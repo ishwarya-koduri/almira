@@ -202,6 +202,45 @@ class MalformedRequestTest : ApiTestBase() {
         }
     }
 
+    /**
+     * `null` is valid JSON, which is what made it the one shape that got
+     * through: everything else here failed inside Jackson, while this parsed to
+     * nothing and tripped a Kotlin null check on the way out of the converter.
+     * A 500 on 99 of the 137 endpoints that read a body, ten of them reachable
+     * with no token at all, so both are covered below.
+     */
+    @Test
+    fun `a body of literal null is malformed_request, not a server fault`() {
+        val r = refused(400, "malformed_request", "HttpMessageNotReadableException", marker()) {
+            send(HttpMethod.POST, "/api/v1/households/$householdId/members", "null")
+        }
+        assertThat(r.json().path("error").path("message").asText()).isEqualTo("We couldn't read that request.")
+    }
+
+    @Test
+    fun `a body of literal null is malformed_request with no token at all`() {
+        refused(400, "malformed_request", "HttpMessageNotReadableException", marker()) {
+            send(HttpMethod.POST, "/api/v1/auth/otp/request", "null", auth = false)
+        }
+    }
+
+    @Test
+    fun `a body of literal null is malformed_request on the other doors that need no token`() {
+        listOf(
+            "/api/v1/auth/otp/verify",
+            "/api/v1/auth/refresh",
+            "/api/v1/auth/second-factor/authenticator",
+            "/api/v1/auth/second-factor/recovery-code",
+            "/api/v1/auth/second-factor/passkey/options",
+            "/api/v1/auth/second-factor/passkey",
+            "/api/v1/continuity-links/redeem",
+        ).forEach { path ->
+            val r = send(HttpMethod.POST, path, "null", auth = false)
+            assertThat(r.statusCode.value()).describedAs("$path: ${r.body}").isEqualTo(400)
+            assertThat(r.errorCode()).describedAs(path).isEqualTo("malformed_request")
+        }
+    }
+
     // --- the body is not JSON at all ----------------------------------------------
 
     @Test

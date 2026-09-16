@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -33,11 +34,30 @@ class ApiErrorHandler {
 
     private val log = LoggerFactory.getLogger(javaClass)
 
+    /**
+     * Every error leaves here as JSON, whatever the request asked to be sent.
+     *
+     * Setting the content type on the response tells Spring what to write and
+     * skips content negotiation for it. Without that, an error answering a
+     * request whose `Accept` excludes JSON cannot be written at all: the write
+     * throws, the throw escapes the dispatcher, and the container re-dispatches
+     * to /error — where the JWT filter does not run, because a
+     * OncePerRequestFilter skips an error dispatch by default — so the caller is
+     * told 401 unauthorized with a live session (docs/api/README.md, changelog
+     * 2026-09-16).
+     *
+     * A caller who cannot read JSON still cannot read this. But the status is
+     * then the truth (406 below), and an error is never mistaken for a dead
+     * session.
+     */
+    private fun envelope(status: HttpStatus, body: ApiErrorBody): ResponseEntity<ApiErrorEnvelope> =
+        ResponseEntity.status(status)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(ApiErrorEnvelope(body))
+
     @ExceptionHandler(ApiException::class)
     fun handleApi(e: ApiException): ResponseEntity<ApiErrorEnvelope> =
-        ResponseEntity.status(e.status).body(
-            ApiErrorEnvelope(ApiErrorBody(e.code, e.message, e.details.ifEmpty { null })),
-        )
+        envelope(e.status, ApiErrorBody(e.code, e.message, e.details.ifEmpty { null }))
 
     /** Field validation. Messages are per-field so the form can show them inline. */
     @ExceptionHandler(MethodArgumentNotValidException::class)
@@ -45,13 +65,12 @@ class ApiErrorHandler {
         val fields = e.bindingResult.fieldErrors.associate {
             it.field to (it.defaultMessage ?: "is not valid")
         }
-        return ResponseEntity.badRequest().body(
-            ApiErrorEnvelope(
-                ApiErrorBody(
-                    "validation_failed",
-                    "Some details need a second look.",
-                    mapOf("fields" to fields),
-                ),
+        return envelope(
+            HttpStatus.BAD_REQUEST,
+            ApiErrorBody(
+                "validation_failed",
+                "Some details need a second look.",
+                mapOf("fields" to fields),
             ),
         )
     }
@@ -70,17 +89,17 @@ class ApiErrorHandler {
         val text = (e.mostSpecificCause.message ?: "").lowercase()
         if ("row-level security" in text || "permission denied" in text) {
             log.warn("write refused by database policy: {}", text)
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
-                ApiErrorEnvelope(ApiErrorBody("forbidden", "You don't have access to do that.")),
+            return envelope(
+                HttpStatus.FORBIDDEN,
+                ApiErrorBody("forbidden", "You don't have access to do that."),
             )
         }
         log.error("bad SQL", e)
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-            ApiErrorEnvelope(
-                ApiErrorBody(
-                    "internal_error",
-                    "Something went wrong on our side. Your data is safe. Please try again.",
-                ),
+        return envelope(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            ApiErrorBody(
+                "internal_error",
+                "Something went wrong on our side. Your data is safe. Please try again.",
             ),
         )
     }
@@ -105,7 +124,7 @@ class ApiErrorHandler {
         // Logged at debug: the driver message can echo user data back into logs.
         log.debug("data integrity violation: {}", text)
         val status = if (code == "forbidden") HttpStatus.FORBIDDEN else HttpStatus.BAD_REQUEST
-        return ResponseEntity.status(status).body(ApiErrorEnvelope(ApiErrorBody(code, message)))
+        return envelope(status, ApiErrorBody(code, message))
     }
 
     /**
@@ -117,16 +136,15 @@ class ApiErrorHandler {
     fun handleNoRoute(
         e: org.springframework.web.servlet.resource.NoResourceFoundException,
     ): ResponseEntity<ApiErrorEnvelope> =
-        ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-            ApiErrorEnvelope(ApiErrorBody("not_found", "We couldn't find that.")),
-        )
+        envelope(HttpStatus.NOT_FOUND, ApiErrorBody("not_found", "We couldn't find that."))
 
     @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException::class)
     fun handleWrongMethod(
         e: org.springframework.web.HttpRequestMethodNotSupportedException,
     ): ResponseEntity<ApiErrorEnvelope> =
-        ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(
-            ApiErrorEnvelope(ApiErrorBody("method_not_allowed", "That isn't something you can do here.")),
+        envelope(
+            HttpStatus.METHOD_NOT_ALLOWED,
+            ApiErrorBody("method_not_allowed", "That isn't something you can do here."),
         )
 
     /**
@@ -148,13 +166,12 @@ class ApiErrorHandler {
         logRefused(e, request)
         val missing = (e as? UnreadableBodyException)?.missingField
             ?: return malformed()
-        return ResponseEntity.badRequest().body(
-            ApiErrorEnvelope(
-                ApiErrorBody(
-                    "validation_failed",
-                    "Some details need a second look.",
-                    mapOf("fields" to mapOf(missing to "This is required")),
-                ),
+        return envelope(
+            HttpStatus.BAD_REQUEST,
+            ApiErrorBody(
+                "validation_failed",
+                "Some details need a second look.",
+                mapOf("fields" to mapOf(missing to "This is required")),
             ),
         )
     }
@@ -192,10 +209,41 @@ class ApiErrorHandler {
         request: HttpServletRequest,
     ): ResponseEntity<ApiErrorEnvelope> {
         logRefused(e, request)
-        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(
-            ApiErrorEnvelope(
-                ApiErrorBody("unsupported_media_type", "We couldn't read that request in the format it was sent."),
-            ),
+        return envelope(
+            HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+            ApiErrorBody("unsupported_media_type", "We couldn't read that request in the format it was sent."),
+        )
+    }
+
+    /**
+     * The mirror of the 415 above: the caller's `Accept` leaves nothing this
+     * endpoint can send. Thrown two ways, and both used to reach the catch-all.
+     *
+     * Before the handler runs, when the URL matches only routes that produce
+     * something else: `GET /api/v1/me/export` (`application/zip`) asked for as
+     * JSON answered 500, a server fault for a correct refusal, on the door DPDP
+     * makes us keep open.
+     *
+     * After it runs, when the answer cannot be written in any accepted type:
+     * `Accept: text/html` on any JSON endpoint answered **401 unauthorized**
+     * with a perfectly good session, because the failed write escaped into an
+     * error dispatch (see [envelope]). A client that treats 401 as "signed out"
+     * would have wiped a live session over a request header.
+     *
+     * 406 both times, rather than sending JSON anyway: the caller stated what it
+     * can read, and an endpoint that produces a zip has no JSON to fall back to.
+     * A status that says "not in that format" is one a client can act on; a body
+     * in a format it just said it cannot parse is not.
+     */
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotAcceptableException::class)
+    fun handleNotAcceptable(
+        e: org.springframework.web.HttpMediaTypeNotAcceptableException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ApiErrorEnvelope> {
+        logRefused(e, request)
+        return envelope(
+            HttpStatus.NOT_ACCEPTABLE,
+            ApiErrorBody("not_acceptable", "We can't send that in the format you asked for."),
         )
     }
 
@@ -207,29 +255,27 @@ class ApiErrorHandler {
             is UnreadableBodyException -> "HttpMessageNotReadableException (${e.failure})"
             else -> e.javaClass.simpleName
         }
-        log.info("request refused as unreadable on {} {}: {}", request.method, route, type)
+        log.info("request refused on {} {}: {}", request.method, route, type)
     }
 
     private fun malformed(parameter: String? = null): ResponseEntity<ApiErrorEnvelope> =
-        ResponseEntity.badRequest().body(
-            ApiErrorEnvelope(
-                ApiErrorBody(
-                    "malformed_request",
-                    "We couldn't read that request.",
-                    parameter?.let { mapOf("parameter" to it) },
-                ),
+        envelope(
+            HttpStatus.BAD_REQUEST,
+            ApiErrorBody(
+                "malformed_request",
+                "We couldn't read that request.",
+                parameter?.let { mapOf("parameter" to it) },
             ),
         )
 
     @ExceptionHandler(Exception::class)
     fun handleUnexpected(e: Exception, request: HttpServletRequest): ResponseEntity<ApiErrorEnvelope> {
         log.error("unhandled error on {} {}", request.method, request.requestURI, e)
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-            ApiErrorEnvelope(
-                ApiErrorBody(
-                    "internal_error",
-                    "Something went wrong on our side. Your data is safe. Please try again.",
-                ),
+        return envelope(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            ApiErrorBody(
+                "internal_error",
+                "Something went wrong on our side. Your data is safe. Please try again.",
             ),
         )
     }

@@ -157,7 +157,7 @@ class HouseholdPlanService(
         val NEVER_DO = listOf(
             "Sell or rent your data, to anyone",
             "Give you investment advice or sell you a product",
-            "Move your money — Almira can't reach your accounts",
+            "Move your money: Almira can't reach your accounts",
         )
     }
 }

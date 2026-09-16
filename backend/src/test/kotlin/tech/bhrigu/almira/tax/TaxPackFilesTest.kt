@@ -131,7 +131,7 @@ class TaxPackFilesTest {
             ),
             warnings = listOf("Some sales are larger than the purchases recorded, so part of their cost is nil."),
             assumptions = listOf("Units are matched to sales oldest first."),
-            disclaimer = "Informational only — not tax advice.",
+            disclaimer = "Informational only, not tax advice.",
         )
         val meter = DeductionMeter(
             "80C", "Section 80C", "PPF, ELSS", BigDecimal(150_000), "₹1,50,000", BigDecimal(150_000), "₹1,50,000",
@@ -142,7 +142,7 @@ class TaxPackFilesTest {
             deductions = listOf(meter),
             capitalGains = CapitalGains(fy.label, emptyList(), net, IndianNumbers.rupees(net), emptyList(), "not tax advice"),
             interestIncome = InterestIncome(fy.label, BigDecimal(42_000), "₹42,000", emptyList()),
-            disclaimer = "Informational only — not tax advice. Check it with your CA before filing.",
+            disclaimer = "Informational only, not tax advice. Check it with your CA before filing.",
             capitalGainsSchedule = schedule,
         )
     }

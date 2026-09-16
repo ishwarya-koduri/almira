@@ -96,7 +96,7 @@ function review(fileName, lines, onSaved) {
 
   const lumpsum = typesFlat().find((type) => type.code === "mf_lumpsum");
   const typeSelect = select({
-    options: typesFlat().map((type) => ({ value: type.id, label: `${type.categoryLabel} — ${type.label}` })),
+    options: typesFlat().map((type) => ({ value: type.id, label: `${type.categoryLabel}: ${type.label}` })),
     value: lumpsum?.id,
     "aria-label": t("statement.type"),
   });
@@ -245,7 +245,7 @@ function review(fileName, lines, onSaved) {
       ),
       el("p.caption", {}, report.note),
       ...report.rows.filter((row) => row.outcome === "failed" || row.outcome === "skipped").map((row) =>
-        notice(`${row.title || ""} — ${row.message}`, { tone: "alert" })),
+        notice(`${row.title || ""}: ${row.message}`, { tone: "alert" })),
     );
     if (isDryRun) {
       commit.disabled = report.wouldImport === 0;

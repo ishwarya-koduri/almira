@@ -267,7 +267,7 @@ class ComingOfAgeNotices(
                                     "$name has been told that what is held in their name is theirs to manage now."
                                 } else {
                                     "$name still needs telling: they have no login, so nothing from Almira can reach " +
-                                        "them. Invite them to their own login — they will be told the moment they " +
+                                        "them. Invite them to their own login. They will be told the moment they " +
                                         "first sign in."
                                 },
                                 idempotencyKey = "coming-of-age:$memberId:$admin",

@@ -189,7 +189,7 @@ class HouseholdService(
         if (member.userId != null) {
             throw ApiException.conflict(
                 "member_has_login",
-                "${member.displayName} has their own login. Ask them to leave instead — what is " +
+                "${member.displayName} has their own login. Ask them to leave instead: what is " +
                     "theirs goes with them, and nothing changes for seven days.",
             )
         }

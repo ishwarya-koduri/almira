@@ -77,7 +77,7 @@ function chooseHowToAdd(onSaved) {
         ...unclear.map((span) => el("span.chip.chip-static.chip-unclear", {},
           el("span.caption", {}, `${t("capture.parse.unclear")} · `), `“${span.text}”`)),
       ),
-      amount?.hint && el("p.caption.muted", {}, `${amount.display} — ${amount.hint}`),
+      amount?.hint && el("p.caption.muted", {}, `${amount.display}: ${amount.hint}`),
       unclear.length > 0 && el("p.caption.muted", {}, t("capture.parse.unclearHelp")),
       result.note && el("p.caption.muted", {}, result.note),
       type
@@ -690,7 +690,7 @@ async function saveNominee(investmentId, nominee) {
 function buildColumnControl(key, def) {
   if (key === "currency") {
     const input = select({
-      options: [{ value: "", label: "—" }, ...FOREIGN_CURRENCIES.map((code) => ({ value: code, label: code }))],
+      options: [{ value: "", label: t("capture.notSet") }, ...FOREIGN_CURRENCIES.map((code) => ({ value: code, label: code }))],
       "aria-label": def.label,
     });
     const wrapper = field({ label: def.label, required: def.required, control: input, help: def.help });
@@ -792,7 +792,7 @@ function buildAttributeControl(def) {
     }
     case "select": {
       const input = select({
-        options: [{ value: "", label: "—" }, ...(def.options || [])],
+        options: [{ value: "", label: t("capture.notSet") }, ...(def.options || [])],
         "aria-label": def.label,
       });
       control = input;

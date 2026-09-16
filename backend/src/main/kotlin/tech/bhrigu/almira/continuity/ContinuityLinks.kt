@@ -129,8 +129,8 @@ class ContinuityLinkService(
 
     // Unknown, used and expired all read the same, on purpose.
     private fun unusable() = ApiException.notFound(
-        "That link has already been used or has expired. If you meant to say you're here, open Almira — " +
-            "signing in says it too.",
+        "That link has already been used or has expired. If you meant to say you're here, open Almira. " +
+            "Signing in says it too.",
     )
 
     private companion object {

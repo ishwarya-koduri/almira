@@ -312,7 +312,7 @@ class DormancyService(
 
     private companion object {
         const val NOT_ELIGIBLE =
-            "An adult in the household with their own login — an admin, an editor or a viewer — can take it on."
+            "An adult in the household with their own login (an admin, an editor or a viewer) can take it on."
         const val WAIT_EXPLANATION =
             "A week after a memorial, so it can be corrected if it's wrong. Until then nothing that needs " +
                 "an owner can be done."

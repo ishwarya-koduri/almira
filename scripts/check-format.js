@@ -25,7 +25,7 @@ expect("forty-two lakh", rupees(4200000), "₹42,00,000");
 expect("a crore and a quarter", rupees(12500000), "₹1,25,00,000");
 expect("under a thousand is left alone", rupees(999), "₹999");
 expect("a negative figure keeps its sign", groupIndian(-150000), "-1,50,000");
-expect("no value is a dash, not ₹0", rupees(null), "—");
+expect("no value is a dash, not ₹0", rupees(null), "–");
 
 // The short form for a tight list.
 expect("₹42 L, with no trailing zeros", compactRupees(4200000), "₹42 L");

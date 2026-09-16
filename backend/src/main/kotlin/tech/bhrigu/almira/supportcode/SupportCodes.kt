@@ -239,7 +239,7 @@ class SupportCodeService(
 
         val NEVER = listOf(
             "Amounts",
-            "Names — yours, your family's, or a bank's",
+            "Names: yours, your family's, or a bank's",
             "What your records are called",
             "Documents, or anything in them",
             "Your phone number or email",

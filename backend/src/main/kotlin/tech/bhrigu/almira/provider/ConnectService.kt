@@ -680,12 +680,12 @@ class ConnectService(
             )
         }.firstOrNull()
             ?: throw ApiException.badRequest(
-                "not_connected", "Connect that first — there's nothing to fetch yet.",
+                "not_connected", "Connect that first. There's nothing to fetch yet.",
             )
         if (!stored.expiresAt.isAfter(Instant.now())) {
             throw ApiException.badRequest(
                 "connection_expired",
-                "Your DigiLocker connection has run out. Connect again — your documents are still there.",
+                "Your DigiLocker connection has run out. Connect again. Your documents are still there.",
             )
         }
         return stored

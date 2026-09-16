@@ -26,7 +26,7 @@ export function groupIndian(value) {
 }
 
 export const rupees = (value) =>
-  value === null || value === undefined ? "—" : `₹${groupIndian(value)}`;
+  value === null || value === undefined ? "–" : `₹${groupIndian(value)}`;
 
 /**
  * ₹42 L, ₹1.25 Cr, and the full figure below a lakh — where the short form

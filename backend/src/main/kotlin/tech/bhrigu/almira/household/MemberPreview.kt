@@ -168,7 +168,7 @@ class MemberPreviewService(
                     "Their own private records are theirs, and are not shown to you here."
             },
             caveats = listOf(
-                "Built from what you can see. $name may see more — their own private records — and you will not see those here.",
+                "Built from what you can see. $name may see more (their own private records) and you will not see those here.",
                 "A role never decides sight: an admin sees what is shared with them, like everyone else.",
                 "Amounts in another currency are not added into the figure.",
             ),

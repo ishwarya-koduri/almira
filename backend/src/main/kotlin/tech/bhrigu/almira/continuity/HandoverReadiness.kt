@@ -416,7 +416,7 @@ class HandoverReadinessService(
         val explanation = buildString {
             append("$knows of ${items.size} ${if (items.size == 1) "person you asked says" else "people you asked say"} ")
             append("they know where it is.")
-            if (notSure > 0) append(" $notSure not sure — worth showing them.")
+            if (notSure > 0) append(" $notSure not sure. Worth showing them.")
             if (waiting > 0) append(" $waiting yet to answer.")
             append(" This does not change the score.")
         }

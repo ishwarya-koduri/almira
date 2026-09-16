@@ -74,7 +74,7 @@ class SignInMethodsService(
             throw ApiException.conflict(
                 "sign_in_methods_minimum",
                 "That would leave only one way to sign in. Add another first" +
-                    (if (methods.passkeysAvailable) " — a passkey or an authenticator app" else " — an authenticator app") +
+                    (if (methods.passkeysAvailable) ": a passkey or an authenticator app" else ": an authenticator app") +
                     ", then remove this one.",
             )
         }

@@ -225,14 +225,14 @@ function handbookCard(handbook, host) {
         ),
         ...sealedLines(entry.sealed),
       ),
-      el("div.amount", {}, el("b", {}, entry.valueFormatted || "—")),
+      el("div.amount", {}, el("b", {}, entry.valueFormatted || "–")),
     ))),
 
     handbook.debts.length > 0 && el("div.stack-2", {},
       el("span.overline", {}, t("home.owed")),
       ...handbook.debts.map((debt) => el("div.row-between", {},
-        el("span", {}, `${debt.title}${debt.lender ? ` — ${debt.lender}` : ""}`),
-        el("span.muted", {}, debt.outstandingFormatted || "—"),
+        el("span", {}, `${debt.title}${debt.lender ? ` · ${debt.lender}` : ""}`),
+        el("span.muted", {}, debt.outstandingFormatted || "–"),
       )),
     ),
   );
@@ -849,7 +849,7 @@ function portalCard(portal, check, memberId, host) {
       el("p.caption", {}, t("lostMoney.becameRecord", { title: check.recordTitle || t("lostMoney.aRecord") })),
       el("details", {},
         el("summary.caption", {}, t("lostMoney.howToClaim")),
-        el("ol.portal-steps", {}, ...portal.claim.map((step) => el("li", {}, el("b", {}, step.step), ` — ${step.detail}`))),
+        el("ol.portal-steps", {}, ...portal.claim.map((step) => el("li", {}, el("b", {}, step.step), `: ${step.detail}`))),
       ),
     ),
   );

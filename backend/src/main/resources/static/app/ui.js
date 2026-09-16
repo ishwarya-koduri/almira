@@ -117,7 +117,7 @@ export function money(formatted, value) {
  * name and the tooltip, and shown beside it wherever there is room.
  */
 export function when(iso) {
-  if (!iso) return el("span.when", {}, "—");
+  if (!iso) return el("span.when", {}, "–");
   const relative = relativeDays(iso);
   const date = formatDate(iso);
   return el("time.when", { datetime: String(iso).slice(0, 10), title: date, "aria-label": `${relative}, ${date}` },

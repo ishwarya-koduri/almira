@@ -61,6 +61,8 @@ data class SignInState(
     /** What the server said about an emailed code that ran late or could not be sent. */
     val delivery: EmailDelivery? = null,
     val signedIn: Me? = null,
+    /** Where the key is, for the unlock animation that plays over a verify. */
+    val unlock: UnlockPhase = UnlockPhase.Idle,
 ) {
     /** Ten digits, which is every Indian mobile number and no accidents. */
     val phoneIsPlausible: Boolean get() = phone.length == 10 && phone.first() in '6'..'9'
@@ -91,6 +93,31 @@ data class SignInState(
         const val CODE_LENGTH = 6
         const val PHONE_LENGTH = 10
         private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s.]+$")
+    }
+}
+
+/**
+ * The key in the lock, as far as the controller knows.
+ *
+ * `Checking` is set the moment a code goes to the server, and the outcome
+ * replaces it when the server answers. The outcomes stay until the animation
+ * says it has shown them ([SignInController.unlockShown]) — a success in
+ * particular has to outlive the sign-in screen, because the doors open over
+ * whatever comes after it.
+ */
+enum class UnlockPhase {
+    Idle,
+    Checking,
+    /** The code was right. */
+    Opened,
+    /** The server looked at the code and turned it down: wrong, expired, too many tries. */
+    Refused,
+    /** The code was never judged — no connection, or the server failing. Not a wrong key. */
+    Interrupted;
+
+    companion object {
+        /** A 4xx is a verdict on the code; anything else is a failure to reach one. */
+        fun afterFailure(status: Int): UnlockPhase = if (status in 400..499) Refused else Interrupted
     }
 }
 
@@ -307,7 +334,7 @@ class SignInController(
         val current = state.value
         if (!current.codeIsComplete || current.busy) return
         scope.launch {
-            _state.update { it.copy(busy = true, error = null) }
+            _state.update { it.copy(busy = true, error = null, unlock = UnlockPhase.Checking) }
             try {
                 val requestId = current.challenge?.requestId
                 val login = when (current.channel) {
@@ -315,7 +342,7 @@ class SignInController(
                     SignInChannel.Email -> api.verifyEmailOtp(current.email.trim(), current.code, requestId)
                 }
                 countdown?.cancel()
-                _state.update { it.copy(signedIn = login.user) }
+                _state.update { it.copy(signedIn = login.user, unlock = UnlockPhase.Opened) }
             } catch (failure: ApiException) {
                 // Clear the code as well as showing why. Leaving six wrong
                 // digits in place means six backspaces before the next attempt,
@@ -323,12 +350,25 @@ class SignInController(
                 // The caution borders stay until the first new keystroke, which
                 // is what makes the failure legible without being in the way.
                 _state.update {
-                    it.copy(code = "", error = failure.message.ifBlank { "That didn't work." })
+                    it.copy(
+                        code = "",
+                        error = failure.message.ifBlank { "That didn't work." },
+                        unlock = UnlockPhase.afterFailure(failure.status),
+                    )
                 }
             } finally {
                 _state.update { it.copy(busy = false) }
             }
         }
+    }
+
+    /**
+     * The animation has finished telling the outcome. `Checking` is left alone:
+     * the answer it is waiting for has not arrived, and clearing it would take
+     * the key out of the lock mid-turn.
+     */
+    fun unlockShown() {
+        _state.update { if (it.unlock == UnlockPhase.Checking) it else it.copy(unlock = UnlockPhase.Idle) }
     }
 
     /** Back to the first step — a wrong number or address should not need a restart. */

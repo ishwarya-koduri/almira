@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -143,21 +144,12 @@ fun SignInScreen(
 
 @Composable
 private fun BrandMark() {
-    val colors = AlmiraTheme.colors
-    val type = AlmiraTheme.typography
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(AlmiraTheme.spacing.x3),
     ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .background(colors.accent, RoundedCornerShape(AlmiraTheme.radii.md)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("A", style = type.h3, color = colors.accentInk)
-        }
-        Text("Almira", style = type.h2, color = colors.ink)
+        AlmiraMark(Modifier.size(44.dp))
+        Text("Almira", style = AlmiraTheme.typography.h2, color = AlmiraTheme.colors.ink)
     }
 }
 
@@ -289,8 +281,16 @@ private fun CodeStep(
     val type = AlmiraTheme.typography
     val space = AlmiraTheme.spacing
     val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
 
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    // Again after a refused key: the animation put the keyboard away, and the
+    // next attempt is the only thing this person wants to do.
+    LaunchedEffect(state.unlock == UnlockPhase.Idle) {
+        if (state.unlock == UnlockPhase.Idle) {
+            focus.requestFocus()
+            keyboard?.show()
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(space.x4)) {
         Text(

@@ -103,4 +103,11 @@ class SignInStateTest {
         assertEquals(EmailDelivery.Failed("We couldn't send the code. x"), EmailDelivery.of(decoded))
         assertNull(json.decodeFromString(OtpDeliveryStatus.serializer(), """{"requestId":"r","status":"sent"}""").failure)
     }
+
+    /** Only a verdict on the code rattles the lock; a failure to reach one does not call the key wrong. */
+    @Test
+    fun aRefusedKeyIsOneTheServerJudged() {
+        listOf(400, 401, 410, 422, 429).forEach { assertEquals(UnlockPhase.Refused, UnlockPhase.afterFailure(it), "$it") }
+        listOf(0, 500, 502, 503).forEach { assertEquals(UnlockPhase.Interrupted, UnlockPhase.afterFailure(it), "$it") }
+    }
 }

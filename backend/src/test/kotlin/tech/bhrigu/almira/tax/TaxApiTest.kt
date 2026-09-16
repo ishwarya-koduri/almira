@@ -4,9 +4,11 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.springframework.http.HttpStatus
 import tech.bhrigu.almira.support.ApiTestBase
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.util.UUID
 
 /**
  * The tax layer is the part most likely to be believed without checking, so the
@@ -274,5 +276,42 @@ class TaxApiTest : ApiTestBase() {
         assertThat(
             get("/api/v1/households/$householdId/tax/pack?fy=whenever", owner).errorCode(),
         ).isEqualTo("fy_invalid")
+    }
+
+    // --- who may ask ---------------------------------------------------------
+
+    /**
+     * Every read on this controller is a household read, so every one of them
+     * answers a stranger the same way. Two of the seven used to answer 200:
+     * row-level security kept the figures at zero, so nothing leaked, but a
+     * household someone is not in should not respond to them at all — and an
+     * endpoint that answers at all is one refactor away from answering with
+     * something. Listed rather than looped so a failure names the path.
+     */
+    private val taxPaths = listOf(
+        "pack", "pack/pdf", "deductions", "capital-gains",
+        "capital-gains/schedule", "schedule-112a", "interest-income",
+    )
+
+    @Test
+    fun `a stranger to the household gets nothing from any tax endpoint`() {
+        val stranger = signIn()
+
+        taxPaths.forEach { path ->
+            assertThat(get("/api/v1/households/$householdId/tax/$path", stranger).status())
+                .describedAs("tax/$path answered someone who is not in this household")
+                .isEqualTo(HttpStatus.NOT_FOUND)
+        }
+    }
+
+    @Test
+    fun `a household id that does not exist is not answered either`() {
+        val nobodys = UUID.randomUUID()
+
+        taxPaths.forEach { path ->
+            assertThat(get("/api/v1/households/$nobodys/tax/$path", owner).status())
+                .describedAs("tax/$path answered for a household that does not exist")
+                .isEqualTo(HttpStatus.NOT_FOUND)
+        }
     }
 }

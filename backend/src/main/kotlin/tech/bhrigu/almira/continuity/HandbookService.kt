@@ -374,7 +374,7 @@ class HandbookService(
             entry.valueFormatted?.let { line("  Value: $it (${basisInWords(entry.valueBasis)})") }
             if (entry.nominees.isNotEmpty()) line("  Nominee: ${entry.nominees.joinToString(", ")}")
             else line("  Nominee: none recorded")
-            entry.contacts.forEach { line("  Call: ${it.name}${it.phone?.let { p -> ", $p" } ?: ""}") }
+            entry.contacts.forEach { line("  Call: ${it.name}${it.phone?.let { p -> " · $p" } ?: ""}") }
             line("  Proof: ${if (entry.hasProof) "a scan is in the vault" else "no document attached"}")
             line("  To claim: ${entry.howToClaim}")
             entry.sealed.forEach { line("  ${sealedLabel(it.fieldKey)}: ${it.sentence}") }
@@ -385,7 +385,7 @@ class HandbookService(
             line("WHAT IS OWED", true)
             handbook.debts.forEach { debt ->
                 line("")
-                line("${debt.title}${debt.lender?.let { ": $it" } ?: ""}", true)
+                line("${debt.title}${debt.lender?.let { " · $it" } ?: ""}", true)
                 debt.outstandingFormatted?.let { line("  Outstanding: $it") }
                 if (debt.securedAgainst.isNotEmpty()) {
                     line("  Secured against: ${debt.securedAgainst.joinToString(", ")}")
@@ -412,7 +412,7 @@ class HandbookService(
             line("")
             line("WHO TO CALL", true)
             handbook.contacts.forEach {
-                line("  ${it.name} (${it.kind})${it.phone?.let { p -> ", $p" } ?: ""}")
+                line("  ${it.name} (${it.kind})${it.phone?.let { p -> " · $p" } ?: ""}")
             }
         }
 

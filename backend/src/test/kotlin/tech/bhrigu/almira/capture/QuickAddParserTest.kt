@@ -38,7 +38,7 @@ class QuickAddParserTest {
             TypeVocabulary(propertyId, "property", "Property", setOf("flat", "plot", "house", "property")),
             // A custom type, matched exactly like a built-in one.
             TypeVocabulary(angelTypeId, "angel_investment", "Angel Investment", setOf("angel investment")),
-            TypeVocabulary(sipId, "mf_sip", "Mutual Fund — SIP", setOf("sip", "mutual fund", "mf")),
+            TypeVocabulary(sipId, "mf_sip", "Mutual Fund (SIP)", setOf("sip", "mutual fund", "mf")),
         ),
         institutions = listOf(
             InstitutionVocabulary(iciciId, "ICICI Bank"),

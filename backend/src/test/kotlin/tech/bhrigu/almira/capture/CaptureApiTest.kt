@@ -69,6 +69,48 @@ class CaptureApiTest : ApiTestBase() {
     }
 
     /**
+     * The seeded label says "Mutual Fund (SIP)" since V149, where it used to say
+     * it with an em dash. Quick add reads the label as a keyword, so a rename
+     * that nobody followed into the code is a shorthand that stops working.
+     */
+    @Test
+    fun `sip still finds the mutual fund type, which now names itself without a dash`() {
+        val parsed = post(
+            "/api/v1/households/$householdId/capture/parse-text", owner,
+            mapOf("text" to "5000 sip in Axis Bluechip"),
+        ).json()
+
+        val fields = parsed.path("fields").associateBy { it.path("key").asText() }
+        assertThat(fields["typeId"]!!.path("value").asText())
+            .isEqualTo(typeId(owner, householdId, "mf_sip"))
+        assertThat(fields["typeId"]!!.path("display").asText())
+            .describedAs("no em dash reaches a screen, a CSV or a PDF")
+            .isEqualTo("Mutual Fund (SIP)")
+    }
+
+    /**
+     * The words before a bracket are a keyword of their own, which is what lets
+     * "mutual fund" find "Mutual Fund (SIP)". A custom type proves the rule is
+     * in the vocabulary rather than in a list of the types we happen to seed.
+     */
+    @Test
+    fun `a bracketed label is found by the words before the bracket`() {
+        post(
+            "/api/v1/households/$householdId/types", owner,
+            mapOf("label" to "Angel Investment (Series A)", "categoryCode" to "alternatives"),
+        )
+
+        val parsed = post(
+            "/api/v1/households/$householdId/capture/parse-text", owner,
+            mapOf("text" to "5L angel investment"),
+        ).json()
+
+        val fields = parsed.path("fields").associateBy { it.path("key").asText() }
+        assertThat(fields["typeId"]?.path("display")?.asText())
+            .isEqualTo("Angel Investment (Series A)")
+    }
+
+    /**
      * The chips and the "didn't understand" words travel with their positions, so
      * the client can underline the words each chip came from.
      */

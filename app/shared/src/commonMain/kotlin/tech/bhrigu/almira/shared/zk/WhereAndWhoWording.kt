@@ -22,12 +22,12 @@ object WhereAndWhoWording {
     const val ORIGINAL_LOCATION_LABEL = "Original is at"
 
     const val KEY_HOLDER_HELP =
-        "Write a role or a relationship — “Amma”, “the CA”, “my brother” — not a full name, " +
+        "Write a role or a relationship: “Amma”, “the CA”, “my brother”, not a full name, " +
             "an address or a phone number. It names another person, so say only what your family " +
             "needs. End-to-end encrypted: Almira can't read it, and we never contact them."
 
     const val ORIGINAL_LOCATION_HELP =
-        "Enough for your family to find it — “steel almirah, second shelf”, “the SBI locker”. " +
+        "Enough for your family to find it: “steel almirah, second shelf”, “the SBI locker”. " +
             "No street address or locker number needed. End-to-end encrypted: Almira can't read it."
 
     /** The guidance for a sealed field, when it is one of the two; null otherwise. */

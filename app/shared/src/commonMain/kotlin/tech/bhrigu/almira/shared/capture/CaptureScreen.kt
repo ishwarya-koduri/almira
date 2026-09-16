@@ -151,7 +151,7 @@ private fun TypePicker(
             onValueChange = controller::onQueryChanged,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            placeholder = { Text("Search — FD, gold, PPF…", style = type.body) },
+            placeholder = { Text("Search: FD, gold, PPF…", style = type.body) },
             shape = RoundedCornerShape(AlmiraTheme.radii.full),
             colors = almiraFieldColors(),
             textStyle = type.body,
@@ -408,7 +408,7 @@ private fun SavedBanner(
             Column(verticalArrangement = Arrangement.spacedBy(space.x1)) {
                 Text("Saved", style = type.overline, color = colors.accent)
                 Text(
-                    saved.valueFormatted?.let { "${saved.title} — $it" } ?: saved.title,
+                    saved.valueFormatted?.let { "${saved.title}: $it" } ?: saved.title,
                     style = type.body,
                     color = colors.ink,
                 )
@@ -460,7 +460,7 @@ private fun InstitutionPicker(state: CaptureState, controller: CaptureController
 
     FieldShell(
         label = "Where is it held?",
-        help = "Which bank, fund house or broker — so you know what funds what.",
+        help = "Which bank, fund house or broker, so you know what funds what.",
     ) {
         ExposedDropdownMenuBox(
             expanded = open,
@@ -600,7 +600,7 @@ private fun SharedWithPicker(state: CaptureState, controller: CaptureController)
 // --- words ------------------------------------------------------------------
 
 private val VISIBILITIES = listOf(
-    "private" to "Private — only the owner",
+    "private" to "Private, only the owner",
     "household" to "Shared with the household",
     "scoped" to "Shared with specific people",
 )
@@ -617,7 +617,7 @@ private fun memberLabel(member: Member) =
  * label, which is never wrong, only less helpful.
  */
 private fun titleHint(code: String, label: String) = when (code) {
-    "fd" -> "SBI FD — 5 years"
+    "fd" -> "SBI FD, 5 years"
     "gold_physical" -> "Wedding coins"
     "mf_sip" -> "Parag Parikh Flexi Cap"
     "stock_listed" -> "Infosys"

@@ -366,7 +366,7 @@ async function connectCard(host) {
     el("h4", {}, t("connect.title")),
     ...providers.map((provider) => el("details", {},
       el("summary", {},
-        `${provider.label} — ${
+        `${provider.label}: ${
           provider.mode === "LIVE" ? t("connect.live")
             : provider.mode === "SANDBOX" ? t("connect.sandbox") : t("connect.off")}`),
       el("div.stack-2", { style: { paddingTop: "8px" } },

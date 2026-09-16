@@ -135,15 +135,15 @@ export function offlineScreen(copy, { onRetry } = {}) {
                   el("summary.caption", {}, t("offline.howToClaim")),
                   el("p.caption", { style: { whiteSpace: "pre-line" } }, entry.howToClaim)),
               ),
-              el("div.amount", {}, el("b", {}, entry.valueFormatted || "—")),
+              el("div.amount", {}, el("b", {}, entry.valueFormatted || "–")),
             ))),
       ),
 
       handbook.debts.length > 0 && el("section.card.stack-3", { "aria-labelledby": "offline-debts" },
         el("h3#offline-debts", {}, t("home.owed")),
         ...handbook.debts.map((debt) => el("div.row-between", {},
-          el("span", {}, `${debt.title}${debt.lender ? ` — ${debt.lender}` : ""}`),
-          el("span.owed", {}, debt.outstandingFormatted || "—"),
+          el("span", {}, `${debt.title}${debt.lender ? ` · ${debt.lender}` : ""}`),
+          el("span.owed", {}, debt.outstandingFormatted || "–"),
         )),
       ),
 

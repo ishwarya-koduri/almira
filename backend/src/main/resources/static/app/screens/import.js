@@ -65,7 +65,7 @@ function mapAndRun(file, preview, onSaved) {
       { value: "", label: t("import.typeFromSheet") },
       ...state.taxonomy.flatMap((category) =>
         category.types.map((type) => ({
-          value: type.id, label: `${categoryName(category.categoryCode, category.categoryLabel)} — ${type.label}`,
+          value: type.id, label: `${categoryName(category.categoryCode, category.categoryLabel)}: ${type.label}`,
         }))),
     ],
   });
@@ -134,13 +134,13 @@ function mapAndRun(file, preview, onSaved) {
         .slice(0, 20)
         .map((row) => el("div.card.card-tight", {},
           el("b", {}, t("import.row", { row: row.row })), " ",
-          el("span.muted", {}, row.title || ""), " — ", row.message)),
+          el("span.muted", {}, row.title || ""), " · ", row.message)),
       ...report.rows
         .filter((row) => row.outcome !== "failed" && row.outcome !== "skipped"
           && (row.message || "").includes("Couldn't read"))
         .slice(0, 20)
         .map((row) => el("p.caption.muted", {},
-          `${t("import.row", { row: row.row })} — ${row.message}`)),
+          `${t("import.row", { row: row.row })}: ${row.message}`)),
     );
   };
 

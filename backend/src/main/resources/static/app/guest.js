@@ -82,7 +82,7 @@ function handbookBlock(book) {
     book.debts.length > 0 && el("section.card.stack-2", {},
       el("h2", {}, t("guest.handbook.owed")),
       ...book.debts.map((debt) => el("div.row-between.wrap", {},
-        el("span", {}, `${debt.title}${debt.lender ? ` — ${debt.lender}` : ""}`),
+        el("span", {}, `${debt.title}${debt.lender ? ` · ${debt.lender}` : ""}`),
         debt.outstandingFormatted && el("span.owed", {}, debt.outstandingFormatted),
       )),
     ),

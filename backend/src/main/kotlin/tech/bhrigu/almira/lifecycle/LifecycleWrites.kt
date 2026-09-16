@@ -76,10 +76,8 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
      * contact details survive — the name only, as the other person wrote it.*
      * So: the name the record itself was given, or else the name the household
      * knew them by on its member list — never anything from their account; the
-     * member link cleared; and a role's link to a contact card cleared with it,
-     * since that card is where a phone number or address would be. The record's
-     * own relationship, share and note are the other person's writing and stay as
-     * they were. Flagged for counsel (docs/23).
+     * member link cleared. [removeContactTraces] does the rest of it for an
+     * erasure. Flagged for counsel (docs/23).
      */
     fun keepNamesOnOthersRecords(memberIds: List<UUID>) {
         if (memberIds.isEmpty()) return
@@ -96,7 +94,7 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
         jdbc.update(
             """
             update estate_roles r
-               set person_name = coalesce(r.person_name, m.display_name), member_id = null, contact_id = null
+               set person_name = coalesce(r.person_name, m.display_name), member_id = null
               from members m
              where m.id = r.member_id and r.member_id in (:mids)
             """.trimIndent(),
@@ -112,6 +110,61 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
             p,
         )
     }
+
+    /**
+     * What an erasure takes off other people's records besides the link: the
+     * contact card and the free text.
+     *
+     * Owner's decision (2026-09-16), setting the default while counsel is asked:
+     * *the contact card should go — that's contact data, which we already decided
+     * doesn't survive. Free-text notes are different from a name: a name is one
+     * fact the other person recorded, a note can contain health, money or a
+     * family dispute. Until counsel answers, redact free text that names the
+     * erased person rather than keep it. Easier to restore than to un-disclose.*
+     *
+     * So, on the records that named them: the contact card an estate role
+     * pointed at is deleted (with what it was linked to, by cascade), and a
+     * relationship or note that spells their name is cleared. The name itself
+     * stays, kept by [keepNamesOnOthersRecords]. Free text that does not name
+     * them is the other person's writing about their own arrangement and is left
+     * alone; text elsewhere in the household is not searched for their name.
+     *
+     * Runs BEFORE the link is cleared — it needs `member_id` to know which rows
+     * are about this person, and the member row to know the name to look for.
+     */
+    fun removeContactTraces(memberIds: List<UUID>) {
+        if (memberIds.isEmpty()) return
+        val p = mapOf("mids" to memberIds)
+        // The card is where a number or an address would be, so the card goes.
+        jdbc.update(
+            """
+            delete from contacts
+             where id in (select contact_id from estate_roles
+                           where member_id in (:mids) and contact_id is not null)
+            """.trimIndent(),
+            p,
+        )
+        // Anything naming the person, in text the other person wrote on a record about them.
+        NAMED_TEXT.forEach { (table, alias, columns) ->
+            columns.forEach { column ->
+                jdbc.update(
+                    """
+                    update $table $alias
+                       set $column = null
+                      from members m
+                     where m.id = $alias.member_id and $alias.member_id in (:mids)
+                       and $alias.$column is not null
+                       and ($alias.$column ilike '%' || m.display_name || '%'
+                            or ($alias.${nameColumn(table)} is not null
+                                and $alias.$column ilike '%' || $alias.${nameColumn(table)} || '%'))
+                    """.trimIndent(),
+                    p,
+                )
+            }
+        }
+    }
+
+    private fun nameColumn(table: String) = if (table == "investment_nominees") "nominee_name" else "person_name"
 
     /**
      * What a person made in a household that is not a record of theirs: the
@@ -230,6 +283,13 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
     }
 
     private companion object {
+        /** Free text another person wrote on a record about someone, with the row's own name column. */
+        val NAMED_TEXT = listOf(
+            Triple("investment_nominees", "n", listOf("relationship")),
+            Triple("estate_roles", "r", listOf("note")),
+            Triple("estate_beneficiaries", "b", listOf("relationship", "note")),
+        )
+
         /** Nullable "who made this" columns on household-scoped tables. */
         val CREATED_BY = listOf(
             "accounts" to "created_by", "contacts" to "created_by", "custom_fields" to "created_by",

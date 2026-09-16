@@ -333,14 +333,15 @@ So, while legal review of third-party consent is **pending**:
   fact about the record owner's arrangement; it must not stay linked to the
   erased account, and no contact details survive — the name only, as the other
   person wrote it (docs/05 §12.1). What is built: the link to the member is
-  cleared, a will role's link to a contact card is cleared, and the name kept is
-  the one written on the record or on the household's member list. What counsel
-  should confirm: that keeping the name without consent is permitted under DPDP
-  s.12 and rule 8 as data of the record owner's own arrangement; whether the
-  record's free-text relationship and note fields, which the other person wrote
-  and may mention the erased person, may stay as written; and whether the
-  contact card itself, which belongs to the household and is not linked to the
-  account, may stay.
+  cleared, the contact card a will role pointed at is deleted, free text on
+  those rows that spells the erased person's name is redacted, and the name kept
+  is the one written on the record or on the household's member list. The owner
+  set that default on 2026-09-16 while counsel is asked: a card is contact data,
+  which does not survive; a note, unlike a name, can carry health, money or a
+  family dispute, so it is redacted rather than kept — *easier to restore than to
+  un-disclose*. What counsel should confirm: that keeping the name without
+  consent is permitted under DPDP s.12 and rule 8 as data of the record owner's
+  own arrangement, and whether the free text may in fact stay as written.
 - The notice has not been read by counsel. Nor have the Telugu and Hindi
   translations been checked by a native speaker. The four sections added with
   data rights (consent, rights, children, complaints) and every `rights.*`,

@@ -173,6 +173,8 @@ class AccountPurge(
                 erasedRecords += erased.size + documents.size
                 keptRecords += sole.size - erased.size + joint.size
                 writes.detachPerson(householdId, userId)
+                // Before the link goes, since it says which rows are about them.
+                writes.removeContactTraces(mine)
                 val former = writes.becomeFormerMember(householdId, mine)
                 writes.systemAudit(
                     householdId, "member.erased", "household", householdId,
@@ -202,6 +204,7 @@ class AccountPurge(
                 mapOf("uid" to userId),
             ) { rs, _ -> rs.getObject("id", UUID::class.java) }
             // A nomination there that named them keeps the name, unlinked, as anywhere else.
+            writes.removeContactTraces(leftBehind)
             writes.keepNamesOnOthersRecords(leftBehind)
             jdbc.update(
                 """

@@ -77,8 +77,18 @@ class AccountClosureApiTest : LifecycleTestSupport() {
             UUID::class.java, householdId, ishwaryaMemberId,
         )!!
         db.update(
-            "insert into estate_roles (estate_document_id, role, member_id, contact_id) values (?::uuid, 'executor', ?::uuid, ?::uuid)",
+            """
+            insert into estate_roles (estate_document_id, role, member_id, contact_id, note)
+            values (?::uuid, 'executor', ?::uuid, ?::uuid, 'Ravi keeps the locker key; he and I disagreed about the flat')
+            """.trimIndent(),
             will, raviMemberId, card,
+        )
+        db.update(
+            """
+            insert into estate_beneficiaries (estate_document_id, member_id, relationship, note, share_pct)
+            values (?::uuid, ?::uuid, 'brother-in-law', 'Half to the temple fund', 50)
+            """.trimIndent(),
+            will, raviMemberId,
         )
         // Ishwarya's record that nominates Ravi: hers, and it should still say who.
         put(
@@ -229,6 +239,23 @@ class AccountClosureApiTest : LifecycleTestSupport() {
                 UUID.fromString(ids.getValue("will")),
             ),
         ).containsEntry("person_name", "Ravi").containsEntry("unlinked", true).containsEntry("no_contact", true)
+        assertThat(
+            db.queryForObject("select count(*) from contacts where id = ?::uuid", Int::class.java, UUID.fromString(ids.getValue("card"))),
+        ).describedAs("the card itself is contact data and goes (owner, 2026-09-16)").isZero()
+        assertThat(
+            db.queryForObject(
+                "select note from estate_roles where estate_document_id = ?::uuid", String::class.java,
+                UUID.fromString(ids.getValue("will")),
+            ),
+        ).describedAs("free text that names him is redacted until counsel answers").isNull()
+        // Text that does not name him is her own writing about her own will, and stays.
+        assertThat(
+            db.queryForMap(
+                "select person_name, relationship, note from estate_beneficiaries where estate_document_id = ?::uuid",
+                UUID.fromString(ids.getValue("will")),
+            ),
+        ).containsEntry("person_name", "Ravi").containsEntry("relationship", "brother-in-law")
+            .containsEntry("note", "Half to the temple fund")
 
         // Security records are kept, without his name on them.
         assertThat(

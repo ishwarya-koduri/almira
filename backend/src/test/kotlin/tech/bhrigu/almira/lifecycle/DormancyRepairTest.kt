@@ -96,7 +96,19 @@ class DormancyRepairTest : LifecycleTestSupport() {
     @Test
     fun `without a request record nothing is done, and the attempt is audited`() {
         val made = UUID.randomUUID()
-        assertThat(carryOut(made)).isEqualTo("no_request")
+        // In its own connection, so no earlier call in this session has given
+        // plpgsql a cached plan: an unassigned record only raises on the first
+        // call that reaches the expression (V151).
+        assertThat(
+            db.execute(
+                org.springframework.jdbc.core.ConnectionCallback { connection ->
+                    connection.prepareStatement("select ops.carry_out_dormancy_repair(?::uuid, 'support-2', null)").use {
+                        it.setString(1, made.toString())
+                        it.executeQuery().use { rs -> rs.next(); rs.getString(1) }
+                    }
+                },
+            ),
+        ).describedAs("a request id nobody has is answered, not raised").isEqualTo("no_request")
         assertThat(count("select count(*) from activity_log where action = 'ops.dormancy_repair.carry_out' and entity_id = ?::uuid and diff ->> 'outcome' = 'no_request'", made))
             .isEqualTo(1)
         assertThat(role()).isEqualTo("advisor")

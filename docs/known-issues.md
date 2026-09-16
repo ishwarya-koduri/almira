@@ -2659,3 +2659,47 @@ through the checked function to have any effect.
 **Risk if left** Needs SQL access as the runtime role; an invitation written that
 way cannot be accepted into a dormant household, and elsewhere still needs its
 token.
+
+---
+
+## 85. After a wrong code, the app's code field loses focus
+
+**Where** `app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/signin/SignInScreen.kt`,
+`SignInController.verify`.
+
+**What** Found by driving the Android app on the emulator (2026-09-16). The
+controller clears the code on a refusal on purpose: "the next attempt is the only
+thing this person wants". But the field also loses focus and the keyboard closes,
+so the next attempt needs a tap on the field first. During the test the taps that
+followed went nowhere and the tries-left count stayed where it was until the
+field was tapped again, which reads as though the app has stopped responding.
+
+**Why not fixed** Where focus should go after a refusal, and whether the keyboard
+should stay up, is a design decision about the screen rather than a defect with
+one right answer. The same screen is shared with iOS, so it wants deciding once.
+
+**Risk if left** No security or data risk. It costs a tap at the moment somebody
+is already having trouble getting in, and it can look like a frozen screen.
+
+---
+
+## 86. The service worker could not be verified in this session
+
+**Where** `backend/src/main/resources/static/index.html` (registration),
+`backend/src/main/resources/static/sw.js`.
+
+**What** Live testing of the web client ran in the in-app browser, which refuses
+every service worker registration: registering `sw.js` fails with "An unknown
+error occurred when fetching the script", and so does registering any other
+same-origin script, so it is the browser and not the app. The file itself is
+served correctly (200, `text/javascript`) and `scripts/check-service-worker.js`
+passes, but the offline shell was never actually exercised against a running
+server in this session.
+
+**Why not fixed** Nothing to fix was found; what is missing is the verification.
+It needs an ordinary browser pointed at a development server, offline mode
+toggled, and the shell opened.
+
+**Risk if left** Unknown rather than broken. Offline behaviour is an enhancement
+(the app works online exactly as before without it), but the "opens without a
+network" promise in docs/16 rests on a check nobody has run end to end.

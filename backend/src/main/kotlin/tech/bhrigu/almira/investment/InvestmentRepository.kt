@@ -293,6 +293,17 @@ class InvestmentRepository(
         }
     }
 
+    /**
+     * May this caller write to this record? The same function the write policy
+     * uses, asked before the write rather than inferred from it (docs/05 §3.6,
+     * layer 2). Row-level security filters a refused UPDATE or DELETE to zero
+     * rows instead of raising, so a service that only looks at the row count
+     * cannot tell "refused" from "already gone" — and used to report neither.
+     */
+    fun canModify(id: UUID): Boolean = jdbc.queryForObject(
+        "select app.can_modify_investment(:id)", mapOf("id" to id), Boolean::class.java,
+    ) == true
+
     fun updateVisibility(id: UUID, visibility: String): Int = jdbc.update(
         "update investments set visibility = :visibility where id = :id and deleted_at is null",
         mapOf("id" to id, "visibility" to visibility),

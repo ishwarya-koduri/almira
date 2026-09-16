@@ -229,6 +229,11 @@ class LiabilityRepository(
         )
     }
 
+    /** The write policy's own predicate, asked before the write (docs/05 §3.6). */
+    fun canModify(id: UUID): Boolean = jdbc.queryForObject(
+        "select app.can_modify_liability(:id)", mapOf("id" to id), Boolean::class.java,
+    ) == true
+
     fun updateVisibility(id: UUID, visibility: String): Int = jdbc.update(
         "update liabilities set visibility = :visibility where id = :id and deleted_at is null",
         mapOf("id" to id, "visibility" to visibility),

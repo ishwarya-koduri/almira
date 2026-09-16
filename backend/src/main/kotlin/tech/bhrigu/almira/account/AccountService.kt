@@ -136,7 +136,10 @@ class AccountService(
     fun update(householdId: UUID, id: UUID, input: UpdateAccount): AccountRow {
         val userId = userContext.require()
         val household = households.get(householdId)
-        val current = get(householdId, id)
+        get(householdId, id)
+        // Permission is settled here, before anything is written, so that a
+        // refusal below can only mean the version moved (docs/05 §3.6).
+        requireWritable(id)
 
         // Checked before the row is written, not after.
         val holders = input.holders?.let { resolveHolders(householdId, household.myMemberId, it) }
@@ -165,19 +168,10 @@ class AccountService(
             clearFullNumber = clearFull,
         )
         if (updated == 0) {
-            // Nothing was written for one of two very different reasons, and
-            // saying the wrong one is worse than unhelpful: a viewer or an
-            // advisor told "someone else changed this" will reload, try again,
-            // and see the same thing forever. If the version they sent is still
-            // the current one, nobody changed anything — the write was refused.
-            if (input.version == current.version) {
-                throw ApiException.forbidden("You can read this, but it isn't yours to change.")
-            }
-            throw ApiException.conflict(
-                "stale_write",
-                "Someone else changed this while you were editing. Reload and try again.",
-                mapOf("currentVersion" to current.version),
-            )
+            // Permission was settled before the write, so this can only be the
+            // version — and it has to be read again rather than compared with
+            // the copy above, which a concurrent writer has already moved past.
+            throw staleWrite(householdId, id)
         }
 
         holders?.let { repo.replaceHolders(id, it) }
@@ -198,6 +192,7 @@ class AccountService(
         val userId = userContext.require()
         households.get(householdId)
         val current = get(householdId, id)
+        requireWritable(id)
         if (visibility !in visibilities) {
             throw ApiException.badRequest(
                 "visibility_invalid", "Visibility must be private, household or scoped.",
@@ -258,6 +253,7 @@ class AccountService(
         val userId = userContext.require()
         households.get(householdId)
         val account = get(householdId, id)
+        requireWritable(id)
         if (account.linkedInvestmentCount > 0) {
             throw ApiException.conflict(
                 "account_in_use",
@@ -271,6 +267,30 @@ class AccountService(
         audit.record(
             householdId = householdId, actorUserId = userId, action = "account.delete",
             entityType = "account", entityId = id,
+        )
+    }
+
+    // --- guards ---------------------------------------------------------------
+
+    /**
+     * The same predicate the write policy uses, asked before the write rather
+     * than inferred from it (docs/05 §3.6). Row-level security filters a
+     * refused UPDATE or DELETE to zero rows instead of raising, so counting
+     * rows cannot tell "refused" from "nothing to do".
+     */
+    private fun requireWritable(id: UUID) {
+        if (!repo.canModify(id)) {
+            throw ApiException.forbidden("You can read this, but it isn't yours to change.")
+        }
+    }
+
+    /** See InvestmentService.staleWrite: the row is re-read, never remembered. */
+    private fun staleWrite(householdId: UUID, id: UUID): ApiException {
+        val latest = repo.find(householdId, id) ?: return ApiException.notFound()
+        return ApiException.conflict(
+            "stale_write",
+            "Someone else changed this while you were editing. Reload and try again.",
+            mapOf("currentVersion" to latest.version),
         )
     }
 

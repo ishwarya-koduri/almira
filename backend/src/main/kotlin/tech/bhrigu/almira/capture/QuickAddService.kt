@@ -57,8 +57,10 @@ class QuickAddService(
         val base = buildSet {
             add(label.lowercase())
             add(code.replace('_', ' '))
-            // "Mutual Fund — SIP" should also match on "mutual fund".
-            label.lowercase().substringBefore(" —").trim().let(::add)
+            // "Mutual Fund (SIP)" should also match on "mutual fund". The dash
+            // is still read the same way: the seeded labels lost theirs (V149),
+            // but a household may well have written one into a type of its own.
+            label.lowercase().substringBefore(" (").substringBefore(" —").trim().let(::add)
         }
         return base + (SHORTHAND[code] ?: emptySet())
     }

@@ -16,7 +16,10 @@
 --
 -- So it is refused, and refused BEFORE anything is written: the raise rolls the
 -- statement back, `accepted_at` stays null, and the link still works for the
--- person it was addressed to. Nothing else in the function changes.
+-- person it was addressed to. Nothing else in the function changes, and V135's
+-- dormancy guard is carried over unchanged -- a function replaced whole loses
+-- every line the new text forgets, which is how the first draft of this
+-- migration silently deleted it (caught by DormantHouseholdApiTest).
 -- =============================================================================
 
 create or replace function app.accept_invitation(p_token_hash text)
@@ -52,6 +55,14 @@ begin
              where hm.household_id = inv.household_id
                and hm.user_id = v_user and hm.status = 'active') then
     raise exception 'already_a_member' using errcode = 'invalid_parameter_value';
+  end if;
+
+  -- Joining a household nobody runs waits until someone takes it on (V135).
+  -- Kept here word for word: this function is replaced whole, so a guard left
+  -- out of the new text is a guard deleted.
+  if exists (select 1 from household_dormancies d
+              where d.household_id = inv.household_id and d.ended_at is null) then
+    raise exception 'household_dormant' using errcode = 'insufficient_privilege';
   end if;
 
   -- Claim the managed member row, if the invitation named an unclaimed one.

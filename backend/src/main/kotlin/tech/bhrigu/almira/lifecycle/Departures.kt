@@ -241,8 +241,8 @@ class DepartureService(
             tell(
                 householdId, listOf(leaverUserId), "lifecycle.departure.asked", "departure.asked:$id",
                 "You've been asked to leave ${household.name}",
-                "On $date what is yours goes with you into a household of your own. Until then you can " +
-                    "choose what happens to it, and download your copy.",
+                "On $date what was private to you goes into a household of your own, with a copy of what " +
+                    "you shared. Until then you can choose what happens to it, and download your copy.",
             )
         }
         tell(

@@ -183,7 +183,7 @@ class HouseholdService(
         if (member.userId == userId) {
             throw ApiException.badRequest(
                 "cannot_remove_self",
-                "To leave this household, choose Leave household. What is yours goes with you.",
+                "To leave this household, choose Leave household. What was private to you goes with you.",
             )
         }
         if (member.userId != null) {

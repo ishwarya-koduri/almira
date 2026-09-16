@@ -201,7 +201,7 @@ private fun AddressStep(
                 placeholder = { Text("98765 43210", style = type.body, color = colors.inkFaint) },
                 textStyle = type.body,
                 singleLine = true,
-                isError = state.error != null,
+                isError = state.error != null || state.addressHint != null,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Phone,
                     imeAction = ImeAction.Go,
@@ -220,7 +220,7 @@ private fun AddressStep(
                 placeholder = { Text("you@example.com", style = type.body, color = colors.inkFaint) },
                 textStyle = type.body,
                 singleLine = true,
-                isError = state.error != null,
+                isError = state.error != null || state.addressHint != null,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Email,
                     autoCorrectEnabled = false,
@@ -233,7 +233,7 @@ private fun AddressStep(
         }
 
         HelperLine(
-            message = state.error,
+            message = state.error ?: state.addressHint,
             fallback = when (state.channel) {
                 SignInChannel.Phone -> "We'll text you a 6-digit code."
                 SignInChannel.Email -> "We'll email you a 6-digit code."

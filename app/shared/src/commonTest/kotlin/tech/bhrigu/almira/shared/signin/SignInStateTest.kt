@@ -104,6 +104,27 @@ class SignInStateTest {
         assertNull(json.decodeFromString(OtpDeliveryStatus.serializer(), """{"requestId":"r","status":"sent"}""").failure)
     }
 
+    /**
+     * A number that cannot work says why. The send button is disabled until the
+     * address could work, which on its own leaves someone tapping a dead button
+     * with no way to find out what is wrong (seen on Android, 2026-09-16).
+     */
+    @Test
+    fun aNumberThatCannotWorkSaysSo() {
+        val typing = SignInState(phone = "5432")
+        assertNull(typing.addressHint, "nobody is corrected mid-word")
+
+        val wrongStart = SignInState(phone = "5432109876")
+        assertEquals("An Indian mobile number starts with 6, 7, 8 or 9.", wrongStart.addressHint)
+        assertEquals(false, wrongStart.addressIsPlausible)
+
+        assertNull(SignInState(phone = "9876543210").addressHint, "a number that works says nothing")
+
+        val halfAnAddress = SignInState(channel = SignInChannel.Email, email = "ishwarya@")
+        assertEquals("That address looks incomplete.", halfAnAddress.addressHint)
+        assertNull(SignInState(channel = SignInChannel.Email, email = "ishwarya@example.com").addressHint)
+    }
+
     /** Only a verdict on the code rattles the lock; a failure to reach one does not call the key wrong. */
     @Test
     fun aRefusedKeyIsOneTheServerJudged() {

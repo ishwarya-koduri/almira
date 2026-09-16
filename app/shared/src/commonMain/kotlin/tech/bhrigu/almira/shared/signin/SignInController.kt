@@ -73,6 +73,25 @@ data class SignInState(
      */
     val emailIsPlausible: Boolean get() = EMAIL.matches(email.trim())
 
+    /**
+     * What is wrong with what has been typed, once there is enough to judge.
+     *
+     * The send button is disabled until the address could work, which on its own
+     * says nothing: someone whose number starts with a 5 taps it, nothing
+     * happens, and there is no way to find out why (seen on Android, 2026-09-16).
+     * Null while it could still come right, so nobody is corrected mid-word.
+     */
+    val addressHint: String? get() = when (channel) {
+        SignInChannel.Phone ->
+            if (phone.length == PHONE_LENGTH && phone.first() !in '6'..'9') {
+                "An Indian mobile number starts with 6, 7, 8 or 9."
+            } else {
+                null
+            }
+        SignInChannel.Email ->
+            if (email.contains('@') && !emailIsPlausible) "That address looks incomplete." else null
+    }
+
     val addressIsPlausible: Boolean get() = when (channel) {
         SignInChannel.Phone -> phoneIsPlausible
         SignInChannel.Email -> emailIsPlausible

@@ -7,6 +7,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.common.RateLimit
 import tech.bhrigu.almira.config.AlmiraProperties
 import tech.bhrigu.almira.provider.FailureKind
 import tech.bhrigu.almira.provider.ProviderCallFailed
@@ -159,6 +160,10 @@ class OtpService(
     ) : this(redis, sender, props, calls, emailSender, outbox, props.otp.sendTimeout.plus(SETTLE_MARGIN))
 
     private val log = LoggerFactory.getLogger(javaClass)
+
+    /** The product's one rate limiter (common/RateLimit.kt); guest links use it too. */
+    private val limits = RateLimit(redis)
+
     private val cfg = props.otp
     private val development = props.isDevelopment
     private val random = SecureRandom()
@@ -593,12 +598,11 @@ class OtpService(
     }
 
     private fun enforceVerifyAllowance(key: String) {
+        // Counted by [recordNetworkMiss] rather than here — only a WRONG code
+        // spends one — so this reads the count instead of taking from it.
         val misses = redis.opsForValue().get(key)?.toLongOrNull() ?: 0
         if (misses >= cfg.maxVerifyFailuresPerIpPerHour) {
-            val retry = redis.getExpire(key, TimeUnit.SECONDS).coerceAtLeast(60)
-            throw ApiException.tooManyRequests(
-                "Too many incorrect codes from this network. Please try again later.", retry,
-            )
+            throw limits.refusal(key, "Too many incorrect codes from this network. Please try again later.")
         }
     }
 
@@ -608,16 +612,11 @@ class OtpService(
         if (count == 1L) redis.expire(key, Duration.ofHours(1))
     }
 
-    private fun enforceHourlyLimit(key: String, max: Int, subject: String) {
-        val count = redis.opsForValue().increment(key) ?: 1
-        if (count == 1L) redis.expire(key, Duration.ofHours(1))
-        if (count > max) {
-            val retry = redis.getExpire(key, TimeUnit.SECONDS).coerceAtLeast(60)
-            throw ApiException.tooManyRequests(
-                "Too many sign-in attempts from this $subject. Please try again later.", retry,
-            )
-        }
-    }
+    private fun enforceHourlyLimit(key: String, max: Int, subject: String) =
+        limits.take(
+            key, max, Duration.ofHours(1),
+            "Too many sign-in attempts from this $subject. Please try again later.",
+        )
 
     // Phone keys are unchanged from before email existed, so challenges and
     // counters live across the deploy that added it.

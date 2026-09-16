@@ -2110,6 +2110,10 @@ a process already serving.
 | A closure's household is made dormant before the person's rows in it are touched | — (new) | `AccountPurge` opens the dormancy first; watched failing with it moved after the erasure — the successor was gone and nobody was asked first (`DormancyOrderApiTest`) | ws/dormant-ordered |
 | Write permission on deleting a record, changing its visibility, replacing its nominees or adding a valuation | nothing: row-level security filtered the refused UPDATE/DELETE to zero rows and the service never looked, so a viewer got 204 and 200 over records that had not moved | each service asks `app.can_modify_*` (and, for documents, the rule `documents_delete` spells out) before the write; watched failing on master, where each case reports success over a record still exactly as it was (`RefusedWritesDoNotReportSuccessApiTest`) | `fbb6f00` |
 
+---
+| A guest link's view limit is at least one | — (new); `maxViews: 0` and below were accepted, and every open of the link answered 404 | `ShareService.create` refuses beside the expiry check, before a token is minted or a row written; watched failing with the check removed — a zero-view link was created 201 (`ShareApiTest`) | worktree-agent-a2fa0fd8eeb7d75f4 |
+| Guest-link open rate limits, per link and per network | — (new); the endpoint had none, though docs/05 §7 called it rate limited | `ShareService.admit` spends both caps before `resolve_guest_share`, the view count, the audit row and the payload; watched failing with the call removed — 429 never came, and a refused open is proven not to be a view (`GuestShareRateLimitApiTest`) | worktree-agent-a2fa0fd8eeb7d75f4 |
+
 The scripts' tests are in `scripts/tests/` and run the real scripts against
 throwaway containers and volumes, or with a stub `curl`; each was watched failing
 against the script as it was before its commit.
@@ -2670,6 +2674,7 @@ token.
 
 ---
 
+<<<<<<< HEAD
 ## 85. After a wrong code, the app's code field loses focus
 
 **Where** `app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/signin/SignInScreen.kt`,
@@ -2735,3 +2740,24 @@ right answer; it is only the readable-but-not-writable case that misleads.
 **Risk if left** A viewer or an advisor deleting a contact is told the contact is
 gone from under them rather than that it is not theirs to remove, and reloads to
 find it still listed. No data is at risk either way.
+=======
+## 85. A rate-limited guest link reads as a gone one
+
+**Where** `static/app/guest.js` (`load`, `failed`), `sharing/ShareService.rateLimit`.
+
+**What** Found while adding the per-link and per-network caps on opening a guest
+link. `load` treats any non-2xx as nothing and the page then says the link has
+expired or been withdrawn, so a `429` shows the same words as a `404`. That is
+right for the two answers the page was written for, and wrong for this one:
+the link is fine, and the reader only has to wait. The API says which it is
+(`error.code` is `rate_limited`, with `details.retryAfterSeconds`).
+
+**Why not fixed** The honest page needs its own words in English, Telugu and
+Hindi (docs/14), and the web client has no screen tests (docs/20 §9). The caps
+are sized so that a person reading the page never reaches them; the reader who
+does is a script.
+
+**Risk if left** A CA who somehow met the cap would be told the link is gone and
+would ask for a new one, rather than waiting. Nothing is lost, and the old link
+still works.
+>>>>>>> worktree-agent-a2fa0fd8eeb7d75f4

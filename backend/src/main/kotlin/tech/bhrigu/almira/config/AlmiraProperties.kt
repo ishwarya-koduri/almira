@@ -15,6 +15,7 @@ data class AlmiraProperties(
     val outbox: Outbox = Outbox(),
     val webauthn: WebAuthn = WebAuthn(),
     val ops: Ops = Ops(),
+    val share: Share = Share(),
     /**
      * Gates the checks that must not be bypassable by forgetting a flag:
      * anything other than exactly "development" makes them strict.
@@ -123,6 +124,41 @@ data class AlmiraProperties(
          * job and is not used. Bounded to (0, 15s] at startup by OtpService.
          */
         val sendTimeout: Duration = Duration.ofSeconds(5),
+    )
+
+    /**
+     * Guest links (docs/05 §7), where the token IS the credential and there is
+     * no account behind it to lock. A link that leaks — a forwarded email, a
+     * browser history on a shared machine — can otherwise be read at machine
+     * speed, so the two caps below bound how fast anyone holding a token can
+     * spend it. Both are counted in Redis by common/RateLimit.kt, the same
+     * mechanism and the same fixed hour as sign-in's caps.
+     *
+     * Sized so that a family sharing with their CA never meets them; see
+     * [maxOpensPerLinkPerHour] and [maxOpensPerNetworkPerHour].
+     */
+    data class Share(
+        /**
+         * Opens of ONE link in an hour, whoever opens it. A CA reads the page,
+         * reloads it on a bad train connection, opens the PDF and the CSV, and
+         * comes back after lunch: a busy afternoon is perhaps a dozen. Sixty is
+         * several times that and still one a minute, where a scraper wants
+         * hundreds a second. This is the cap that matters for a leaked token,
+         * because it follows the token rather than whoever is holding it.
+         */
+        val maxOpensPerLinkPerHour: Int = 60,
+        /**
+         * Opens of ANY link from one network in an hour. A CA's office behind
+         * one address, holding links from several clients at once, is still far
+         * under four a minute; this bounds what one host can do with a handful
+         * of leaked tokens, and what an unauthenticated endpoint costs when
+         * somebody simply hammers it with nonsense.
+         *
+         * On a laptop every request comes from 127.0.0.1, so the end-to-end
+         * suites would share one counter — scripts/dev.sh raises it there, the
+         * way it already does for sign-in.
+         */
+        val maxOpensPerNetworkPerHour: Int = 240,
     )
 
     /**

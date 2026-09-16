@@ -440,6 +440,21 @@ be withdrawn and replaced, never recovered.
 **An expired link and a withdrawn one answer identically.** Do not write UI that
 distinguishes them: telling them apart would confirm a link once existed.
 
+**A link must be openable at least once.** `maxViews` below `1` answers
+`400 view_limit_invalid` and no link is made; it used to be accepted and mint a
+URL that every open answered `404`. Leave it out for no limit.
+
+**Opening a link is rate limited, and the refusal says nothing.**
+`GET /share/{token}` (and the tax-pack PDF and CSV behind the same token) can
+answer `429 rate_limited` with `details.retryAfterSeconds`, per link and per
+network. A real recipient will not meet it; a script reading a leaked token
+will. The same 429 comes back for a token that was never real, so do not treat
+it as "this link exists". A refused open is not counted as a view.
+
+**The view log is paged.** `GET /shares/{id}/views` answers the hundred most
+recent rows, newest first; `?limit=` (up to 100) and `?offset=` walk back
+through the rest. Sending neither is what the endpoint always did.
+
 **Emergency access is a state machine with a clock *and* a silence.** `status`
 is `waiting`, `open`, `vetoed`, `withdrawn` or `ended`, derived from timestamps
 rather than stored — so a client should re-read rather than cache it, and

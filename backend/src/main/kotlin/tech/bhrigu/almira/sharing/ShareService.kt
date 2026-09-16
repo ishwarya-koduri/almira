@@ -1,5 +1,6 @@
 package tech.bhrigu.almira.sharing
 
+import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
@@ -8,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.common.RateLimit
+import tech.bhrigu.almira.config.AlmiraProperties
 import tech.bhrigu.almira.continuity.FamilyHandbook
 import tech.bhrigu.almira.continuity.HandbookService
 import tech.bhrigu.almira.household.HouseholdService
@@ -19,6 +22,7 @@ import tech.bhrigu.almira.tax.TaxExportService
 import tech.bhrigu.almira.tax.TaxPack
 import tech.bhrigu.almira.tax.TaxService
 import java.security.SecureRandom
+import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.Base64
@@ -134,9 +138,15 @@ class ShareService(
     private val jwt: JwtService,
     private val userContext: RequestUserContext,
     private val transactions: TransactionTemplate,
+    redis: StringRedisTemplate,
+    props: AlmiraProperties,
 ) {
 
     private val random = SecureRandom()
+
+    /** The product's one rate limiter, the same one sign-in counts with. */
+    private val limits = RateLimit(redis)
+    private val caps = props.share
 
     /** The guest's own transaction: read-only, and enforced as such by Postgres. */
     private val readOnly = TransactionTemplate(transactions.transactionManager!!).apply {
@@ -182,6 +192,15 @@ class ShareService(
         if (input.expiresInDays !in 1..maxDays) {
             throw ApiException.badRequest(
                 "expiry_invalid", "A link lasts between a day and ninety days.",
+            )
+        }
+        // Beside the expiry check, and for the same reason. A limit of zero (or
+        // below) was accepted and minted a link that every open answered 404 —
+        // so the person sent their accountant a link that was dead before it
+        // arrived, and neither of them was told why.
+        if (input.maxViews != null && input.maxViews < 1) {
+            throw ApiException.badRequest(
+                "view_limit_invalid", "A link opens at least once.",
             )
         }
 
@@ -369,15 +388,35 @@ class ShareService(
         ) { rs, _ -> mapShare(rs) }.firstOrNull() ?: throw ApiException.notFound()
     }
 
+    /**
+     * The view log, most recent first, a page at a time.
+     *
+     * It used to be a bare `limit 100` with no way to ask for the rest, so a
+     * link that had been opened two hundred times showed its owner a hundred
+     * and said nothing about the other hundred — an audit trail that stops
+     * short without saying so is worse than one that admits its edge, and
+     * docs/05 §7 promises these links are fully audited.
+     *
+     * [limit] and [offset], rather than a cursor, because that is what this
+     * codebase's other paged list already takes (InvestmentController.list) and
+     * because it is additive: the frozen contract gains two optional query
+     * parameters, the response keeps its shape, and a v1 client that sends
+     * neither still gets exactly the hundred most recent rows it got before.
+     *
+     * Ordered by `id` after the timestamp: two views in the same millisecond
+     * would otherwise be free to swap places between pages, which is how a
+     * paged log quietly shows a row twice and drops another.
+     */
     @Transactional(readOnly = true)
-    fun views(householdId: UUID, id: UUID): List<ShareViewRow> {
+    fun views(householdId: UUID, id: UUID, limit: Int = MAX_VIEW_PAGE, offset: Int = 0): List<ShareViewRow> {
         get(householdId, id)
         return jdbc.query(
             """
             select viewed_at, user_agent from guest_share_views
-            where share_id = :id order by viewed_at desc limit 100
+            where share_id = :id order by viewed_at desc, id desc
+            limit :limit offset :offset
             """.trimIndent(),
-            mapOf("id" to id),
+            mapOf("id" to id, "limit" to limit.coerceIn(1, MAX_VIEW_PAGE), "offset" to offset.coerceAtLeast(0)),
         ) { rs, _ -> ShareViewRow(rs.getTimestamp("viewed_at").toInstant(), rs.getString("user_agent")) }
     }
 
@@ -436,19 +475,57 @@ class ShareService(
         }
 
     /**
+     * How fast a link may be opened (docs/05 §7, which has always described
+     * these links as rate-limited).
+     *
+     * The token is the whole credential here: there is no password and no
+     * account to lock, so a token that leaks — a forwarded email, a browser
+     * history on a shared machine — used to be readable as fast as a script
+     * could ask. Two caps, both counted by the one rate limiter sign-in uses:
+     * one that follows the LINK, which is what bounds a leaked token however
+     * many machines are holding it, and one that follows the NETWORK, which
+     * bounds a host holding several and an endpoint being hammered with
+     * nonsense. Sizes and their reasons: AlmiraProperties.Share.
+     *
+     * The network's cap is spent first, for the reason sign-in spends it first:
+     * an open its network is going to refuse must not also use up one of that
+     * link's own hourly opens.
+     *
+     * [tokenHash], never the token: this counter is keyed by exactly what the
+     * database is keyed by, so a Redis dump is no more useful than the token
+     * table. And the refusal is the same sentence whatever was presented — a
+     * live link, a withdrawn one, a string of nonsense — because a 429 that
+     * read differently for a real token would answer the one question the
+     * 404s are careful never to answer.
+     */
+    private fun rateLimit(tokenHash: String, ipHash: String?) {
+        ipHash?.let {
+            limits.take("share:opens:network:$it", caps.maxOpensPerNetworkPerHour, WINDOW, TOO_FAST)
+        }
+        limits.take("share:opens:link:$tokenHash", caps.maxOpensPerLinkPerHour, WINDOW, TOO_FAST)
+    }
+
+    /**
      * A helper's link and a page link are two different doors. A helper's token
      * opens only its task list, and any other token opens nothing there — so a
      * link sent to an aunt for one task cannot be replayed at the ordinary
      * guest endpoint to read the records behind it.
      */
     private fun admit(token: String, ipHash: String?, userAgent: String?, helperLink: Boolean): ShareLookup {
+        val tokenHash = jwt.hash(token)
+
+        // Before the link is resolved, before a view is counted, before an
+        // audit row is written and before any payload is built: the cap is on
+        // OPENING, so it has to be spent before opening does anything.
+        rateLimit(tokenHash, ipHash)
+
         // Nobody is signed in here, so this one lookup runs with definer rights,
         // keyed by the token hash alone. Everything after it runs as the sharer,
         // clamped to the share's own scope.
         val share = transactions.execute {
             jdbc.query(
                 "select * from app.resolve_guest_share(:hash)",
-                mapOf("hash" to jwt.hash(token)),
+                mapOf("hash" to tokenHash),
             ) { rs, _ ->
                 ShareLookup(
                     share = mapShare(rs),
@@ -695,5 +772,14 @@ class ShareService(
         private val SCOPES = setOf("tax_pack", "handbook", "records")
         const val MAX_DAYS = 90
         const val HELPER_SCOPE = "heir_help"
+
+        /** The same fixed hour sign-in counts in. */
+        private val WINDOW: Duration = Duration.ofHours(1)
+
+        /** One sentence for every refusal, so the refusal says nothing about the token. */
+        private const val TOO_FAST = "This link is being opened too often. Please try again later."
+
+        /** The most recent views one request may ask for. */
+        const val MAX_VIEW_PAGE = 100
     }
 }

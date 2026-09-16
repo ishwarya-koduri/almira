@@ -221,4 +221,59 @@ class ShareApiTest : ApiTestBase() {
         assertThat(refused.status()).isEqualTo(HttpStatus.BAD_REQUEST)
         assertThat(refused.errorCode()).isEqualTo("expiry_invalid")
     }
+
+    /**
+     * A link with no opens in it was accepted, and every open of it answered
+     * 404 — so the person sent their accountant a URL that was dead before it
+     * arrived, and neither of them was told. Refused now, where the expiry the
+     * field sits beside has always been refused.
+     */
+    @Test
+    fun `a link that could never be opened is refused, not minted`() {
+        capture(owner, householdId, "gold_physical", "Gold", BigDecimal("100000"), visibility = "household")
+
+        for (views in listOf(0, -5)) {
+            val refused = share(
+                owner, mapOf("label" to "For the CA", "scope" to "handbook", "maxViews" to views),
+            )
+            assertThat(refused.status()).describedAs("maxViews $views").isEqualTo(HttpStatus.BAD_REQUEST)
+            assertThat(refused.errorCode()).describedAs("maxViews $views").isEqualTo("view_limit_invalid")
+            assertThat(refused.json().path("error").path("message").asText()).isEqualTo("A link opens at least once.")
+        }
+
+        assertThat(get("/api/v1/households/$householdId/shares", owner).json())
+            .describedAs("refused before a token exists, so there is no link to send")
+            .isEmpty()
+
+        assertThat(share(owner, mapOf("label" to "Once", "scope" to "handbook", "maxViews" to 1)).status())
+            .describedAs("one open is still a link somebody meant to make")
+            .isEqualTo(HttpStatus.CREATED)
+    }
+
+    /**
+     * The view log used to be a bare hundred rows with no way to ask for the
+     * rest, so a busy link's trail stopped short without saying so. Walked here
+     * in pages of two, which is the same question at a size a test can read.
+     */
+    @Test
+    fun `the view log can be walked past its first page`() {
+        capture(owner, householdId, "gold_physical", "Gold", BigDecimal("100000"), visibility = "household")
+        val created = share(owner, mapOf("label" to "Audited", "scope" to "handbook")).json()
+        val id = created.path("id").asText()
+        val url = created.path("url").asText()
+        repeat(3) { assertThat(openLink(url).status()).isEqualTo(HttpStatus.OK) }
+
+        fun page(query: String) = get("/api/v1/households/$householdId/shares/$id/views$query", owner).json()
+
+        assertThat(page("")).describedAs("what a client that sends nothing still gets").hasSize(3)
+
+        val first = page("?limit=2")
+        val second = page("?limit=2&offset=2")
+        assertThat(first).hasSize(2)
+        assertThat(second).hasSize(1)
+        assertThat((first.toList() + second.toList()).map { it.path("viewedAt").asText() })
+            .describedAs("three opens, three rows, each shown once")
+            .doesNotHaveDuplicates()
+            .hasSize(3)
+    }
 }

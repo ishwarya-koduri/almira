@@ -46,6 +46,8 @@ export ALMIRA_TEST_REDIS_PORT=56379
 # one attacker. Raised for development only; the default still applies anywhere
 # this variable is not set.
 export ALMIRA_OTP_MAX_PER_IP_PER_HOUR="${ALMIRA_OTP_MAX_PER_IP_PER_HOUR:-500}"
+# The same story for guest links, which are now rate limited per network too.
+export ALMIRA_SHARE_MAX_OPENS_PER_NETWORK_PER_HOUR="${ALMIRA_SHARE_MAX_OPENS_PER_NETWORK_PER_HOUR:-5000}"
 
 if [ "${1:-}" = "test" ]; then
   # First, because it is the cheapest and because prose is the thing nothing

@@ -111,7 +111,7 @@ class TaxService(
 
     private val disclaimer =
         "A summary of what you've recorded, arranged the way a return asks for it. " +
-            "Informational only — not tax advice. Check it with your CA before filing."
+            "Informational only, not tax advice. Check it with your CA before filing."
 
     @Transactional(readOnly = true)
     fun pack(householdId: UUID, memberId: UUID?, fyLabel: String?): TaxPack {
@@ -259,7 +259,7 @@ class TaxService(
             note = if (rows.isEmpty()) {
                 "No home loan recorded."
             } else {
-                "Estimated from the outstanding balance and rate — your lender's interest " +
+                "Estimated from the outstanding balance and rate. Your lender's interest " +
                     "certificate is the figure to file."
             },
         )
@@ -344,7 +344,7 @@ class TaxService(
             netRealizedFormatted = IndianNumbers.rupees(net),
             unrealized = unrealized.sortedByDescending { it.unrealizedGain },
             disclaimer = "Gains are worked out from the units you recorded selling, oldest " +
-                "first, by the rules on the date of each sale. Informational — not tax advice.",
+                "first, by the rules on the date of each sale. Informational, not tax advice.",
         )
     }
 

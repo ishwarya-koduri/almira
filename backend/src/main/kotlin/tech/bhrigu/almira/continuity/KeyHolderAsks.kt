@@ -110,7 +110,7 @@ class KeyHolderAskService(
         val asked = members.firstOrNull { it.id == body.askedMemberId }
             ?: throw ApiException.badRequest("member_unknown", "That person isn't in this household.")
         if (asked.id == me?.id) {
-            throw ApiException.badRequest("asked_is_you", "Ask someone else — you already know what you know.")
+            throw ApiException.badRequest("asked_is_you", "Ask someone else. You already know what you know.")
         }
         if (asked.userId == null) {
             throw ApiException.badRequest(

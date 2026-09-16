@@ -81,18 +81,18 @@ class OutboundMessages(
     companion object {
         /** docs/13 "When a provider fails" has the same table. */
         fun messageFor(failure: String?): String = when (failure) {
-            "timeout" -> "Not confirmed — the service took too long to answer. It may still arrive."
-            "unavailable" -> "Not sent — the service wasn't reachable. Nothing for you to do."
-            "rejected" -> "Not delivered — it was refused for this address or number. Check your contact details."
-            "insufficient_balance" -> "Not sent — a problem on our side, not with your details. We've been alerted."
-            "turned_off" -> "Not sent — you turned this off in Settings. It's here instead."
-            "no_recipient" -> "Not sent — we don't have somewhere to send this for you. It's here instead."
-            "daily_limit" -> "Not sent — you'd already had a message that day, and we keep to one. It's here instead."
+            "timeout" -> "Not confirmed: the service took too long to answer. It may still arrive."
+            "unavailable" -> "Not sent: the service wasn't reachable. Nothing for you to do."
+            "rejected" -> "Not delivered: it was refused for this address or number. Check your contact details."
+            "insufficient_balance" -> "Not sent: a problem on our side, not with your details. We've been alerted."
+            "turned_off" -> "Not sent: you turned this off in Settings. It's here instead."
+            "no_recipient" -> "Not sent: we don't have somewhere to send this for you. It's here instead."
+            "daily_limit" -> "Not sent: you'd already had a message that day, and we keep to one. It's here instead."
             NotificationOutbox.NO_CONSENT ->
-                "Not sent — you haven't said yes to reminders this way. It's here instead. Change it in Settings, Your data rights."
+                "Not sent: you haven't said yes to reminders this way. It's here instead. Change it in Settings, Your data rights."
             NotificationOutbox.BODY_NOT_RESTORED ->
-                "Not sent — it was still waiting to go out when our service was restored from a backup. Nothing for you to do."
-            else -> "Not sent — something went wrong on our side."
+                "Not sent: it was still waiting to go out when our service was restored from a backup. Nothing for you to do."
+            else -> "Not sent: something went wrong on our side."
         }
     }
 }

@@ -252,7 +252,7 @@ object MessageTemplates {
                 append(title).append("\n\n")
                 if (body.isNotBlank()) append(body.trim()).append("\n\n")
                 append(why).append("\n\n")
-                append("— ").append(wording.promise)
+                append(wording.promise)
             }
         }
         return Composed(subject = title, text = text, language = wording.language)

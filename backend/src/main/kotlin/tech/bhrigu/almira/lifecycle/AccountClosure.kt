@@ -94,7 +94,7 @@ class AccountClosureService(
             if (others == 0) {
                 erased += LifecycleLine(
                     hid, household.name, "household", hid, household.name,
-                    "Nobody else signs in here, so the household goes too — with everything in it, " +
+                    "Nobody else signs in here, so the household goes too, with everything in it, " +
                         "including what is recorded for people without a login.",
                 )
                 return@forEach
@@ -116,7 +116,7 @@ class AccountClosureService(
             (sole - goes.toSet()).forEach {
                 stays += LifecycleLine(
                     hid, household.name, lineKind(it.type), it.id, it.title,
-                    "You shared this, so it stays with ${household.name}, held by \"Former member\" — not your name.",
+                    "You shared this, so it stays with ${household.name}, held by \"Former member\", not your name.",
                 )
             }
 
@@ -285,7 +285,7 @@ class AccountClosureService(
          * purposes in the Seventh Schedule. The audit log is that record here.
          */
         const val RETENTION =
-            "We keep security records — sign-ins and the log of what was changed and when — for " +
+            "We keep security records (sign-ins and the log of what was changed and when) for " +
                 "at least one year after your account closes, because the DPDP Rules require it " +
                 "(rule 8(3)). They are used for nothing else. In your household's activity log, " +
                 "changes you made stay listed without your name."

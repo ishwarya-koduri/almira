@@ -122,7 +122,7 @@ class LostMoneyService(
         val today = LocalDate.now(INDIA)
         val checkedOn = input.checkedOn ?: today
         if (checkedOn.isAfter(today) || checkedOn.isBefore(today.minusYears(20))) {
-            throw ApiException.badRequest("checked_on_invalid", "Use the date you looked — today or earlier.")
+            throw ApiException.badRequest("checked_on_invalid", "Use the date you looked: today or earlier.")
         }
         jdbc.update(
             """
@@ -169,7 +169,7 @@ class LostMoneyService(
                 owners = listOf(OwnerInput(input.memberId, BigDecimal(100))),
                 attributes = mapOf("what_it_is" to "Found on ${source.name}${input.whereFound?.trim()?.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}"),
                 isInContinuity = true,
-                notes = "How to claim it:\n" + source.claim.mapIndexed { i, step -> "${i + 1}. ${step.step} — ${step.detail}" }.joinToString("\n"),
+                notes = "How to claim it:\n" + source.claim.mapIndexed { i, step -> "${i + 1}. ${step.step}: ${step.detail}" }.joinToString("\n"),
             ),
         )
         jdbc.update(

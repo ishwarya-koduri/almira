@@ -374,7 +374,7 @@ class RecoveryService(
         }
         if (cleaned.any { it.length > 60 || it.any(Char::isISOControl) }) {
             throw ApiException.badRequest(
-                "holders_invalid", "Write who holds it in a few words — \"Amma\", \"our lawyer\".",
+                "holders_invalid", "Write who holds it in a few words: \"Amma\", \"our lawyer\".",
             )
         }
         return cleaned
@@ -409,7 +409,7 @@ internal object Envelopes {
 
     fun requireBase64Url(field: String, value: String, minBytes: Int) {
         val decoded = decodeOrNull(value) ?: throw ApiException.badRequest(
-            "not_ciphertext", "$field has to be base64url — this looks like plain text.",
+            "not_ciphertext", "$field has to be base64url. This looks like plain text.",
         )
         if (decoded.size < minBytes) {
             throw ApiException.badRequest("not_ciphertext", "$field is too short to be what it claims to be.")

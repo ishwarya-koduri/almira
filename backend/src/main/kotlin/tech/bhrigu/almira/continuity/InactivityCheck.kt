@@ -311,7 +311,7 @@ class InactivityCheckService(
         val explanation = when {
             contacts.isEmpty() -> "Nobody you named can sign in, so going quiet would start nothing. Name someone first."
             !enabled -> "Off. Only a request from someone you named can start emergency access."
-            stage == "raised" -> "The request has begun. Tap \"I'm here\" to stop it — nothing has opened."
+            stage == "raised" -> "The request has begun. Tap \"I'm here\" to stop it. Nothing has opened."
             stage == "quiet" -> "On. Signing in, or tapping \"I'm here\", starts the count again."
             else -> "We've asked whether you're there. Tap \"I'm here\" and nothing more happens."
         }

@@ -142,7 +142,7 @@ class DepartureService(
         } + sharedStays.map {
             LifecycleLine(
                 householdId, household.name, AccountClosureService.lineKind(it.type), it.id, it.title,
-                "You shared this with ${household.name}, so it stays, held by \"Former member\" — not your name. " +
+                "You shared this with ${household.name}, so it stays, held by \"Former member\", not your name. " +
                     "You take a copy of it.",
             )
         } + LifecycleLine(

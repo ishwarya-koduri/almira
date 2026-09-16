@@ -277,7 +277,7 @@ object TaxPackPdf {
             y -= 22f
 
             notice(
-                "Informational only — not tax advice. A summary of recorded holdings, arranged the way a " +
+                "Informational only, not tax advice. A summary of recorded holdings, arranged the way a " +
                     "return asks for it. Check every figure against broker and bank statements before filing.",
             )
             y -= 12f
@@ -361,7 +361,7 @@ object TaxPackPdf {
                     listOf(
                         line.title, line.acquiredOn.format(SHORT), line.transferredOn.format(SHORT),
                         units(line.quantity), fonts.money(line.proceeds), fonts.money(line.costOfAcquisition),
-                        line.indexedCost?.let(fonts::money) ?: "—", fonts.money(line.gain),
+                        line.indexedCost?.let(fonts::money) ?: "-", fonts.money(line.gain),
                         line.section + (line.ratePercent?.let { " · ${CapitalGainsRules.pct(it)}" } ?: " · slab"),
                     ),
                 )

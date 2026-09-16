@@ -47,7 +47,7 @@ class AccessChainService(
             )
             !slot -> throw ApiException.conflict(
                 "sealed_by_someone_else",
-                "Only the person who wrote this name can say they checked with them — nobody else can read it.",
+                "Only the person who wrote this name can say they checked with them. Nobody else can read it.",
             )
         }
         jdbc.update(

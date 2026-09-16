@@ -131,7 +131,7 @@ class CapitalGainsService(
 
     private val disclaimer =
         "Worked out from the units you recorded selling, oldest first, using the rules for the " +
-            "date of each sale. Informational only — not tax advice. Check it with your CA before filing."
+            "date of each sale. Informational only, not tax advice. Check it with your CA before filing."
 
     @Transactional(readOnly = true)
     fun schedule(householdId: UUID, memberId: UUID?, fy: FinancialYear): CapitalGainsSchedule {

@@ -2101,6 +2101,8 @@ a process already serving.
 | An operator repair has a request, its wait, its before-notice, a dormant household and an eligible member | — (new) | `ops.carry_out_dormancy_repair` decides the outcome, and audits it, before the role change (V137); watched failing with the role change moved in front — the advisor became owner during the wait (`DormancyRepairTest`) | ws/dormant-ordered |
 | dormancy-repair.sh is enabled for this environment | — (new) | before psql is called; watched failing with the gate moved to the end (`scripts/tests/dormancy-repair-refuses-unless-enabled.sh`) | ws/dormant-ordered |
 | A closure's household is made dormant before the person's rows in it are touched | — (new) | `AccountPurge` opens the dormancy first; watched failing with it moved after the erasure — the successor was gone and nobody was asked first (`DormancyOrderApiTest`) | ws/dormant-ordered |
+| A guest link's view limit is at least one | — (new); `maxViews: 0` and below were accepted, and every open of the link answered 404 | `ShareService.create` refuses beside the expiry check, before a token is minted or a row written; watched failing with the check removed — a zero-view link was created 201 (`ShareApiTest`) | worktree-agent-a2fa0fd8eeb7d75f4 |
+| Guest-link open rate limits, per link and per network | — (new); the endpoint had none, though docs/05 §7 called it rate limited | `ShareService.admit` spends both caps before `resolve_guest_share`, the view count, the audit row and the payload; watched failing with the call removed — 429 never came, and a refused open is proven not to be a view (`GuestShareRateLimitApiTest`) | worktree-agent-a2fa0fd8eeb7d75f4 |
 
 The scripts' tests are in `scripts/tests/` and run the real scripts against
 throwaway containers and volumes, or with a stub `curl`; each was watched failing
@@ -2659,3 +2661,25 @@ through the checked function to have any effect.
 **Risk if left** Needs SQL access as the runtime role; an invitation written that
 way cannot be accepted into a dormant household, and elsewhere still needs its
 token.
+
+---
+
+## 85. A rate-limited guest link reads as a gone one
+
+**Where** `static/app/guest.js` (`load`, `failed`), `sharing/ShareService.rateLimit`.
+
+**What** Found while adding the per-link and per-network caps on opening a guest
+link. `load` treats any non-2xx as nothing and the page then says the link has
+expired or been withdrawn, so a `429` shows the same words as a `404`. That is
+right for the two answers the page was written for, and wrong for this one:
+the link is fine, and the reader only has to wait. The API says which it is
+(`error.code` is `rate_limited`, with `details.retryAfterSeconds`).
+
+**Why not fixed** The honest page needs its own words in English, Telugu and
+Hindi (docs/14), and the web client has no screen tests (docs/20 §9). The caps
+are sized so that a person reading the page never reaches them; the reader who
+does is a script.
+
+**Risk if left** A CA who somehow met the cap would be told the link is gone and
+would ask for a new one, rather than waiting. Nothing is lost, and the old link
+still works.

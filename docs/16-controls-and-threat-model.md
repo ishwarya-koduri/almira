@@ -153,7 +153,7 @@ Grouped the way a reviewer usually asks. Each names the file to read.
 | ID-2 | Single-use refresh tokens with reuse revocation — `auth/AuthService.kt`, `auth/SessionRevoker.kt` |
 | ID-3 | Step-up re-authentication for sensitive reads, and for making, replacing or removing a recovery copy, scoped to the session — `auth/StepUpService.kt`, `e2e/Recovery.kt` |
 | ID-4 | OTP purposes namespaced so a sign-in code cannot elevate a session |
-| ID-5 | Rate limits per phone and per IP — `auth/OtpService.kt` |
+| ID-5 | Rate limits per phone and per IP — `auth/OtpService.kt`; the same limiter (`common/RateLimit.kt`) caps guest-link opens per link and per network, spent before the token is resolved — `sharing/ShareService.kt` |
 | ID-6 | Second factor after the one-time code for any account that has one: authenticator (RFC 6238, replay-guarded), passkey (WebAuthn), recovery code; five tries per pending sign-in, ten misses an hour per account — `auth/SecondFactorService.kt`, `auth/PasskeyService.kt` |
 | ID-7 | Factor secrets sealed per person (`crypto/UserSecretCipher.kt`); recovery codes PBKDF2; factor tables under RLS to their owner — V50, SQL suite "second factors" |
 | ID-8 | Removing or replacing a factor needs elevation by a factor, and never leaves fewer than two ways in — `auth/StepUpService.kt`, `auth/SignInMethodsService.kt` |

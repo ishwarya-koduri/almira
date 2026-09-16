@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.security.MessageDigest
 import java.util.UUID
@@ -35,10 +36,21 @@ class ShareController(private val service: ShareService) {
     fun get(@PathVariable householdId: UUID, @PathVariable id: UUID): ShareRow =
         service.get(householdId, id)
 
-    /** Who opened it, and when. Sharing without this is sharing into the dark. */
+    /**
+     * Who opened it, and when. Sharing without this is sharing into the dark.
+     *
+     * Most recent first, a hundred at a time, and `offset` walks back through
+     * the rest: a busy link's trail used to stop at a hundred with nothing to
+     * say so. Both parameters are optional and their defaults are what this
+     * endpoint always did, so a client that sends neither sees no change.
+     */
     @GetMapping("/{id}/views")
-    fun views(@PathVariable householdId: UUID, @PathVariable id: UUID): List<ShareViewRow> =
-        service.views(householdId, id)
+    fun views(
+        @PathVariable householdId: UUID,
+        @PathVariable id: UUID,
+        @RequestParam(defaultValue = "100") limit: Int,
+        @RequestParam(defaultValue = "0") offset: Int,
+    ): List<ShareViewRow> = service.views(householdId, id, limit, offset)
 
     @DeleteMapping("/{id}")
     fun revoke(@PathVariable householdId: UUID, @PathVariable id: UUID): ResponseEntity<Void> {

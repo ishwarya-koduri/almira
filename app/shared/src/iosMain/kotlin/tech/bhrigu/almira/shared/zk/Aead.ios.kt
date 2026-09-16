@@ -98,6 +98,13 @@ actual fun aesGcmOpen(
 )?.toByteArray() ?: throw AeadFailure()
 
 actual fun secureRandomBytes(size: Int): ByteArray {
+    // `addressOf(0)` on an empty array throws, so nothing-asked-for has to be
+    // answered before the array is pinned. Android returns an empty array here
+    // and shared code is allowed to rely on that: a zero-length AAD or an empty
+    // tail is an ordinary value, not a programming error, and a platform that
+    // threw for it would fail on one phone and not the other.
+    if (size == 0) return ByteArray(0)
+
     val bytes = ByteArray(size)
     val status = bytes.usePinned { pinned ->
         SecRandomCopyBytes(kSecRandomDefault, size.convert(), pinned.addressOf(0))

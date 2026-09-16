@@ -117,6 +117,21 @@ fun App(
         if (!stored || availability == LockAvailability.None) lockState.unlocked()
     }
 
+    // The other way a session comes into being, and the one the effect above
+    // cannot see: signing in without leaving the app. `signedOutAt` has not
+    // moved, so that effect does not re-run, and `haveSession` stays at the
+    // `false` it was given at launch — for the rest of the process.
+    //
+    // Which would be a detail, except `showLock` is built on it. Without this,
+    // someone who signs in and then puts the phone down comes back to the
+    // dashboard: the family's net worth, on screen, with nothing asked of
+    // whoever picked the phone up. The lock only starts working after the app
+    // is killed and launched again, which is the one path the thin slice tests
+    // (`terminate()` then `launch()`) and so the one path that looked fine.
+    LaunchedEffect(state.signedIn) {
+        if (state.signedIn != null) haveSession = true
+    }
+
     // Locking has to reach the store, not just the screen. Dropping the
     // in-memory data key is what makes the lock a lock: after this, reading the
     // session needs the device's own authentication again.

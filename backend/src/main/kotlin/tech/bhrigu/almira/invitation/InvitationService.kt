@@ -81,6 +81,16 @@ class InvitationService(
             )
         }
         val normalisedPhone = phone?.let(PhoneNumber::normalize)
+        // Somebody who already signs in here cannot be invited here again. An
+        // invitation that names their number reads as though it will give them a
+        // login; accepting it can only hand back the member row they already
+        // have, and it spends a single-use link to do nothing. Refused before the
+        // row is written, so nothing is spent and nobody is told.
+        alreadySignsIn(householdId, normalisedPhone, email)?.let { name ->
+            throw ApiException.badRequest(
+                "already_a_member", "$name already signs in to this household.",
+            )
+        }
 
         memberId?.let { target ->
             val member = households.members(householdId).firstOrNull { it.id == target }
@@ -123,6 +133,29 @@ class InvitationService(
             token = token,
             link = "almira://invite/$token",
         )
+    }
+
+    /**
+     * The name this household knows an active member by, when the number or
+     * address is already theirs. Null when nobody here signs in with it.
+     */
+    private fun alreadySignsIn(householdId: UUID, phone: String?, email: String?): String? {
+        if (phone == null && email == null) return null
+        return jdbc.query(
+            """
+            select coalesce(m.display_name, u.full_name, 'Someone') as name
+              from household_memberships hm
+              join users u on u.id = hm.user_id
+              left join members m on m.household_id = hm.household_id and m.user_id = hm.user_id
+                                 and m.deleted_at is null
+             where hm.household_id = :hid and hm.status = 'active'
+               and ((cast(:phone as text) is not null and u.phone = cast(:phone as text))
+                 or (cast(:email as text) is not null and u.email = cast(:email as text)))
+             limit 1
+            """.trimIndent(),
+            MapSqlParameterSource().addValue("hid", householdId)
+                .addValue("phone", phone).addValue("email", email),
+        ) { rs, _ -> rs.getString("name") }.firstOrNull()
     }
 
     @Transactional(readOnly = true)
@@ -177,7 +210,9 @@ class InvitationService(
 
     /** Claims the managed member row where one was named — merge, never duplicate. */
     @Transactional
-    fun accept(token: String): AcceptedInvitation = try {
+    fun accept(token: String): AcceptedInvitation = redeem(token)
+
+    private fun redeem(token: String): AcceptedInvitation = try {
         jdbc.queryForObject(
             """
             select out_household_id as household_id,
@@ -196,12 +231,14 @@ class InvitationService(
     } catch (e: EmptyResultDataAccessException) {
         throw ApiException.notFound("That invitation link isn't valid.")
     } catch (e: UncategorizedSQLException) {
-        throw translate(e)
+        throw translate(e.sqlException?.message ?: e.mostSpecificCause.message ?: "")
     } catch (e: org.springframework.dao.DataAccessException) {
-        // Joining a dormant household waits until someone takes it on (V135), refused
-        // in the database before any row is written.
-        if ("household_dormant" in (e.mostSpecificCause.message ?: "")) throw joiningWaits()
-        throw e
+        // Every refusal the function raises comes back as one of these, and which
+        // subclass depends on the SQLSTATE it chose. What it says is the thing to
+        // read: joining a dormant household waits (V135), and an invitation for
+        // somebody who already signs in here is refused (V150). Both are raised
+        // before anything is written.
+        throw translate(e.mostSpecificCause.message ?: "")
     }
 
     private fun joiningWaits() = ApiException(
@@ -210,12 +247,16 @@ class InvitationService(
             "takes it on. Ask them again after that.",
     )
 
-    private fun translate(e: UncategorizedSQLException): ApiException {
-        val text = e.sqlException?.message ?: e.mostSpecificCause.message ?: ""
+    private fun translate(text: String): ApiException {
         return when {
             "household_dormant" in text -> joiningWaits()
             "invitation_not_found" in text ->
                 ApiException.notFound("That invitation link isn't valid.")
+            "already_a_member" in text ->
+                ApiException.conflict(
+                    "already_a_member",
+                    "You already sign in to this household, so this invitation is for somebody else.",
+                )
             "invitation_used" in text ->
                 ApiException.conflict("invitation_used", "That invitation has already been used.")
             "invitation_revoked" in text ->
@@ -224,6 +265,7 @@ class InvitationService(
                 ApiException.badRequest(
                     "invitation_expired", "That invitation has expired. Ask for a new one.",
                 )
+            "invitation_not_found" in text -> ApiException.notFound("That invitation link isn't valid.")
             else -> ApiException.badRequest("invitation_invalid", "We couldn't use that invitation.")
         }
     }

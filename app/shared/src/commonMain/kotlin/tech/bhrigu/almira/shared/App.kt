@@ -48,6 +48,8 @@ import tech.bhrigu.almira.shared.security.UnlockResult
 import tech.bhrigu.almira.shared.security.createAppLock
 import tech.bhrigu.almira.shared.security.createTokenStore
 import tech.bhrigu.almira.shared.signin.SignInController
+import tech.bhrigu.almira.shared.signin.UnlockPhase
+import tech.bhrigu.almira.shared.signin.VaultUnlock
 import tech.bhrigu.almira.shared.signin.createOtpAutofill
 import tech.bhrigu.almira.shared.zk.ZkController
 import tech.bhrigu.almira.shared.zk.ZkScreen
@@ -227,6 +229,17 @@ fun App(
                             signedOutAt += 1
                         }
                     },
+                )
+            }
+
+            // Above the `when`, not inside the sign-in screen: a right code
+            // replaces that screen at once, and the doors open over what
+            // replaced it.
+            if (state.unlock != UnlockPhase.Idle) {
+                VaultUnlock(
+                    phase = state.unlock,
+                    message = state.error,
+                    onFinished = controller::unlockShown,
                 )
             }
         }

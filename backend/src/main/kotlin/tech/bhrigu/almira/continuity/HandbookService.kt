@@ -165,7 +165,7 @@ class HandbookService(
                 contacts = emptyList(),
                 hasProof = rs.getBoolean("has_proof"),
                 howToClaim = rs.getString("playbook_summary")
-                    ?: "No standard route — start with the institution named here.",
+                    ?: "No standard route. Start with the institution named here.",
             )
         }
 
@@ -368,7 +368,7 @@ class HandbookService(
         line("WHAT THERE IS  (${handbook.totalIncludedFormatted} of recorded value)", true)
         handbook.entries.forEach { entry ->
             line("")
-            line("${entry.title} — ${entry.typeLabel}", true)
+            line("${entry.title}: ${entry.typeLabel}", true)
             entry.institutionName?.let { line("  Held at: $it") }
             entry.reference?.let { line("  Reference: $it") }
             entry.valueFormatted?.let { line("  Value: $it (${basisInWords(entry.valueBasis)})") }

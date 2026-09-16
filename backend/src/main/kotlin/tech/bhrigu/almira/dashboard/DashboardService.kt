@@ -510,6 +510,6 @@ class DashboardService(
 
         const val DISCLAIMER =
             "These figures reflect what you've recorded and what you're permitted to see. " +
-                "Informational only — not financial advice."
+                "Informational only, not financial advice."
     }
 }

@@ -88,7 +88,7 @@ class ReturnsService(
         if (txnType in setOf("buy", "sell") && (quantity == null || quantity.signum() <= 0)) {
             throw ApiException.badRequest(
                 "quantity_required",
-                "A buy or sell needs a quantity — without it we can't work out what was sold, " +
+                "A buy or sell needs a quantity. Without it we can't work out what was sold, " +
                     "or what it cost.",
             )
         }
@@ -284,7 +284,7 @@ class ReturnsService(
             }.sortedByDescending { it.currentValue ?: BigDecimal.ZERO }
 
             "category" -> aggregate(rows, disposals) { it.categoryCode to it.categoryLabel }
-            "member" -> aggregate(rows, disposals) { it.memberId.toString() to (it.memberName ?: "—") }
+            "member" -> aggregate(rows, disposals) { it.memberId.toString() to (it.memberName ?: "–") }
             else -> aggregate(rows, disposals) { "total" to "Everything" }
         }
     }

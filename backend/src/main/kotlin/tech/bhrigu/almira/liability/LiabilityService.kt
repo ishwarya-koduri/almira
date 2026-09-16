@@ -341,7 +341,7 @@ class LiabilityService(
         if (total.compareTo(BigDecimal(100)) != 0) {
             throw ApiException.badRequest(
                 "responsibility_must_total_100",
-                "Responsibility adds up to $total% — it needs to total 100%.",
+                "Responsibility adds up to $total%. It needs to total 100%.",
                 mapOf("total" to total),
             )
         }

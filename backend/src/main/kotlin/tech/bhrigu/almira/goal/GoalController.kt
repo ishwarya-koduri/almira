@@ -158,7 +158,7 @@ class GoalController(private val service: GoalService) {
             )
         },
         version = version,
-        disclaimer = "Based on what you've recorded. Informational — not financial advice.",
+        disclaimer = "Based on what you've recorded. Informational, not financial advice.",
     )
 }
 

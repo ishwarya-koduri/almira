@@ -61,7 +61,7 @@ class GoalApiTest : ApiTestBase() {
         val created = goal().json()
         assertThat(created.path("funded").decimalValue()).isEqualByComparingTo(BigDecimal.ZERO)
         assertThat(created.path("progress").path("note").asText())
-            .contains("map a holding")
+            .contains("Map a holding")
     }
 
     @Test

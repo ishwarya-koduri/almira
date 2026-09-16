@@ -127,7 +127,7 @@ class CompletenessService(
             ) { it.valueIsFresh },
             check(
                 "continuity", "Left out of the family summary",
-                "Include it, or leave it out on purpose — either is fine, as long " +
+                "Include it, or leave it out on purpose. Either is fine, as long " +
                     "as it is a decision.",
                 weight = 1, rows,
             ) { it.inContinuity },
@@ -236,7 +236,7 @@ class CompletenessService(
             "Nothing is recorded that you can see yet, so there is nothing to score."
         const val NOTE =
             "A measure of how usable these records would be to someone who didn't create " +
-                "them — not a judgement of the holdings themselves."
+                "them, not a judgement of the holdings themselves."
         val CATEGORIES_WITH_ACCOUNTS = listOf(
             "deposits", "mutual_funds", "equity", "ipo", "bonds", "retirement",
         )

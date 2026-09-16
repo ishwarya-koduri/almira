@@ -524,7 +524,7 @@ class InvestmentService(
         if (total.compareTo(BigDecimal(100)) != 0) {
             throw ApiException.badRequest(
                 "nominee_shares_must_total_100",
-                "Nominee shares add up to $total% — they need to total 100%.",
+                "Nominee shares add up to $total%. They need to total 100%.",
                 mapOf("total" to total),
             )
         }
@@ -614,7 +614,7 @@ class InvestmentService(
         if (total.compareTo(BigDecimal(100)) != 0) {
             throw ApiException.badRequest(
                 "shares_must_total_100",
-                "Ownership shares add up to $total% — they need to total 100%.",
+                "Ownership shares add up to $total%. They need to total 100%.",
                 mapOf("total" to total),
             )
         }

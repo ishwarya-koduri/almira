@@ -247,7 +247,7 @@ class TaxLotEngineTest {
             .describedAs("the unexplained 30 are assumed to have cost nothing")
             .isEqualByComparingTo(BigDecimal.ZERO)
         assertThat(result.warnings).singleElement().asString()
-            .contains("more units").contains("add the missing purchase")
+            .contains("more units").contains("Add the missing purchase")
     }
 
     @Test

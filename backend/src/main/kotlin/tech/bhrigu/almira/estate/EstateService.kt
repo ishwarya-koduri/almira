@@ -197,7 +197,7 @@ class EstateService(
         RetiredPlaintextLocation.refuseIfSent("location", input.location)
         households.get(householdId)
         if (input.title.isBlank()) {
-            throw ApiException.badRequest("title_required", "Give it a name — “Ishwarya's will” is fine.")
+            throw ApiException.badRequest("title_required", "Give it a name. “Ishwarya's will” is fine.")
         }
         requireVisibility(input.visibility)
         requireDocumentKind(input.kind)

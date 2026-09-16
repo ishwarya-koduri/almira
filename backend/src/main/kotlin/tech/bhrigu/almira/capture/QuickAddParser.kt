@@ -156,7 +156,7 @@ object QuickAddParser {
                 .sortedBy { FIELD_ORDER.indexOf(it.key).takeIf { i -> i >= 0 } ?: 99 },
             unparsed = leftovers.joinToString(" ") { it.text },
             note = when {
-                fields.isEmpty() -> "We couldn't make anything of that — try “1L gold at ICICI”."
+                fields.isEmpty() -> "We couldn't make anything of that. Try “1L gold at ICICI”."
                 fields.none { it.key == "typeId" } -> "Pick a type and we'll fill in the rest."
                 else -> null
             },

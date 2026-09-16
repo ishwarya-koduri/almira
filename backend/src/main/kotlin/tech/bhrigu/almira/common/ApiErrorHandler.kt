@@ -79,7 +79,7 @@ class ApiErrorHandler {
             ApiErrorEnvelope(
                 ApiErrorBody(
                     "internal_error",
-                    "Something went wrong on our side. Your data is safe — please try again.",
+                    "Something went wrong on our side. Your data is safe. Please try again.",
                 ),
             ),
         )
@@ -228,7 +228,7 @@ class ApiErrorHandler {
             ApiErrorEnvelope(
                 ApiErrorBody(
                     "internal_error",
-                    "Something went wrong on our side. Your data is safe — please try again.",
+                    "Something went wrong on our side. Your data is safe. Please try again.",
                 ),
             ),
         )

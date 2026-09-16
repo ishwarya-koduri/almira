@@ -145,7 +145,7 @@ class ExportService(
                 content.beginText()
                 content.setFont(heading, 14f)
                 content.newLineAtOffset(40f, y)
-                content.showText(ascii("$householdName — holdings"))
+                content.showText(ascii("$householdName: holdings"))
                 content.endText()
 
                 y -= 16f
@@ -174,7 +174,7 @@ class ExportService(
                     content.showText(
                         pdfLine(
                             listOf(
-                                row.title, row.typeLabel, row.institution ?: "—",
+                                row.title, row.typeLabel, row.institution ?: "-",
                                 row.value?.let { IndianNumbers.group(it) } ?: "not recorded",
                                 row.maturityDate?.toString() ?: "",
                             ),

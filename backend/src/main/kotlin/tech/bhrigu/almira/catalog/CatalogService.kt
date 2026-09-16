@@ -122,7 +122,7 @@ class CatalogService(
         if (!KEY.matches(field.key)) {
             throw ApiException.badRequest(
                 "field_key_invalid",
-                "“${field.key}” can't be used as a field name — use lowercase letters, " +
+                "“${field.key}” can't be used as a field name. Use lowercase letters, " +
                     "numbers and underscores.",
             )
         }

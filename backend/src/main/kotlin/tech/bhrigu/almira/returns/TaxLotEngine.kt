@@ -238,7 +238,7 @@ object TaxLotEngine {
             )
             warnings += "Sold ${remaining.stripTrailingZeros().toPlainString()} more units on " +
                 "${txn.date} than we have a record of buying. The gain assumes they cost " +
-                "nothing — add the missing purchase and it'll correct itself."
+                "nothing. Add the missing purchase and it'll correct itself."
         }
     }
 

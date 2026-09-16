@@ -222,7 +222,7 @@ class InvitationService(
                 ApiException.badRequest("invitation_revoked", "That invitation was cancelled.")
             "invitation_expired" in text ->
                 ApiException.badRequest(
-                    "invitation_expired", "That invitation has expired — ask for a new one.",
+                    "invitation_expired", "That invitation has expired. Ask for a new one.",
                 )
             else -> ApiException.badRequest("invitation_invalid", "We couldn't use that invitation.")
         }

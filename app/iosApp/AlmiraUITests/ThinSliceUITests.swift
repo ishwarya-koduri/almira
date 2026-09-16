@@ -274,6 +274,50 @@ final class ThinSliceUITests: XCTestCase {
         // twice.
         Screen.tapText(app, "It expires in 5 minutes")
         app.typeText(code)
+        waitOutTheUnlock(app)
+    }
+
+    /// Waits out the vault unlock.
+    ///
+    /// The sixth digit goes to the server and the almira on screen answers with
+    /// the verdict: the key turns, and on a right code the doors open over
+    /// whatever has replaced the sign-in screen. It runs for about three
+    /// seconds, it covers the whole window, and the accessibility tree changes
+    /// the entire way through.
+    ///
+    /// So every read of the *whole* hierarchy has to come after it. One during
+    /// it does not return a partial answer — XCUITest abandons the snapshot and
+    /// fails the test with "Failed to get matching snapshot", which is not an
+    /// error Swift can catch, and which says nothing about what the app did.
+    /// That is what `Screen.record` hit in `test1` and `test2` once this
+    /// animation arrived, while `test3` reached the same call a second and a
+    /// half later and went through: a race, not a broken app.
+    ///
+    /// Only XCUITest's own polling waits are used here, which are the queries
+    /// that ride a mid-animation hierarchy out.
+    private func waitOutTheUnlock(_ app: XCUIApplication) {
+        // "Turning the key…" is up from the first frame; if it never appears
+        // the animation is not running and there is nothing to wait for.
+        guard Screen.waitForText(app, "Turning the key", timeout: 15) else { return }
+        XCTAssertTrue(
+            Screen.waitForAbsence(app, "Turning the key", timeout: 40),
+            "the lock never answered the code"
+        )
+
+        // Then the verdict's own caption, whichever one it is — only one is
+        // ever on screen, and it leaves with the overlay.
+        for caption in ["Unlocked", "That key doesn't fit", "Couldn't check the key"]
+        where Screen.showing(app, caption) {
+            XCTAssertTrue(
+                Screen.waitForAbsence(app, caption, timeout: 40),
+                "the unlock animation never finished"
+            )
+        }
+
+        // The caption fades before the overlay itself does. A second covers the
+        // rest of it rather than leaving the next read on the same knife-edge
+        // this method exists to get off.
+        sleep(1)
     }
 
     /// Satisfies the Face ID prompt.

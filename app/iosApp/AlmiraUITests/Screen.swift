@@ -46,6 +46,26 @@ enum Screen {
         matching(app, needle).waitForExistence(timeout: 1.5)
     }
 
+    /// Waits for a string to go away.
+    ///
+    /// The mirror of `waitForText`, and not the same thing as `absent`: that
+    /// one answers "was this never here", and returns false the moment it finds
+    /// the string, which is exactly the case this is for. Goes through
+    /// XCTWaiter rather than a loop of `exists` for the reason in the note on
+    /// `waitForText` — XCUITest's own waits poll inside the framework and ride
+    /// out a hierarchy that is mid-animation, and a bare query does not.
+    static func waitForAbsence(
+        _ app: XCUIApplication,
+        _ needle: String,
+        timeout: TimeInterval = 25
+    ) -> Bool {
+        let gone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: matching(app, needle)
+        )
+        return XCTWaiter().wait(for: [gone], timeout: timeout) == .completed
+    }
+
     /// Is this reliably *not* on screen?
     ///
     /// Separate from `!showing` and given a longer window on purpose: a

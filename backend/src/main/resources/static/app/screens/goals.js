@@ -21,7 +21,7 @@ export async function goalsScreen(host) {
   if (goals.length === 0) {
     mount(host, empty({
       title: "No goals yet",
-      body: "A goal is a name, an amount and a date — “Aarav's degree, 2039”. " +
+      body: "A goal is a name, an amount and a date: “Aarav's degree, 2039”. " +
         "Holdings you already have can fund it.",
       action: el("button.btn.btn-primary", { type: "button", onclick: () => newGoal(host) }, "Set a goal"),
     }));
@@ -105,7 +105,7 @@ function newGoal(host) {
   });
   const visibility = select({
     options: [
-      { value: "private", label: "Private — only me" },
+      { value: "private", label: "Private: only me" },
       { value: "household", label: `Shared with ${state.household.name}` },
     ],
     value: state.user?.defaultVisibility || "private",
@@ -139,7 +139,7 @@ function newGoal(host) {
     body: el("div.stack-3", {},
       field({ label: "What is it for?", control: name, required: true }),
       field({ label: "How much?", control: target, required: true }),
-      field({ label: "By when?", control: date, help: "Optional — a goal without a date still counts." }),
+      field({ label: "By when?", control: date, help: "Optional. A goal without a date still counts." }),
       field({ label: "Whose goal is it?", control: member }),
       field({ label: "Who can see it?", control: visibility,
         help: "A goal says what someone is saving for and how far short they are." }),
@@ -198,7 +198,7 @@ function attachHolding(goal, host) {
     title: `What funds ${goal.name}?`,
     body: el("div.stack-3", {},
       el("p.caption.muted", {},
-        "One holding can fund two goals — say what share of it belongs to this one."),
+        "One holding can fund two goals. Say what share of it belongs to this one."),
       list, error,
     ),
   });

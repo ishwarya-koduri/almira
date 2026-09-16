@@ -69,7 +69,7 @@ export async function accountsScreen(host) {
   // ---------------------------------------------------------------- form ---
 
   function openForm() {
-    const label = textInput({ placeholder: "SBI savings — salary", "aria-label": "Name" });
+    const label = textInput({ placeholder: "SBI savings, salary", "aria-label": "Name" });
     const kind = select({ options: KINDS, value: "savings", "aria-label": "Kind" });
     const number = textInput({ placeholder: "Account number", "aria-label": "Account number" });
     const ifsc = textInput({ placeholder: "SBIN0001234", "aria-label": "IFSC" });
@@ -80,7 +80,7 @@ export async function accountsScreen(host) {
       el("div", {},
         el("div", { style: { fontSize: "var(--text-sm)" } }, "Keep the whole number"),
         el("div.caption.muted", {},
-          "Off by default. We keep only the last four digits — enough to recognise " +
+          "Off by default. We keep only the last four digits, enough to recognise " +
           "the account. Turn this on and the rest is stored encrypted, and seeing " +
           "it later needs a fresh confirmation."),
       ),
@@ -88,7 +88,7 @@ export async function accountsScreen(host) {
 
     const visibility = select({
       options: [
-        { value: "private", label: "Private — only its holders" },
+        { value: "private", label: "Private: only its holders" },
         { value: "household", label: `Shared with ${state.household.name}` },
       ],
       value: state.user?.defaultVisibility || state.household.defaultVisibility,
@@ -122,7 +122,7 @@ export async function accountsScreen(host) {
           ),
         ),
         field({ label: "Who can see this?", control: visibility,
-          help: "Private means only its holders — not even a household admin." }),
+          help: "Private means only its holders. Not even a household admin." }),
       ),
       footer: [save],
     });
@@ -236,7 +236,7 @@ export async function accountsScreen(host) {
         body: el("div.stack-3", {},
           codeField,
           challenge.developmentCode && el("div.banner.banner-accent", {},
-            el("div", {}, el("b", {}, "Development mode — "), "the code is ",
+            el("div", {}, el("b", {}, "Development mode: "), "the code is ",
               el("b", {}, challenge.developmentCode), "."),
           ),
         ),

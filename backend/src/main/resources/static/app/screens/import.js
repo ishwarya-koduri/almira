@@ -55,7 +55,7 @@ export function openImport(onSaved) {
 
 function mapAndRun(file, preview, onSaved) {
   const columnOptions = [
-    { value: "", label: "— not imported —" },
+    { value: "", label: "Not imported" },
     ...preview.headers.map((header) => ({ value: header, label: header })),
   ];
 
@@ -74,14 +74,14 @@ function mapAndRun(file, preview, onSaved) {
     options: [
       { value: "", label: "Take it from the sheet, or Anything Else" },
       ...state.taxonomy.flatMap((category) =>
-        category.types.map((type) => ({ value: type.id, label: `${category.categoryLabel} — ${type.label}` }))),
+        category.types.map((type) => ({ value: type.id, label: `${category.categoryLabel}: ${type.label}` }))),
     ],
     "aria-label": "Type for every row",
   });
 
   const visibilitySelect = select({
     options: [
-      { value: "private", label: "Private — only the owner" },
+      { value: "private", label: "Private: only the owner" },
       { value: "household", label: `Shared with ${state.household.name}` },
     ],
     value: state.user?.defaultVisibility || state.household.defaultVisibility,
@@ -141,13 +141,13 @@ function mapAndRun(file, preview, onSaved) {
         .slice(0, 20)
         .map((row) => el("div.card.card-tight", {},
           el("b", {}, `Row ${row.row}`), " ",
-          el("span.muted", {}, row.title || ""), " — ", row.message)),
+          el("span.muted", {}, row.title || ""), " · ", row.message)),
       ...report.rows
         .filter((row) => row.outcome !== "failed" && row.outcome !== "skipped"
           && (row.message || "").includes("Couldn't read"))
         .slice(0, 20)
         .map((row) => el("p.caption.muted", {},
-          `Row ${row.row} — ${row.message}`)),
+          `Row ${row.row}: ${row.message}`)),
     );
   };
 
@@ -168,7 +168,7 @@ function mapAndRun(file, preview, onSaved) {
       ),
       field({
         label: "Type for every row", control: typeSelect,
-        help: "One sheet is usually one kind of thing — all your FDs, or all your funds. " +
+        help: "One sheet is usually one kind of thing: all your FDs, or all your funds. " +
           "Leave it unset only if a column above says the type.",
       }),
       field({ label: "Who can see these?", control: visibilitySelect }),

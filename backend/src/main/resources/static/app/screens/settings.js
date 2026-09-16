@@ -45,7 +45,7 @@ function preferencesCard() {
 
   const visibility = select({
     options: [
-      { value: "private", label: "Private — only I can see new entries" },
+      { value: "private", label: "Private: only I can see new entries" },
       { value: "household", label: "Shared with my household" },
     ],
     value: state.user.defaultVisibility,
@@ -74,7 +74,7 @@ function preferencesCard() {
           settingsScreen(document.querySelector("main"));
         },
       ),
-      el("span.help", {}, "Dark mode has full parity — nothing is hidden in either."),
+      el("span.help", {}, "Dark mode has full parity. Nothing is hidden in either."),
     ),
   );
 }
@@ -121,7 +121,7 @@ async function securityCard(host) {
     button.onclick = () => withBusy(button, async () => {
       error.textContent = "";
       if (passphrase.value.length < 12) {
-        error.textContent = "Use at least twelve characters — a sentence you'll remember.";
+        error.textContent = "Use at least twelve characters: a sentence you'll remember.";
         return;
       }
       if (passphrase.value !== confirm.value) {
@@ -270,7 +270,7 @@ function newShare(host) {
         // What is actually inside, before it is sent: the family handbook
         // deliberately includes what is private to its owner.
         share.scopeNote && el("div.banner", {}, share.scopeNote),
-        el("div.banner", {}, "Copy this now — it isn't shown again."),
+        el("div.banner", {}, "Copy this now. It isn't shown again."),
         el("code", { style: { wordBreak: "break-all", fontSize: "var(--text-caption)" } }, share.url),
         el("button.btn.btn-sm", {
           type: "button",
@@ -292,8 +292,8 @@ function newShare(host) {
     title: t("sharing.create"),
     body: el("div.stack-3", {},
       el("p.caption.muted", {},
-        "A link shows one slice, read-only, until it expires — and you can withdraw it at " +
-        "any time. It can never show more than you can see yourself."),
+        "A link shows one slice, read-only, until it expires. You can withdraw it at " +
+        "any time, and it can never show more than you can see yourself."),
       field({ label: "What is it for?", control: label }),
       field({ label: "What to share", control: scope }),
       field({ label: "For how long", control: days }),
@@ -337,7 +337,7 @@ async function connectCard(host) {
     el("h4", {}, t("connect.title")),
     ...providers.map((provider) => el("details", {},
       el("summary", {},
-        `${provider.label} — ${
+        `${provider.label}: ${
           provider.mode === "LIVE" ? t("connect.live")
             : provider.mode === "SANDBOX" ? t("connect.sandbox") : t("connect.off")}`),
       el("div.stack-2", { style: { paddingTop: "8px" } },
@@ -417,7 +417,7 @@ function aboutCard() {
     el("h4", {}, "About"),
     el("p.caption.muted", { style: { margin: 0 } },
       "Almira never moves money, never holds funds, and never stores a bank password. " +
-      "It is a record — which is exactly why it can track the things transactional apps can't."),
+      "It is a record, which is exactly why it can track the things transactional apps can't."),
     el("p.caption.faint", { style: { margin: 0 } },
       "Figures are informational and are not financial advice."),
   );

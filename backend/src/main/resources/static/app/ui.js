@@ -73,10 +73,10 @@ export function groupIndian(value) {
 }
 
 export const rupees = (value) =>
-  value === null || value === undefined ? "—" : `₹${groupIndian(value)}`;
+  value === null || value === undefined ? "–" : `₹${groupIndian(value)}`;
 
 export function formatDate(iso) {
-  if (!iso) return "—";
+  if (!iso) return "–";
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 

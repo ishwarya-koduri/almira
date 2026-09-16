@@ -130,7 +130,7 @@ function handbookCard(handbook, host) {
     return el("div.card", {}, empty({
       title: t("continuity.title"),
       body: "Nothing is marked for the family summary yet. Anything you record is included " +
-        "by default — you can leave individual things out.",
+        "by default. You can leave individual things out.",
     }));
   }
 
@@ -157,14 +157,14 @@ function handbookCard(handbook, host) {
           ].filter(Boolean).join(" · "),
         ),
       ),
-      el("div.amount", {}, el("b", {}, entry.valueFormatted || "—")),
+      el("div.amount", {}, el("b", {}, entry.valueFormatted || "–")),
     ))),
 
     handbook.debts.length > 0 && el("div.stack-2", {},
       el("span.overline", {}, t("home.owed")),
       ...handbook.debts.map((debt) => el("div.row-between", {},
-        el("span", {}, `${debt.title}${debt.lender ? ` — ${debt.lender}` : ""}`),
-        el("span.muted", {}, debt.outstandingFormatted || "—"),
+        el("span", {}, `${debt.title}${debt.lender ? ` · ${debt.lender}` : ""}`),
+        el("span.muted", {}, debt.outstandingFormatted || "–"),
       )),
     ),
   );
@@ -293,7 +293,7 @@ function newEstateDocument(host) {
   const executedOn = textInput({ type: "date", "aria-label": "Executed on" });
   const visibility = select({
     options: [
-      { value: "private", label: "Private — only me" },
+      { value: "private", label: "Private: only me" },
       { value: "household", label: `Shared with ${state.household.name}` },
     ],
     "aria-label": "Who can see this",

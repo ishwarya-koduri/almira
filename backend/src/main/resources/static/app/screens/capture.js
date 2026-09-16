@@ -54,7 +54,7 @@ function chooseHowToAdd(onSaved) {
           el("span.caption.muted", {}, `${f.label}: `), f.display)),
       ),
       result.unparsed && el("p.caption.muted", {},
-        `We couldn't place “${result.unparsed}” — it'll become the name.`),
+        `We couldn't place “${result.unparsed}”. It'll become the name.`),
       result.note && el("p.caption.muted", {}, result.note),
       type
         ? el("button.btn.btn-primary", {
@@ -104,7 +104,7 @@ function chooseHowToAdd(onSaved) {
       field({
         label: "Say it in your own words",
         control: el("div.row", {}, quick, parseButton),
-        help: "Lakhs and crores are fine — “2.5Cr flat”, “50k SIP”.",
+        help: "Lakhs and crores are fine: “2.5Cr flat”, “50k SIP”.",
       }),
       chipHost,
       templateHost,
@@ -232,7 +232,7 @@ function pickType(onPick) {
       .filter((category) => category.types.length > 0);
 
     mount(grid, ...(groups.length === 0
-      ? [el("p.muted", {}, "Nothing matches. Try a different word — or pick “Anything Else”.")]
+      ? [el("p.muted", {}, "Nothing matches. Try a different word, or pick “Anything Else”.")]
       : groups.map((category) => el("div.stack-2", {},
           el("div.overline", {}, category.categoryLabel),
           el("div.row.wrap", { style: { gap: "8px" } },
@@ -311,7 +311,7 @@ export function captureForm(type, onSaved, prefill = null) {
   const defaultVisibility = state.user?.defaultVisibility || state.household.defaultVisibility;
   const visibilitySelect = select({
     options: [
-      { value: "private", label: "Private — only the owner can see it" },
+      { value: "private", label: "Private: only the owner can see it" },
       { value: "household", label: `Shared with ${state.household.name}` },
       { value: "scoped", label: "Shared with specific people" },
     ],
@@ -383,7 +383,7 @@ export function captureForm(type, onSaved, prefill = null) {
     titleField,
     essentials,
     field({ label: "Where is it held?", control: institutionSelect,
-      help: "Which bank, fund house or broker — so you know what funds what." }),
+      help: "Which bank, fund house or broker, so you know what funds what." }),
     field({ label: "Whose is it?", control: ownerSelect }),
     field({ label: "Who can see this?", control: visibilitySelect,
       help: "Private means only the owner. Not even a household admin." }),
@@ -486,7 +486,7 @@ export function captureForm(type, onSaved, prefill = null) {
         // and the API tells us when the creator cannot read it back. Saying so
         // is far better than appearing to have lost it.
         toast(created.visibleToYou
-          ? `Saved — ${created.investment.valueFormatted || body.title}`
+          ? `Saved: ${created.investment.valueFormatted || body.title}`
           : "Saved. It's private to its owner, so it won't appear in your list.");
         await (onSaved ? onSaved() : reload());
         if (andAnother) openCapture(onSaved);
@@ -599,7 +599,7 @@ function buildAttributeControl(def) {
     }
     case "select": {
       const input = select({
-        options: [{ value: "", label: "—" }, ...(def.options || [])],
+        options: [{ value: "", label: "Not set" }, ...(def.options || [])],
         "aria-label": def.label,
       });
       control = input;
@@ -639,7 +639,7 @@ async function loadInstitutions(selectNode) {
 
 function titlePlaceholder(type) {
   const examples = {
-    fd: "SBI FD — 5 years",
+    fd: "SBI FD, 5 years",
     gold_physical: "Wedding coins",
     mf_sip: "Parag Parikh Flexi Cap",
     stock_listed: "Infosys",

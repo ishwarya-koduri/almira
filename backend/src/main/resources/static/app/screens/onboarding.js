@@ -36,7 +36,7 @@ export function onboardingScreen(onDone) {
           choice("just_me", mode, "Just me", "Your own investments and loans.",
             () => { mode = "just_me"; draw(); }),
           choice("family", mode, "Me and my family",
-            "Track for a spouse, children or parents — each person keeps their own privacy.",
+            "Track for a spouse, children or parents. Each person keeps their own privacy.",
             () => { mode = "family"; draw(); }),
         ),
       ),
@@ -44,7 +44,7 @@ export function onboardingScreen(onDone) {
       el("div.card.stack-3", {},
         el("h4", {}, "What should new entries default to?"),
         el("p.caption.muted", { style: { margin: 0 } },
-          "Private means only you can see it — not even a household admin. " +
+          "Private means only you can see it. Not even a household admin. " +
           "You can share any single entry whenever you want."),
         el("div.choices", {},
           choice("private", visibility, "Private by default",
@@ -70,7 +70,7 @@ export function onboardingScreen(onDone) {
           });
         },
       },
-        field({ label: "Household name", control: nameInput, help: "Optional — we'll call it “My household” otherwise." }),
+        field({ label: "Household name", control: nameInput, help: "Optional. We'll call it “My household” otherwise." }),
         field({ label: "What should we call you?", control: displayInput, help: "Shown next to the things you own." }),
         el("div.row", {}, submit),
       ),

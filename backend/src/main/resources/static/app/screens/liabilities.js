@@ -115,7 +115,7 @@ export async function liabilitiesScreen(host) {
 
     const visibility = select({
       options: [
-        { value: "private", label: "Private — only whoever owes it" },
+        { value: "private", label: "Private: only whoever owes it" },
         { value: "household", label: `Shared with ${state.household.name}` },
       ],
       value: state.user?.defaultVisibility || state.household.defaultVisibility,
@@ -129,9 +129,9 @@ export async function liabilitiesScreen(host) {
         titleField,
         field({ label: "What kind?", control: kind }),
         outstandingField,
-        field({ label: "EMI amount", control: emiAmount, help: "Optional — we'll show it in what's coming up." }),
+        field({ label: "EMI amount", control: emiAmount, help: "Optional. We'll show it in what's coming up." }),
         field({ label: "EMI day of the month", control: emiDay,
-          help: "A loan due on the 31st still falls due in February — we handle that." }),
+          help: "A loan due on the 31st still falls due in February. We handle that." }),
         el("details.more", {},
           el("summary", {}, "More details"),
           el("div.stack-3", { style: { paddingTop: "16px" } },
@@ -142,7 +142,7 @@ export async function liabilitiesScreen(host) {
           ),
         ),
         field({ label: "Who can see this?", control: visibility,
-          help: "Private means only whoever owes it — not even a household admin." }),
+          help: "Private means only whoever owes it. Not even a household admin." }),
       ),
       footer: [save],
     });

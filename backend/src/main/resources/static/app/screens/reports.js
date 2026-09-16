@@ -43,7 +43,7 @@ function completenessCard(report, host) {
     ...report.checks.map((check) => el("div.row-between.wrap", {},
       el("div", {},
         el("span", {}, check.label),
-        el("span.caption.muted", {}, ` — ${check.done} done, ${check.outstanding} to go`),
+        el("span.caption.muted", {}, `: ${check.done} done, ${check.outstanding} to go`),
       ),
       check.outstanding > 0 && el("button.btn.btn-sm", {
         type: "button",

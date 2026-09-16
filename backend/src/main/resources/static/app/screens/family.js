@@ -40,7 +40,7 @@ export async function familyScreen(host) {
     el("div.banner.banner-accent", {},
       el("div", {},
         el("b", {}, "Everyone keeps their own privacy. "),
-        "A role decides what someone can ", el("i", {}, "do"), " — invite people, edit shared entries. ",
+        "A role decides what someone can ", el("i", {}, "do"), ": invite people, edit shared entries. ",
         "It never decides what they can ", el("i", {}, "see"), ". ",
         "Private entries stay private, including from the household owner.",
       ),
@@ -91,9 +91,9 @@ export async function familyScreen(host) {
     const phone = textInput({ type: "tel", placeholder: "98765 43210", "aria-label": "Phone number" });
     const role = select({
       options: [
-        { value: "editor", label: "Editor — can add and edit shared entries" },
-        { value: "admin", label: "Admin — can also manage people" },
-        { value: "viewer", label: "Viewer — can only look" },
+        { value: "editor", label: "Editor: can add and edit shared entries" },
+        { value: "admin", label: "Admin: can also manage people" },
+        { value: "viewer", label: "Viewer: can only look" },
       ],
       value: "editor",
       "aria-label": "Role",
@@ -107,7 +107,7 @@ export async function familyScreen(host) {
       body: el("div.stack-3", {},
         el("p.caption.muted", {},
           `When ${member.displayName} accepts, they take over this entry rather than ` +
-          "becoming a second person — so nothing they own gets split in two."),
+          "becoming a second person, so nothing they own gets split in two."),
         phoneField,
         field({ label: "What should they be able to do?", control: role,
           help: "This does not give them sight of anyone's private entries." }),

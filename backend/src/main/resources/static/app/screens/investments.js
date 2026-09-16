@@ -73,7 +73,7 @@ function renderRows(rows) {
       title: "Nothing here yet",
       body: filters.q || filters.category
         ? "No holdings match that. Try clearing the filters."
-        : "Add your first holding — it takes about twenty seconds.",
+        : "Add your first holding. It takes about twenty seconds.",
       action: el("button.btn.btn-primary", { onclick: () => openCapture() }, "＋ Add something"),
     }));
   }
@@ -92,7 +92,7 @@ function renderRows(rows) {
         ].filter(Boolean).join(" · ")),
       ),
       el("div.amount", {},
-        el("b", {}, row.valueFormatted || "—"),
+        el("b", {}, row.valueFormatted || "–"),
         el("div.meta", {}, valueNote(row)),
       ),
       visibilityPill(row.visibility),

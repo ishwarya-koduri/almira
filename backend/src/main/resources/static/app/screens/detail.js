@@ -135,7 +135,7 @@ export async function openDetail(id, onChanged) {
         ? el("div.stack-2", {}, ...record.nominees.map((nominee) => row(
             nominee.name, `${nominee.relationship || "nominee"} · ${nominee.sharePct}%`)))
         : el("p.caption.muted", {},
-            "Nobody recorded. A nominee is who the institution pays — not who inherits it."),
+            "Nobody recorded. A nominee is who the institution pays, not who inherits it."),
       el("div.row", {},
         el("button.btn.btn-sm", { type: "button", onclick: () => editNominees() },
           record.nominees.length ? "Change nominees" : "Add a nominee"),
@@ -209,7 +209,7 @@ export async function openDetail(id, onChanged) {
       body: el("div.stack-3", {},
         el("p.caption.muted", {},
           "A nominee receives the money from the institution. Who inherits it is " +
-          "decided by a will — Almira records both so a mismatch can be spotted."),
+          "decided by a will. Almira records both so a mismatch can be spotted."),
         host,
         el("button.btn.btn-sm", { type: "button", onclick: () => addRow(null) }, "＋ Add another"),
         error,
@@ -236,7 +236,7 @@ export async function openDetail(id, onChanged) {
       title: "Duplicate",
       body: el("div.stack-3", {},
         el("p.caption.muted", {},
-          "Same shape — type, institution, owners, nominees. The valuations and " +
+          "Same shape: type, institution, owners, nominees. The valuations and " +
           "transactions stay with the original, because they happened to it."),
         field({ label: "Name", control: title }),
       ),
@@ -269,11 +269,11 @@ export async function openDetail(id, onChanged) {
       body: el("div.stack-3", {},
         el("p.caption.muted", {},
           `The old record is kept and marked matured, and the new one starts where ` +
-          `it ended${record.maturityDate ? ` — ${formatDate(record.maturityDate)}` : ""}. ` +
+          `it ended${record.maturityDate ? ` (${formatDate(record.maturityDate)})` : ""}. ` +
           `Anything it funds carries across.`),
         field({ label: "Amount", control: amount, help: "Principal plus whatever it earned." }),
         field({ label: "New maturity date", control: maturity,
-          help: "We don't guess this one — the old date has already passed." }),
+          help: "We don't guess this one. The old date has already passed." }),
       ),
       footer: [button],
     });
@@ -324,7 +324,7 @@ export async function openDetail(id, onChanged) {
   function changeVisibility() {
     const choice = select({
       options: [
-        { value: "private", label: "Private — only the owner" },
+        { value: "private", label: "Private: only the owner" },
         { value: "household", label: `Shared with ${state.household.name}` },
         { value: "scoped", label: "Shared with specific people" },
       ],
@@ -347,7 +347,7 @@ export async function openDetail(id, onChanged) {
       title: "Who can see this?",
       body: el("div.stack-3", {},
         field({ label: "Visibility", control: choice,
-          help: "Private is genuinely private — no role in the household can override it." }),
+          help: "Private is genuinely private. No role in the household can override it." }),
         picker,
       ),
       footer: [save],
@@ -388,7 +388,7 @@ export async function openDetail(id, onChanged) {
 function valueExplanation(record) {
   switch (record.valueBasis) {
     case "valued": return `Your snapshot from ${formatDate(record.valuedOn)}`;
-    case "at_cost": return "What you paid — add a value to see what it's worth today";
+    case "at_cost": return "What you paid. Add a value to see what it's worth today";
     case "custom_field": return "From a field you added";
     default: return "Add a value to include this in your totals";
   }
@@ -402,5 +402,5 @@ function visibilityText(record) {
       .map((m) => m.displayName);
     return names.length ? `The owner and ${names.join(", ")}` : "The owner only";
   }
-  return "Only the owner — not even a household admin";
+  return "Only the owner, not even a household admin";
 }

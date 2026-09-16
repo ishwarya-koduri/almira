@@ -61,7 +61,7 @@ export async function homeScreen(host) {
           el("div.hero-side-row", {},
             el("span.muted", {}, t("home.owed")),
             el("b", { style: { color: "var(--caution)" } },
-              Number(data.totalLiabilities) > 0 ? `− ${data.totalLiabilitiesFormatted}` : "—")),
+              Number(data.totalLiabilities) > 0 ? `− ${data.totalLiabilitiesFormatted}` : "–")),
           el("div", { style: { height: "1px", background: "var(--hairline)", margin: "4px 0" } }),
           el("div.hero-side-row", {},
             el("span.muted", {}, "Holdings"), el("b", {}, String(data.holdingCount))),

@@ -12,6 +12,7 @@ import tech.bhrigu.almira.catalog.CatalogService
 import tech.bhrigu.almira.catalog.CustomFieldRow
 import tech.bhrigu.almira.catalog.FieldOption
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.common.SensibleDates
 import tech.bhrigu.almira.e2e.RetiredPlaintextLocation
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.security.RequestUserContext
@@ -154,6 +155,7 @@ class InvestmentService(
         if (input.title.isBlank()) {
             throw ApiException.badRequest("title_required", "Give this a name you'll recognise.")
         }
+        requireSensibleDates(input.startDate, input.maturityDate)
 
         val currency = resolveCurrency(input.currency, household.baseCurrency, type.schema)
 
@@ -370,6 +372,7 @@ class InvestmentService(
         // refusal below can only mean the version moved (docs/05 §3.6).
         requireWritable(id)
         input.status?.let(::requireStatus)
+        requireSensibleDates(input.startDate, input.maturityDate)
 
         val attributes = RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes)?.let {
             val type = catalog.type(householdId, current.typeId)
@@ -600,6 +603,11 @@ class InvestmentService(
             "Someone else changed this while you were editing. Reload and try again.",
             mapOf("currentVersion" to latest.version),
         )
+    }
+
+    private fun requireSensibleDates(startDate: LocalDate?, maturityDate: LocalDate?) {
+        SensibleDates.require(startDate, "startDate", "The start date")
+        SensibleDates.require(maturityDate, "maturityDate", "The maturity date")
     }
 
     // --- resolution helpers ---------------------------------------------------

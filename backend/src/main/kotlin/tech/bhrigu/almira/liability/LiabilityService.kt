@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
+import tech.bhrigu.almira.common.SensibleDates
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.security.RequestUserContext
 import java.math.BigDecimal
@@ -89,6 +90,9 @@ class LiabilityService(
         if (input.emiDay != null && input.emiDay !in 1..31) {
             throw ApiException.badRequest("emi_day_invalid", "Pick a day between 1 and 31.")
         }
+        requireSensibleRate(input.interestRate)
+        SensibleDates.require(input.startDate, "startDate", "The start date")
+        SensibleDates.require(input.endDate, "endDate", "The end date")
 
         val id = input.id ?: UUID.randomUUID()
         repo.find(householdId, id)?.let { return it }   // idempotent retry
@@ -160,6 +164,8 @@ class LiabilityService(
                 throw ApiException.badRequest("status_invalid", "A loan is either active or closed.")
             }
         }
+        requireSensibleRate(input.interestRate)
+        SensibleDates.require(input.endDate, "endDate", "The end date")
         // Checked before the row is written, not after.
         val holders = input.holders?.let { resolveHolders(householdId, household.myMemberId, it) }
 
@@ -319,6 +325,15 @@ class LiabilityService(
             "Someone else changed this while you were editing. Reload and try again.",
             mapOf("currentVersion" to latest.version),
         )
+    }
+
+    /** A loan at minus five percent pays you to borrow; it is a typed minus sign. */
+    private fun requireSensibleRate(rate: BigDecimal?) {
+        if (rate != null && rate.signum() < 0) {
+            throw ApiException.badRequest(
+                "interest_rate_negative", "An interest rate can't be negative.",
+            )
+        }
     }
 
     // --- helpers --------------------------------------------------------------

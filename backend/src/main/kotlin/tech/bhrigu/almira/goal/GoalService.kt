@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional
 import tech.bhrigu.almira.audit.AuditService
 import tech.bhrigu.almira.common.ApiException
 import tech.bhrigu.almira.common.IndianNumbers
+import tech.bhrigu.almira.common.SensibleDates
 import tech.bhrigu.almira.household.HouseholdService
 import tech.bhrigu.almira.investment.InvestmentService
 import tech.bhrigu.almira.security.RequestUserContext
@@ -76,6 +77,7 @@ class GoalService(
         if (priority !in 1..3) {
             throw ApiException.badRequest("priority_invalid", "Priority runs from 1 to 3.")
         }
+        SensibleDates.require(targetDate, "targetDate", "The target date")
         memberId?.let { target ->
             if (households.members(householdId).none { it.id == target }) {
                 throw ApiException.badRequest("member_unknown", "That person isn't in this household.")
@@ -137,6 +139,7 @@ class GoalService(
                 throw ApiException.badRequest("status_invalid", "Choose one of: ${statuses.joinToString()}.")
             }
         }
+        SensibleDates.require(targetDate, "targetDate", "The target date")
         if (repo.update(id, version, name?.trim(), targetAmount, targetDate, priority, notes, status) == 0) {
             // Permission was settled before the write, so this can only be the
             // version — and it has to be read again rather than compared with

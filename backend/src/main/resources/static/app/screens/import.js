@@ -65,7 +65,7 @@ function mapAndRun(file, preview, onSaved) {
       { value: "", label: t("import.typeFromSheet") },
       ...state.taxonomy.flatMap((category) =>
         category.types.map((type) => ({
-          value: type.id, label: `${categoryName(category.categoryCode, category.categoryLabel)} — ${type.label}`,
+          value: type.id, label: `${categoryName(category.categoryCode, category.categoryLabel)} · ${type.label}`,
         }))),
     ],
   });

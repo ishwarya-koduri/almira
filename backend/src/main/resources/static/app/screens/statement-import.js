@@ -96,7 +96,7 @@ function review(fileName, lines, onSaved) {
 
   const lumpsum = typesFlat().find((type) => type.code === "mf_lumpsum");
   const typeSelect = select({
-    options: typesFlat().map((type) => ({ value: type.id, label: `${type.categoryLabel} — ${type.label}` })),
+    options: typesFlat().map((type) => ({ value: type.id, label: `${type.categoryLabel} · ${type.label}` })),
     value: lumpsum?.id,
     "aria-label": t("statement.type"),
   });

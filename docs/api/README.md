@@ -329,6 +329,12 @@ displayed without its basis is a claim about the market that nobody made.
   `details.parameter`. A body in a content type the endpoint does not read is
   `415 unsupported_media_type`. None of these repeats the value that was sent;
   they are programming errors in a client, so log them, don't retry them.
+- **What you can read decides the format, never whether you are signed in.** An
+  `Accept` that leaves an endpoint nothing to send is `406 not_acceptable`: send
+  `application/json` or `*/*`, and note that `GET /me/export` produces
+  `application/zip`. Every error is written as JSON whatever was asked for, so
+  the reason is always readable. `401` means the session, only ever the session:
+  a client that signs the user out on one can trust that.
 
 ---
 
@@ -715,6 +721,25 @@ Corrections made under the freeze rule at the top of this file: responses the
 contract never declared, that reported a server fault for input the server
 rejected, corrected to a documented 4xx. Newest first. Additive changes to the
 contract itself are in `openapi-v1.json` and are not listed here.
+
+### 2026-09-16 — a header is never a reason to be signed out
+
+Three responses that reported a fault, or a dead session, for requests the
+server had correctly refused. The envelope is unchanged in all three.
+
+| Input | Was | Now |
+|---|---|---|
+| A body of the bare JSON literal `null` (99 of the 137 endpoints that read a body, 10 of them reachable with no token) | `500 internal_error` | `400 malformed_request` |
+| An `Accept` the endpoint cannot satisfy (`text/html`, `application/xml`, `foo/bar`), on reads and writes alike | `401 unauthorized` | `406 not_acceptable` |
+| `GET /me/export` (produces `application/zip`) asked for as `application/json` | `500 internal_error` | `406 not_acceptable` |
+
+The 401 is the one to notice: the session was alive and correct, and a client
+that treats 401 as "signed out" would have dropped it, and the local data with
+it, over a request header. `application/json` and `*/*` behaved correctly
+throughout, which is why no shipped client saw this.
+
+A URL the container rejects before the API sees it (`/share/%2e%2e%2f`) also
+answers the envelope now, instead of an HTML page naming the server.
 
 ### 2026-09-14 — a DigiLocker completion needs the state it was started with
 

@@ -2101,6 +2101,7 @@ a process already serving.
 | An operator repair has a request, its wait, its before-notice, a dormant household and an eligible member | — (new) | `ops.carry_out_dormancy_repair` decides the outcome, and audits it, before the role change (V137); watched failing with the role change moved in front — the advisor became owner during the wait (`DormancyRepairTest`) | ws/dormant-ordered |
 | dormancy-repair.sh is enabled for this environment | — (new) | before psql is called; watched failing with the gate moved to the end (`scripts/tests/dormancy-repair-refuses-unless-enabled.sh`) | ws/dormant-ordered |
 | A closure's household is made dormant before the person's rows in it are touched | — (new) | `AccountPurge` opens the dormancy first; watched failing with it moved after the erasure — the successor was gone and nobody was asked first (`DormancyOrderApiTest`) | ws/dormant-ordered |
+| Write permission on deleting a record, changing its visibility, replacing its nominees or adding a valuation | nothing: row-level security filtered the refused UPDATE/DELETE to zero rows and the service never looked, so a viewer got 204 and 200 over records that had not moved | each service asks `app.can_modify_*` (and, for documents, the rule `documents_delete` spells out) before the write; watched failing on master, where each case reports success over a record still exactly as it was (`RefusedWritesDoNotReportSuccessApiTest`) | `fbb6f00` |
 
 The scripts' tests are in `scripts/tests/` and run the real scripts against
 throwaway containers and volumes, or with a stub `curl`; each was watched failing
@@ -2659,3 +2660,28 @@ through the checked function to have any effect.
 **Risk if left** Needs SQL access as the runtime role; an invitation written that
 way cannot be accepted into a dormant household, and elsewhere still needs its
 token.
+
+---
+
+## 85. A contact or an estate document a viewer may read is refused as "not found"
+
+**Where** `estate/EstateService.kt` (`deleteContact`, `deleteDocument`),
+`contacts_delete` / `estate_documents_delete` (V18).
+
+**What** Found while sweeping the record types for the hole fixed in `fbb6f00`.
+These two do **not** have that hole: both check the row count and throw, so
+nothing is reported as done that was not done. But what they throw is
+`notFound`, and a viewer who can read the contact perfectly well is told it does
+not exist. Investments, liabilities, accounts, goals and documents now answer
+"You can read this, but it isn't yours to change" in the same situation.
+
+**Why not fixed** Saying so needs a predicate for "may write this contact" that
+the service can ask before it acts, and there is no `app.can_modify_contact` or
+`app.can_modify_estate_document` to ask — those two policies spell their rule
+out inline. Adding them is a migration, and `fbb6f00` deliberately touched no
+SQL. Answering 404 is safe, and for a record the caller cannot read it is the
+right answer; it is only the readable-but-not-writable case that misleads.
+
+**Risk if left** A viewer or an advisor deleting a contact is told the contact is
+gone from under them rather than that it is not theirs to remove, and reloads to
+find it still listed. No data is at risk either way.

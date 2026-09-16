@@ -36,23 +36,51 @@ import java.lang.reflect.Type
 @Configuration
 class UnreadableBodyMessages {
 
+    /**
+     * A body of exactly `null` is the one shape that got past all of this.
+     *
+     * It is valid JSON, so Jackson does not fail: it reads it as nothing and
+     * returns null. Spring's converter is declared as never returning null
+     * (`@NonNullApi` on the package) and with `-Xjsr305=strict` this override
+     * inherits that, so Kotlin checked the result on the way out and threw a
+     * NullPointerException from inside the converter. That reached the
+     * catch-all: 500 internal_error and an ERROR log, on 99 of the 137
+     * endpoints that read a body, ten of them reachable with no token at all.
+     *
+     * The override cannot hand null back — the type it overrides forbids it —
+     * so the no-body case is named where it happens, as the same exception
+     * every other unreadable body raises. The caller gets what an empty body
+     * gets: 400 malformed_request.
+     */
     @Bean
     fun mappingJackson2HttpMessageConverter(mapper: ObjectMapper): MappingJackson2HttpMessageConverter =
         object : MappingJackson2HttpMessageConverter(mapper) {
-            override fun read(type: Type, contextClass: Class<*>?, inputMessage: HttpInputMessage): Any =
-                try {
+            override fun read(type: Type, contextClass: Class<*>?, inputMessage: HttpInputMessage): Any {
+                val body: Any? = try {
                     super.read(type, contextClass, inputMessage)
                 } catch (e: HttpMessageNotReadableException) {
                     throw withoutInput(e, inputMessage)
                 }
+                return body ?: throw emptyBody(inputMessage)
+            }
 
-            override fun readInternal(clazz: Class<*>, inputMessage: HttpInputMessage): Any =
-                try {
+            override fun readInternal(clazz: Class<*>, inputMessage: HttpInputMessage): Any {
+                val body: Any? = try {
                     super.readInternal(clazz, inputMessage)
                 } catch (e: HttpMessageNotReadableException) {
                     throw withoutInput(e, inputMessage)
                 }
+                return body ?: throw emptyBody(inputMessage)
+            }
         }
+
+    private fun emptyBody(input: HttpInputMessage) =
+        UnreadableBodyException(
+            "Request body was the JSON literal null, which carries no object to read",
+            input,
+            null,
+            "NullBody",
+        )
 
     private fun withoutInput(e: HttpMessageNotReadableException, input: HttpInputMessage) =
         UnreadableBodyException(

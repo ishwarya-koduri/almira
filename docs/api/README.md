@@ -321,7 +321,9 @@ displayed without its basis is a claim about the market that nobody made.
   field that is missing or `null` is `400 validation_failed` with
   `details.fields.<name>: "This is required"` (a nested field by its path,
   `owners[0].memberId`). A body that is not JSON, has a field of the wrong type,
-  or is empty is `400 malformed_request`. A path or query parameter that does
+  is empty, or is the bare JSON literal `null`, is `400 malformed_request`
+  (`null` parses, but carries nothing to read: send no body instead where a body
+  is optional). A path or query parameter that does
   not convert (a household id that is not a UUID), or a required query
   parameter or upload part that is missing, is `400 malformed_request` with
   `details.parameter`. A body in a content type the endpoint does not read is

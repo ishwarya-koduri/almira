@@ -63,6 +63,13 @@ bad part never in the response or any log at INFO or above),
 `MissingRequiredFieldTest` (names come from declarations, never map keys) and
 `OtpCodeNeverLeaksTest` (statuses now 400; still every logger at DEBUG).
 
+One input was missed then and is covered now (2026-09-16): a body of the bare
+literal `null`. It is valid JSON, so it never failed inside Jackson the way
+every other case here did; it read as nothing and tripped the Kotlin null check
+on the way out of the converter, which is a 500 on 99 of the 137 endpoints that
+read a body, ten of them reachable with no token. It answers
+`400 malformed_request` with the rest, in `MalformedRequestTest`.
+
 ---
 
 ## 3. A static-asset change needs a service-worker version bump

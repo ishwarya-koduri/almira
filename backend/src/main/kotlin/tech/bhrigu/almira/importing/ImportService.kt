@@ -220,7 +220,7 @@ class ImportService(
             val maturityDate = read(request.mapping.maturityDate, "Maturity date", Coerce::date)
 
             val warning = unreadable.takeIf { it.isNotEmpty() }
-                ?.joinToString(", ", prefix = "Couldn't read ", postfix = " — left empty.")
+                ?.joinToString(", ", prefix = "Couldn't read ", postfix = ", left empty.")
 
             if (request.dryRun) {
                 outcomes += RowOutcome(
@@ -290,7 +290,7 @@ class ImportService(
                 else ->
                     "Imported $imported." +
                         (if (duplicates > 0) " $duplicates were already here." else "") +
-                        (if (failed > 0) " $failed couldn't be read — the rows are listed below." else "")
+                        (if (failed > 0) " $failed couldn't be read. The rows are listed below." else "")
             },
         )
     }

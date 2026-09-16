@@ -93,8 +93,8 @@ class ConnectService(
                     connections["digilocker"]?.first == "active",
                 sandboxNote = sandboxOnly(
                     vault.mode,
-                    "Returns three sample documents — a PAN card, an LIC policy and a " +
-                        "driving licence — as real PDFs. They are nobody's records.",
+                    "Returns three sample documents (a PAN card, an LIC policy and a " +
+                        "driving licence) as real PDFs. They are nobody's records.",
                 ),
                 // Kept in step with docs/providers/digilocker.md, which has the reasons.
                 toGoLive = listOf(
@@ -119,7 +119,7 @@ class ConnectService(
                 ),
                 // Kept in step with docs/providers/account-aggregator.md.
                 toGoLive = listOf(
-                    "An entity regulated by RBI, SEBI, IRDAI or PFRDA — without one, production " +
+                    "An entity regulated by RBI, SEBI, IRDAI or PFRDA. Without one, production " +
                         "access is not available, which is why it is cut from v1",
                     "A Company PAN and GSTIN, even for the sandbox",
                     "FIU registration with an Account Aggregator (Sahamati onboarding)",
@@ -194,7 +194,7 @@ class ConnectService(
             throw ApiException(
                 e.status, e.code,
                 "You're connected to DigiLocker, but it couldn't list your documents just now. " +
-                    "Please try again in a minute — you won't need to sign in to DigiLocker again.",
+                    "Please try again in a minute. You won't need to sign in to DigiLocker again.",
                 e.details + mapOf("connected" to true),
                 e,
             )
@@ -252,7 +252,7 @@ class ConnectService(
         return ImportedFromProvider(
             provider = "digilocker", imported = titles.size, skipped = skipped, titles = titles,
             note = "Stored encrypted in the vault, like anything else uploaded here. " +
-                "Nothing was linked to a holding — do that where it belongs.",
+                "Nothing was linked to a holding. Do that where it belongs.",
         )
     }
 
@@ -318,7 +318,7 @@ class ConnectService(
             throw e
         } catch (e: RuntimeException) {
             throw ApiException.badRequest(
-                "consent_not_active", "That consent isn't active yet — approve it first.",
+                "consent_not_active", "That consent isn't active yet. Approve it first.",
             )
         }
 
@@ -555,7 +555,7 @@ class ConnectService(
         mapOf("hid" to householdId, "provider" to provider, "anyStatus" to !requireActive),
     ) { rs, _ -> rs.getString("external_ref") }.firstOrNull()
         ?: throw ApiException.badRequest(
-            "not_connected", "Connect that first — there's nothing to fetch yet.",
+            "not_connected", "Connect that first. There's nothing to fetch yet.",
         )
 
     private fun activeSession(householdId: UUID, provider: String, requireActive: Boolean = false) = ProviderSession(

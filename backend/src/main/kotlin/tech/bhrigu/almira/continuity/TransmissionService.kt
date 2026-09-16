@@ -45,8 +45,8 @@ data class TransmissionGuide(
 data class TransmissionContact(val name: String, val kind: String, val phone: String?, val role: String?)
 
 internal const val DISCLAIMER =
-    "What a family usually has to do, not legal advice. Forms and thresholds change — " +
-        "confirm with the institution before you post anything original."
+    "What a family usually has to do, not legal advice. Forms and thresholds change, " +
+        "so confirm with the institution before you post anything original."
 
 /**
  * How a family claims each thing (docs/01 §10, docs/10 Phase 3).
@@ -155,7 +155,7 @@ class TransmissionService(
                     name,
                     ready = nomineeCount > 0,
                     note = if (nomineeCount > 0) "A nominee is recorded here."
-                    else "No nominee recorded — worth registering one with the institution.",
+                    else "No nominee recorded. Worth registering one with the institution.",
                 )
 
             lower.contains("policy document") || lower.contains("certificate") ||

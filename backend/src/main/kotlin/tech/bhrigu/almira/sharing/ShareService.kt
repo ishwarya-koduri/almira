@@ -168,7 +168,7 @@ class ShareService(
         if (items.isEmpty()) {
             throw ApiException.badRequest(
                 "scope_empty",
-                "There's nothing to share in that slice — check the year, or pick some records.",
+                "There's nothing to share in that slice. Check the year, or pick some records.",
             )
         }
         items.forEach { (type, recordId) ->
@@ -217,8 +217,8 @@ class ShareService(
             append(". ")
             if (private > 0) {
                 append(
-                    "$private of ${if (private == 1) "them is" else "them are"} private to you — " +
-                        "whoever opens this link will see ${if (private == 1) "it" else "them"}.",
+                    "$private of ${if (private == 1) "them is" else "them are"} private to you. " +
+                        "Whoever opens this link will see ${if (private == 1) "it" else "them"}.",
                 )
             } else {
                 append("Nothing private to you is included.")

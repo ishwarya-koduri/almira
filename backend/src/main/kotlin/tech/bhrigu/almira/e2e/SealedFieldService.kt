@@ -69,7 +69,7 @@ class SealedFieldService(
         if (envelope.iterations < MIN_ITERATIONS) {
             throw ApiException.badRequest(
                 "kdf_too_weak",
-                "That passphrase stretch is too short to be worth doing — use at least " +
+                "That passphrase stretch is too short to be worth doing. Use at least " +
                     "$MIN_ITERATIONS iterations.",
             )
         }
@@ -149,7 +149,7 @@ class SealedFieldService(
         if (ciphertext.length > MAX_CIPHERTEXT) {
             throw ApiException.badRequest(
                 "ciphertext_too_large",
-                "A sealed field holds a note, not a file — attach documents instead.",
+                "A sealed field holds a note, not a file. Attach documents instead.",
             )
         }
         if (findKey(householdId, userId) == null) {
@@ -259,7 +259,7 @@ class SealedFieldService(
             .recoverCatching { Base64.getDecoder().decode(value) }
             .getOrElse {
                 throw ApiException.badRequest(
-                    "not_ciphertext", "$field has to be base64 — this looks like plain text.",
+                    "not_ciphertext", "$field has to be base64. This looks like plain text.",
                 )
             }
         if (decoded.size < minBytes) {
@@ -291,7 +291,7 @@ class SealedFieldService(
      */
     private fun requireEnvelope(value: String) {
         val decoded = decodeBase64OrNull(value) ?: throw ApiException.badRequest(
-            "not_ciphertext", "ciphertext has to be base64 — this looks like plain text.",
+            "not_ciphertext", "ciphertext has to be base64. This looks like plain text.",
         )
         if (decoded.size < MIN_ENVELOPE_BYTES) {
             throw ApiException.badRequest(

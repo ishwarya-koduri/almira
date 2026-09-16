@@ -90,7 +90,7 @@ class EmergencyService(
         }
         if (trustedMemberId == me.id) {
             throw ApiException.badRequest(
-                "trusted_is_you", "Choose someone else — this is who acts if you can't.",
+                "trusted_is_you", "Choose someone else. This is who acts if you can't.",
             )
         }
         if (waitDays !in 1..90) {
@@ -367,7 +367,7 @@ class EmergencyService(
     private fun explain(status: String, subject: String?, subjectActive: Boolean) = when (status) {
         "waiting" -> if (subjectActive) {
             "${subject ?: "The person it concerns"} has used Almira since you asked, so nothing " +
-                "will open. They are reachable — talk to them."
+                "will open. They are reachable, so talk to them."
         } else {
             "Waiting. ${subject ?: "The person it concerns"} can stop this at any time " +
                 "before it opens, and has been told."

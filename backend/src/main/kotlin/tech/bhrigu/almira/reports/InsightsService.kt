@@ -224,6 +224,6 @@ class InsightsService(
         )
         const val DISCLAIMER =
             "Informational, not financial advice. Liquidity here is a rough guide from " +
-                "what's recorded — a maturity date and a category — not a market judgement."
+                "what's recorded (a maturity date and a category), not a market judgement."
     }
 }

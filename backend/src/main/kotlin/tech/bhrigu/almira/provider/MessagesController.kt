@@ -71,11 +71,11 @@ class OutboundMessages(
     companion object {
         /** docs/13 "When a provider fails" has the same table. */
         fun messageFor(failure: String?): String = when (failure) {
-            "timeout" -> "Not confirmed — the service took too long to answer. It may still arrive."
-            "unavailable" -> "Not sent — the service wasn't reachable. Nothing for you to do."
-            "rejected" -> "Not delivered — it was refused for this address or number. Check your contact details."
-            "insufficient_balance" -> "Not sent — a problem on our side, not with your details. We've been alerted."
-            else -> "Not sent — something went wrong on our side."
+            "timeout" -> "Not confirmed: the service took too long to answer. It may still arrive."
+            "unavailable" -> "Not sent: the service wasn't reachable. Nothing for you to do."
+            "rejected" -> "Not delivered: it was refused for this address or number. Check your contact details."
+            "insufficient_balance" -> "Not sent: a problem on our side, not with your details. We've been alerted."
+            else -> "Not sent: something went wrong on our side."
         }
     }
 }

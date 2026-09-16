@@ -57,8 +57,8 @@ object DeductionRules {
             code = "80D",
             label = "Section 80D",
             limit = BigDecimal(25_000),
-            description = "Health insurance premiums, up to ₹25,000 — more if the " +
-                "person insured is a senior citizen.",
+            description = "Health insurance premiums, up to ₹25,000 (more if the " +
+                "person insured is a senior citizen).",
             typeCodes = setOf("insurance_health"),
             requiresFlag = null,
             declaredAmountKeys = listOf("premium_amount"),

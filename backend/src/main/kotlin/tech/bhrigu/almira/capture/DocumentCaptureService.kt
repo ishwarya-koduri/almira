@@ -85,7 +85,7 @@ class DocumentCaptureService(
                 "We read the document but couldn't pick out anything useful. " +
                     "Fill it in and the file stays attached as proof."
             } else {
-                "Check these before saving — they're read from the document, not verified."
+                "Check these before saving: they're read from the document, not verified."
             },
         )
     }

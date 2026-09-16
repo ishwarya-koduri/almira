@@ -51,7 +51,7 @@ class DocumentTextExtractor : TextExtractor {
             text = "",
             source = "none",
             note = "We can read PDFs today. Reading a photo needs an OCR service, " +
-                "which isn't connected yet — fill in the details and attach the " +
+                "which isn't connected yet. Fill in the details and attach the " +
                 "picture as proof.",
         )
     }

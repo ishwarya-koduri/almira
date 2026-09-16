@@ -193,7 +193,7 @@ class GoalService(
                     "That holding is already fully allocated to other goals."
                 } else {
                     "That holding is already ${elsewhere.stripTrailingZeros().toPlainString()}% " +
-                        "allocated to other goals — ${available.stripTrailingZeros().toPlainString()}% " +
+                        "allocated to other goals. ${available.stripTrailingZeros().toPlainString()}% " +
                         "is left."
                 },
                 mapOf("allocatedElsewhere" to elsewhere, "available" to available),
@@ -325,7 +325,7 @@ class GoalService(
 
         val note = when {
             goal.holdingCount == 0 ->
-                "Nothing is pointed at this goal yet — map a holding to see progress."
+                "Nothing is pointed at this goal yet. Map a holding to see progress."
             shortfall.signum() == 0 -> "Fully funded."
             months != null && months <= 0 && shortfall.signum() > 0 ->
                 "The target date has passed and there's still a shortfall."

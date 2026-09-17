@@ -93,6 +93,21 @@ data class ImportReport(
 )
 
 /**
+ * Labels this product used to seed, and what they are called now (V149, which
+ * took the em dashes out of the words a family reads). A sheet exported before
+ * that still says the old name, and a year-old spreadsheet is exactly the thing
+ * somebody imports.
+ *
+ * Tried only after the code column and the current label, so the file's own
+ * `code` always wins and a household that has named a type of its own is never
+ * overruled by this list. Keyed in lower case; the match ignores case either way.
+ */
+private val LEGACY_TYPE_LABELS = mapOf(
+    "mutual fund — sip" to "Mutual Fund (SIP)",
+    "mutual fund — lumpsum" to "Mutual Fund (Lumpsum)",
+)
+
+/**
  * Spreadsheet import (docs/10 Epic 2.4.3).
  *
  * Two rules shape the whole thing:
@@ -190,9 +205,9 @@ class ImportService(
             }
 
             val type = cell(request.mapping.type)?.let { text ->
-                types.firstOrNull {
-                    it.label.equals(text, true) || it.code.equals(text, true)
-                }
+                types.firstOrNull { it.code.equals(text, true) }
+                    ?: types.firstOrNull { it.label.equals(text, true) }
+                    ?: types.firstOrNull { it.label.equals(LEGACY_TYPE_LABELS[text.trim().lowercase()], true) }
             } ?: defaultType
 
             if (type == null) {
@@ -498,4 +513,5 @@ object Coerce {
         }
         return null
     }
+
 }

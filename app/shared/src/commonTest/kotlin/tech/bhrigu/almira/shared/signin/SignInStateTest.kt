@@ -125,6 +125,50 @@ class SignInStateTest {
         assertNull(SignInState(channel = SignInChannel.Email, email = "ishwarya@example.com").addressHint)
     }
 
+    /**
+     * The owner's ruling (2026-09-17): hint only, never auto-correct while
+     * typing, validate at submit. So a number is read however somebody writes
+     * it, and nothing they typed is taken away from them.
+     */
+    @Test
+    fun aNumberIsReadHoweverItIsWritten() {
+        listOf(
+            "9876543210",
+            "98765 43210",
+            "+91 98765 43210",
+            "+91-98765-43210",
+            "(98765) 43210",
+            "919876543210",
+        ).forEach { written ->
+            val state = SignInState(phone = written)
+            assertEquals("9876543210", state.phoneDigits, written)
+            assertEquals(true, state.phoneIsPlausible, written)
+            assertNull(state.addressHint, written)
+            assertNull(state.addressProblem, written)
+            assertEquals("+91 9876543210", state.sentTo, written)
+        }
+    }
+
+    @Test
+    fun theSubmitIsWhatRefuses() {
+        // Nothing typed: the button still presses, and this is what it says.
+        assertEquals("Enter your phone number.", SignInState().addressProblem)
+        // Too few digits is only said at the submit; the hint stays quiet mid-word.
+        val half = SignInState(phone = "98765")
+        assertNull(half.addressHint)
+        assertEquals("An Indian mobile number is ten digits.", half.addressProblem)
+        // What the hint says, the submit says too: the words do not change.
+        val wrongStart = SignInState(phone = "5432109876")
+        assertEquals(wrongStart.addressHint, wrongStart.addressProblem)
+        // Eleven digits is too many, and says so both ways.
+        val tooMany = SignInState(phone = "98765432109")
+        assertEquals("That is more than ten digits.", tooMany.addressHint)
+        assertEquals(tooMany.addressHint, tooMany.addressProblem)
+
+        assertNull(SignInState(phone = "+91 98765 43210").addressProblem, "a number that works is not refused")
+        assertEquals("Enter your email address.", SignInState(channel = SignInChannel.Email).addressProblem)
+    }
+
     /** Only a verdict on the code rattles the lock; a failure to reach one does not call the key wrong. */
     @Test
     fun aRefusedKeyIsOneTheServerJudged() {

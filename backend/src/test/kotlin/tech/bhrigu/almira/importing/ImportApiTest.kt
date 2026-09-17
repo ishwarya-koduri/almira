@@ -220,6 +220,48 @@ class ImportApiTest : ApiTestBase() {
         assertThat(completeness.path("score").asInt()).isLessThan(100)
     }
 
+    /**
+     * Owner's ruling (2026-09-17): add the CSV legacy alias mapping the old label
+     * to the renamed type, and keep preferring the code column. V149 renamed two
+     * seeded labels to take an em dash out of what a family reads, and a sheet
+     * exported before that still carries the old name.
+     */
+    @Test
+    fun `a sheet written before the rename still finds its type, and the code column still wins`() {
+        val sipCsv = """
+            Name,Amount,Type
+            Monthly SIP,60000,Mutual Fund — SIP
+            Old lumpsum,40000,Mutual Fund — Lumpsum
+        """.trimIndent()
+        val byLabel = """
+            {"typeId":"${typeId(owner, householdId, "gold_physical")}",
+             "mapping":{"title":"Name","investedAmount":"Amount","type":"Type"},
+             "dryRun":false}
+        """.trimIndent()
+
+        val report = mapper.readTree(upload("", sipCsv, byLabel).body)
+        assertThat(report.path("imported").asInt()).describedAs(report.toString()).isEqualTo(2)
+        assertThat(report.path("failed").asInt()).isZero()
+
+        val titles = get("/api/v1/households/$householdId/investments", owner).json()
+            .associate { it.path("title").asText() to it.path("typeLabel").asText() }
+        assertThat(titles["Monthly SIP"]).isEqualTo("Mutual Fund (SIP)")
+        assertThat(titles["Old lumpsum"]).isEqualTo("Mutual Fund (Lumpsum)")
+
+        // The code column still decides, whatever the label column says.
+        val codeCsv = """
+            Name,Amount,Type
+            By its code,15000,gold_physical
+        """.trimIndent()
+        assertThat(
+            mapper.readTree(upload("", codeCsv, byLabel).body).path("imported").asInt(),
+        ).isEqualTo(1)
+        assertThat(
+            get("/api/v1/households/$householdId/investments", owner).json()
+                .first { it.path("title").asText() == "By its code" }.path("typeLabel").asText(),
+        ).isEqualTo("Physical Gold")
+    }
+
     @Test
     fun `running the same import twice does not duplicate anything`() {
         upload("", csv, request(dryRun = false))

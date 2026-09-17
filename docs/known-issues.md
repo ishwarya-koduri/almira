@@ -2676,6 +2676,14 @@ token.
 
 ## 85. After a wrong code, the app's code field loses focus
 
+**Resolved** (2026-09-17), by the owner's ruling: *focus goes to the first cell
+after a wrong code.* The code screen now asks for focus whenever the refusal has
+been shown, keyed on the error as well as on the unlock animation, so it holds
+whether or not the key rattled; it waits for the animation to finish, because
+focusing under it raises the keyboard behind the doors. The controller already
+cleared the code on a refusal, so the caret lands in cell one. The entry is kept
+below as it was found.
+
 **Where** `app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/signin/SignInScreen.kt`,
 `SignInController.verify`.
 

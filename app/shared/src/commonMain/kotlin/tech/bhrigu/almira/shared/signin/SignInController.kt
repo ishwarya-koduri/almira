@@ -64,8 +64,18 @@ data class SignInState(
     /** Where the key is, for the unlock animation that plays over a verify. */
     val unlock: UnlockPhase = UnlockPhase.Idle,
 ) {
+    /**
+     * The digits of what was typed, with the country code taken off when it is
+     * there. Spaces, brackets, dashes and a leading +91 are how people write a
+     * number down and how a phone offers one; reading them is this program's
+     * job, not the person's, and nothing is changed on screen to do it.
+     */
+    val phoneDigits: String get() = phone.filter(Char::isDigit)
+        .let { if (it.length == PHONE_LENGTH + 2 && it.startsWith("91")) it.drop(2) else it }
+
     /** Ten digits, which is every Indian mobile number and no accidents. */
-    val phoneIsPlausible: Boolean get() = phone.length == 10 && phone.first() in '6'..'9'
+    val phoneIsPlausible: Boolean get() =
+        phoneDigits.length == PHONE_LENGTH && phoneDigits.first() in '6'..'9'
 
     /**
      * Loose on purpose, as the server is: one `@`, something either side, a
@@ -82,14 +92,28 @@ data class SignInState(
      * Null while it could still come right, so nobody is corrected mid-word.
      */
     val addressHint: String? get() = when (channel) {
-        SignInChannel.Phone ->
-            if (phone.length == PHONE_LENGTH && phone.first() !in '6'..'9') {
+        SignInChannel.Phone -> when {
+            phoneDigits.length >= PHONE_LENGTH && phoneDigits.first() !in '6'..'9' ->
                 "An Indian mobile number starts with 6, 7, 8 or 9."
-            } else {
-                null
-            }
+            phoneDigits.length > PHONE_LENGTH -> "That is more than ten digits."
+            else -> null
+        }
         SignInChannel.Email ->
             if (email.contains('@') && !emailIsPlausible) "That address looks incomplete." else null
+    }
+
+    /**
+     * What to say when somebody asks for a code and the address cannot work. The
+     * hint when there is one, so the words do not change between reading and
+     * pressing; otherwise the plainest thing that is true.
+     */
+    val addressProblem: String? get() = when {
+        addressIsPlausible -> null
+        addressHint != null -> addressHint
+        channel == SignInChannel.Phone && phoneDigits.isEmpty() -> "Enter your phone number."
+        channel == SignInChannel.Phone -> "An Indian mobile number is ten digits."
+        email.isBlank() -> "Enter your email address."
+        else -> "That address looks incomplete."
     }
 
     val addressIsPlausible: Boolean get() = when (channel) {
@@ -99,7 +123,7 @@ data class SignInState(
 
     /** What the code step says the code was sent to. */
     val sentTo: String get() = when (channel) {
-        SignInChannel.Phone -> "+91 $phone"
+        SignInChannel.Phone -> "+91 $phoneDigits"
         SignInChannel.Email -> email.trim()
     }
 
@@ -111,6 +135,13 @@ data class SignInState(
     companion object {
         const val CODE_LENGTH = 6
         const val PHONE_LENGTH = 10
+
+        /**
+         * A guard, not a correction: long past any number anybody could have
+         * meant, so a paste is never cut short in front of them while a stuck
+         * key cannot fill the field for ever.
+         */
+        const val PHONE_INPUT_LIMIT = 24
         private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s.]+$")
     }
 }
@@ -211,9 +242,20 @@ class SignInController(
     private var listening: Job? = null
     private var watching: Job? = null
 
+    /**
+     * What was typed, kept as typed. Owner's ruling (2026-09-17): *hint only,
+     * never auto-correct while typing, validate at submit.* Quietly deleting a
+     * character somebody just pressed, or cutting a pasted number short, leaves
+     * them looking at something they did not write and no idea which of them was
+     * wrong. Only a length guard stays, and only well past any real number, so
+     * the field cannot be used as a paste bucket.
+     *
+     * [SignInState.phoneDigits] is what gets sent: spaces, brackets, dashes and
+     * a leading +91 are how people write a number down, and reading them is the
+     * program's job rather than the person's.
+     */
     fun onPhoneChanged(input: String) {
-        val digits = input.filter(Char::isDigit).take(SignInState.PHONE_LENGTH)
-        _state.update { it.copy(phone = digits, error = null) }
+        _state.update { it.copy(phone = input.take(SignInState.PHONE_INPUT_LIMIT), error = null) }
     }
 
     /** Whitespace inside an address is never right; the ends are trimmed on send. */
@@ -268,7 +310,15 @@ class SignInController(
     }
 
     fun sendCode() {
-        if (!state.value.addressIsPlausible || state.value.busy) return
+        if (state.value.busy) return
+        // Validated here, where a person has said they are finished, rather than
+        // by a button that will not press and cannot say why (owner's ruling,
+        // 2026-09-17). The hint under the field says what is wrong while they
+        // type; this is the same sentence at the moment they ask.
+        state.value.addressProblem?.let { problem ->
+            _state.update { it.copy(error = problem) }
+            return
+        }
         run("Couldn't send the code.") {
             val challenge = requestCode(state.value)
             _state.update {
@@ -357,7 +407,7 @@ class SignInController(
             try {
                 val requestId = current.challenge?.requestId
                 val login = when (current.channel) {
-                    SignInChannel.Phone -> api.verifyOtp(current.phone, current.code, requestId)
+                    SignInChannel.Phone -> api.verifyOtp(current.phoneDigits, current.code, requestId)
                     SignInChannel.Email -> api.verifyEmailOtp(current.email.trim(), current.code, requestId)
                 }
                 countdown?.cancel()
@@ -406,7 +456,7 @@ class SignInController(
     fun dismissError() = _state.update { it.copy(error = null) }
 
     private suspend fun requestCode(state: SignInState): OtpChallenge = when (state.channel) {
-        SignInChannel.Phone -> api.requestOtp(state.phone)
+        SignInChannel.Phone -> api.requestOtp(state.phoneDigits)
         SignInChannel.Email -> api.requestEmailOtp(state.email.trim())
     }
 

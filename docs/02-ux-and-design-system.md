@@ -105,6 +105,8 @@ Every control below is specified with **anatomy, states (default / hover / focus
 - Label above (Small/label), field height 44, radius-sm, `hairline` border → `accent` on focus. Helper/error text below reserves space (no jump).
 - **Money field:** leading `₹`, auto-groups Indian style as you type, right-aligned tabular; on blur shows amount-in-words in faint helper ("₹1,00,000 — One Lakh"). **Validation on blur**, not per keystroke.
 - **Number+unit:** trailing unit selector (g / units / shares). Textarea auto-grows to ~5 lines.
+- **A field never rewrites what somebody typed** (owner's ruling, 2026-09-17: *hint only, never auto-correct while typing, validate at submit*). The phone field on sign-in is the pattern: it keeps the characters as written, spaces, brackets, dashes and a leading +91 included, and the program reads the digits out of them when it sends. The helper line carries a hint once there is enough typed to judge ("An Indian mobile number starts with 6, 7, 8 or 9."), and the button stays pressable, because a button that will not move cannot say why. The check happens on the press, in the same words as the hint. Only a length guard stays, well past any real number, so a paste is never cut short in front of the person.
+- **After a refusal, focus goes back to where the next attempt starts** (same ruling): the sign-in code field takes focus and raises the keyboard as soon as the refusal is shown, with the code already cleared, so the caret is in the first cell. It waits for any animation over the screen to finish first.
 
 ### 6.3 Select / Dropdown (single) & Combobox (searchable)
 - Trigger looks like a field with a chevron; opens a menu in a **popover on desktop, a bottom sheet on mobile** (thumb-reachable).

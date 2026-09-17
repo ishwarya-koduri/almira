@@ -240,9 +240,12 @@ private fun AddressStep(
             },
         )
 
+        // Pressable whatever has been typed (owner's ruling, 2026-09-17): the
+        // check happens on the press, where it can say what is wrong, instead of
+        // in a button that will not move and cannot explain itself.
         PrimaryButton(
             label = "Send code",
-            enabled = state.addressIsPlausible,
+            enabled = !state.busy,
             busy = state.busy,
             onClick = onSubmit,
         )
@@ -283,13 +286,18 @@ private fun CodeStep(
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
 
-    // Again after a refused key: the animation put the keyboard away, and the
-    // next attempt is the only thing this person wants to do.
-    LaunchedEffect(state.unlock == UnlockPhase.Idle) {
-        if (state.unlock == UnlockPhase.Idle) {
-            focus.requestFocus()
-            keyboard?.show()
-        }
+    // Owner's ruling (2026-09-17): after a wrong code the caret goes back to the
+    // first cell. The controller clears the code on a refusal, so focusing the
+    // field is what puts the caret in cell one, and the keyboard comes with it:
+    // the next attempt is the only thing this person wants to do.
+    //
+    // Keyed on the refusal as well as on the animation, so it holds whether or
+    // not the key rattled; it waits for `Idle` either way, because focusing
+    // while the doors are still moving raises the keyboard behind them.
+    LaunchedEffect(state.unlock == UnlockPhase.Idle, state.error) {
+        if (state.unlock != UnlockPhase.Idle) return@LaunchedEffect
+        focus.requestFocus()
+        keyboard?.show()
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(space.x4)) {

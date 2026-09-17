@@ -182,10 +182,11 @@ class SecondFactorService(
             redis.delete(pendingKey(token))
             throw pendingLocked()
         }
+        val remaining = MAX_ATTEMPTS - attempts
         throw ApiException.badRequest(
             "second_factor_invalid",
-            "That code doesn't match. ${MAX_ATTEMPTS - attempts} tries left.",
-            mapOf("attemptsRemaining" to (MAX_ATTEMPTS - attempts).toInt()),
+            "That code doesn't match. $remaining ${if (remaining == 1L) "try" else "tries"} left.",
+            mapOf("attemptsRemaining" to remaining.toInt()),
         )
     }
 

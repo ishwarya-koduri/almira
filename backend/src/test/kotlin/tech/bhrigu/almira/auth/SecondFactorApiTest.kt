@@ -130,6 +130,21 @@ class SecondFactorApiTest : SignInApiTestBase() {
         )
         assertThat(wrong.errorCode()).isEqualTo("second_factor_invalid")
         assertThat(wrong.json().path("error").path("details").path("attemptsRemaining").asInt()).isEqualTo(4)
+        assertThat(wrong.json().path("error").path("message").asText()).isEqualTo("That code doesn't match. 4 tries left.")
+
+        // Down to the last one, it counts in English: "1 try left", not "1 tries left".
+        repeat(2) {
+            post(
+                "/api/v1/auth/second-factor/authenticator",
+                body = mapOf("secondFactorToken" to token, "code" to code(enrolled.secret, 7)),
+            )
+        }
+        val lastOne = post(
+            "/api/v1/auth/second-factor/authenticator",
+            body = mapOf("secondFactorToken" to token, "code" to code(enrolled.secret, 7)),
+        )
+        assertThat(lastOne.json().path("error").path("message").asText())
+            .describedAs(lastOne.body).isEqualTo("That code doesn't match. 1 try left.")
         assertThat(sessions(account.userId)).isEqualTo(before)
 
         val good = code(enrolled.secret, 1)

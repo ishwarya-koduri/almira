@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -116,11 +117,17 @@ fun App(
         if (!stored || availability == LockAvailability.None) lockState.unlocked()
     }
 
-    // Signing in is the moment a session starts existing, and the lock is gated
-    // on there being one. Without this the flag keeps the answer from launch —
-    // false, because nothing was stored yet — and the app would not lock again
-    // until it was next started cold: background it right after signing in and
-    // it came back to the records with nothing asked.
+    // The other way a session comes into being, and the one the effect above
+    // cannot see: signing in without leaving the app. `signedOutAt` has not
+    // moved, so that effect does not re-run, and `haveSession` stays at the
+    // `false` it was given at launch — for the rest of the process.
+    //
+    // Which would be a detail, except `showLock` is built on it. Without this,
+    // someone who signs in and then puts the phone down comes back to the
+    // dashboard: the family's net worth, on screen, with nothing asked of
+    // whoever picked the phone up. The lock only starts working after the app
+    // is killed and launched again, which is the one path the thin slice tests
+    // (`terminate()` then `launch()`) and so the one path that looked fine.
     LaunchedEffect(state.signedIn) {
         if (state.signedIn != null) haveSession = true
     }
@@ -314,7 +321,9 @@ private fun SignedIn(
     }
 
     when {
-        problem != null -> Message(problem!!, colors.caution)
+        // Both of these are dead ends otherwise: the only Sign out in the app
+        // is the one on the dashboard, and neither of these screens is it.
+        problem != null -> Message(problem!!, colors.caution, onSignOut)
 
         households == null -> Box(
             Modifier.fillMaxSize().background(colors.canvas),
@@ -324,6 +333,7 @@ private fun SignedIn(
         household == null -> Message(
             "No household yet. The web client can create one.",
             colors.inkMuted,
+            onSignOut,
         )
 
         else -> {
@@ -342,8 +352,24 @@ private fun SignedIn(
     }
 }
 
+/**
+ * A screen that is only a sentence, and the way off it.
+ *
+ * The way out matters as much as the words. Both screens that use this are
+ * reached by signing in successfully — a number with no household, or a
+ * households call that failed — and neither of them is the dashboard, which is
+ * where the app's only other Sign out lives. Without this, someone who signs in
+ * with a number that has no household is on a screen with one sentence, no
+ * controls, and nothing a relaunch changes: the app has to be deleted. The lock
+ * screen already treats "a way out without uninstalling the app" as the rule
+ * (LockScreen.kt); this is the same rule, in the place it was missing.
+ */
 @Composable
-private fun Message(text: String, color: androidx.compose.ui.graphics.Color) {
+private fun Message(
+    text: String,
+    color: androidx.compose.ui.graphics.Color,
+    onSignOut: (() -> Unit)? = null,
+) {
     Box(
         Modifier
             .fillMaxSize()
@@ -352,7 +378,21 @@ private fun Message(text: String, color: androidx.compose.ui.graphics.Color) {
             .padding(AlmiraTheme.spacing.x6),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = AlmiraTheme.typography.small, color = color)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(AlmiraTheme.spacing.x3),
+        ) {
+            Text(text, style = AlmiraTheme.typography.small, color = color)
+            onSignOut?.let {
+                TextButton(onClick = it) {
+                    Text(
+                        "Sign out",
+                        style = AlmiraTheme.typography.small,
+                        color = AlmiraTheme.colors.accent,
+                    )
+                }
+            }
+        }
     }
 }
 

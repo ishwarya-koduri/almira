@@ -326,27 +326,25 @@ So, while legal review of third-party consent is **pending**:
 
 ## Not verified
 
-- **For counsel: a name that outlives an erasure.** When someone's account is
-  erased, another person's record that named them — a nomination, an executor
-  or guardian in a will, a beneficiary — keeps the name as text. The owner's
-  decision (2026-09-15): the name stays, because a nomination naming Lakshmi is a
-  fact about the record owner's arrangement; it must not stay linked to the
-  erased account, and no contact details survive — the name only, as the other
-  person wrote it (docs/05 §12.1). What is built: the link to the member is
-  cleared, the contact card a will role pointed at is deleted, free text on
-  those rows that spells the erased person's name is redacted, and the name kept
-  is the one written on the record or on the household's member list. The owner
-  set that default on 2026-09-16 while counsel is asked: a card is contact data,
-  which does not survive; a note, unlike a name, can carry health, money or a
-  family dispute, so it is redacted rather than kept — *easier to restore than to
-  un-disclose*. What counsel should confirm: that keeping the name without
+- **For counsel: a name that outlives an erasure.** This is the **documented
+  default, and it needs legal review before real users see it.** When someone's
+  account is erased, another person's record that named them keeps the name as
+  text: a nomination, an executor or guardian in a will, a beneficiary. The
+  owner's rulings (2026-09-15 to 17): the name stays, because a nomination
+  naming Lakshmi is a fact about the record owner's own arrangement; it must not
+  stay linked to the erased account; no contact details survive; and the free
+  text on those records keeps its words with the name in them replaced by
+  "Former member", the same name the holder rows carry, rather than being
+  redacted, since throwing away a sentence a family relies on is its own harm.
+  Free text private to the erased person is deleted with their records. What is
+  built: the member link is cleared, the contact card a will role pointed at is
+  deleted, the surviving words say "Former member", and the name kept is the one
+  written on the record or on the household's member list, never anything from
+  the erased account. What counsel should confirm: that keeping the name without
   consent is permitted under DPDP s.12 and rule 8 as data of the record owner's
-  own arrangement, and whether the free text may in fact stay as written.
-- The notice has not been read by counsel. Nor have the Telugu and Hindi
-  translations been checked by a native speaker. The four sections added with
-  data rights (consent, rights, children, complaints) and every `rights.*`,
-  `family.consent.*` and `stepUp.*` string exist in English only; Telugu and
-  Hindi fall back to English until translated.
+  own arrangement, and that keeping the surrounding sentence with the name
+  replaced is the right line to draw.
+
 - Legal review of the data-rights design (whether a step-up code and a
   declaration are "verifiable" parental consent under Rule 10, whether the list
   of notices that protect your account is right to send without consent,

@@ -112,25 +112,33 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
     }
 
     /**
-     * What an erasure takes off other people's records besides the link: the
-     * contact card and the free text.
+     * What an erasure does to other people's records besides clearing the link:
+     * the contact card goes, and the person's name inside the words that stay
+     * becomes "Former member".
      *
-     * Owner's decision (2026-09-16), setting the default while counsel is asked:
-     * *the contact card should go — that's contact data, which we already decided
-     * doesn't survive. Free-text notes are different from a name: a name is one
-     * fact the other person recorded, a note can contain health, money or a
-     * family dispute. Until counsel answers, redact free text that names the
-     * erased person rather than keep it. Easier to restore than to un-disclose.*
+     * Owner's ruling (2026-09-17), after the interim redaction of 2026-09-16:
+     * *keep a name on another member's own record but sever the account link;
+     * keep shared free text as "Former member", reusing the Leaving model; erase
+     * private free text with the account.*
      *
-     * So, on the records that named them: the contact card an estate role
-     * pointed at is deleted (with what it was linked to, by cascade), and a
-     * relationship or note that spells their name is cleared. The name itself
-     * stays, kept by [keepNamesOnOthersRecords]. Free text that does not name
-     * them is the other person's writing about their own arrangement and is left
-     * alone; text elsewhere in the household is not searched for their name.
+     * So the text a family relies on is no longer thrown away for mentioning
+     * somebody. A will that reads "Ravi keeps the locker key" still says what to
+     * do; it says "Former member keeps the locker key", the same name the holder
+     * rows carry (V136), so one word means one thing wherever it appears. Free
+     * text that never named them is the other person's own writing and is
+     * untouched; text elsewhere in the household is not searched.
      *
-     * Runs BEFORE the link is cleared — it needs `member_id` to know which rows
+     * Free text that was **private to the erased person** needs nothing here: it
+     * lives on records private to them alone, and those are deleted whole, with
+     * their notes, by [erase]. What this touches is only what survives.
+     *
+     * The contact card an estate role pointed at is still deleted, with what it
+     * was linked to, by cascade: a card is where a number or an address would be,
+     * and the ruling of 2026-09-15 is that no contact details survive.
+     *
+     * Runs BEFORE the link is cleared: it needs `member_id` to know which rows
      * are about this person, and the member row to know the name to look for.
+     * **Flagged for legal review before real users** (docs/23 "Not verified").
      */
     fun removeContactTraces(memberIds: List<UUID>) {
         if (memberIds.isEmpty()) return
@@ -144,25 +152,44 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
             """.trimIndent(),
             p,
         )
-        // Anything naming the person, in text the other person wrote on a record about them.
+        // Their name, inside the words that stay. Twice over, because a record can
+        // carry its own spelling of the name as well as the household's.
         NAMED_TEXT.forEach { (table, alias, columns) ->
             columns.forEach { column ->
                 jdbc.update(
                     """
                     update $table $alias
-                       set $column = null
+                       set $column = regexp_replace($alias.$column, ${quoted("m.display_name")},
+                                                    '$FORMER_MEMBER', 'gi')
                       from members m
                      where m.id = $alias.member_id and $alias.member_id in (:mids)
+                       and $alias.$column is not null and length(btrim(m.display_name)) > 0
+                    """.trimIndent(),
+                    p,
+                )
+                jdbc.update(
+                    """
+                    update $table $alias
+                       set $column = regexp_replace($alias.$column, ${quoted("$alias.${nameColumn(table)}")},
+                                                    '$FORMER_MEMBER', 'gi')
+                     where $alias.member_id in (:mids)
                        and $alias.$column is not null
-                       and ($alias.$column ilike '%' || m.display_name || '%'
-                            or ($alias.${nameColumn(table)} is not null
-                                and $alias.$column ilike '%' || $alias.${nameColumn(table)} || '%'))
+                       and $alias.${nameColumn(table)} is not null
+                       and length(btrim($alias.${nameColumn(table)})) > 0
                     """.trimIndent(),
                     p,
                 )
             }
         }
     }
+
+    /**
+     * A name as a regular expression that matches only itself: every character
+     * the engine would otherwise read as syntax is escaped first. Somebody called
+     * "A. (Ravi) K." is a name, not a pattern.
+     */
+    private fun quoted(expression: String) =
+        "regexp_replace($expression, '([\\^$.|?*+()\\[\\]{}])', '\\\\\\1', 'g')"
 
     private fun nameColumn(table: String) = if (table == "investment_nominees") "nominee_name" else "person_name"
 
@@ -242,7 +269,7 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
         val former = jdbc.queryForObject(
             """
             insert into members (household_id, display_name, former_since)
-            values (:hid, 'Former member', now()) returning id
+            values (:hid, '$FORMER_MEMBER', now()) returning id
             """.trimIndent(),
             mapOf("hid" to householdId), UUID::class.java,
         )
@@ -298,6 +325,9 @@ internal class LifecycleWrites(private val jdbc: NamedParameterJdbcTemplate) {
     }
 
     private companion object {
+        /** The one name every trace of a departed person wears, here and on the holder rows. */
+        const val FORMER_MEMBER = "Former member"
+
         /** Where a member row is named as holding something that can stay with the household. */
         val HOLDER_TABLES = listOf(
             "investment_ownerships", "liability_holders", "account_holders", "goals", "estate_documents",

@@ -242,12 +242,14 @@ class AccountClosureApiTest : LifecycleTestSupport() {
         assertThat(
             db.queryForObject("select count(*) from contacts where id = ?::uuid", Int::class.java, UUID.fromString(ids.getValue("card"))),
         ).describedAs("the card itself is contact data and goes (owner, 2026-09-16)").isZero()
+        // Owner's ruling (2026-09-17): the words stay and he becomes "Former member"
+        // in them, the same name his holder rows carry. Her will still says what to do.
         assertThat(
             db.queryForObject(
                 "select note from estate_roles where estate_document_id = ?::uuid", String::class.java,
                 UUID.fromString(ids.getValue("will")),
             ),
-        ).describedAs("free text that names him is redacted until counsel answers").isNull()
+        ).isEqualTo("Former member keeps the locker key; he and I disagreed about the flat")
         // Text that does not name him is her own writing about her own will, and stays.
         assertThat(
             db.queryForMap(
@@ -283,6 +285,41 @@ class AccountClosureApiTest : LifecycleTestSupport() {
         // Ishwarya's household is untouched from where she sits.
         assertThat(get("/api/v1/households/$householdId/investments", ishwarya).json().map { it.path("title").asText() })
             .contains("Joint locker gold", "Ishwarya's gold")
+    }
+
+    /**
+     * A name is a name, not a pattern. Somebody whose name carries brackets or a
+     * dot would be read as a regular expression by the replacement that puts
+     * "Former member" in their place, and could match the wrong words or none.
+     */
+    @Test
+    fun `a name with brackets in it is replaced as written, and matches nothing else`() {
+        val awkward = "A. (Ravi) K."
+        val memberId = addMember(ishwarya, householdId, awkward).path("id").asText()
+        val joiner = signIn()
+        joinHousehold(ishwarya, householdId, memberId, joiner, role = "editor")
+        val will = db.queryForObject(
+            "insert into estate_documents (household_id, member_id, kind, title) values (?::uuid, ?::uuid, 'will', 'Her will') returning id",
+            UUID::class.java, householdId, ishwaryaMemberId,
+        )!!
+        db.update(
+            """
+            insert into estate_roles (estate_document_id, role, member_id, note)
+            values (?::uuid, 'executor', ?::uuid, 'A. (Ravi) K. has the keys. Ax (Ravi) Ky is somebody else.')
+            """.trimIndent(),
+            will, memberId,
+        )
+
+        stepUp(joiner)
+        post("/api/v1/me/closure", joiner)
+        assertThat(purge.purge(closureId(userId(joiner)), Instant.now().plus(Duration.ofDays(31)))).isNotNull
+
+        assertThat(
+            db.queryForMap(
+                "select person_name, note from estate_roles where estate_document_id = ?::uuid", will,
+            ),
+        ).containsEntry("person_name", awkward)
+            .containsEntry("note", "Former member has the keys. Ax (Ravi) Ky is somebody else.")
     }
 
     @Test

@@ -118,6 +118,53 @@ it will appear, and then:
 rm -rf ~/.konan
 ```
 
+### A second stack cannot be made by renaming the project
+
+Learnt the hard way on 2026-09-26, and it nearly cost the personal database.
+
+`docker-compose.personal.yml` pins its names:
+
+```yaml
+volumes:
+  dbdata:      { name: almira-personal-dbdata }
+  redisdata:   { name: almira-personal-redisdata }
+  documents:   { name: almira-personal-documents }
+networks:
+  personal:    { name: almira-personal-net }
+```
+
+A pinned `name:` is the name Docker uses, whatever project asks for it. So
+`docker compose -p almira-somethingelse -f docker-compose.personal.yml up`
+does **not** get volumes of its own: it mounts these, and joins this network.
+What was meant to be a fresh, empty scratch stack came up on the real database,
+two postmasters ran on one data directory for four minutes, and the first one
+saved itself with
+
+```
+LOG:  performing immediate shutdown because data directory lock file is invalid
+```
+
+which is an emergency stop, not a margin to rely on. `pg_amcheck
+--heapallindexed --parent-check` found nothing afterwards, and the row counts
+were unchanged, but that was luck plus two guards: Postgres's lock check, and
+V33 refusing to migrate a database that still holds a plaintext location.
+
+Two rules follow:
+
+- **`docker compose config` must be read for `volumes:` and `networks:`, not
+  only `ports:` and `container_name:`.** The dry run that missed this checked
+  the ports and the container names, and both were right.
+- **A second stack gets its own compose file**, with its own volume and network
+  names, or its own containers entirely. Renaming the project is not isolation.
+
+And when removing such a stack, `down -v` is the wrong command: with pinned
+names it deletes the volumes of the stack it borrowed them from. Remove the
+containers by name instead:
+
+```bash
+docker rm -f <the scratch containers>          # never `down -v` here
+```
+
 ### Docker's own state
 
 Image layers, the build cache and the daemon's storage are shared across every

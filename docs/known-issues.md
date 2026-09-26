@@ -2769,3 +2769,36 @@ does is a script.
 **Risk if left** A CA who somehow met the cap would be told the link is gone and
 would ask for a new one, rather than waiting. Nothing is lost, and the old link
 still works.
+
+---
+
+## 89. A new person can sign in to the app and then cannot start anything
+
+**Where** `app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/App.kt`
+(`SignedIn`, the `household == null` branch), `POST /api/v1/households`.
+
+**What** Found on a real phone, 2026-09-26, doing the first end-to-end run
+against a backend over Wi-Fi (docs/18 §4). Sign-in works. The account it makes
+is new, so it has no household, and the app says: *"No household yet. The web
+client can create one."* That sentence is the whole screen, apart from the Sign
+out added this morning (issue 85's fix). The app can **use** a household and
+cannot **start** one, so a person who meets Almira on a phone is sent to another
+device before they can record anything.
+
+Nothing is broken underneath: the API creates households perfectly well
+(`POST /api/v1/households` is what the web client calls, and what was used from
+the Mac to unblock that phone). What is missing is the screen.
+
+**Why not fixed** The thin slice was scoped to reading an existing household on
+a phone, and this is a piece of onboarding rather than a defect in what was
+built. It needs the choices the web client's first run asks about (who it is
+for, who it tracks, what new entries default to, the household's name and
+yours), which is a design pass, not a form.
+
+**Risk if left** It is the first thing a new user meets, and it tells them to go
+away and come back. Every native-first install stops there. It also makes "a
+real new user can onboard entirely from the app" untestable, which is half of
+the docs/18 §4 milestone: the sign-in half is proven on real hardware, the
+"and then use it" half is only reachable with a household someone made for you
+elsewhere.
+

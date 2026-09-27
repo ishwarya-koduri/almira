@@ -125,6 +125,28 @@ data class Household(
     val version: Int,
 )
 
+/**
+ * The first run's four answers. Every one is optional to the server, which fills
+ * in what is left out ("My household", the signed-in person's name), so a person
+ * who answers nothing still ends up with somewhere to put things.
+ */
+@Serializable
+data class CreateHousehold(
+    val name: String? = null,
+    /** just_me or family: who the household is keeping records for. */
+    val mode: String? = null,
+    /** private or household: what a new entry starts as. */
+    val defaultVisibility: String? = null,
+    val displayName: String? = null,
+)
+
+/** Somebody recorded in a household who has no login of their own yet. */
+@Serializable
+data class AddMember(
+    val displayName: String,
+    val relationship: String? = null,
+)
+
 // --- the dashboard ----------------------------------------------------------
 
 /**

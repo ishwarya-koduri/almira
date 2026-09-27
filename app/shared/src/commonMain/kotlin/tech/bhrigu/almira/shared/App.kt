@@ -45,6 +45,8 @@ import tech.bhrigu.almira.shared.security.LockAvailability
 import tech.bhrigu.almira.shared.security.LockScreen
 import tech.bhrigu.almira.shared.security.LockState
 import tech.bhrigu.almira.shared.security.PlatformHost
+import tech.bhrigu.almira.shared.onboarding.FirstRunController
+import tech.bhrigu.almira.shared.onboarding.FirstRunScreen
 import tech.bhrigu.almira.shared.security.UnlockResult
 import tech.bhrigu.almira.shared.security.createAppLock
 import tech.bhrigu.almira.shared.security.createTokenStore
@@ -330,11 +332,20 @@ private fun SignedIn(
             contentAlignment = Alignment.Center,
         ) { CircularProgressIndicator(color = colors.accent) }
 
-        household == null -> Message(
-            "No household yet. The web client can create one.",
-            colors.inkMuted,
-            onSignOut,
-        )
+        // Nowhere to put anything yet, so the first run asks the four questions
+        // and makes one (docs/03 §1). Until this existed the app said "the web
+        // client can create one" and left the person holding a phone that could
+        // sign in and do nothing else (known issue 89).
+        household == null -> {
+            val firstRun = remember(api) { FirstRunController(api, scope) }
+            FirstRunScreen(
+                controller = firstRun,
+                // Straight into the household just made, without a round trip to
+                // the server that would show an empty screen on a slow line.
+                onCreated = { made -> households = listOf(made) },
+                onSignOut = onSignOut,
+            )
+        }
 
         else -> {
             val dashboard = remember(household.id, savedAt) {

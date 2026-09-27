@@ -176,6 +176,19 @@ class AlmiraApi(
     suspend fun households(): List<Household> = request { client.get("$baseUrl/api/v1/households") }
 
     /**
+     * The first run: a person with no household makes one (docs/03 §1). The same
+     * call the web client's first run makes, with the same four answers, so a
+     * household started on a phone is indistinguishable from one started on a
+     * laptop.
+     */
+    suspend fun createHousehold(body: CreateHousehold): Household =
+        request { client.post("$baseUrl/api/v1/households") { setBody(body) } }
+
+    /** Somebody the household keeps records for who does not sign in yet. */
+    suspend fun addMember(householdId: String, body: AddMember): Member =
+        request { client.post("$baseUrl/api/v1/households/$householdId/members") { setBody(body) } }
+
+    /**
      * Each viewer's own totals. Two members of one household see different
      * figures and **both are correct** — never label one "the household total"
      * in a way that implies the other is incomplete.

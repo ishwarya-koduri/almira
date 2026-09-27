@@ -23,6 +23,25 @@ end to end on both platforms as a thin slice.
 | **Brand** | One master, [`brand/almira-mark.svg`](../brand/almira-mark.svg) — a lock plate centred on its ground, covering 38 by 50 of a 100-unit canvas, with the wordmark as outlined paths so no font is needed. Every icon for web, Android and iOS is rendered from it by `brand/render-icons.py`, which also derives the maskable and adaptive scales by measuring the rendered pixels and fails if any variant overflows the area its platform guarantees. |
 | **Deployment** | [`deploy/`](../deploy) and [Doc 17](17-deploying.md): Dockerfile, compose stack, database bootstrap, `.env.production.example`, smoke test. Written; never run against a real host. |
 
+## 1a · What is built but switched off
+
+One feature ships behind a flag that is **false in every environment**.
+
+| | |
+|---|---|
+| Flag | `almira.exports.email.enabled` (`ALMIRA_EXPORTS_EMAIL_ENABLED`), default **false** |
+| What it gates | Emailing an export. With it off there is no email path to an export: the endpoints are `@ConditionalOnProperty`, so they are not routes and answer 404, and the clients show nothing. An export stays a download or a link the person opens. |
+| What turning it on requires | An email provider that can send (`almira.providers.email.mode` is `sandbox` or `live`, not `disabled` — the two together refuse at startup), **and** at least one address the account has proved it receives mail at. |
+| The guard that is not part of it | An export is never emailed to an address nobody proved. That holds with the flag on or off, and there is no setting that relaxes it. |
+| Where it is explained | [Doc 13, "Emailing an export"](13-providers-and-going-live.md#emailing-an-export--almiraexportsemailenabled); the addresses table is `V153`. |
+
+Deferred behind a later sub-flag, and not built: **scheduled sends** — a
+standing statement every month or quarter, a tax pack timed to the filing
+deadline, and an export that goes to a named heir if somebody stops checking in.
+The machinery each would sit on already exists (the notification outbox, the
+still-true sweep, the continuity signals), so these are wiring rather than
+invention, and they are v1.1 backlog rather than v1 scope.
+
 ## 2 · What is deliberately not built
 
 Not oversights — decisions, each with its reasoning written down where the code

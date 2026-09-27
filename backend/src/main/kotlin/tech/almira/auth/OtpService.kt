@@ -682,6 +682,13 @@ class OtpService(
         /** A code to a number someone wants on their account: proves they receive its texts. */
         const val PHONE_CHANGE = "phone_change"
 
+        /**
+         * A code to an address someone wants an export sent to: proves they
+         * receive its mail. The email twin of [PHONE_CHANGE], and deliberately
+         * not [LOGIN] — nothing proved under this purpose signs anybody in.
+         */
+        const val PROVE_EMAIL = "verify_email"
+
         const val SENDING = "sending"
         const val SENT = "sent"
         const val DELAYED = "delayed"

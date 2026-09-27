@@ -59,6 +59,9 @@ class StartupSettingsCheck : EnvironmentPostProcessor {
         }
         OtpService.checkBounds(props.otp)
         ProviderCalls.checkBounds(props.providers)
+        // Last, so a server with two problems still names the same one first
+        // as it did before this was added.
+        AlmiraProperties.Exports.check(props)
 
         // Properties classes that refuse in their own init blocks. Binding one
         // constructs it, so the refusal happens here rather than whenever the

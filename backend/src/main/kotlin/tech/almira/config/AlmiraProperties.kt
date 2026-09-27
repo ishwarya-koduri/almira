@@ -16,6 +16,7 @@ data class AlmiraProperties(
     val webauthn: WebAuthn = WebAuthn(),
     val ops: Ops = Ops(),
     val share: Share = Share(),
+    val exports: Exports = Exports(),
     /**
      * Gates the checks that must not be bypassable by forgetting a flag:
      * anything other than exactly "development" makes them strict.
@@ -137,6 +138,66 @@ data class AlmiraProperties(
      * Sized so that a family sharing with their CA never meets them; see
      * [maxOpensPerLinkPerHour] and [maxOpensPerNetworkPerHour].
      */
+    /**
+     * Exports, and the one thing about them that is switched off.
+     *
+     * [Exports.Email.enabled] gates emailing an export: with it false — which
+     * is the default, in every environment — there is no email path to an
+     * export at all. The endpoints that add a destination address, and the one
+     * that sends, answer 404 as though they had never been written, and the
+     * clients show nothing. An export is what it was before: a download, or a
+     * link the person opens themselves.
+     *
+     * Turning it on needs two things beyond this flag, and StartupSettingsCheck
+     * refuses to start without the first: an email provider that can send
+     * (`almira.providers.email.mode` is sandbox or live, not disabled), and at
+     * least one address the account has proved it receives mail at. The second
+     * cannot be a startup check because it is per account, so it is a guard on
+     * the send — and that guard is unconditional, not part of this flag: even
+     * with email on, an export is never sent to an address nobody proved
+     * (V153).
+     */
+    data class Exports(val email: Email = Email()) {
+        data class Email(
+            /** Off. Every environment, until somebody turns it on deliberately. */
+            val enabled: Boolean = false,
+            /**
+             * How long an emailed export's link works for. The link is the
+             * delivery, so this is how long the export itself is reachable —
+             * after it, the link is gone and a new one has to be asked for.
+             */
+            val linkTtl: Duration = Duration.ofDays(7),
+            /** How many addresses one account may prove. A destination list, not a mailing list. */
+            val maxAddressesPerAccount: Int = 5,
+        )
+
+        companion object {
+            /** The refusal this makes at startup, with no side effects. See StartupSettingsCheck. */
+            fun check(props: AlmiraProperties) {
+                require(
+                    !props.exports.email.enabled ||
+                        props.providers.email.mode.trim().lowercase() != "disabled",
+                ) {
+                    "Emailing exports is on in almira.exports.email.enabled (ALMIRA_EXPORTS_EMAIL_ENABLED), " +
+                        "but almira.providers.email.mode (ALMIRA_PROVIDER_EMAIL_MODE) is 'disabled', so no " +
+                        "export could ever be sent and no address could ever be proved. Set the email " +
+                        "provider to sandbox or live, or turn emailing exports off. Refusing rather than " +
+                        "starting a server whose export screen offers something it cannot do."
+                }
+                require(props.exports.email.maxAddressesPerAccount in 1..20) {
+                    "almira.exports.email.max-addresses-per-account must be 1 to 20 " +
+                        "(is ${props.exports.email.maxAddressesPerAccount}). Zero means the feature is on " +
+                        "and unusable; a large number makes an account's destination list a mailing list."
+                }
+                require(!props.exports.email.linkTtl.isNegative && !props.exports.email.linkTtl.isZero) {
+                    "almira.exports.email.link-ttl must be more than zero (is " +
+                        "${props.exports.email.linkTtl}). A link that has already expired when it is sent " +
+                        "is a support ticket, not a protection."
+                }
+            }
+        }
+    }
+
     data class Share(
         /**
          * Opens of ONE link in an hour, whoever opens it. A CA reads the page,

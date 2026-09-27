@@ -57,6 +57,14 @@ class StartupSettingsCheckTest {
             "almira.providers.email.mode (ALMIRA_PROVIDER_EMAIL_MODE) is 'disabled'",
         ),
         Case(
+            "emailing exports on with the email provider disabled",
+            mapOf(
+                "almira.exports.email.enabled" to "true",
+                "almira.providers.email.mode" to "disabled",
+            ),
+            "almira.providers.email.mode (ALMIRA_PROVIDER_EMAIL_MODE) is 'disabled'",
+        ),
+        Case(
             "a key-encryption key that is not 32 bytes",
             mapOf("almira.encryption.master-key" to "AAAA"),
             "must be 32 bytes (AES-256); got 3",

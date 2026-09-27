@@ -58,6 +58,69 @@ Every provider reads one property, with three values:
   rule, because phone codes go through `almira.otp.provider`, not the `sms`
   provider (known-issues 12).
 
+### Emailing an export — `almira.exports.email.enabled`
+
+A second switch, and not a provider one: it gates a *feature*, not an adapter.
+
+```
+almira.exports.email.enabled       false          ALMIRA_EXPORTS_EMAIL_ENABLED
+almira.exports.email.link-ttl      7d             ALMIRA_EXPORTS_EMAIL_LINK_TTL
+almira.exports.email.max-addresses-per-account
+                                   5              ALMIRA_EXPORTS_EMAIL_MAX_ADDRESSES
+```
+
+**Off in every environment, until somebody turns it on deliberately.** With it
+false there is no email path to an export at all: the endpoints that prove a
+destination address, and the one that sends, are not routes — the controllers
+are `@ConditionalOnProperty`, so they answer the ordinary 404 of something that
+was never written rather than a 403 that tells a caller the feature exists and
+is switched off. An export is what it has always been: a download, or a link the
+person opens themselves.
+
+**What turning it on requires.**
+
+1. An email provider that can send — `almira.providers.email.mode` is `sandbox`
+   or `live`, not `disabled`. The two together refuse at startup naming both
+   settings, for the same reason email sign-in with a disabled provider does:
+   a server whose export screen offers something it cannot do is not a state
+   anyone chose.
+2. At least one address the account has proved it receives mail at. That cannot
+   be a startup check because it is per account, so it is a guard on the send.
+
+**The guard is not part of the switch.** An export is never emailed to an
+address nobody proved, and that holds whatever this flag says. Turning the
+feature on does not turn the guard off; there is no setting that does. An
+account with no proved address simply cannot email an export, and is told how to
+prove one.
+
+**The frozen contract and a flag that is off.** These endpoints are deliberately
+*not* in `docs/api/openapi-v1.json`, and that is not drift. The contract is
+checked in both directions: the live API must not lose anything the frozen file
+describes, and it must not serve anything the file omits. A flag-gated path
+cannot satisfy both at once — listed in the file it is a missing path whenever
+the flag is off, which is every environment today, and the compatibility check
+calls that a breakage. So the file describes what the server always serves, the
+undeclared check is satisfied because nothing extra is served with the flag off,
+and re-freezing (`./scripts/freeze-api-spec.sh`, against a server started with
+the flag on) belongs to the change that turns emailing exports on by default —
+not to the commits that build it.
+
+**Proving an address** is a one-time code to that address, from a signed-in
+session that has recently confirmed it is you (`OtpService.PROVE_EMAIL`, purpose
+`verify_email`). It is the phone-change flow with the channel swapped, and it
+carries the same care: the code is stored keyed rather than hashed, it works
+once, wrong guesses are counted, and the per-address and per-network hourly caps
+are the ones sign-in already uses.
+
+A proved address is **not** an identity. It lives in `verified_email_addresses`
+(V153), never in `users.email`, and nothing in sign-in reads that table.
+Somewhere to send a file and a way into the account are different things, and
+the day they are the same column is the day adding a destination quietly adds a
+front door. There is deliberately no global uniqueness on the address either:
+two accounts may prove the same one — a couple with one mailbox is a household,
+not a conflict — which is also what lets the request path answer identically for
+every address, because there is nothing for it to find out.
+
 Anything else refuses to start, with a sentence. That includes `off`, which was
 the old name for this state: it passed the startup check and then crashed the
 application for three providers (known-issues 11), so it is refused by name and

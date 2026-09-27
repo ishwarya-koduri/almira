@@ -87,6 +87,23 @@ person opens themselves.
 2. At least one address the account has proved it receives mail at. That cannot
    be a startup check because it is per account, so it is a guard on the send.
 
+**Off is proven, not asserted.** `ExportEmailOffChangesNothingTest` runs in the
+ordinary suite context — the state every environment is actually in — and
+checks that the send and the address endpoints answer 404 with `not_found`
+rather than a 403 that would advertise the feature; that neither appears in
+`/v3/api-docs`, which is what a client is generated from; and that the download
+is byte-for-byte the behaviour it always had in all three formats. The same
+endpoints are exercised on the other side of the switch by the flag-on classes,
+so the pair proves the toggle does something rather than that one side is
+inert.
+
+One thing deliberately survives the switch: **a link already sent keeps
+working**. `/api/v1/share/{token}/export` is not flag-gated, because turning the
+feature off must stop new links being made and must not reach into somebody's
+inbox to break one they were already given. With the flag off nothing can mint
+one, so the route has nothing to serve and says what every dead link says. There
+is a test for the surviving link too.
+
 **The guard is not part of the switch.** An export is never emailed to an
 address nobody proved, and that holds whatever this flag says. Turning the
 feature on does not turn the guard off; there is no setting that does. An

@@ -2802,3 +2802,42 @@ the docs/18 §4 milestone: the sign-in half is proven on real hardware, the
 "and then use it" half is only reachable with a household someone made for you
 elsewhere.
 
+---
+
+## 90. Emailing an export has no screen in either client
+
+Built, tested, switched off, and unreachable by a person.
+
+`almira.exports.email.enabled` gates a complete server-side feature (V153,
+V154): an account proves an address with a one-time code, asks for its holdings
+as CSV, XLSX or PDF, and is emailed an expiring link to the file. It is covered
+by four test classes, and with the flag off it is provably absent
+(`ExportEmailOffChangesNothingTest`).
+
+Neither client can reach any of it. The web client's export is still a download
+button, the app has no export screen at all, and nothing in `app/` or
+`static/app/` mentions `/me/email-addresses` or `/reports/export/email` —
+deliberately, since with the flag off those paths do not exist and a client that
+called them would get a 404 it had no way to interpret.
+
+**Why not fixed** The stages the owner set ran to the toggle and stopped there;
+the client half was never in them. It is also the half that needs decisions
+rather than wiring: where "email it to me" sits beside the download, how an
+account manages its proved addresses, whether a sent link is shown on the
+existing shares screen or gets its own, and what the app shows when the server
+has the feature switched off.
+
+**Risk if left** Nobody can use it, so it is code that is maintained and not
+earning anything — and the longer it sits, the more likely the first person to
+wire a client up will be someone who was not in these four commits. The server
+side is done and the contract is additive, so a client can be built against it
+whenever the screens are decided.
+
+**How a client should ask** Not by probing. With the flag off the endpoints
+404, which a client cannot tell from a network error or a typo in a path, so
+before any UI is built the server should report the capability the way it
+reports a disabled provider (`connect/providers` answers `mode: DISABLED` and
+the web client hides Account Aggregator because of it). That is one always-served
+field rather than a route that may or may not exist, and it belongs in the same
+change as the first screen.
+

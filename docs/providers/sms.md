@@ -21,7 +21,7 @@ provider's timeout and retry policy.
 
 ## (a) The interface contract
 
-### One-time codes — `backend/src/main/kotlin/tech/bhrigu/almira/auth/OtpSender.kt`
+### One-time codes — `backend/src/main/kotlin/tech/almira/auth/OtpSender.kt`
 
 ```kotlin
 interface OtpSender {
@@ -54,7 +54,7 @@ What each outcome does, already implemented and tested in `OtpServiceTest` and
 | `REJECTED` | 422 `otp_delivery_failed` | removed / lifted / given back | kept |
 | `INSUFFICIENT_BALANCE` | 503 `otp_service_unavailable` + ERROR `PROVIDER ACCOUNT PROBLEM` | removed / lifted / given back | kept |
 
-### Reminders — `backend/src/main/kotlin/tech/bhrigu/almira/provider/Delivery.kt`
+### Reminders — `backend/src/main/kotlin/tech/almira/provider/Delivery.kt`
 
 ```kotlin
 interface ChannelSender {
@@ -111,7 +111,7 @@ Found reading the code in this stage.
 1. **No `almira.otp.provider` value other than `log` exists, and choosing one
    crashes startup.** Run on 2026-09-13 against the jar from `94d839e` with
    `ALMIRA_OTP_PROVIDER=sms`:
-   `Parameter 1 of constructor in tech.bhrigu.almira.auth.OtpService required a bean of type 'tech.bhrigu.almira.auth.OtpSender' that could not be found.`
+   `Parameter 1 of constructor in tech.almira.auth.OtpService required a bean of type 'tech.almira.auth.OtpSender' that could not be found.`
    `ProviderModeCheck` checks `almira.providers.*.mode` but not
    `almira.otp.provider`, so this is the obscure failure that check exists to
    replace. A live sender should read `almira.providers.sms.mode=live` (one

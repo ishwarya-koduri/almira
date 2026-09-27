@@ -78,7 +78,7 @@ Lots of text scrolls past. You are looking for **`** BUILD SUCCEEDED **`** at
 the end. Then:
 
 ```bash
-xcrun simctl boot "iPhone 17 Pro" 2>/dev/null; xcrun simctl install "iPhone 17 Pro" ~/Developer/almira-personal/xcode-derived/Build/Products/Debug-iphonesimulator/Almira.app && xcrun simctl launch "iPhone 17 Pro" tech.bhrigu.almira
+xcrun simctl boot "iPhone 17 Pro" 2>/dev/null; xcrun simctl install "iPhone 17 Pro" ~/Developer/almira-personal/xcode-derived/Build/Products/Debug-iphonesimulator/Almira.app && xcrun simctl launch "iPhone 17 Pro" tech.almira
 ```
 
 Almira opens in the iPhone window. You can tap it with your mouse and type with
@@ -112,7 +112,7 @@ Look for `BUILD SUCCESSFUL`. Then open **Almira** from the emulator's app list,
 or launch it from Terminal:
 
 ```bash
-adb shell monkey -p tech.bhrigu.almira -c android.intent.category.LAUNCHER 1
+adb shell monkey -p tech.almira -c android.intent.category.LAUNCHER 1
 ```
 
 ---

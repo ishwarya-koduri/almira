@@ -1,0 +1,783 @@
+package tech.almira.investment
+
+import tech.almira.measurement.ProductEvent
+import tech.almira.measurement.ProductMeasurement
+import org.springframework.dao.DuplicateKeyException
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import tech.almira.audit.AuditService
+import tech.almira.auth.AuthService
+import tech.almira.catalog.CatalogRepository
+import tech.almira.catalog.CatalogService
+import tech.almira.catalog.CustomFieldRow
+import tech.almira.catalog.FieldOption
+import tech.almira.common.ApiException
+import tech.almira.common.SensibleDates
+import tech.almira.e2e.RetiredPlaintextLocation
+import tech.almira.household.HouseholdService
+import tech.almira.security.RequestUserContext
+import java.math.BigDecimal
+import java.time.LocalDate
+import java.util.UUID
+
+data class OwnerInput(val memberId: UUID, val sharePct: BigDecimal? = null)
+
+data class CustomFieldInput(
+    val key: String,
+    val label: String,
+    val dataType: String,
+    val unit: String? = null,
+    val options: List<FieldOption>? = null,
+    val required: Boolean = false,
+    /** At most one per record may count toward value — enforced by the database. */
+    val countsTowardValue: Boolean = false,
+)
+
+/**
+ * A nominee is either a household member or a plain name — an aunt who will
+ * never use this app is still a nominee, and the record has to hold her.
+ */
+data class NomineeInput(
+    val memberId: UUID? = null,
+    val name: String? = null,
+    val relationship: String? = null,
+    val sharePct: BigDecimal? = null,
+)
+
+data class ValuationInput(
+    val value: BigDecimal,
+    val asOfDate: LocalDate? = null,
+    val quantity: BigDecimal? = null,
+    val note: String? = null,
+)
+
+/**
+ * The total a rate and a quantity make, when the total was not given.
+ *
+ * The owner typed 5000 into "Amount paid" meaning rupees a gram, put 4 in the
+ * weight, and the almirah recorded five thousand rupees of gold instead of
+ * twenty (2026-09-26). The clients now offer both fields and compute one from
+ * the other as you type; this is the same arithmetic on the server, so a client
+ * that sends only a rate and a quantity — an import, a script, an older app —
+ * gets the same answer rather than a quarter of it.
+ *
+ * The total wins when both are given: it is the field of record, and a person
+ * who edits the total after the rate means the total (owner's ruling,
+ * 2026-09-26).
+ */
+internal fun totalFor(investedAmount: BigDecimal?, ratePerUnit: BigDecimal?, quantity: BigDecimal?): BigDecimal? =
+    investedAmount ?: ratePerUnit?.let { rate -> quantity?.let { rate.multiply(it) } }
+
+data class CreateInvestment(
+    /** Client-supplied so an offline capture keeps its identity and retries are idempotent. */
+    val id: UUID? = null,
+    val typeId: UUID,
+    val title: String,
+    val investedAmount: BigDecimal? = null,
+    /** Rupees a gram, a share, a unit. See [totalFor] (V152). */
+    val ratePerUnit: BigDecimal? = null,
+    val currency: String? = null,
+    val quantity: BigDecimal? = null,
+    val unit: String? = null,
+    val startDate: LocalDate? = null,
+    val maturityDate: LocalDate? = null,
+    val institutionId: UUID? = null,
+    val accountId: UUID? = null,
+    val attributes: Map<String, Any?> = emptyMap(),
+    val owners: List<OwnerInput> = emptyList(),
+    val visibility: String? = null,
+    val visibleToMemberIds: List<UUID> = emptyList(),
+    val isInContinuity: Boolean = true,
+    val notes: String? = null,
+    val customFields: List<CustomFieldInput> = emptyList(),
+    val initialValuation: ValuationInput? = null,
+    /**
+     * Set only by the spreadsheet import: save what the sheet had, and let the
+     * completeness report ask for the rest. Not reachable from the API body —
+     * the controller builds this object field by field.
+     */
+    val allowMissingRequired: Boolean = false,
+)
+
+/**
+ * What to change about the copy. Everything not named here is carried over.
+ */
+data class DuplicateInvestment(
+    /** Client-supplied, so a retry of the same tap does not make a third record. */
+    val id: UUID? = null,
+    val title: String? = null,
+    val investedAmount: BigDecimal? = null,
+    val quantity: BigDecimal? = null,
+    val startDate: LocalDate? = null,
+    val maturityDate: LocalDate? = null,
+    val visibility: String? = null,
+    /** The nominees are usually the same people; the option exists for when they aren't. */
+    val copyNominees: Boolean = true,
+    /**
+     * False for a renewal. Carrying the old maturity date forward would create a
+     * record that matured before it started, and it would show on the dashboard
+     * as overdue the day it was made.
+     */
+    val carryMaturityDate: Boolean = true,
+)
+
+data class RolledOver(val previous: InvestmentRow, val created: CreatedInvestment)
+
+data class UpdateInvestment(
+    val version: Int,
+    val title: String? = null,
+    val investedAmount: BigDecimal? = null,
+    val ratePerUnit: BigDecimal? = null,
+    val quantity: BigDecimal? = null,
+    val unit: String? = null,
+    val startDate: LocalDate? = null,
+    val maturityDate: LocalDate? = null,
+    /** Retired (V33, docs/20 §1). Text here is refused; see [RetiredPlaintextLocation]. */
+    val storageLocation: String? = null,
+    val institutionId: UUID? = null,
+    val accountId: UUID? = null,
+    val attributes: Map<String, Any?>? = null,
+    val notes: String? = null,
+    val status: String? = null,
+    val isInContinuity: Boolean? = null,
+    val owners: List<OwnerInput>? = null,
+)
+
+/** A record saved but not visible to its creator is a legitimate outcome, so it is reported. */
+data class CreatedInvestment(val id: UUID, val visibleToYou: Boolean, val record: InvestmentRow?)
+
+@Service
+class InvestmentService(
+    private val repo: InvestmentRepository,
+    private val catalog: CatalogService,
+    private val catalogRepo: CatalogRepository,
+    private val households: HouseholdService,
+    private val validator: AttributeValidator,
+    private val auth: AuthService,
+    private val audit: AuditService,
+    private val reminders: tech.almira.reminder.ReminderService,
+    private val userContext: RequestUserContext,
+    private val measurement: ProductMeasurement,
+) {
+    private val visibilities = setOf("private", "household", "scoped")
+    private val statuses = setOf("active", "matured", "closed", "draft", "archived")
+    private val CURRENCY_CODE = Regex("^[A-Z]{3}$")
+
+    @Transactional
+    fun create(householdId: UUID, input: CreateInvestment): CreatedInvestment {
+        val userId = userContext.require()
+        // Before anything is written: a retired "where" key with text in it is
+        // refused by name, not left to fall through as an unknown attribute.
+        val submittedAttributes = RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes)!!
+        val household = households.get(householdId)
+        val type = catalog.type(householdId, input.typeId)
+
+        if (input.title.isBlank()) {
+            throw ApiException.badRequest("title_required", "Give this a name you'll recognise.")
+        }
+        requireSensibleDates(input.startDate, input.maturityDate)
+
+        val currency = resolveCurrency(input.currency, household.baseCurrency, type.schema)
+
+        val id = input.id ?: UUID.randomUUID()
+        // A retry of an offline capture arrives with the same id. If we can see
+        // the earlier one, it succeeded and this is a duplicate delivery.
+        repo.find(householdId, id)?.let {
+            return CreatedInvestment(it.id, visibleToYou = true, record = it)
+        }
+
+        val owners = resolveOwners(householdId, household.myMemberId, input.owners)
+        val visibility = resolveVisibility(input.visibility, household.defaultVisibility, userId)
+        val grants = resolveGrants(householdId, visibility, input.visibleToMemberIds, owners)
+
+        input.customFields.forEach { catalog.validateFieldDefinition(it.toFieldDef()) }
+        // The values are validated against the definitions as they will be
+        // stored, before any of them is: the custom fields used to be written
+        // first, then the values checked, then the insert decide whether this
+        // caller may create this record at all — so nothing was written for a
+        // refusal only because the transaction rolled it back.
+        val pendingDefs = input.customFields.map { field ->
+            CustomFieldRow(
+                id = UUID.randomUUID(), ownerType = "record", ownerId = id,
+                key = field.key, label = field.label, dataType = field.dataType,
+                unit = field.unit, options = field.options, required = field.required,
+                countsTowardValue = field.countsTowardValue, sort = 0,
+            )
+        }
+        val attributes = validator.validate(
+            type.schema, pendingDefs, submittedAttributes,
+            requireEssentials = !input.allowMissingRequired,
+        )
+
+        try {
+            repo.insert(
+                id = id, householdId = householdId, typeId = type.id, title = input.title.trim(),
+                investedAmount = totalFor(input.investedAmount, input.ratePerUnit, input.quantity),
+                ratePerUnit = input.ratePerUnit, currency = currency,
+                quantity = input.quantity, unit = input.unit,
+                startDate = input.startDate, maturityDate = input.maturityDate,
+                institutionId = input.institutionId, accountId = input.accountId,
+                attributes = attributes, notes = input.notes,
+                visibility = visibility, isInContinuity = input.isInContinuity,
+                createdBy = userId,
+            )
+        } catch (_: DuplicateKeyException) {
+            throw ApiException.conflict(
+                "already_exists", "This one is already saved.", mapOf("id" to id),
+            )
+        }
+
+        // Only now that the record exists and is this caller's to create.
+        input.customFields.forEach { field ->
+            catalogRepo.createCustomField(
+                householdId = householdId, ownerType = "record", ownerId = id,
+                key = field.key, label = field.label, dataType = field.dataType,
+                unit = field.unit, options = field.options, required = field.required,
+                countsTowardValue = field.countsTowardValue,
+            )
+        }
+
+        repo.replaceOwners(id, owners, holderType = "primary")
+        if (grants.isNotEmpty()) repo.replaceVisibilityGrants(householdId, id, grants, userId)
+        input.initialValuation?.let {
+            repo.addValuation(id, it.asOfDate ?: LocalDate.now(), it.value, it.quantity, it.note, userId)
+        }
+
+        audit.record(
+            householdId = householdId, actorUserId = userId, action = "investment.create",
+            entityType = "investment", entityId = id,
+            diff = mapOf("title" to input.title, "type" to type.code, "visibility" to visibility),
+        )
+        measurement.record(ProductEvent.HOLDING_ADDED, householdId = householdId, investmentIds = listOf(id))
+
+        val readBack = repo.find(householdId, id)
+        // A maturity date, a premium or a SIP implies a reminder. Creating it
+        // automatically is the difference between a registry that tells you
+        // things and one you have to remember to interrogate.
+        readBack?.let(reminders::syncForInvestment)
+        return CreatedInvestment(id, visibleToYou = readBack != null, record = readBack)
+    }
+
+    /**
+     * The fourth FD of the year, typed once.
+     *
+     * A duplicate copies the *shape* — type, institution, account, unit,
+     * attributes, custom field definitions, owners, nominees, visibility — and
+     * none of the history. Valuations, transactions, tax lots and documents
+     * belong to the record that actually happened; copying them would invent a
+     * second purchase that never took place, and every return figure downstream
+     * would be wrong in the same direction.
+     */
+    @Transactional
+    fun duplicate(householdId: UUID, id: UUID, input: DuplicateInvestment): CreatedInvestment {
+        val source = get(householdId, id)
+        val customFields = catalogRepo.customFields("record", listOf(id))
+
+        val created = create(
+            householdId,
+            CreateInvestment(
+                id = input.id,
+                typeId = source.typeId,
+                title = input.title?.trim()?.takeIf { it.isNotBlank() } ?: "${source.title} (copy)",
+                investedAmount = input.investedAmount ?: source.investedAmount,
+                currency = source.currency,
+                quantity = input.quantity ?: source.quantity,
+                unit = source.unit,
+                startDate = input.startDate ?: source.startDate,
+                maturityDate = input.maturityDate
+                    ?: source.maturityDate.takeIf { input.carryMaturityDate },
+                institutionId = source.institutionId,
+                accountId = source.accountId,
+                attributes = source.attributes,
+                owners = source.owners.map { OwnerInput(it.memberId, it.sharePct) },
+                visibility = input.visibility ?: source.visibility,
+                visibleToMemberIds = source.visibleToMemberIds,
+                isInContinuity = source.isInContinuity,
+                notes = source.notes,
+                customFields = customFields.map {
+                    CustomFieldInput(
+                        key = it.key, label = it.label, dataType = it.dataType, unit = it.unit,
+                        options = it.options, required = it.required,
+                        countsTowardValue = it.countsTowardValue,
+                    )
+                },
+            ),
+        )
+
+        if (input.copyNominees && source.nominees.isNotEmpty()) {
+            repo.replaceNominees(
+                created.id,
+                source.nominees.map {
+                    Triple(it.memberId, it.name, it.relationship to it.sharePct)
+                },
+            )
+        }
+        return created.copy(record = repo.find(householdId, created.id))
+    }
+
+    /**
+     * A maturity, renewed.
+     *
+     * The old record is not edited into the new one: it is marked matured and
+     * kept, and the new one points back at it. Overwriting would lose the years
+     * of valuations and interest that make the renewal worth recording — and
+     * "what did that FD actually earn?" is exactly the question a registry is
+     * for (docs/07 §1 "rollover without losing history").
+     */
+    @Transactional
+    fun rollover(householdId: UUID, id: UUID, input: DuplicateInvestment): RolledOver {
+        val userId = userContext.require()
+        val source = get(householdId, id)
+        if (source.status == "closed") {
+            throw ApiException.badRequest(
+                "already_closed", "This one is closed. Add it as a new record instead.",
+            )
+        }
+
+        val created = duplicate(
+            householdId, id,
+            input.copy(
+                title = input.title ?: source.title,
+                // The new term starts where the old one ended, unless told otherwise.
+                startDate = input.startDate ?: source.maturityDate ?: LocalDate.now(),
+                // Ask for the new maturity date rather than guessing at it.
+                maturityDate = input.maturityDate,
+                carryMaturityDate = false,
+            ),
+        )
+        repo.setRolledFrom(created.id, id)
+        repo.copyGoalLinks(id, created.id)
+
+        val previous = repo.update(
+            id = id, version = source.version, status = "matured",
+            title = null, investedAmount = null, ratePerUnit = null, quantity = null, unit = null,
+            startDate = null, maturityDate = null,
+            institutionId = null, accountId = null, attributes = null, notes = null,
+            isInContinuity = null,
+        )
+        if (previous == 0) {
+            throw ApiException.conflict(
+                "stale_write",
+                "Someone else changed this while you were renewing it. Reload and try again.",
+                mapOf("currentVersion" to source.version),
+            )
+        }
+
+        audit.record(
+            householdId = householdId, actorUserId = userId, action = "investment.rollover",
+            entityType = "investment", entityId = id,
+            diff = mapOf("renewedAs" to created.id.toString()),
+        )
+        return RolledOver(previous = get(householdId, id), created = created.copy(record = repo.find(householdId, created.id)))
+    }
+
+    @Transactional(readOnly = true)
+    fun list(householdId: UUID, filter: InvestmentFilter): List<InvestmentRow> {
+        households.get(householdId)
+        return repo.list(householdId, filter)
+    }
+
+    @Transactional(readOnly = true)
+    fun get(householdId: UUID, id: UUID): InvestmentRow {
+        households.get(householdId)
+        return repo.find(householdId, id) ?: throw ApiException.notFound()
+    }
+
+    @Transactional
+    fun update(householdId: UUID, id: UUID, input: UpdateInvestment): InvestmentRow {
+        val userId = userContext.require()
+        val household = households.get(householdId)
+        RetiredPlaintextLocation.refuseIfSent("storageLocation", input.storageLocation)
+        val current = get(householdId, id)
+        // Permission is settled here, before anything is written, so that a
+        // refusal below can only mean the version moved (docs/05 §3.6).
+        requireWritable(id)
+        input.status?.let(::requireStatus)
+        requireSensibleDates(input.startDate, input.maturityDate)
+
+        val attributes = RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes)?.let {
+            val type = catalog.type(householdId, current.typeId)
+            val customDefs = catalogRepo.customFields("record", listOf(id))
+            validator.validate(type.schema, customDefs, it)
+        }
+
+        // Checked before the row is written, not after.
+        val owners = input.owners?.let { resolveOwners(householdId, household.myMemberId, it) }
+
+        val updated = repo.update(
+            id = id, version = input.version, title = input.title?.trim(),
+            // The same rule as on create: a rate and a quantity with no total
+            // mean the two multiplied, so editing on a phone cannot quietly
+            // record a quarter of what somebody owns (V152).
+            investedAmount = totalFor(input.investedAmount, input.ratePerUnit, input.quantity ?: current.quantity),
+            ratePerUnit = input.ratePerUnit, quantity = input.quantity, unit = input.unit,
+            startDate = input.startDate, maturityDate = input.maturityDate,
+            institutionId = input.institutionId,
+            accountId = input.accountId, attributes = attributes, notes = input.notes,
+            status = input.status, isInContinuity = input.isInContinuity,
+        )
+        if (updated == 0) {
+            // Permission was settled before the write, so this can only be the
+            // version. Comparing against the version read at the top of this
+            // method would be wrong under contention: a writer that committed
+            // in between moved the row after we read it, and the loser would be
+            // told "not yours" for a record that is its own. Read it again.
+            throw staleWrite(householdId, id)
+        }
+
+        owners?.let { repo.replaceOwners(id, it, "primary") }
+
+        audit.record(
+            householdId = householdId, actorUserId = userId, action = "investment.update",
+            entityType = "investment", entityId = id,
+        )
+        return get(householdId, id).also(reminders::syncForInvestment)
+    }
+
+    /**
+     * Changing visibility is audited separately from an ordinary edit. Moving a
+     * record from household to private retroactively hides it from everyone
+     * else — from lists, search, reports and totals alike — and that is exactly
+     * the kind of change someone may need to account for later (docs/05 §3.5).
+     */
+    @Transactional
+    fun changeVisibility(
+        householdId: UUID,
+        id: UUID,
+        visibility: String,
+        visibleToMemberIds: List<UUID>,
+    ): InvestmentRow {
+        val userId = userContext.require()
+        households.get(householdId)
+        val current = get(householdId, id)
+        requireWritable(id)
+        requireVisibility(visibility)
+
+        val grants =
+            if (visibility == "scoped") {
+                resolveGrants(householdId, visibility, visibleToMemberIds, current.owners.map {
+                    it.memberId to it.sharePct
+                })
+            } else {
+                emptyList()
+            }
+
+        repo.updateVisibility(id, visibility)
+        repo.replaceVisibilityGrants(householdId, id, grants, userId)
+
+        audit.record(
+            householdId = householdId, actorUserId = userId, action = "investment.visibility_change",
+            entityType = "investment", entityId = id,
+            diff = mapOf(
+                "from" to current.visibility, "to" to visibility,
+                "sharedWith" to grants.size,
+            ),
+        )
+        return get(householdId, id)
+    }
+
+    @Transactional
+    fun addValuation(householdId: UUID, id: UUID, input: ValuationInput): InvestmentRow {
+        val userId = userContext.require()
+        households.get(householdId)
+        get(householdId, id)
+        requireWritable(id)
+        if (input.value.signum() < 0) {
+            throw ApiException.badRequest("value_negative", "A value can't be negative.")
+        }
+        val asOf = input.asOfDate ?: LocalDate.now()
+        if (asOf.isAfter(LocalDate.now())) {
+            throw ApiException.badRequest("value_future", "That date is in the future.")
+        }
+        repo.addValuation(id, asOf, input.value, input.quantity, input.note, userId)
+        repo.markVerified(id)
+        audit.record(
+            householdId = householdId, actorUserId = userId, action = "investment.valuation_add",
+            entityType = "investment", entityId = id,
+        )
+        return get(householdId, id)
+    }
+
+    @Transactional(readOnly = true)
+    fun valuations(householdId: UUID, id: UUID): List<ValuationRow> {
+        get(householdId, id)
+        return repo.valuations(id)
+    }
+
+    /**
+     * Records who is nominated, and for how much.
+     *
+     * A nominee is NOT an heir. In India a nominee receives an asset as a
+     * custodian; who ends up owning it is decided by a will or by succession law
+     * (docs/01 §10). Almira records both so the mismatch can be surfaced later,
+     * which is precisely the thing families discover too late.
+     */
+    @Transactional
+    fun replaceNominees(householdId: UUID, id: UUID, nominees: List<NomineeInput>): InvestmentRow {
+        val userId = userContext.require()
+        households.get(householdId)
+        get(householdId, id)
+        requireWritable(id)
+
+        if (nominees.isEmpty()) {
+            repo.replaceNominees(id, emptyList())
+            audit.record(
+                householdId = householdId, actorUserId = userId, action = "investment.nominees_cleared",
+                entityType = "investment", entityId = id,
+            )
+            return get(householdId, id)
+        }
+
+        val known = households.members(householdId).associateBy { it.id }
+        val resolved = nominees.map { nominee ->
+            val name = when {
+                nominee.memberId != null ->
+                    known[nominee.memberId]?.displayName ?: throw ApiException.badRequest(
+                        "nominee_unknown", "One of those people isn't part of this household.",
+                    )
+                !nominee.name.isNullOrBlank() -> nominee.name.trim()
+                else -> throw ApiException.badRequest(
+                    "nominee_required", "Give each nominee a name, or pick someone in the household.",
+                )
+            }
+            Triple(
+                nominee.memberId,
+                if (nominee.memberId == null) name else null,
+                (nominee.relationship to (nominee.sharePct ?: BigDecimal(100))),
+            )
+        }
+
+        val total = resolved.fold(BigDecimal.ZERO) { acc, it -> acc + it.third.second }
+        if (total.compareTo(BigDecimal(100)) != 0) {
+            throw ApiException.badRequest(
+                "nominee_shares_must_total_100",
+                "Nominee shares add up to $total%. They need to total 100%.",
+                mapOf("total" to total),
+            )
+        }
+
+        repo.replaceNominees(id, resolved)
+        audit.record(
+            householdId = householdId, actorUserId = userId, action = "investment.nominees_set",
+            entityType = "investment", entityId = id, diff = mapOf("count" to resolved.size),
+        )
+        return get(householdId, id)
+    }
+
+    /** Soft delete: the record moves to Trash and can be restored (docs/01 §11). */
+    @Transactional
+    fun archive(householdId: UUID, id: UUID) {
+        val userId = userContext.require()
+        households.get(householdId)
+        get(householdId, id)
+        requireWritable(id)
+        repo.softDelete(id)
+        audit.record(
+            householdId = householdId, actorUserId = userId, action = "investment.delete",
+            entityType = "investment", entityId = id,
+        )
+    }
+
+    @Transactional(readOnly = true)
+    fun trash(householdId: UUID): List<InvestmentRow> {
+        households.get(householdId)
+        return repo.listTrash(householdId)
+    }
+
+    @Transactional
+    fun restore(householdId: UUID, id: UUID): InvestmentRow {
+        val userId = userContext.require()
+        households.get(householdId)
+        if (repo.restore(id) == 0) throw ApiException.notFound("That isn't in the trash.")
+        audit.record(
+            householdId = householdId, actorUserId = userId, action = "investment.restore",
+            entityType = "investment", entityId = id,
+        )
+        return get(householdId, id)
+    }
+
+    // --- guards ---------------------------------------------------------------
+
+    /**
+     * The service layer's half of docs/05 §3.6: the same predicate the write
+     * policy uses, asked before the write instead of read back from it.
+     *
+     * Row-level security does not raise on a refused UPDATE or DELETE — it
+     * filters the row out, and the statement reports nothing changed. A viewer
+     * deleting a holding therefore got 204 and a record that was still there.
+     * Called after [get], so a record the caller cannot even read is already a
+     * 404 and this never turns into a "yes, it exists" for a stranger.
+     */
+    private fun requireWritable(id: UUID) {
+        if (!repo.canModify(id)) {
+            throw ApiException.forbidden("You can read this, but it isn't yours to change.")
+        }
+    }
+
+    /**
+     * Why the row is read again rather than compared with the copy from the top
+     * of the method: under contention the copy is out of date by construction.
+     * Two writers read version n, both send n, one commits n+1 — and the loser,
+     * comparing n against its own stale n, would conclude nobody had changed
+     * anything and answer "not yours to change" for its own record.
+     */
+    private fun staleWrite(householdId: UUID, id: UUID): ApiException {
+        val latest = repo.find(householdId, id) ?: return ApiException.notFound()
+        return ApiException.conflict(
+            "stale_write",
+            "Someone else changed this while you were editing. Reload and try again.",
+            mapOf("currentVersion" to latest.version),
+        )
+    }
+
+    private fun requireSensibleDates(startDate: LocalDate?, maturityDate: LocalDate?) {
+        SensibleDates.require(startDate, "startDate", "The start date")
+        SensibleDates.require(maturityDate, "maturityDate", "The maturity date")
+    }
+
+    // --- resolution helpers ---------------------------------------------------
+
+    /**
+     * Owner defaults to "me" because that is right almost every time, and an
+     * unowned record would be invisible to everyone including its author.
+     */
+    private fun resolveOwners(
+        householdId: UUID,
+        myMemberId: UUID?,
+        requested: List<OwnerInput>,
+    ): List<Pair<UUID, BigDecimal>> {
+        if (requested.isEmpty()) {
+            val me = myMemberId ?: throw ApiException.badRequest(
+                "owner_required", "Choose who this belongs to.",
+            )
+            return listOf(me to BigDecimal(100))
+        }
+
+        val known = households.members(householdId).associateBy { it.id }
+        requested.forEach {
+            if (it.memberId !in known) {
+                throw ApiException.badRequest(
+                    "owner_unknown", "One of the owners isn't part of this household.",
+                )
+            }
+        }
+        if (requested.map { it.memberId }.toSet().size != requested.size) {
+            throw ApiException.badRequest("owner_duplicate", "The same person is listed twice.")
+        }
+
+        // A single owner without an explicit share means all of it.
+        val shares = if (requested.size == 1 && requested[0].sharePct == null) {
+            listOf(requested[0].memberId to BigDecimal(100))
+        } else {
+            requested.map {
+                it.memberId to (
+                    it.sharePct ?: throw ApiException.badRequest(
+                        "share_required", "Give each owner a share when there's more than one.",
+                    )
+                    )
+            }
+        }
+        val total = shares.fold(BigDecimal.ZERO) { acc, (_, s) -> acc + s }
+        if (total.compareTo(BigDecimal(100)) != 0) {
+            throw ApiException.badRequest(
+                "shares_must_total_100",
+                "Ownership shares add up to $total%. They need to total 100%.",
+                mapOf("total" to total),
+            )
+        }
+        return shares
+    }
+
+    /** Per-user default wins over the household's (docs/05 §3.2). */
+    private fun resolveVisibility(
+        requested: String?,
+        householdDefault: String,
+        userId: UUID,
+    ): String {
+        if (requested != null) {
+            requireVisibility(requested)
+            return requested
+        }
+        return auth.me(userId).defaultVisibility.takeIf { it.isNotBlank() } ?: householdDefault
+    }
+
+    /**
+     * Co-owners are always added to the grant list. It costs nothing — they can
+     * see the record by ownership regardless — but it keeps "who can see this"
+     * in the UI honest rather than quietly incomplete.
+     */
+    private fun resolveGrants(
+        householdId: UUID,
+        visibility: String,
+        requested: List<UUID>,
+        owners: List<Pair<UUID, BigDecimal>>,
+    ): List<UUID> {
+        if (visibility != "scoped") return emptyList()
+        if (requested.isEmpty()) {
+            throw ApiException.badRequest(
+                "scope_empty", "Choose who you'd like to share this with.",
+            )
+        }
+        val known = households.members(householdId).map { it.id }.toSet()
+        requested.forEach {
+            if (it !in known) {
+                throw ApiException.badRequest(
+                    "scope_unknown", "One of those people isn't part of this household.",
+                )
+            }
+        }
+        return (requested + owners.map { it.first }).distinct()
+    }
+
+    /**
+     * A three-letter code, upper-cased, or the household's own currency.
+     *
+     * Free text here was how a total ended up unable to find a rate for
+     * "dollars". A type that asks for the currency (something held abroad) has
+     * to be told one: defaulting it to rupees would convert a dirham balance at
+     * a rate of one.
+     */
+    private fun resolveCurrency(
+        value: String?,
+        baseCurrency: String,
+        schema: tech.almira.catalog.TypeSchema,
+    ): String {
+        val code = value?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
+        if (code == null) {
+            if (schema.common["currency"]?.required == true) {
+                throw ApiException.badRequest(
+                    "currency_required", "Which currency is it held in?",
+                    mapOf("fields" to mapOf("currency" to "Which currency is it held in?")),
+                )
+            }
+            return baseCurrency
+        }
+        if (!CURRENCY_CODE.matches(code)) {
+            throw ApiException.badRequest(
+                "currency_invalid", "Use a three-letter currency code, like USD or AED.",
+                mapOf("fields" to mapOf("currency" to "Use a three-letter code, like USD")),
+            )
+        }
+        return code
+    }
+
+    private fun requireVisibility(value: String) {
+        if (value !in visibilities) {
+            throw ApiException.badRequest(
+                "visibility_invalid", "Visibility must be private, household or scoped.",
+            )
+        }
+    }
+
+    private fun requireStatus(value: String) {
+        if (value !in statuses) {
+            throw ApiException.badRequest(
+                "status_invalid", "Status must be one of: ${statuses.joinToString()}.",
+            )
+        }
+    }
+
+    private fun CustomFieldInput.toFieldDef() = tech.almira.catalog.FieldDef(
+        key = key, label = label, dataType = dataType, options = options, required = required,
+    )
+}

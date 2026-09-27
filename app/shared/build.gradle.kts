@@ -76,12 +76,12 @@ kotlin {
 // so `Res.font.inter_regular` reads the same from either platform module.
 compose.resources {
     publicResClass = true
-    packageOfResClass = "tech.bhrigu.almira.shared.resources"
+    packageOfResClass = "tech.almira.shared.resources"
     generateResClass = always
 }
 
 android {
-    namespace = "tech.bhrigu.almira.shared"
+    namespace = "tech.almira.shared"
     compileSdk = 35
     defaultConfig {
         minSdk = 26

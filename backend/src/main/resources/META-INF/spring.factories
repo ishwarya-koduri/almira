@@ -8,7 +8,7 @@
 # NoSuchBeanDefinitionException the check exists to replace, after the unit test
 # had already passed and been watched failing. See docs/19.
 org.springframework.boot.env.EnvironmentPostProcessor=\
-tech.bhrigu.almira.provider.ProviderModeCheck,\
-tech.bhrigu.almira.ops.LogFormatSelector,\
-tech.bhrigu.almira.document.StorageProviderCheck,\
-tech.bhrigu.almira.config.StartupSettingsCheck
+tech.almira.provider.ProviderModeCheck,\
+tech.almira.ops.LogFormatSelector,\
+tech.almira.document.StorageProviderCheck,\
+tech.almira.config.StartupSettingsCheck

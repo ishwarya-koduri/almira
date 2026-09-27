@@ -19,7 +19,7 @@ authenticate perfectly and find no device to send to.
 
 ## (a) The interface contract
 
-`backend/src/main/kotlin/tech/bhrigu/almira/provider/Delivery.kt`, the same
+`backend/src/main/kotlin/tech/almira/provider/Delivery.kt`, the same
 interface as SMS and email:
 
 ```kotlin
@@ -107,7 +107,7 @@ per-token call goes through `ProviderCalls`.
 | An **APNs authentication key** (`.p8`) | Downloadable **once**. Back it up like the release keystore — a password manager and one offline copy |
 | The **key id** | Shown with the key |
 | The **team id** | From the membership |
-| The **bundle id** | `tech.bhrigu.almira` (from `app/iosApp/iosApp.xcodeproj`); the APNs topic |
+| The **bundle id** | `tech.almira` (from `app/iosApp/iosApp.xcodeproj`); the APNs topic |
 | The Push Notifications capability on that app id, and the `aps-environment` entitlement in the iOS app | Absent today |
 
 No config key exists for a `.p8` path, key id or team id. `…_PUSH_API_KEY` is a
@@ -119,7 +119,7 @@ single string and does not fit. They must be added to `AlmiraProperties.kt`,
 ### Android (FCM)
 
 Self-serve (research 2026-09): a Firebase project, the Android app
-(`tech.bhrigu.almira`) added to it, `google-services.json` in the Android app,
+(`tech.almira`) added to it, `google-services.json` in the Android app,
 and a **service-account JSON** for the server to call FCM HTTP v1. The service
 account JSON is a credential: environment or secrets manager, never the repo.
 

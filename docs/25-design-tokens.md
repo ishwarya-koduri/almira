@@ -19,7 +19,7 @@ colour or a size under 13px, or when a motion token reaches 200ms.
 ```
 
 **The native app** has its own copy in
-`app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/theme/`
+`app/shared/src/commonMain/kotlin/tech/almira/shared/theme/`
 (`AlmiraColors.kt`, `AlmiraTypography.kt`, `AlmiraDimensions.kt`). It has not
 been updated to this revision — §9 lists exactly what differs. Until it is, a
 value here wins, and a change to either copy is a change to both.

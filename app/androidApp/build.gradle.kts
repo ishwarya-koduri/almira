@@ -22,11 +22,11 @@ kotlin {
 }
 
 android {
-    namespace = "tech.bhrigu.almira.android"
+    namespace = "tech.almira.android"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "tech.bhrigu.almira"
+        applicationId = "tech.almira"
         // 26 is the floor for the things this app actually needs: the Keystore
         // work and the biometric prompt that arrive in a later stage.
         minSdk = 26

@@ -341,7 +341,7 @@ that is a change to the authentication surface, to be designed and signed off
 rather than configured.
 
 What the code path now guarantees, each with a test that was watched failing
-with its fix removed (`backend/src/test/kotlin/tech/bhrigu/almira/auth/`):
+with its fix removed (`backend/src/test/kotlin/tech/almira/auth/`):
 
 | Guarantee | Test |
 |---|---|

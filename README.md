@@ -87,7 +87,7 @@ So there are two roles:
 Account numbers, policy numbers and document contents are encrypted with a
 **per-household data key**, itself wrapped by a key-encryption key that lives
 outside the database. A dump of Postgres yields ciphertext and a wrapped key that
-nothing in the dump can open ([`crypto/`](backend/src/main/kotlin/tech/bhrigu/almira/crypto)).
+nothing in the dump can open ([`crypto/`](backend/src/main/kotlin/tech/almira/crypto)).
 
 Every value is bound to *where it lives* — household, table, column — so a
 ciphertext cannot be moved to another row and decrypted there. Without that,
@@ -357,7 +357,7 @@ almira/
 ├─ backend/            Spring Boot (Kotlin, Gradle) — the API and the web client
 │  ├─ src/main/resources/static/
 │  │  └─ app/           the web client: design tokens, components, screens
-│  └─ src/main/kotlin/tech/bhrigu/almira/
+│  └─ src/main/kotlin/tech/almira/
 │     ├─ config/       datasources, and RlsDataSource — where identity meets the database
 │     ├─ security/     JWT, request identity, session revocation
 │     ├─ auth/         phone OTP, rotating refresh tokens

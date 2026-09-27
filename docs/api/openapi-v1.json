@@ -1771,6 +1771,9 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "ratePerUnit": {
+            "type": "number"
           }
         },
         "required": [
@@ -5072,6 +5075,9 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "ratePerUnit": {
+            "type": "number"
           }
         },
         "required": [
@@ -9739,6 +9745,9 @@
           "version": {
             "format": "int32",
             "type": "integer"
+          },
+          "ratePerUnit": {
+            "type": "number"
           }
         },
         "required": [

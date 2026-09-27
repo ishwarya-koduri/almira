@@ -65,14 +65,14 @@ def want(label: str, condition: bool, detail: str = "") -> None:
 
 def main() -> None:
     doc = read("docs/12-end-to-end-encryption.md")
-    envelope = read("app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/zk/Envelope.kt")
-    aad = read("app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/zk/Aad.kt")
-    service = read("backend/src/main/kotlin/tech/bhrigu/almira/e2e/SealedFieldService.kt")
-    reference = read("backend/src/test/kotlin/tech/bhrigu/almira/e2e/E2eApiTest.kt")
+    envelope = read("app/shared/src/commonMain/kotlin/tech/almira/shared/zk/Envelope.kt")
+    aad = read("app/shared/src/commonMain/kotlin/tech/almira/shared/zk/Aad.kt")
+    service = read("backend/src/main/kotlin/tech/almira/e2e/SealedFieldService.kt")
+    reference = read("backend/src/test/kotlin/tech/almira/e2e/E2eApiTest.kt")
     web = read("backend/src/main/resources/static/app/e2e.js")
-    android_kdf = read("app/shared/src/androidMain/kotlin/tech/bhrigu/almira/shared/zk/PassphraseKey.android.kt")
-    ios_kdf = read("app/shared/src/iosMain/kotlin/tech/bhrigu/almira/shared/zk/PassphraseKey.ios.kt")
-    ios_aead = read("app/shared/src/iosMain/kotlin/tech/bhrigu/almira/shared/zk/Aead.ios.kt")
+    android_kdf = read("app/shared/src/androidMain/kotlin/tech/almira/shared/zk/PassphraseKey.android.kt")
+    ios_kdf = read("app/shared/src/iosMain/kotlin/tech/almira/shared/zk/PassphraseKey.ios.kt")
+    ios_aead = read("app/shared/src/iosMain/kotlin/tech/almira/shared/zk/Aead.ios.kt")
     swift_aead = read("app/iosApp/iosApp/CryptoKitAead.swift")
 
     print("CONSTANTS — what the document states, read back out of the code")
@@ -122,7 +122,7 @@ def main() -> None:
     # docs/20: the two field keys are a contract between the clients, and the
     # server hands them out, so all three must spell them the same way.
     doc20 = read("docs/20-where-and-who.md")
-    where_service = read("backend/src/main/kotlin/tech/bhrigu/almira/e2e/WhereAndWho.kt")
+    where_service = read("backend/src/main/kotlin/tech/almira/e2e/WhereAndWho.kt")
     where_web = read("backend/src/main/resources/static/app/where.js")
     for key in ("original_location", "key_holder"):
         want(f"the field key `{key}` is the same in docs/20, the server and the web client",
@@ -164,10 +164,10 @@ def main() -> None:
 
     want("the conformance vector's derived key is asserted in the shared tests",
          "17c0b45fe7d3dcc10b70395e28a8cc533a0c8113691b174d39b8a205f2085f6f"
-         in read("app/shared/src/commonTest/kotlin/tech/bhrigu/almira/shared/zk/InteropKatTest.kt"))
+         in read("app/shared/src/commonTest/kotlin/tech/almira/shared/zk/InteropKatTest.kt"))
     want("the conformance vector's envelope is asserted too",
          "AQAAAAGgoaKjpKWmp6ipqqvPXvr272LHpln2v1MfVTtWxjXLbZR0eNYAsS5bJYmnCrpDPstqzByPY2RZI1X1WKjF52IsjQ"
-         in read("app/shared/src/androidUnitTest/kotlin/tech/bhrigu/almira/shared/zk/InteropKatEnvelopeTest.kt"))
+         in read("app/shared/src/androidUnitTest/kotlin/tech/almira/shared/zk/InteropKatEnvelopeTest.kt"))
     for token in ("17c0b45fe7d3dcc10b70395e28a8cc533a0c8113691b174d39b8a205f2085f6f",
                   "AQAAAAGgoaKjpKWmp6ipqqvPXvr272LHpln2v1MfVTtWxjXLbZR0eNYAsS5bJYmnCrpDPstqzByPY2RZI1X1WKjF52IsjQ"):
         want(f"the doc carries the constant {token[:16]}…", token in doc)
@@ -201,10 +201,10 @@ def main() -> None:
          "CCHmacInit" in code_only(ios_kdf) and "CCHmacFinal" in code_only(ios_kdf))
     want("the passphrase is NFC-normalised before UTF-8, in one place",
          "normalizeNfc(passphrase).encodeToByteArray()"
-         in read("app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/zk/PassphraseKey.kt"))
+         in read("app/shared/src/commonMain/kotlin/tech/almira/shared/zk/PassphraseKey.kt"))
     want("a sealed value is never normalised",
          "fun bytesOf(text: String): ByteArray = text.encodeToByteArray()"
-         in read("app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/zk/SealedValue.kt"))
+         in read("app/shared/src/commonMain/kotlin/tech/almira/shared/zk/SealedValue.kt"))
 
     # §7 says AES-GCM on iOS cannot come from Kotlin and is injected from Swift.
     want("iOS AES-GCM is declared as an injected seam, not called from Kotlin",
@@ -239,11 +239,11 @@ def check_recovery(doc: str, web: str) -> None:
     print()
     print("RECOVERY — docs/12 §10 read back out of both clients and the server")
     codes = read("backend/src/main/resources/static/app/recovery-codes.js")
-    reference = read("backend/src/test/kotlin/tech/bhrigu/almira/e2e/RecoveryReference.kt")
-    reference_test = read("backend/src/test/kotlin/tech/bhrigu/almira/e2e/RecoveryReferenceTest.kt")
+    reference = read("backend/src/test/kotlin/tech/almira/e2e/RecoveryReference.kt")
+    reference_test = read("backend/src/test/kotlin/tech/almira/e2e/RecoveryReferenceTest.kt")
     check_js = read("scripts/check-recovery.js")
-    service = read("backend/src/main/kotlin/tech/bhrigu/almira/e2e/SealedFieldService.kt")
-    recovery = read("backend/src/main/kotlin/tech/bhrigu/almira/e2e/Recovery.kt")
+    service = read("backend/src/main/kotlin/tech/almira/e2e/SealedFieldService.kt")
+    recovery = read("backend/src/main/kotlin/tech/almira/e2e/Recovery.kt")
     migration = read("db/migrations/V55__recovery_for_sealed_fields.sql")
 
     alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -341,15 +341,15 @@ def check_plaintext_location_retired() -> None:
          and "no_plaintext_where_in_attributes" in v34
          and "no_plaintext_where_in_template_attributes" in v34
          and "custom_field_is_not_plaintext_where" in v34)
-    retired_kotlin = code_only(read("backend/src/main/kotlin/tech/bhrigu/almira/e2e/RetiredPlaintextLocation.kt"))
+    retired_kotlin = code_only(read("backend/src/main/kotlin/tech/almira/e2e/RetiredPlaintextLocation.kt"))
     want("the service refuses all three retired keys by name, on holdings and templates",
          RETIRED_KEYS_LINE in retired_kotlin
-         and code_only(read("backend/src/main/kotlin/tech/bhrigu/almira/investment/InvestmentService.kt"))
+         and code_only(read("backend/src/main/kotlin/tech/almira/investment/InvestmentService.kt"))
              .count("RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes)") == 2
-         and code_only(read("backend/src/main/kotlin/tech/bhrigu/almira/template/TemplateService.kt"))
+         and code_only(read("backend/src/main/kotlin/tech/almira/template/TemplateService.kt"))
              .count("RetiredPlaintextLocation.withoutRetiredAttribute(input.attributes)") == 2
          and "field.key in RetiredPlaintextLocation.ATTRIBUTE_KEYS"
-             in code_only(read("backend/src/main/kotlin/tech/bhrigu/almira/catalog/CatalogService.kt")))
+             in code_only(read("backend/src/main/kotlin/tech/almira/catalog/CatalogService.kt")))
 
     offenders: list[str] = []
 
@@ -438,10 +438,10 @@ def check_privacy_notice() -> None:
         want(f"the English key-holder guidance says {word}", word.lower() in english.lower())
     want("docs/23 says legal review of a key holder's consent is pending, without a conclusion",
          "legal review" in notice_doc and "pending" in notice_doc and "“Amma”" in notice_doc)
-    native_wording = read("app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/zk/WhereAndWhoWording.kt")
+    native_wording = read("app/shared/src/commonMain/kotlin/tech/almira/shared/zk/WhereAndWhoWording.kt")
     want("the native app shows the same key-holder guidance under the sealed field",
          "WhereAndWhoWording.helpFor(state.newFieldKey)"
-         in code_only(read("app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/zk/ZkScreen.kt"))
+         in code_only(read("app/shared/src/commonMain/kotlin/tech/almira/shared/zk/ZkScreen.kt"))
          and all(word in native_wording for word in ("“Amma”", "“the CA”", "End-to-end encrypted")))
     want("the notice is reachable from Settings and from onboarding",
          "privacyLink()" in code_only(read("backend/src/main/resources/static/app/screens/settings.js"))
@@ -465,7 +465,7 @@ SCORE_READ_KT = re.compile(r"\.score\b|[\"]score[\"]|\bscore\s*=|\$\{?score\b")
 
 WEB_APP = "backend/src/main/resources/static/app"
 WEB_SCORE_READERS = {f"{WEB_APP}/completeness.js", f"{WEB_APP}/readiness.js"}
-NATIVE_MODELS = "app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/api/Models.kt"
+NATIVE_MODELS = "app/shared/src/commonMain/kotlin/tech/almira/shared/api/Models.kt"
 
 
 def native_client_sources() -> list[Path]:

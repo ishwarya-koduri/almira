@@ -1,0 +1,515 @@
+package tech.almira.dashboard
+
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import tech.almira.common.ApiException
+import tech.almira.common.IndianNumbers
+import tech.almira.household.HouseholdService
+import java.math.BigDecimal
+import java.math.RoundingMode
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
+import java.util.UUID
+
+/** One owner's slice of one holding — the grain everything else is built from. */
+private data class Slice(
+    val investmentId: UUID,
+    val title: String,
+    val categoryCode: String,
+    val categoryLabel: String,
+    val color: String,
+    val typeLabel: String,
+    val memberId: UUID,
+    val memberName: String?,
+    val institutionName: String?,
+    val effectiveValue: BigDecimal?,
+    val valueBasis: String,
+    val attributedValue: BigDecimal,
+    val currency: String,
+    val maturityDate: LocalDate?,
+    val hasInstitution: Boolean,
+    val hasAccount: Boolean,
+    val categoryExpectsAccount: Boolean,
+)
+
+/** One holder's share of one debt — the mirror of [Slice]. */
+private data class DebtSlice(
+    val liabilityId: UUID,
+    val title: String,
+    val kind: String,
+    val kindLabel: String,
+    val memberId: UUID,
+    val memberName: String?,
+    val outstanding: BigDecimal,
+    val attributedOutstanding: BigDecimal,
+    val emiAmount: BigDecimal?,
+    val emiDay: Int?,
+)
+
+data class Breakdown(
+    val key: String,
+    val label: String,
+    val color: String?,
+    val value: BigDecimal,
+    val valueFormatted: String,
+    val percentage: BigDecimal,
+    val count: Int,
+)
+
+data class UpcomingItem(
+    val investmentId: UUID,
+    val title: String,
+    val kind: String,
+    val date: LocalDate,
+    val daysAway: Long,
+    val value: BigDecimal?,
+)
+
+data class AttentionItem(
+    val code: String,
+    val label: String,
+    val count: Int,
+    val investmentIds: List<UUID>,
+)
+
+data class ValueConfidence(
+    val valued: Int,
+    val atCost: Int,
+    val fromCustomField: Int,
+    val unknown: Int,
+)
+
+/**
+ * Holdings in a currency this household has no rate for.
+ *
+ * They are left out of the total rather than converted at a guess, and said out
+ * loud rather than quietly dropped — a total that silently omits a holding is
+ * the worst of the three options (docs/07 §1).
+ */
+data class UnconvertedHoldings(
+    val currency: String,
+    val count: Int,
+    val note: String,
+)
+
+data class Dashboard(
+    val scope: String,
+    val scopeLabel: String,
+    /**
+     * assets − liabilities. This is the headline: a figure called "net worth"
+     * that quietly ignored a home loan would be worse than no figure at all
+     * (docs/01 §6). Assets and liabilities are reported alongside it so the
+     * number is never a black box.
+     */
+    val netWorth: BigDecimal,
+    val netWorthFormatted: String,
+    val netWorthInWords: String,
+    val totalAssets: BigDecimal,
+    val totalAssetsFormatted: String,
+    val totalLiabilities: BigDecimal,
+    val totalLiabilitiesFormatted: String,
+    val currency: String,
+    val holdingCount: Int,
+    val liabilityCount: Int,
+    val valueConfidence: ValueConfidence,
+    val byCategory: List<Breakdown>,
+    val byMember: List<Breakdown>,
+    val byInstitution: List<Breakdown>,
+    val byLiabilityKind: List<Breakdown>,
+    val upcoming: List<UpcomingItem>,
+    val attention: List<AttentionItem>,
+    val unconverted: List<UnconvertedHoldings> = emptyList(),
+    val disclaimer: String,
+)
+
+@Service
+class DashboardService(
+    private val jdbc: NamedParameterJdbcTemplate,
+    private val households: HouseholdService,
+    private val currencies: tech.almira.money.CurrencyService,
+) {
+
+    /**
+     * Every figure here is computed through the caller's own row-level security,
+     * so it already reflects only what they may see. There is no separate
+     * "filter the totals" step to forget — a private record contributes nothing,
+     * not even its amount, because the rows were never returned (docs/05 §3.3).
+     */
+    @Transactional(readOnly = true)
+    fun build(householdId: UUID, scope: String, memberId: UUID?): Dashboard {
+        val household = households.get(householdId)
+        val members = households.members(householdId)
+        val myMemberIds = members.filter { it.isMe }.map { it.id }.toSet()
+
+        val loaded = loadSlices(householdId)
+        // Converted into the household's own currency before anything is added
+        // up. What has no rate is excluded and counted, never guessed at.
+        val (slices, unconverted) = convert(loaded, household.baseCurrency, householdId)
+        val debts = loadDebtSlices(householdId)
+
+        // Both sides are filtered by the same scope, so a member lens shows what
+        // that person owns AND what they are responsible for. Netting one
+        // against a differently-scoped other would produce a number that means
+        // nothing.
+        val (selected, selectedDebts, scopeLabel) = when (scope) {
+            "household" -> Triple(slices, debts, household.name)
+            "me" -> Triple(
+                slices.filter { it.memberId in myMemberIds },
+                debts.filter { it.memberId in myMemberIds },
+                "Me",
+            )
+            "member" -> {
+                val target = memberId ?: throw ApiException.badRequest(
+                    "member_required", "Choose whose holdings to show.",
+                )
+                val member = members.firstOrNull { it.id == target }
+                    ?: throw ApiException.notFound("We couldn't find that person.")
+                Triple(
+                    slices.filter { it.memberId == target },
+                    debts.filter { it.memberId == target },
+                    member.displayName,
+                )
+            }
+            else -> throw ApiException.badRequest(
+                "scope_invalid", "Scope must be me, household or member.",
+            )
+        }
+
+        val total = selected.fold(BigDecimal.ZERO) { acc, s -> acc + s.attributedValue }
+        val owed = selectedDebts.fold(BigDecimal.ZERO) { acc, d -> acc + d.attributedOutstanding }
+        val netWorth = total - owed
+        val distinct = selected.distinctBy { it.investmentId }
+
+        return Dashboard(
+            scope = scope,
+            scopeLabel = scopeLabel,
+            netWorth = netWorth.setScale(2, RoundingMode.HALF_UP),
+            netWorthFormatted = IndianNumbers.rupees(netWorth),
+            netWorthInWords = IndianNumbers.words(netWorth),
+            totalAssets = total.setScale(2, RoundingMode.HALF_UP),
+            totalAssetsFormatted = IndianNumbers.rupees(total),
+            totalLiabilities = owed.setScale(2, RoundingMode.HALF_UP),
+            totalLiabilitiesFormatted = IndianNumbers.rupees(owed),
+            currency = household.baseCurrency,
+            holdingCount = distinct.size,
+            liabilityCount = selectedDebts.distinctBy { it.liabilityId }.size,
+            valueConfidence = ValueConfidence(
+                valued = distinct.count { it.valueBasis == "valued" },
+                atCost = distinct.count { it.valueBasis == "at_cost" },
+                fromCustomField = distinct.count { it.valueBasis == "custom_field" },
+                unknown = distinct.count { it.valueBasis == "unknown" },
+            ),
+            byCategory = group(selected, total) { Triple(it.categoryCode, it.categoryLabel, it.color) },
+            byMember = group(selected, total) {
+                Triple(it.memberId.toString(), it.memberName ?: "Unassigned", null)
+            },
+            byInstitution = group(selected.filter { it.hasInstitution }, total) {
+                Triple(it.institutionName!!, it.institutionName, null)
+            },
+            byLiabilityKind = groupDebts(selectedDebts, owed),
+            upcoming = upcoming(distinct, selectedDebts.distinctBy { it.liabilityId }),
+            attention = attention(distinct, stillTrueDue(householdId)),
+            unconverted = unconverted,
+            disclaimer = DISCLAIMER,
+        )
+    }
+
+    /**
+     * Values arrive in whatever currency they were recorded in. The total needs
+     * one currency, so each is converted at a rate that has a date and a source;
+     * a holding with no rate available is dropped from the sum and reported, so
+     * the figure is smaller than the truth and says why rather than being wrong
+     * and silent.
+     */
+    private fun convert(
+        slices: List<Slice>,
+        baseCurrency: String,
+        householdId: UUID,
+    ): Pair<List<Slice>, List<UnconvertedHoldings>> {
+        val (native, foreign) = slices.partition { it.currency.equals(baseCurrency, true) }
+        if (foreign.isEmpty()) return slices to emptyList()
+
+        val converted = mutableListOf<Slice>()
+        val missing = mutableMapOf<String, MutableSet<UUID>>()
+
+        foreign.forEach { slice ->
+            val result = currencies.convert(
+                slice.attributedValue, slice.currency, baseCurrency, householdId,
+            )
+            if (result.convertedAmount != null) {
+                converted += slice.copy(attributedValue = result.convertedAmount)
+            } else {
+                missing.getOrPut(slice.currency) { mutableSetOf() } += slice.investmentId
+            }
+        }
+
+        return (native + converted) to missing.map { (currency, ids) ->
+            UnconvertedHoldings(
+                currency = currency,
+                count = ids.size,
+                note = "${ids.size} ${if (ids.size == 1) "holding is" else "holdings are"} in " +
+                    "$currency and there's no $currency→$baseCurrency rate recorded, so they " +
+                    "aren't in this total. Add a rate and they will be.",
+            )
+        }
+    }
+
+    private fun loadSlices(householdId: UUID): List<Slice> = jdbc.query(
+        """
+        select i.id, i.title, i.maturity_date, i.currency,
+               c.code as category_code, c.label as category_label,
+               coalesce(t.color, c.color) as color, t.label as type_label,
+               o.member_id, m.display_name as member_name,
+               coalesce(inst.name, acct_inst.name) as institution_name,
+               ov.effective_value, ov.value_basis, ov.attributed_value,
+               i.account_id
+        from investments i
+        join investment_types t   on t.id = i.type_id
+        join asset_categories c   on c.id = t.category_id
+        join investment_owner_value ov on ov.investment_id = i.id
+        join investment_ownerships o
+          on o.investment_id = i.id and o.member_id = ov.member_id
+        left join members m       on m.id = o.member_id
+        left join institutions inst on inst.id = i.institution_id
+        left join accounts acct on acct.id = i.account_id
+        left join institutions acct_inst on acct_inst.id = acct.institution_id
+        where i.household_id = :hid
+          and i.deleted_at is null
+          and i.status in ('active','matured')
+          -- A matured FD that is still sitting there is real money and counts.
+          -- One that was renewed is not: its money is in the record that
+          -- replaced it, and counting both would double the household's worth
+          -- on the day of a renewal. Under the caller's own RLS, a viewer who
+          -- cannot see the renewal still sees exactly one of the two.
+          and not exists (select 1 from investments s
+                          where s.rolled_from_id = i.id and s.deleted_at is null)
+        """.trimIndent(),
+        mapOf("hid" to householdId),
+    ) { rs, _ ->
+        Slice(
+            investmentId = rs.getObject("id", UUID::class.java),
+            title = rs.getString("title"),
+            categoryCode = rs.getString("category_code"),
+            categoryLabel = rs.getString("category_label"),
+            color = rs.getString("color"),
+            typeLabel = rs.getString("type_label"),
+            memberId = rs.getObject("member_id", UUID::class.java),
+            memberName = rs.getString("member_name"),
+            institutionName = rs.getString("institution_name"),
+            effectiveValue = rs.getBigDecimal("effective_value"),
+            valueBasis = rs.getString("value_basis") ?: "unknown",
+            attributedValue = rs.getBigDecimal("attributed_value") ?: BigDecimal.ZERO,
+            currency = rs.getString("currency"),
+            maturityDate = rs.getDate("maturity_date")?.toLocalDate(),
+            hasInstitution = rs.getString("institution_name") != null,
+            hasAccount = rs.getObject("account_id") != null,
+            categoryExpectsAccount = rs.getString("category_code") in CATEGORIES_WITH_ACCOUNTS,
+        )
+    }
+
+    /**
+     * The holdings "Still true?" says are due, read from the same view its list
+     * and its sweep read (`still_true_records`, security invoker), so the card
+     * cannot keep a second clock. Under the caller's RLS this is every due
+     * holding they can see; who is *asked* is narrower (docs/21 §4), but when a
+     * record is due is the same answer for everyone.
+     */
+    private fun stillTrueDue(householdId: UUID): Set<UUID> = jdbc.queryForList(
+        """
+        select record_id from still_true_records
+        where household_id = :hid and record_type = 'investment' and is_due
+        """.trimIndent(),
+        mapOf("hid" to householdId),
+        UUID::class.java,
+    ).toSet()
+
+    /**
+     * Read through the caller's own RLS, exactly like assets. A private debt
+     * therefore contributes nothing to anyone else's net worth — not its
+     * amount, not its existence — because the rows are never returned.
+     */
+    private fun loadDebtSlices(householdId: UUID): List<DebtSlice> = jdbc.query(
+        """
+        select l.id, l.title, l.kind, l.emi_amount, l.emi_day,
+               h.member_id, m.display_name as member_name,
+               hv.outstanding, hv.attributed_outstanding
+        from liabilities l
+        join liability_holder_value hv on hv.liability_id = l.id
+        join liability_holders h
+          on h.liability_id = l.id and h.member_id = hv.member_id
+        left join members m on m.id = h.member_id
+        where l.household_id = :hid
+          and l.deleted_at is null
+          and l.status = 'active'
+        """.trimIndent(),
+        mapOf("hid" to householdId),
+    ) { rs, _ ->
+        val kind = rs.getString("kind")
+        DebtSlice(
+            liabilityId = rs.getObject("id", UUID::class.java),
+            title = rs.getString("title"),
+            kind = kind,
+            kindLabel = LIABILITY_LABELS[kind] ?: kind.replace('_', ' ').replaceFirstChar { it.uppercase() },
+            memberId = rs.getObject("member_id", UUID::class.java),
+            memberName = rs.getString("member_name"),
+            outstanding = rs.getBigDecimal("outstanding") ?: BigDecimal.ZERO,
+            attributedOutstanding = rs.getBigDecimal("attributed_outstanding") ?: BigDecimal.ZERO,
+            emiAmount = rs.getBigDecimal("emi_amount"),
+            emiDay = rs.getObject("emi_day")?.let { rs.getInt("emi_day") },
+        )
+    }
+
+    private fun groupDebts(debts: List<DebtSlice>, total: BigDecimal): List<Breakdown> = debts
+        .groupBy { it.kind to it.kindLabel }
+        .map { (key, group) ->
+            val value = group.fold(BigDecimal.ZERO) { acc, d -> acc + d.attributedOutstanding }
+            Breakdown(
+                key = key.first,
+                label = key.second,
+                // Debt uses the caution family throughout, so owe and own never
+                // read as the same thing at a glance (docs/02 §2.4).
+                color = "var(--caution)",
+                value = value.setScale(2, RoundingMode.HALF_UP),
+                valueFormatted = IndianNumbers.rupees(value),
+                percentage = if (total.signum() == 0) BigDecimal.ZERO
+                else value.multiply(BigDecimal(100)).divide(total, 1, RoundingMode.HALF_UP),
+                count = group.distinctBy { it.liabilityId }.size,
+            )
+        }
+        .sortedByDescending { it.value }
+
+    private fun group(
+        slices: List<Slice>,
+        total: BigDecimal,
+        key: (Slice) -> Triple<String, String, String?>,
+    ): List<Breakdown> = slices
+        .groupBy { key(it) }
+        .map { (k, group) ->
+            val value = group.fold(BigDecimal.ZERO) { acc, s -> acc + s.attributedValue }
+            Breakdown(
+                key = k.first,
+                label = k.second,
+                color = k.third,
+                value = value.setScale(2, RoundingMode.HALF_UP),
+                valueFormatted = IndianNumbers.rupees(value),
+                percentage = if (total.signum() == 0) BigDecimal.ZERO
+                else value.multiply(BigDecimal(100)).divide(total, 1, RoundingMode.HALF_UP),
+                count = group.distinctBy { it.investmentId }.size,
+            )
+        }
+        .sortedByDescending { it.value }
+
+    private fun upcoming(slices: List<Slice>, debts: List<DebtSlice>): List<UpcomingItem> {
+        val today = LocalDate.now()
+        val horizon = today.plusDays(90)
+
+        val maturities = slices.mapNotNull { s ->
+            s.maturityDate
+                ?.takeIf { !it.isBefore(today) && !it.isAfter(horizon) }
+                ?.let {
+                    UpcomingItem(
+                        investmentId = s.investmentId, title = s.title, kind = "maturity",
+                        date = it, daysAway = ChronoUnit.DAYS.between(today, it),
+                        value = s.effectiveValue,
+                    )
+                }
+        }
+
+        // Money going out belongs in the same list as money coming in — that is
+        // what makes it a cash-flow view rather than two half-views.
+        val emis = debts.mapNotNull { debt ->
+            debt.emiDay?.let { day ->
+                UpcomingItem(
+                    investmentId = debt.liabilityId, title = debt.title, kind = "emi",
+                    date = nextOccurrence(day, today), value = debt.emiAmount,
+                    daysAway = ChronoUnit.DAYS.between(today, nextOccurrence(day, today)),
+                )
+            }
+        }
+
+        return (maturities + emis).sortedBy { it.date }
+    }
+
+    /**
+     * The next time a monthly due date falls.
+     *
+     * A loan due on the 31st still has to be due in February. Clamping to the
+     * month's last day is what people's banks actually do, and getting it wrong
+     * means a reminder that silently never fires (docs/07 §1).
+     */
+    private fun nextOccurrence(dayOfMonth: Int, from: LocalDate): LocalDate {
+        val thisMonth = from.withDayOfMonth(minOf(dayOfMonth, from.lengthOfMonth()))
+        if (!thisMonth.isBefore(from)) return thisMonth
+        val next = from.plusMonths(1)
+        return next.withDayOfMonth(minOf(dayOfMonth, next.lengthOfMonth()))
+    }
+
+    /**
+     * The "Attention needed" cards. Each is a fact about the record's
+     * completeness, never a judgement about the investment itself — Almira
+     * records, it does not advise (docs/08 §6).
+     */
+    private fun attention(slices: List<Slice>, dueToConfirm: Set<UUID>): List<AttentionItem> {
+        val items = mutableListOf<AttentionItem>()
+
+        slices.filter { it.valueBasis == "unknown" }.let {
+            if (it.isNotEmpty()) items += AttentionItem(
+                "no_value", "No value recorded yet", it.size, it.map { s -> s.investmentId },
+            )
+        }
+        // "Which bank funds which SIP" is the linkage question docs/01 §4 is
+        // about, and it only makes sense where an account exists to link to.
+        // Asking it of physical gold or a flat would be noise, and noise is how
+        // an attention list stops being read (docs/08 §5).
+        slices.filter { it.categoryExpectsAccount && !it.hasAccount }.let {
+            if (it.isNotEmpty()) items += AttentionItem(
+                "no_account", "Not linked to an account",
+                it.size, it.map { s -> s.investmentId },
+            )
+        }
+        slices.filter { !it.hasInstitution }.let {
+            if (it.isNotEmpty()) items += AttentionItem(
+                "no_institution", "No bank or fund house recorded",
+                it.size, it.map { s -> s.investmentId },
+            )
+        }
+        // One clock: a holding is "not confirmed lately" exactly when "Still
+        // true?" says it is due (docs/21 §2, known-issues 18) — its per-type
+        // period, a maturity or renewal date, a snooze, the household's time
+        // zone. A record entered today is not due, so a new user is not greeted
+        // with problems they have not had time to have (docs/08 §5).
+        slices.filter { it.investmentId in dueToConfirm }.let {
+            if (it.isNotEmpty()) items += AttentionItem(
+                "not_verified", "Due to be confirmed as still true",
+                it.size, it.map { s -> s.investmentId },
+            )
+        }
+        return items
+    }
+
+    private companion object {
+        /**
+         * Categories where a holding is normally funded from, or held in, an
+         * account: a deposit, a fund folio, a demat holding. Gold in a locker
+         * and a flat in Kakinada have no account to link, so they are not
+         * flagged for lacking one.
+         */
+        val CATEGORIES_WITH_ACCOUNTS = setOf(
+            "deposits", "mutual_funds", "equity", "ipo", "bonds", "retirement",
+        )
+
+        val LIABILITY_LABELS = mapOf(
+            "home" to "Home loan", "car" to "Car loan", "personal" to "Personal loan",
+            "education" to "Education loan", "gold" to "Gold loan",
+            "credit_card" to "Credit card", "lap" to "Loan against property",
+            "las" to "Loan against securities",
+            "loan_against_insurance" to "Loan against insurance",
+            "family" to "Family loan", "other" to "Other",
+        )
+
+        const val DISCLAIMER =
+            "These figures reflect what you've recorded and what you're permitted to see. " +
+                "Informational only, not financial advice."
+    }
+}

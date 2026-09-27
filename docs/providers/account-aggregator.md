@@ -53,7 +53,7 @@ is now refused with a sentence naming `disabled`.
 
 ## (a) The interface contract
 
-`backend/src/main/kotlin/tech/bhrigu/almira/provider/Providers.kt`:
+`backend/src/main/kotlin/tech/almira/provider/Providers.kt`:
 
 ```kotlin
 interface AccountAggregatorClient {

@@ -8,7 +8,7 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
 }
 
-group = "tech.bhrigu.almira"
+group = "tech.almira"
 version = "0.1.0"
 
 kotlin {

@@ -326,5 +326,5 @@ springdoc:
 logging:
   level:
     root: INFO
-    tech.bhrigu.almira: DEBUG
+    tech.almira: DEBUG
     org.flywaydb: INFO

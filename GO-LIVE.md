@@ -45,7 +45,7 @@ wanted, and it is a business registration, not a technical step.
 Read these once; each provider page assumes them.
 
 1. **An interface already exists** in
-   `backend/src/main/kotlin/tech/bhrigu/almira/provider/` (or `auth/OtpSender.kt`).
+   `backend/src/main/kotlin/tech/almira/provider/` (or `auth/OtpSender.kt`).
    A live adapter implements it and is annotated
    `@ConditionalOnProperty(name = ["almira.providers.<name>.mode"], havingValue = "live")`.
    Nothing above the interface changes.

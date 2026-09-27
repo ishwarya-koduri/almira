@@ -1,0 +1,432 @@
+package tech.almira.shared.signin
+
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import tech.almira.shared.theme.AlmiraMotion
+import tech.almira.shared.theme.AlmiraTheme
+import tech.almira.shared.ui.PrimaryButton
+
+/**
+ * Two steps, and nothing else on screen at either of them.
+ *
+ * Sign-in is the first thing anybody sees and the only thing standing between
+ * them and their own records, so it carries no navigation, no marketing and no
+ * second call to action. The one line of reassurance at the bottom is there
+ * because this app asks for a phone number and people are right to wonder what
+ * it does with it.
+ */
+@Composable
+fun SignInScreen(
+    state: SignInState,
+    onPhoneChanged: (String) -> Unit,
+    onSendCode: () -> Unit,
+    onEmailChanged: (String) -> Unit = {},
+    onUseChannel: (SignInChannel) -> Unit = {},
+    onCodeChanged: (String) -> Unit,
+    onVerify: () -> Unit,
+    onResend: () -> Unit,
+    onEditPhone: () -> Unit,
+    /** Shown in the development banner only; see [CodeStep]. */
+    smsSignature: String? = null,
+) {
+    val colors = AlmiraTheme.colors
+    val space = AlmiraTheme.spacing
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.canvas)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding(),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 440.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = space.x6),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            Spacer(Modifier.height(space.x16))
+            BrandMark()
+            Spacer(Modifier.height(space.x10))
+
+            AnimatedContent(
+                targetState = state.step,
+                transitionSpec = {
+                    val forward = targetState == SignInStep.Code
+                    val distance = if (forward) 1 else -1
+                    (
+                        slideInHorizontally(tween(AlmiraMotion.BASE)) { it / 6 * distance } +
+                            fadeIn(tween(AlmiraMotion.BASE))
+                        ) togetherWith (
+                        slideOutHorizontally(tween(AlmiraMotion.BASE)) { -it / 6 * distance } +
+                            fadeOut(tween(AlmiraMotion.FAST))
+                        )
+                },
+                label = "signInStep",
+            ) { step ->
+                when (step) {
+                    SignInStep.Phone -> AddressStep(
+                        state = state,
+                        onPhoneChanged = onPhoneChanged,
+                        onEmailChanged = onEmailChanged,
+                        onUseChannel = onUseChannel,
+                        onSubmit = onSendCode,
+                    )
+
+                    SignInStep.Code -> CodeStep(
+                        state = state,
+                        onCodeChanged = onCodeChanged,
+                        onVerify = onVerify,
+                        onResend = onResend,
+                        onEditPhone = onEditPhone,
+                        smsSignature = smsSignature,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(space.x8))
+            Text(
+                "Encrypted. Almira never asks for a bank password and never moves money.",
+                style = AlmiraTheme.typography.caption,
+                color = colors.inkFaint,
+            )
+            Spacer(Modifier.height(space.x8))
+        }
+    }
+}
+
+@Composable
+private fun BrandMark() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AlmiraTheme.spacing.x3),
+    ) {
+        AlmiraMark(Modifier.size(44.dp))
+        Text("Almira", style = AlmiraTheme.typography.h2, color = AlmiraTheme.colors.ink)
+    }
+}
+
+@Composable
+private fun AddressStep(
+    state: SignInState,
+    onPhoneChanged: (String) -> Unit,
+    onEmailChanged: (String) -> Unit,
+    onUseChannel: (SignInChannel) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    val colors = AlmiraTheme.colors
+    val type = AlmiraTheme.typography
+    val space = AlmiraTheme.spacing
+    val focus = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) { focus.requestFocus() }
+
+    Column(verticalArrangement = Arrangement.spacedBy(space.x4)) {
+        Text("Welcome to Almira", style = type.h1, color = colors.ink)
+        Text(
+            "Everything your family owns and owes, in one calm, private place.",
+            style = type.body,
+            color = colors.inkMuted,
+        )
+
+        Spacer(Modifier.height(space.x1))
+
+        val fieldColors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = colors.accent,
+            unfocusedBorderColor = colors.hairline,
+            errorBorderColor = colors.caution,
+            focusedContainerColor = colors.surface,
+            unfocusedContainerColor = colors.surface,
+            errorContainerColor = colors.surface,
+        )
+
+        when (state.channel) {
+            SignInChannel.Phone -> OutlinedTextField(
+                value = state.phone,
+                onValueChange = onPhoneChanged,
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                enabled = !state.busy,
+                label = { Text("Your phone number", style = type.small) },
+                // The country code is shown rather than typed. Every number this
+                // product expects is Indian, and making people type +91 is one more
+                // thing to get wrong.
+                prefix = { Text("+91  ", style = type.body, color = colors.inkMuted) },
+                placeholder = { Text("98765 43210", style = type.body, color = colors.inkFaint) },
+                textStyle = type.body,
+                singleLine = true,
+                isError = state.error != null || state.addressHint != null,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Phone,
+                    imeAction = ImeAction.Go,
+                ),
+                keyboardActions = KeyboardActions(onGo = { onSubmit() }),
+                shape = RoundedCornerShape(AlmiraTheme.radii.sm),
+                colors = fieldColors,
+            )
+
+            SignInChannel.Email -> OutlinedTextField(
+                value = state.email,
+                onValueChange = onEmailChanged,
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                enabled = !state.busy,
+                label = { Text("Your email address", style = type.small) },
+                placeholder = { Text("you@example.com", style = type.body, color = colors.inkFaint) },
+                textStyle = type.body,
+                singleLine = true,
+                isError = state.error != null || state.addressHint != null,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Email,
+                    autoCorrectEnabled = false,
+                    imeAction = ImeAction.Go,
+                ),
+                keyboardActions = KeyboardActions(onGo = { onSubmit() }),
+                shape = RoundedCornerShape(AlmiraTheme.radii.sm),
+                colors = fieldColors,
+            )
+        }
+
+        HelperLine(
+            message = state.error ?: state.addressHint,
+            fallback = when (state.channel) {
+                SignInChannel.Phone -> "We'll text you a 6-digit code."
+                SignInChannel.Email -> "We'll email you a 6-digit code."
+            },
+        )
+
+        // Pressable whatever has been typed (owner's ruling, 2026-09-17): the
+        // check happens on the press, where it can say what is wrong, instead of
+        // in a button that will not move and cannot explain itself.
+        PrimaryButton(
+            label = "Send code",
+            enabled = !state.busy,
+            busy = state.busy,
+            onClick = onSubmit,
+        )
+
+        // Only when the server offers both. The closed alpha offers email alone,
+        // and then there is nothing to choose.
+        state.otherChannel?.let { other ->
+            TextButton(
+                onClick = { onUseChannel(other) },
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    when (other) {
+                        SignInChannel.Phone -> "Use my phone number instead"
+                        SignInChannel.Email -> "Use my email address instead"
+                    },
+                    style = type.small,
+                    color = colors.accent,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CodeStep(
+    state: SignInState,
+    onCodeChanged: (String) -> Unit,
+    onVerify: () -> Unit,
+    onResend: () -> Unit,
+    onEditPhone: () -> Unit,
+    smsSignature: String?,
+) {
+    val colors = AlmiraTheme.colors
+    val type = AlmiraTheme.typography
+    val space = AlmiraTheme.spacing
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    // Owner's ruling (2026-09-17): after a wrong code the caret goes back to the
+    // first cell. The controller clears the code on a refusal, so focusing the
+    // field is what puts the caret in cell one, and the keyboard comes with it:
+    // the next attempt is the only thing this person wants to do.
+    //
+    // Keyed on the refusal as well as on the animation, so it holds whether or
+    // not the key rattled; it waits for `Idle` either way, because focusing
+    // while the doors are still moving raises the keyboard behind them.
+    LaunchedEffect(state.unlock == UnlockPhase.Idle, state.error) {
+        if (state.unlock != UnlockPhase.Idle) return@LaunchedEffect
+        focus.requestFocus()
+        keyboard?.show()
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(space.x4)) {
+        Text(
+            if (state.channel == SignInChannel.Email) "Check your email" else "Check your phone",
+            style = type.h1,
+            color = colors.ink,
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(space.x2),
+        ) {
+            Text(
+                "Sent to ${state.sentTo}",
+                style = type.body,
+                color = colors.inkMuted,
+            )
+            // A mistyped number should cost a tap, not a restart.
+            TextButton(
+                onClick = onEditPhone,
+                enabled = !state.busy,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = space.x2,
+                    vertical = 0.dp,
+                ),
+            ) {
+                Text("Change", style = type.small, color = colors.accent)
+            }
+        }
+
+        // How the email went: said while it is sending, and said plainly
+        // when it could not be sent, rather than leaving an empty inbox to
+        // explain itself.
+        when (val delivery = state.delivery) {
+            is EmailDelivery.Failed -> Text(delivery.message, style = type.body, color = colors.caution)
+            is EmailDelivery.Delayed -> Text(delivery.message, style = type.body, color = colors.ink)
+            else -> if (state.emailSending) {
+                Text("Sending your code…", style = type.small, color = colors.inkMuted)
+            }
+        }
+
+        Spacer(Modifier.height(space.x1))
+
+        OtpField(
+            value = state.code,
+            onValueChange = onCodeChanged,
+            modifier = Modifier.focusRequester(focus),
+            isError = state.error != null,
+            enabled = !state.busy,
+        )
+
+        HelperLine(
+            message = state.error,
+            fallback = state.challenge?.let {
+                "It expires in ${it.expiresInSeconds / 60} minutes."
+            } ?: "",
+        )
+
+        PrimaryButton(
+            label = "Continue",
+            enabled = state.codeIsComplete,
+            busy = state.busy,
+            onClick = onVerify,
+        )
+
+        TextButton(
+            onClick = onResend,
+            enabled = state.resendIn == 0 && !state.busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                if (state.resendIn > 0) "Resend in ${state.resendIn}s" else "Send a new code",
+                style = type.small,
+                color = if (state.resendIn > 0) colors.inkFaint else colors.accent,
+            )
+        }
+
+        // Development only: the server echoes the code when no SMS provider is
+        // configured, so the whole flow is usable without an SMS bill or a DLT
+        // registration. It is absent in every other environment.
+        state.challenge?.developmentCode?.let { code ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.accentSoft, RoundedCornerShape(AlmiraTheme.radii.md))
+                    .padding(space.x4),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(space.x1)) {
+                    Text("Development mode", style = type.overline, color = colors.accent)
+                    Text(
+                        if (state.channel == SignInChannel.Email) {
+                            "Nothing is really emailed from this server, so the code is $code."
+                        } else {
+                            "No SMS provider is configured, so the code is $code."
+                        },
+                        style = type.small,
+                        color = colors.ink,
+                    )
+                    // The signature is derived from whatever signed this build,
+                    // so it differs between debug, release and a Play-resigned
+                    // upload. An SMS template carrying the wrong one fails
+                    // silently — the message arrives and autofill simply never
+                    // happens — so it is shown where someone testing delivery
+                    // is already looking.
+                    smsSignature?.takeIf { state.channel == SignInChannel.Phone }?.let {
+                        Text(
+                            "Messages must end with $it for this build to autofill.",
+                            style = type.caption,
+                            color = colors.inkMuted,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One line that is either the helper text or the error, never both and never
+ * neither — so the layout does not jump when something goes wrong.
+ */
+@Composable
+private fun HelperLine(message: String?, fallback: String) {
+    val colors = AlmiraTheme.colors
+    Text(
+        text = message ?: fallback,
+        style = AlmiraTheme.typography.caption,
+        color = if (message != null) colors.caution else colors.inkMuted,
+        modifier = Modifier.height(38.dp),
+    )
+}

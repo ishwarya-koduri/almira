@@ -296,7 +296,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = tech.bhrigu.almira;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.almira;
 				PRODUCT_NAME = Almira;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -322,7 +322,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = tech.bhrigu.almira;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.almira;
 				PRODUCT_NAME = Almira;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -337,7 +337,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = tech.bhrigu.almira.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.almira.uitests;
 				PRODUCT_NAME = AlmiraUITests;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -353,7 +353,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = tech.bhrigu.almira.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = tech.almira.uitests;
 				PRODUCT_NAME = AlmiraUITests;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;

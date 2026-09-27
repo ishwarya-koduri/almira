@@ -3,4 +3,4 @@
 # it. TestDatabaseGuard refuses, before anything connects, to start any
 # application whose database is not the test database. See its KDoc.
 org.springframework.context.ApplicationListener=\
-tech.bhrigu.almira.support.TestDatabaseGuard
+tech.almira.support.TestDatabaseGuard

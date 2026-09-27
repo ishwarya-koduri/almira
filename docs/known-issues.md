@@ -322,7 +322,7 @@ with the built jar, all six disabled.
 **Resolved as a refusal** (2026-09-13, same change). `ProviderModeCheck` now
 reads `almira.otp.provider` and refuses anything but `log` at startup with a
 sentence pointing at [providers/sms.md](providers/sms.md), instead of dying on
-"required a bean of type 'tech.bhrigu.almira.auth.OtpSender'". Watched in
+"required a bean of type 'tech.almira.auth.OtpSender'". Watched in
 `ProviderModeCheckTest`.
 
 What is **not** done is the other half of "which is right": one switch, where
@@ -827,7 +827,7 @@ done for V26 → V31. `outOfOrder` stays off.
 
 ## 24. The design revision reached the web client, not the native app, and not every screen
 
-**Where** `app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/theme/`;
+**Where** `app/shared/src/commonMain/kotlin/tech/almira/shared/theme/`;
 the web screens `screens/goals.js`, `screens/continuity.js`, `screens/auth.js`.
 
 **What** Doc 25 is the token reference and `static/app/tokens.css` follows it.
@@ -2684,7 +2684,7 @@ focusing under it raises the keyboard behind the doors. The controller already
 cleared the code on a refusal, so the caret lands in cell one. The entry is kept
 below as it was found.
 
-**Where** `app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/signin/SignInScreen.kt`,
+**Where** `app/shared/src/commonMain/kotlin/tech/almira/shared/signin/SignInScreen.kt`,
 `SignInController.verify`.
 
 **What** Found by driving the Android app on the emulator (2026-09-16). The
@@ -2774,7 +2774,7 @@ still works.
 
 ## 89. A new person can sign in to the app and then cannot start anything
 
-**Where** `app/shared/src/commonMain/kotlin/tech/bhrigu/almira/shared/App.kt`
+**Where** `app/shared/src/commonMain/kotlin/tech/almira/shared/App.kt`
 (`SignedIn`, the `household == null` branch), `POST /api/v1/households`.
 
 **What** Found on a real phone, 2026-09-26, doing the first end-to-end run

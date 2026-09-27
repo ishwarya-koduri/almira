@@ -93,6 +93,35 @@ feature on does not turn the guard off; there is no setting that does. An
 account with no proved address simply cannot email an export, and is told how to
 prove one.
 
+It sits on an ordinary bean (`ExportByEmailService`), and only the controller in
+front of it is conditional, so the guard is compiled in and enforced whatever
+the flag says — and a later caller that reaches the service another way, a
+scheduled send for instance, meets the same refusals rather than a second copy
+of them. `ProvedAddressGuardIsUnconditionalTest` runs in the ordinary suite
+context, where the flag is off, and proves the guard is still there and still
+tells a proved address from an unproved one.
+
+Two refusals, and their order is the design:
+
+1. **The household**, first. One you cannot see is *not found*, exactly as
+   everywhere else — asking for it to be emailed must not become a way to learn
+   it exists. Checked before the address, or a stranger holding a perfectly good
+   address of their own would get a different answer for a household that exists
+   than for one that does not.
+2. **The address**, which must be one this account has proved. One refusal
+   covers both "you have no proved addresses" and "you have some, but not that
+   one", in the same words, and an address proved by somebody *else* is refused
+   identically — otherwise the difference between the answers is a way to ask
+   who has an account here.
+
+Past both, the send currently answers **501 `not_implemented`**: the delivery is
+the next stage. That is deliberate rather than unfinished-by-accident. A guard
+written after the action it protects has to be retro-fitted onto every path that
+already reaches the action, and one path is always missed (docs/known-issues,
+"A guard runs before the action it guards") — which matters more here than in
+most places, because the thing being guarded is a household's whole financial
+record leaving the building.
+
 **The frozen contract and a flag that is off.** These endpoints are deliberately
 *not* in `docs/api/openapi-v1.json`, and that is not drift. The contract is
 checked in both directions: the live API must not lose anything the frozen file

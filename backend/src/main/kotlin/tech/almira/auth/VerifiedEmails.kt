@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -227,6 +228,33 @@ class VerifiedEmailService(
             ip = ip, userAgent = userAgent,
         )
         return rows.list(userId).first { it.id == id }
+    }
+
+    /**
+     * The guard: this address, proved by this account, or a refusal.
+     *
+     * **Not part of the feature flag, and it cannot be made part of one.** The
+     * flag decides whether emailing an export is offered; nothing decides
+     * whether the destination has to be proved. So this lives on an
+     * unconditional bean and `almira.exports.email.enabled` gates only the
+     * controller in front of it — turning the feature on cannot turn this off,
+     * because there is no setting that does.
+     *
+     * One refusal for both cases, on purpose. "You have no proved addresses"
+     * and "you have some, but not that one" are the same `email_not_proved` in
+     * the same words, and an address proved by somebody else is refused exactly
+     * as one nobody has proved. Otherwise the difference between the answers is
+     * a way to ask who has an account here.
+     */
+    fun requireProved(userId: UUID, rawAddress: String): VerifiedEmail {
+        val address = EmailAddress.normalize(rawAddress)
+        return rows.list(userId).firstOrNull { it.address.equals(address, ignoreCase = true) }
+            ?: throw ApiException(
+                HttpStatus.FORBIDDEN,
+                "email_not_proved",
+                "We only send to an address you have confirmed. Add it to your account, " +
+                    "confirm the code we email you, and try again.",
+            )
     }
 
     /**

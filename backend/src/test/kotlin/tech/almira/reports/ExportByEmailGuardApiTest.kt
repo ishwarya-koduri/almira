@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.test.annotation.DirtiesContext
 import org.springframework.test.context.TestPropertySource
 import tech.almira.auth.SignInApiTestBase
+import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -22,6 +23,11 @@ import java.util.concurrent.atomic.AtomicLong
  * That last case is the one that makes the rest mean anything. A guard that
  * refuses everything passes every refusal test ever written for it, so one test
  * here proves the opposite: a proved address is NOT refused.
+ *
+ * Since stage three every send also needs a step-up, which is why the refusal
+ * tests confirm it is you first: otherwise each of them would be proving that
+ * an un-elevated session is refused, which is a different guard and already has
+ * its own test.
  */
 @DisplayName("Emailing an export: only to a proved address")
 @TestPropertySource(properties = ["almira.exports.email.enabled=true"])
@@ -37,6 +43,9 @@ class ExportByEmailGuardApiTest : SignInApiTestBase() {
     fun setUp() {
         owner = signUp()
         householdId = createHousehold(owner.token, "Koduri", "private", "Ishwarya").path("id").asText()
+        // Something to send. Without it the send refuses for having nothing to
+        // export, which is a different answer than the one under test here.
+        capture(owner.token, householdId, "gold_physical", "Bangles", BigDecimal("180000"), visibility = "household")
     }
 
     private fun uniqueAddress(): String = "dest.${counter.incrementAndGet()}.${System.nanoTime()}@example.test"
@@ -65,6 +74,20 @@ class ExportByEmailGuardApiTest : SignInApiTestBase() {
     )
 
     @Test
+    fun `a send needs a session that has just confirmed it's you`() {
+        val proved = prove(owner, uniqueAddress())
+
+        // A second sign-in on the same account: the same person, a session that
+        // has confirmed nothing. Proving the address elevated the first one, so
+        // this is the only way to ask the question from a cold session.
+        val cold = Account(owner.phone, otpSignIn(owner.phone).json().path("accessToken").asText(), owner.userId)
+        val refused = sendTo(cold, proved)
+        assertThat(refused.statusCode.value()).describedAs(refused.body).isEqualTo(403)
+        assertThat(refused.errorCode()).isEqualTo("step_up_required")
+        assertThat(refused.json().path("error").path("message").asText()).contains("emailing your records")
+    }
+
+    @Test
     fun `an address nobody proved is refused`() {
         prove(owner, uniqueAddress())
 
@@ -78,6 +101,7 @@ class ExportByEmailGuardApiTest : SignInApiTestBase() {
 
     @Test
     fun `an account with no proved address at all is told how to get one`() {
+        stepUpByCode(owner)
         val refused = sendTo(owner, uniqueAddress())
         assertThat(refused.statusCode.value()).describedAs(refused.body).isEqualTo(403)
         assertThat(refused.errorCode()).isEqualTo("email_not_proved")
@@ -87,6 +111,7 @@ class ExportByEmailGuardApiTest : SignInApiTestBase() {
     fun `somebody else's proved address is refused exactly as an unknown one is`() {
         val stranger = signUp()
         val theirs = prove(stranger, uniqueAddress())
+        stepUpByCode(owner)
 
         val toTheirs = sendTo(owner, theirs)
         val toNobodys = sendTo(owner, uniqueAddress())
@@ -105,13 +130,16 @@ class ExportByEmailGuardApiTest : SignInApiTestBase() {
 
         val past = sendTo(owner, proved)
         assertThat(past.statusCode.value())
-            .describedAs("past the guard, and into the sending that stage three builds: ${past.body}")
-            .isEqualTo(501)
-        assertThat(past.errorCode()).isEqualTo("not_implemented")
+            .describedAs("past the guard and sent: ${past.body}")
+            .isEqualTo(200)
+        assertThat(past.json().path("sentTo").asText())
+            .describedAs("masked, never the address in full")
+            .doesNotContain(proved).contains("@example.test")
     }
 
     @Test
     fun `an address that is not an address is refused before anything else`() {
+        stepUpByCode(owner)
         val refused = sendTo(owner, "not-an-address")
         assertThat(refused.statusCode.value()).describedAs(refused.body).isEqualTo(400)
         assertThat(refused.errorCode()).isEqualTo("email_invalid")
@@ -121,6 +149,8 @@ class ExportByEmailGuardApiTest : SignInApiTestBase() {
     fun `a household that is not yours does not become reachable by emailing it`() {
         val stranger = signUp()
         val proved = prove(stranger, uniqueAddress())
+        // Elevated, and with an address of their own: the only thing they lack
+        // is the household, which must be what the answer is about.
 
         // The stranger's own proved address, but the owner's household.
         val refused = post(

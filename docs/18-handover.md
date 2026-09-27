@@ -35,6 +35,12 @@ One feature ships behind a flag that is **false in every environment**.
 | The guard that is not part of it | An export is never emailed to an address nobody proved. That holds with the flag on or off, and there is no setting that relaxes it. |
 | Where it is explained | [Doc 13, "Emailing an export"](13-providers-and-going-live.md#emailing-an-export--almiraexportsemailenabled); the addresses table is `V153`. |
 
+Not emailable, and deliberately: the **full-account "everything" ZIP**. A guest
+share is scoped to one household and clamped to a list of records; that export is
+account-wide, so it needs a link model that does not exist yet rather than a
+stretch of this one. It stays a download behind its step-up. Deciding that model
+is the next thing to settle if emailing it is wanted.
+
 Deferred behind a later sub-flag, and not built: **scheduled sends** — a
 standing statement every month or quarter, a tax pack timed to the filing
 deadline, and an export that goes to a named heir if somebody stops checking in.

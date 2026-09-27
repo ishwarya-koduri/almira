@@ -122,6 +122,58 @@ already reaches the action, and one path is always missed (docs/known-issues,
 most places, because the thing being guarded is a household's whole financial
 record leaving the building.
 
+**What is emailed is a link, never the file.** An attachment is in that inbox
+forever, and in every relay it passed through on the way, where no expiry,
+withdrawal or view limit this product offers can reach any of the copies. So the
+email carries an ordinary guest share — the same hashed token, `expires_at`,
+`max_views`, `revoked_at` and view log that a link to a CA has had since V20,
+minted through the same code path. It appears in the household's shares list and
+the ordinary withdrawal takes it away.
+
+Three things follow from reusing that machinery rather than copying it:
+
+- **The file is a snapshot.** An export share names its records in
+  `guest_share_items` like any other, and the guest clamp admits only what a
+  link names, so the file holds exactly the holdings that existed when it was
+  sent. A holding added tomorrow is not in a link sent today, and no code had
+  to remember to make that true.
+- **Every open is written down**, in the same view log, and the person sees it
+  on the same screen.
+- **A send that cannot be delivered withdraws its own link.** A token minted for
+  an email that never went is a live credential nobody was told about.
+
+Settings: `link-ttl` (7 days), `max-opens` (5) and `max-per-hour` (10).
+
+**Four refusals before anything is made**, in this order:
+
+1. A **step-up**. Emailing leaves the device for an inbox that can be forwarded
+   and cannot be recalled — a larger disclosure than downloading to the phone
+   already in your hand. The full-account export has required one since it was
+   written; this is the same rule for the same reason (owner's call,
+   2026-09-27).
+2. The **household**: one you cannot see is not found.
+3. The **address**: it must be one this account proved, unconditionally.
+4. The **hour's count**, through `common/RateLimit` — the one counter sign-in
+   codes and guest links already use, so there is one implementation of "too
+   many" and one shape of 429. A request refused by 1 to 3 never reaches it, so
+   a refusal cannot spend somebody's hourly allowance.
+
+**In development only**, and only when the email went to the sandbox, the
+response echoes the link, exactly as a one-time code is echoed
+(`developmentCode`). There is nowhere else to read it: the token is stored as a
+hash and exists in the person's inbox and nowhere else.
+
+**The full-account "everything" ZIP is not emailable, in either form.** It was
+meant to be link-only in this stage and is instead not offered at all, which is
+the more conservative end of that instruction rather than the one asked for. The
+reason is structural: a guest share is scoped to one household and clamped to a
+list of records, and that ZIP is account-wide — every household the person
+belongs to, plus documents and sealed ciphertext. Putting it behind a
+guest-share token would mean a share that names no records, and the clamp then
+admits nothing. It needs a different link model, which is a decision rather than
+an afternoon, and it is listed in docs/18 with the other deferrals. The ZIP
+remains a download behind its step-up, exactly as before.
+
 **The frozen contract and a flag that is off.** These endpoints are deliberately
 *not* in `docs/api/openapi-v1.json`, and that is not drift. The contract is
 checked in both directions: the live API must not lose anything the frozen file

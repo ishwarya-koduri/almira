@@ -17,6 +17,7 @@ import tech.almira.household.HouseholdService
 import tech.almira.security.JwtService
 import tech.almira.security.RequestUserContext
 import tech.almira.reports.Export
+import tech.almira.reports.ExportService
 import tech.almira.tax.FinancialYear
 import tech.almira.tax.TaxExportService
 import tech.almira.tax.TaxPack
@@ -132,6 +133,7 @@ private const val NOTICE =
 class ShareService(
     private val jdbc: NamedParameterJdbcTemplate,
     private val households: HouseholdService,
+    private val exports: ExportService,
     private val tax: TaxService,
     private val handbook: HandbookService,
     private val audit: AuditService,
@@ -215,9 +217,57 @@ class ShareService(
             )
         }
 
+        val expiresAt = Instant.now().plus(input.expiresInDays.toLong(), ChronoUnit.DAYS)
+        val minted = mint(
+            householdId = householdId,
+            userId = userId,
+            label = input.label.trim(),
+            scope = input.scope,
+            scopeDetail = input.financialYear,
+            items = items,
+            expiresAt = expiresAt,
+            maxViews = input.maxViews,
+            recipientHint = input.recipientHint,
+            note = input.note,
+            includeDocuments = input.includeDocuments,
+            memberId = input.memberId,
+        )
+        val id = minted.shareId
+        val token = minted.token
+
+        return get(householdId, id).copy(
+            url = "$baseUrl/share/$token",
+            downloadUrl = if (input.scope == "tax_pack") "$baseUrl/api/v1/share/$token/tax-pack.pdf" else null,
+            scopeNote = describe(householdId, items),
+        )
+    }
+
+    /** A row and its token, the one time the token exists outside the person's hands. */
+    private data class Minted(val shareId: UUID, val token: String)
+
+    /**
+     * The row, its items and its audit line — the only place a link is written.
+     *
+     * Extracted so an emailed export is the same link as any other rather than
+     * a second kind that has to be kept in step. Everything a link is made of
+     * is decided by the caller; nothing here knows why it was asked for.
+     */
+    private fun mint(
+        householdId: UUID,
+        userId: UUID,
+        label: String,
+        scope: String,
+        scopeDetail: String?,
+        items: List<Pair<String, UUID>>,
+        expiresAt: Instant,
+        maxViews: Int?,
+        recipientHint: String? = null,
+        note: String? = null,
+        includeDocuments: Boolean = false,
+        memberId: UUID? = null,
+    ): Minted {
         val id = UUID.randomUUID()
         val token = newToken()
-        val expiresAt = Instant.now().plus(input.expiresInDays.toLong(), ChronoUnit.DAYS)
 
         jdbc.update(
             """
@@ -228,13 +278,13 @@ class ShareService(
                     :includeDocuments, :expiresAt, :maxViews, :createdBy, :member)
             """.trimIndent(),
             MapSqlParameterSource()
-                .addValue("id", id).addValue("hid", householdId).addValue("label", input.label.trim())
-                .addValue("scope", input.scope).addValue("detail", input.financialYear)
-                .addValue("hash", jwt.hash(token)).addValue("recipient", input.recipientHint)
-                .addValue("note", input.note).addValue("includeDocuments", input.includeDocuments)
+                .addValue("id", id).addValue("hid", householdId).addValue("label", label)
+                .addValue("scope", scope).addValue("detail", scopeDetail)
+                .addValue("hash", jwt.hash(token)).addValue("recipient", recipientHint)
+                .addValue("note", note).addValue("includeDocuments", includeDocuments)
                 .addValue("expiresAt", java.sql.Timestamp.from(expiresAt))
-                .addValue("maxViews", input.maxViews).addValue("createdBy", userId)
-                .addValue("member", input.memberId),
+                .addValue("maxViews", maxViews).addValue("createdBy", userId)
+                .addValue("member", memberId),
         )
 
         items.forEach { (type, recordId) ->
@@ -250,14 +300,95 @@ class ShareService(
         audit.record(
             householdId = householdId, actorUserId = userId, action = "share.create",
             entityType = "guest_share", entityId = id,
-            diff = mapOf("scope" to input.scope, "items" to items.size, "days" to input.expiresInDays),
+            diff = mapOf("scope" to scope, "items" to items.size),
         )
+        return Minted(id, token)
+    }
 
-        return get(householdId, id).copy(
-            url = "$baseUrl/share/$token",
-            downloadUrl = if (input.scope == "tax_pack") "$baseUrl/api/v1/share/$token/tax-pack.pdf" else null,
-            scopeNote = describe(householdId, items),
+    /** A link to an export, and how long it lasts. The token is in [url] and nowhere else. */
+    data class ExportLink(
+        val shareId: UUID,
+        val url: String,
+        val expiresAt: Instant,
+        val opensAllowed: Int,
+        val records: Int,
+    )
+
+    /**
+     * A link to this household's holdings, for emailing.
+     *
+     * An ordinary guest share with an ordinary token, expiry, view limit, view
+     * log and revocation — the same row, the same checks, the same screen in
+     * the app. Only two things are particular to it: the scope is `export`, so
+     * [openExportFile] knows there is a file behind it, and `scope_detail`
+     * carries the format.
+     *
+     * Its items are the holdings the sharer can see *now*, which is what makes
+     * the link a snapshot: the guest clamp (V20) admits only the records named
+     * here, so a holding added tomorrow is not in a link sent today. Nothing
+     * had to be written to make that true.
+     *
+     * Not reachable from the shares endpoint — `export` is not in [SCOPES] —
+     * because a link with a file behind it is minted by the thing that emails
+     * it, which is where the address is proved and the sending is counted.
+     */
+    @Transactional
+    fun createExportLink(
+        householdId: UUID,
+        format: String,
+        ttl: java.time.Duration,
+        maxOpens: Int,
+        baseUrl: String,
+    ): ExportLink {
+        val userId = userContext.require()
+        households.get(householdId)
+        val items = jdbc.query(
+            "select id from investments where household_id = :hid and deleted_at is null",
+            mapOf("hid" to householdId),
+        ) { rs, _ -> "investment" to rs.getObject("id", UUID::class.java) }
+        if (items.isEmpty()) {
+            throw ApiException.badRequest(
+                "nothing_to_export",
+                "There's nothing recorded in this household to send yet.",
+            )
+        }
+        val expiresAt = Instant.now().plus(ttl)
+        val minted = mint(
+            householdId = householdId,
+            userId = userId,
+            label = "Your export",
+            scope = EXPORT_SCOPE,
+            scopeDetail = format,
+            items = items,
+            expiresAt = expiresAt,
+            maxViews = maxOpens,
         )
+        return ExportLink(
+            shareId = minted.shareId,
+            url = "$baseUrl/api/v1/share/${minted.token}/export",
+            expiresAt = expiresAt,
+            opensAllowed = maxOpens,
+            records = items.size,
+        )
+    }
+
+    /**
+     * The file behind an emailed export link.
+     *
+     * Admitted exactly like the link itself — same token check, same expiry,
+     * same view count, same audit, same clamped read-only session — and then
+     * built by the ordinary [ExportService], which is what makes the file and
+     * the download identical rather than merely similar. Any other kind of
+     * link has no such file and says so in the words every refusal here uses.
+     */
+    fun openExportFile(token: String, ipHash: String?, userAgent: String?): Export {
+        val share = admit(token, ipHash, userAgent, helperLink = false)
+        if (share.share.scope != EXPORT_SCOPE) {
+            throw ApiException.notFound("That link doesn't work. It may have expired or been withdrawn.")
+        }
+        return userContext.runAs(share.createdBy, guestShareId = share.share.id) {
+            readOnly.execute { exports.holdings(share.householdId, share.share.scopeDetail ?: "csv") }!!
+        }
     }
 
     /**
@@ -769,9 +900,14 @@ class ShareService(
     }
 
     companion object {
-        private val SCOPES = setOf("tax_pack", "handbook", "records")
+        /** What the shares endpoint will mint. Internal so a test can hold the
+         *  database's constraint to it: see ShareScopesMatchTheDatabaseTest. */
+        internal val SCOPES = setOf("tax_pack", "handbook", "records")
         const val MAX_DAYS = 90
         const val HELPER_SCOPE = "heir_help"
+
+        /** An emailed export's link. Minted by ExportByEmailService, not by the shares endpoint. */
+        const val EXPORT_SCOPE = "export"
 
         /** The same fixed hour sign-in counts in. */
         private val WINDOW: Duration = Duration.ofHours(1)

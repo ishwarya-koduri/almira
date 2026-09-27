@@ -21065,6 +21065,37 @@
         ]
       }
     },
+    "/api/v1/share/{token}/export": {
+      "get": {
+        "operationId": "exportFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "guest-share-controller"
+        ]
+      }
+    },
     "/api/v1/share/{token}/schedule-112a.csv": {
       "get": {
         "operationId": "schedule112A",

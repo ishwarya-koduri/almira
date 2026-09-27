@@ -169,6 +169,16 @@ data class AlmiraProperties(
             val linkTtl: Duration = Duration.ofDays(7),
             /** How many addresses one account may prove. A destination list, not a mailing list. */
             val maxAddressesPerAccount: Int = 5,
+            /**
+             * How many times an emailed link may be opened before it stops
+             * working. More than one because a download can fail, a phone can
+             * run out of space, and a link that dies on its first tap is a
+             * support ticket; few enough that a forwarded link is not a
+             * standing subscription to somebody's holdings.
+             */
+            val maxOpens: Int = 5,
+            /** Sends per account per hour, counted by the one rate limiter (common/RateLimit). */
+            val maxPerHour: Int = 10,
         )
 
         companion object {
@@ -188,6 +198,15 @@ data class AlmiraProperties(
                     "almira.exports.email.max-addresses-per-account must be 1 to 20 " +
                         "(is ${props.exports.email.maxAddressesPerAccount}). Zero means the feature is on " +
                         "and unusable; a large number makes an account's destination list a mailing list."
+                }
+                require(props.exports.email.maxOpens in 1..50) {
+                    "almira.exports.email.max-opens must be 1 to 50 " +
+                        "(is ${props.exports.email.maxOpens}). Zero mints links that are dead on arrival."
+                }
+                require(props.exports.email.maxPerHour in 1..100) {
+                    "almira.exports.email.max-per-hour must be 1 to 100 " +
+                        "(is ${props.exports.email.maxPerHour}). Zero switches the feature off by the " +
+                        "back door, where almira.exports.email.enabled says it is on."
                 }
                 require(!props.exports.email.linkTtl.isNegative && !props.exports.email.linkTtl.isZero) {
                     "almira.exports.email.link-ttl must be more than zero (is " +

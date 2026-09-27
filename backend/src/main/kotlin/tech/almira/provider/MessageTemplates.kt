@@ -104,6 +104,12 @@ object MessageTemplates {
         // Nobody took your household on in the app for 90 days, so only an operator can now
         // (V147): the right to take it on ends for everyone told.
         "lifecycle.household.routed_to_repair",
+        // The export you just asked for, with the link to it (V154). Listed for
+        // the same reason "otp_email" is: a direct answer to something the
+        // person did a moment ago, sent to an address they proved, never
+        // through the outbox. Under consent it would be possible to ask for an
+        // export and be sent nothing, with nowhere for the app to say why.
+        "export.link",
     )
 
     /** Essential, and about the person's place in a household rather than their account (V140, V143, V144, V146). */

@@ -130,7 +130,12 @@ class MessagesConsentTest : ApiTestBase() {
 
     @Test
     fun `essential account and security notices go without consent, on every channel`() {
-        val keys = (MessageTemplates.ESSENTIAL_TEMPLATES - "otp_email").associateWith { tell(it) }
+        // Both exclusions are templates that are never queued: a sign-in code
+        // and an emailed export are sent on the request path, with the outcome
+        // in the response. They are on the essential list so the classification
+        // is complete, not because this worker ever carries them.
+        val neverQueued = setOf("otp_email", "export.link")
+        val keys = (MessageTemplates.ESSENTIAL_TEMPLATES - neverQueued).associateWith { tell(it) }
         keys.forEach { (template, key) ->
             assertThat(outside(key)).describedAs(template).containsExactly("email", "push", "sms")
         }

@@ -151,6 +151,12 @@ class VerifiedEmailRepository(private val jdbc: NamedParameterJdbcTemplate) {
     ) { rs, _ -> rs.getString("address") }.firstOrNull()
 
     @Transactional
+    fun markSent(userId: UUID, id: UUID): Int = jdbc.update(
+        "update verified_email_addresses set last_sent_at = now() where id = :id and user_id = :user",
+        MapSqlParameterSource("id", id).addValue("user", userId),
+    )
+
+    @Transactional
     fun remove(userId: UUID, id: UUID): Int = jdbc.update(
         "delete from verified_email_addresses where id = :id and user_id = :user",
         MapSqlParameterSource("id", id).addValue("user", userId),
@@ -274,6 +280,11 @@ class VerifiedEmailService(
             diff = mapOf("address" to EmailAddress.mask(address)),
             ip = ip, userAgent = userAgent,
         )
+    }
+
+    /** When something was last sent to this address, for the account screen. */
+    fun markSent(userId: UUID, id: UUID) {
+        rows.markSent(userId, id)
     }
 
     private fun tooMany() = ApiException.badRequest(

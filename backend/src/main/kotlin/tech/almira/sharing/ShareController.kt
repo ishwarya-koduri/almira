@@ -91,6 +91,21 @@ class GuestShareController(private val service: ShareService) {
     fun schedule112A(@PathVariable token: String, request: HttpServletRequest): ResponseEntity<ByteArray> =
         file(service.openTaxPackFile(token, "csv", ipHash(request), request.getHeader("User-Agent")))
 
+    /**
+     * The file behind an emailed export link, in whichever format was asked
+     * for when it was sent. Opening it counts as a view, like the page.
+     *
+     * Deliberately not gated by `almira.exports.email.enabled`. The flag stops
+     * new links being made; it must not reach into an inbox and break one
+     * already sent, which would strand a person mid-download for a setting
+     * somebody changed on the server. An export link cannot exist unless the
+     * feature was on when it was made, so with the flag off this route has
+     * nothing to serve and says so like any other dead link.
+     */
+    @GetMapping("/{token}/export")
+    fun exportFile(@PathVariable token: String, request: HttpServletRequest): ResponseEntity<ByteArray> =
+        file(service.openExportFile(token, ipHash(request), request.getHeader("User-Agent")))
+
     private fun file(export: tech.almira.reports.Export): ResponseEntity<ByteArray> =
         ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + export.fileName + "\"")

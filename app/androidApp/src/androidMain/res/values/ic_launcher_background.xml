@@ -4,5 +4,5 @@
      a bitmap: the launcher parallaxes the two layers against each other
      and a flat colour cannot shimmer. -->
 <resources>
-    <color name="ic_launcher_background">#123F3A</color>
+    <color name="ic_launcher_background">#14685C</color>
 </resources>

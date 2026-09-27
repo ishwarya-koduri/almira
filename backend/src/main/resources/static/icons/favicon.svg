@@ -1,8 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024" fill="none"><rect width="100" height="100" fill="#123F3A" />
-  <g transform="translate(0.00000 0.00000) scale(1.000000)"><path d="M20 84 V44 C20 26 33 12.5 50 12.5 C67 12.5 80 26 80 44 V84" stroke="#FAF6F0" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M15 90 H85" stroke="#FAF6F0" stroke-width="6" stroke-linecap="round" />
-  <path d="M50 14 V38" stroke="#FAF6F0" stroke-width="7.5" stroke-linecap="round" />
-  <circle cx="50" cy="45" r="7.6" fill="#E0BC7E" />
-  <path d="M46.2 50.3 L44.1 60 H55.9 L53.8 50.3 Z" fill="#E0BC7E" />
-  <path d="M16.25 70 H83.75" stroke="#E0BC7E" stroke-width="7.5" stroke-linecap="butt" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024" fill="none"><rect id="ground" width="100" height="100" fill="#14685C" />
+
+  
+  <g transform="translate(0.00000 0.00000) scale(1.000000)"><path id="plate" fill="#E0BC7E" fill-rule="evenodd" d="M40 25 H60 A9 9 0 0 1 69 34 V66 A9 9 0 0 1 60 75 H40 A9 9 0 0 1 31 66 V34 A9 9 0 0 1 40 25 Z M46.2 49 L44.4 63 H55.6 L53.8 49 A7.5 7.5 0 1 0 46.2 49 Z" />
+
+  
+  <path id="lock" fill="#123F3A" d="M46.2 49 L44.4 63 H55.6 L53.8 49 A7.5 7.5 0 1 0 46.2 49 Z" />
+
   </g></svg>

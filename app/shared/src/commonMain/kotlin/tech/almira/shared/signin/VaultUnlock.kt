@@ -82,30 +82,41 @@ import kotlin.random.Random
  * whether the app is light or dark.
  */
 private object Mark {
-    val Ground = Color(0xFF123F3A)
+    val Ground = Color(0xFF14685C)
     val Cream = Color(0xFFFAF6F0)
     val Gold = Color(0xFFE0BC7E)
+
+    /**
+     * What shows through the keyhole. It is not the ground colour: the plate is
+     * cut through to a deeper teal, so the lock stays the darkest thing in the
+     * mark whatever the ground behind it is doing.
+     */
+    val Lock = Color(0xFF123F3A)
 
     /** Inside the almira: what the doors were hiding. */
     val Depth = Color(0xFF06201D)
     /** A door's face once light from inside reaches it. */
-    val DoorLit = Color(0xFF1C5750)
+    val DoorLit = Color(0xFF1F7F70)
     val Light = Color(0xFFFFE6B0)
     val Refusal = Color(0xFFE5775A)
 }
 
 /**
- * The Almira mark, drawn rather than rasterised, so it is sharp at any size and
- * the sign-in header is the same drawing the unlock animation opens.
+ * The Almira mark: the lock plate on its ground, drawn rather than rasterised
+ * so it is sharp at any size, and the same thing the launcher icon shows.
+ *
+ * The mark used to be the whole cupboard, and the header drew it as the frame
+ * with two shut doors. It is the plate now, and the plate is what the animation
+ * screws onto the almira's doors — so the header and the animation still share
+ * one drawing, just no longer the same amount of it.
  */
 @Composable
 fun AlmiraMark(modifier: Modifier = Modifier) {
     Canvas(modifier) {
         drawRoundRect(Mark.Ground, cornerRadius = CornerRadius(size.minDimension * 0.24f))
         inUnits {
-            drawFrame()
-            drawDoor(left = true, open = 0f, hollow = 0f, rim = Mark.Gold)
-            drawDoor(left = false, open = 0f, hollow = 0f, rim = Mark.Gold)
+            drawPath(Plate, Mark.Gold)
+            drawPath(Keyhole, Mark.Lock)
         }
     }
 }
@@ -306,7 +317,7 @@ fun VaultUnlock(
                     },
             ) {
                 val hollow = if (withdraw.value > 0f) 1f - withdraw.value else keyholeHollow(approach.value)
-                val rim = lerp(lerp(Mark.Gold, Mark.Light, flash.value), Mark.Refusal, refusal.value)
+                val rim = lerp(lerp(Mark.Lock, Mark.Light, flash.value), Mark.Refusal, refusal.value)
 
                 Canvas(Modifier.fillMaxSize()) {
                     inUnits {
@@ -451,30 +462,38 @@ private fun doorPanel(left: Boolean) = Path().apply {
 private val LeftPanel = doorPanel(left = true)
 private val RightPanel = doorPanel(left = false)
 
+/**
+ * The lock plate: 31..69 by 25..75 on a 9-unit corner, the brass rectangle out
+ * of `brand/almira-mark.svg`. It sits across the two doors, which is what a
+ * lock plate is for.
+ */
+private val Plate = Path().apply {
+    addRoundRect(androidx.compose.ui.geometry.RoundRect(31f, 25f, 69f, 75f, CornerRadius(9f)))
+}
+
 private val Keyhole = Path().apply {
-    addOval(Rect(Offset(50f, 45f), 7.6f))
-    moveTo(46.2f, 50.3f)
-    lineTo(44.1f, 60f)
-    lineTo(55.9f, 60f)
-    lineTo(53.8f, 50.3f)
+    addOval(Rect(Offset(50f, 43f), 7.5f))
+    moveTo(46.2f, 49f)
+    lineTo(44.4f, 63f)
+    lineTo(55.6f, 63f)
+    lineTo(53.8f, 49f)
     close()
 }
 
+/** The same shape inset, so the lock can deepen as the key goes into it. */
 private val KeyholeInside = Path().apply {
-    addOval(Rect(Offset(50f, 45f), 5.3f))
-    moveTo(47.9f, 49.6f)
-    lineTo(46.4f, 57.9f)
-    lineTo(53.6f, 57.9f)
-    lineTo(52.1f, 49.6f)
+    addOval(Rect(Offset(50f, 43f), 5.2f))
+    moveTo(47.9f, 47.6f)
+    lineTo(46.5f, 60.5f)
+    lineTo(53.5f, 60.5f)
+    lineTo(52.1f, 47.6f)
     close()
 }
 
-/** The frame: arch, plinth, and the ends of the gold band that sit on the stiles. */
+/** The frame: the arch and the plinth it stands on. */
 private fun DrawScope.drawFrame() {
     drawPath(Arch, Mark.Cream, style = Stroke(7.5f, cap = StrokeCap.Round, join = StrokeJoin.Round))
     drawLine(Mark.Cream, Offset(15f, 90f), Offset(85f, 90f), 6f, StrokeCap.Round)
-    drawLine(Mark.Gold, Offset(16.25f, 70f), Offset(24.5f, 70f), 7.5f, StrokeCap.Butt)
-    drawLine(Mark.Gold, Offset(75.5f, 70f), Offset(83.75f, 70f), 7.5f, StrokeCap.Butt)
 }
 
 private fun DrawScope.drawDoor(left: Boolean, open: Float, hollow: Float, rim: Color) {
@@ -495,11 +514,14 @@ private fun DrawScope.drawDoor(left: Boolean, open: Float, hollow: Float, rim: C
         val edge = if (left) 49.7f else 50.3f
         drawLine(Mark.Light.copy(alpha = 0.7f * open), Offset(edge, 17f), Offset(edge, 84f), 0.7f)
     }
-    // The seam, the band and the keyhole are shared by both doors; each draws
-    // its own half, overlapping the other's by a hair.
+    // The seam, the plate and the keyhole are shared by both doors; each draws
+    // its own half, overlapping the other's by a hair. The seam runs down to the
+    // plate and picks up again below it rather than passing behind it: a plate
+    // is screwed onto the doors, so the join stops where the plate starts.
     clipRect(left = if (left) 0f else 49.6f, right = if (left) 50.4f else 100f) {
-        drawLine(Mark.Cream, Offset(50f, 14f), Offset(50f, 38f), 7.5f, StrokeCap.Round)
-        drawLine(Mark.Gold, Offset(if (left) 23.75f else 50f, 70f), Offset(if (left) 50f else 76.25f, 70f), 7.5f)
+        drawLine(Mark.Cream, Offset(50f, 14f), Offset(50f, 24f), 7.5f, StrokeCap.Round)
+        drawLine(Mark.Cream, Offset(50f, 76f), Offset(50f, 84f), 7.5f, StrokeCap.Round)
+        drawPath(Plate, Mark.Gold)
         drawPath(Keyhole, rim)
         if (hollow > 0f) drawPath(KeyholeInside, lerp(rim, Mark.Depth, hollow))
     }
@@ -562,7 +584,7 @@ private fun DrawScope.drawKey(approach: Float, withdraw: Float, turn: Float, til
     if (a <= 0f) return
 
     // Anything below the keyhole's centre is inside the lock.
-    clipRect(top = -200f, bottom = 45f) {
+    clipRect(top = -200f, bottom = 43f) {
         withTransform({
             translate(cx, cy)
             rotate(angle, pivot = Offset.Zero)
@@ -631,22 +653,22 @@ private fun DrawScope.drawKeyholeHalo(waiting: Float, flash: Float, refusal: Flo
         drawCircle(
             Brush.radialGradient(
                 listOf(Mark.Light.copy(alpha = 0.55f * glow.coerceAtMost(1f)), Color.Transparent),
-                center = Offset(50f, 47f),
+                center = Offset(50f, 45f),
                 radius = 18f + 8f * flash,
             ),
             radius = 26f,
-            center = Offset(50f, 47f),
+            center = Offset(50f, 45f),
         )
     }
     if (refusal > 0f) {
         drawCircle(
             Brush.radialGradient(
                 listOf(Mark.Refusal.copy(alpha = 0.6f * refusal), Color.Transparent),
-                center = Offset(50f, 47f),
+                center = Offset(50f, 45f),
                 radius = 20f,
             ),
             radius = 26f,
-            center = Offset(50f, 47f),
+            center = Offset(50f, 45f),
         )
     }
 }
@@ -655,7 +677,7 @@ private fun DrawScope.drawKeyholeHalo(waiting: Float, flash: Float, refusal: Flo
 private fun DrawScope.drawClick(click: Float) {
     if (click <= 0f || click >= 1f) return
     val fade = 1f - click
-    val centre = Offset(50f, 45f)
+    val centre = Offset(50f, 43f)
     drawCircle(
         Mark.Light.copy(alpha = 0.85f * fade),
         radius = 8f + 34f * click,
@@ -736,7 +758,7 @@ private fun DrawScope.drawMotes(progress: Float) {
 private fun DrawScope.drawBackdrop(centre: Offset, markPx: Float, open: Float, push: Float, refusal: Float) {
     drawRect(
         Brush.radialGradient(
-            listOf(Color(0xFF1A4E48), Mark.Ground, Color(0xFF0A2A26)),
+            listOf(Color(0xFF17796B), Mark.Ground, Color(0xFF0D423A)),
             center = centre,
             radius = size.maxDimension * 0.75f,
         ),

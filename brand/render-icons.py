@@ -27,7 +27,10 @@ differently, and each variant exists because of a specific crop:
               Android 13's themed icons. The wordmark goes because a themed
               icon is a silhouette: the letters have no band behind them to sit
               on, and flattened to a single colour at launcher size they are
-              mud.
+              mud. The lock survives because the keyhole is a hole cut through
+              the plate rather than a shape drawn on it — the coloured lock
+              that fills that hole is dropped here, and the hole does the work
+              colour does everywhere else.
   symbol      the mark without the wordmark, full bleed, for the favicon and
               the 22px shell mark. Rendered at 16, 22 and 32 beside the full
               lockup, the wordmark is a grey smear at all three and the symbol
@@ -97,16 +100,11 @@ ADAPTIVE_RADIUS = 72 / 108 / 2
 # and with almost nothing in hand.
 SAFE_HEADROOM = 0.96
 
-# In the themed icon only, the door seam stops here instead of at its drawn
-# end. Flattened to one colour the seam runs into the keyhole and the mark
-# reads as a plain arch with a bar across it — the lock, which is the whole
-# idea, disappears. Ending the seam at 29 leaves the gap below to do the work
-# that colour does everywhere else.
-#
-# 29 plus the seam's own 3.75-unit round cap is 32.75; the keyhole circle
-# begins at 45 - 7.6 = 37.4. Four and a half units of clear ground, asserted
-# after rendering rather than assumed.
-MONOCHROME_SEAM_END = 29.0
+# The keyhole in master units, from the top of its circle to the base of its
+# stem. Nothing is drawn from this: it is what the themed icon is measured
+# against after rendering, because a flattened icon whose lock has closed up
+# is a plain brass tablet and there is no way to tell by eye at 48px.
+KEYHOLE_SPAN = (35.5, 63.0)
 
 # Android's five density buckets, as a multiple of the 48dp baseline.
 DENSITIES = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
@@ -124,19 +122,22 @@ def tag_of(element: ET.Element) -> str:
 class Master:
     """The master SVG, taken apart far enough to compose variants from it.
 
-    Two elements have to be told apart from the rest, and both are found by
-    shape rather than by name so that replacing the artwork does not mean
-    editing this file:
+    Three elements have to be told apart from the rest:
 
       the ground   the one rect covering the whole viewBox. Its fill is the
                    brand's ground colour, and it is dropped for the variants
                    that need transparency.
       the wordmark the one path whose `d` runs to thousands of characters,
                    because it is six glyphs as outlines while everything else
-                   is a stroke of four or five points.
+                   is a handful of points.
+      the lock     what shows through the keyhole in colour. The plate is cut
+                   through, so dropping this leaves a hole rather than a gap
+                   that has to be drawn — which is the whole reason the themed
+                   icon still has a lock in it.
 
-    An explicit `id="ground"` or `id="wordmark"` on the master wins over both
-    heuristics, for the day the artwork stops being shaped like this.
+    Each is found by `id` first, and the master names all three. The shape
+    heuristics behind the id are kept for the ground and the wordmark, which
+    are recognisable without one; the lock is not, so it is named or absent.
     """
 
     def __init__(self, path: Path) -> None:
@@ -156,7 +157,7 @@ class Master:
         children = list(self.root)
         self.ground = self._find_ground(children)
         self.wordmark = self._find_wordmark(children)
-        self.seam = self._find_seam(children)
+        self.lock = self._find_lock(children)
         drop = {id(self.ground)} | {
             id(c) for c in children if tag_of(c) == "metadata"
         }
@@ -186,21 +187,17 @@ class Master:
         ]
         return max(outlines, key=lambda c: len(c.get("d", ""))) if outlines else None
 
-    def _find_seam(self, children: list[ET.Element]) -> ET.Element | None:
-        """The door seam: the one path that is a single vertical line.
+    def _find_lock(self, children: list[ET.Element]) -> ET.Element | None:
+        """What fills the keyhole in colour, by name.
 
-        Found by shape, like the others. Nothing else in the mark is one — the
-        rail and the plinth are horizontal, the arch is a long curve, the
-        keyhole stem is a closed polygon and the wordmark is outlines — so
-        `M x y V y2` identifies it without an id and without a name.
+        There is no shape to find it by: it is the same outline as the hole in
+        the plate, which is exactly why it cannot be guessed at. A master with
+        no `id="lock"` renders every variant the same as before — the themed
+        one then flattens the keyhole away, and the check at the end of the run
+        says so rather than letting it through.
         """
         for child in children:
-            if child.get("id") == "seam":
-                return child
-        for child in children:
-            if tag_of(child) != "path":
-                continue
-            if SEAM_SHAPE.match(child.get("d", "")):
+            if child.get("id") == "lock":
                 return child
         return None
 
@@ -211,7 +208,7 @@ class Master:
         ground: bool,
         flatten: str | None = None,
         wordmark: bool = True,
-        seam_end: float | None = None,
+        lock: bool = True,
         shift: tuple[float, float] = (0.0, 0.0),
     ) -> str:
         """One variant, as SVG text ready to rasterise.
@@ -248,9 +245,9 @@ class Master:
         for child in self.mark:
             if not wordmark and self.wordmark is not None and child is self.wordmark:
                 continue
+            if not lock and self.lock is not None and child is self.lock:
+                continue
             element = copy.deepcopy(child)
-            if seam_end is not None and self.seam is not None and child is self.seam:
-                _shorten_seam(element, seam_end)
             if flatten:
                 _recolour(element, flatten)
             group.append(element)
@@ -259,18 +256,6 @@ class Master:
 
 def _trim(value: float) -> str:
     return f"{value:g}"
-
-
-SEAM_SHAPE = re.compile(r"^\s*M\s*([\d.]+)[\s,]+([\d.]+)\s*V\s*([\d.]+)\s*$")
-
-
-def _shorten_seam(element: ET.Element, end: float) -> None:
-    """Rewrites the seam's end point, leaving everything else about it alone."""
-    found = SEAM_SHAPE.match(element.get("d", ""))
-    if not found:
-        die("the seam stopped looking like a vertical line; cannot shorten it")
-    x, y = found.group(1), found.group(2)
-    element.set("d", f"M{x} {y} V{_trim(end)}")
 
 
 def _recolour(element: ET.Element, colour: str) -> None:
@@ -451,7 +436,7 @@ def main() -> None:
     )
     monochrome = master.compose(
         scale=adaptive_scale, ground=False, flatten="#FFFFFF", wordmark=False,
-        shift=shift, seam_end=MONOCHROME_SEAM_END,
+        shift=shift, lock=False,
     )
 
     written: list[Path] = []
@@ -570,48 +555,42 @@ def main() -> None:
 
     # --- and that the lock survives being flattened -------------------------
     #
-    # In one colour the seam runs into the keyhole and the mark reads as an
-    # arch with a bar. The seam is shortened for that variant alone, so the
-    # check has two halves: the gap is there in the themed icon, and it is
-    # *not* there anywhere else — which is what makes the change scoped rather
-    # than merely intended.
-    print("\nthe keyhole gap, down the centre column:")
+    # Flattened to one colour, a keyhole drawn on the plate is the same white
+    # as the plate and the icon becomes a blank brass tablet. This one is a
+    # hole, and the run proves it on the rendered pixels rather than trusting
+    # the SVG: down the middle of the themed icon there should be exactly one
+    # interior blank run, it should be the keyhole's own height, and the
+    # coloured foreground — where the lock is drawn in — should have none.
+    print("\nthe keyhole, down the centre column:")
     themed = ANDROID_RES / "mipmap-xxxhdpi/ic_launcher_monochrome.png"
     plain = ANDROID_RES / "mipmap-xxxhdpi/ic_launcher_foreground.png"
 
     themed_gaps = centre_column_gaps(themed, None)
     plain_gaps = centre_column_gaps(plain, None)
 
-    # Both variants already have gaps below the keyhole — one between its stem
-    # and the rail, one between the rail and the plinth. So the discriminator
-    # is not "does it have a gap", which was the first attempt and passed on
-    # the wrong gap: it is that the themed icon has exactly one *more* gap than
-    # the plain one, and that the extra one is above the rest.
     for label, gaps in (("themed  ", themed_gaps), ("plain fg", plain_gaps)):
         rendered = ", ".join(f"{(b - a) * 100:.2f}% at y={a:.3f}" for a, b in gaps) or "none"
         print(f"  {label} {len(gaps)} interior gap(s): {rendered}")
 
-    # From the geometry: 37.4 - (29 + 3.75) = 4.65 master units, scaled, over a
-    # 100-unit canvas.
-    expected = (37.4 - (MONOCHROME_SEAM_END + 3.75)) / 100 * adaptive_scale
-    opened = (themed_gaps[0][1] - themed_gaps[0][0]) if themed_gaps else 0.0
-    print(f"  the gap the shortening opens: {opened * 100:.2f}% of height"
-          f"   (geometry predicts {expected * 100:.2f}%)")
+    expected = (KEYHOLE_SPAN[1] - KEYHOLE_SPAN[0]) / 100 * adaptive_scale
+    opened = (themed_gaps[0][1] - themed_gaps[0][0]) if len(themed_gaps) == 1 else 0.0
+    print(f"  the hole the flattening leaves: {opened * 100:.2f}% of height"
+          f"   (the keyhole is {expected * 100:.2f}%)")
 
-    if len(themed_gaps) != len(plain_gaps) + 1:
+    if len(themed_gaps) != 1:
         failures.append(
-            f"the themed icon has {len(themed_gaps)} interior gaps and the plain foreground "
-            f"{len(plain_gaps)}; shortening the seam should open exactly one more"
+            f"the themed icon has {len(themed_gaps)} interior gaps down the centre; "
+            "the keyhole should be the one and only"
         )
-    elif opened < expected * 0.6:
+    elif abs(opened - expected) > 0.02:
         failures.append(
-            f"the gap above the keyhole is {opened * 100:.2f}% of height against "
-            f"{expected * 100:.2f}% predicted — the lock has merged into the seam"
+            f"the hole down the themed icon measures {opened * 100:.2f}% of height against "
+            f"{expected * 100:.2f}% of keyhole — it is not the keyhole that is open"
         )
-    elif plain_gaps and themed_gaps[0][0] >= plain_gaps[0][0]:
+    if plain_gaps:
         failures.append(
-            "the themed icon's extra gap is not above the plain one's first — the seam "
-            "shortening has landed somewhere other than between the seam and the keyhole"
+            f"the coloured foreground has {len(plain_gaps)} interior gap(s) down the centre; "
+            "the lock should be filling the keyhole there, not leaving it open"
         )
 
     if failures:

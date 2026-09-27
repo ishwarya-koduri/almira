@@ -51,12 +51,31 @@ data class ValuationInput(
     val note: String? = null,
 )
 
+/**
+ * The total a rate and a quantity make, when the total was not given.
+ *
+ * The owner typed 5000 into "Amount paid" meaning rupees a gram, put 4 in the
+ * weight, and the almirah recorded five thousand rupees of gold instead of
+ * twenty (2026-09-26). The clients now offer both fields and compute one from
+ * the other as you type; this is the same arithmetic on the server, so a client
+ * that sends only a rate and a quantity — an import, a script, an older app —
+ * gets the same answer rather than a quarter of it.
+ *
+ * The total wins when both are given: it is the field of record, and a person
+ * who edits the total after the rate means the total (owner's ruling,
+ * 2026-09-26).
+ */
+internal fun totalFor(investedAmount: BigDecimal?, ratePerUnit: BigDecimal?, quantity: BigDecimal?): BigDecimal? =
+    investedAmount ?: ratePerUnit?.let { rate -> quantity?.let { rate.multiply(it) } }
+
 data class CreateInvestment(
     /** Client-supplied so an offline capture keeps its identity and retries are idempotent. */
     val id: UUID? = null,
     val typeId: UUID,
     val title: String,
     val investedAmount: BigDecimal? = null,
+    /** Rupees a gram, a share, a unit. See [totalFor] (V152). */
+    val ratePerUnit: BigDecimal? = null,
     val currency: String? = null,
     val quantity: BigDecimal? = null,
     val unit: String? = null,
@@ -108,6 +127,7 @@ data class UpdateInvestment(
     val version: Int,
     val title: String? = null,
     val investedAmount: BigDecimal? = null,
+    val ratePerUnit: BigDecimal? = null,
     val quantity: BigDecimal? = null,
     val unit: String? = null,
     val startDate: LocalDate? = null,
@@ -192,7 +212,8 @@ class InvestmentService(
         try {
             repo.insert(
                 id = id, householdId = householdId, typeId = type.id, title = input.title.trim(),
-                investedAmount = input.investedAmount, currency = currency,
+                investedAmount = totalFor(input.investedAmount, input.ratePerUnit, input.quantity),
+                ratePerUnit = input.ratePerUnit, currency = currency,
                 quantity = input.quantity, unit = input.unit,
                 startDate = input.startDate, maturityDate = input.maturityDate,
                 institutionId = input.institutionId, accountId = input.accountId,
@@ -329,7 +350,7 @@ class InvestmentService(
 
         val previous = repo.update(
             id = id, version = source.version, status = "matured",
-            title = null, investedAmount = null, quantity = null, unit = null,
+            title = null, investedAmount = null, ratePerUnit = null, quantity = null, unit = null,
             startDate = null, maturityDate = null,
             institutionId = null, accountId = null, attributes = null, notes = null,
             isInContinuity = null,
@@ -385,7 +406,11 @@ class InvestmentService(
 
         val updated = repo.update(
             id = id, version = input.version, title = input.title?.trim(),
-            investedAmount = input.investedAmount, quantity = input.quantity, unit = input.unit,
+            // The same rule as on create: a rate and a quantity with no total
+            // mean the two multiplied, so editing on a phone cannot quietly
+            // record a quarter of what somebody owns (V152).
+            investedAmount = totalFor(input.investedAmount, input.ratePerUnit, input.quantity ?: current.quantity),
+            ratePerUnit = input.ratePerUnit, quantity = input.quantity, unit = input.unit,
             startDate = input.startDate, maturityDate = input.maturityDate,
             institutionId = input.institutionId,
             accountId = input.accountId, attributes = attributes, notes = input.notes,

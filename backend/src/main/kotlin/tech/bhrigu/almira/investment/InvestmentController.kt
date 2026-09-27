@@ -28,6 +28,13 @@ data class CreateInvestmentBody(
     @field:NotBlank(message = "Give this a name you'll recognise")
     @field:Size(max = 160) val title: String,
     val investedAmount: BigDecimal? = null,
+    /**
+     * What one unit cost, when that is how the person thinks of it: rupees a
+     * gram, a share, a unit. A convenience beside [investedAmount], which stays
+     * the field of record. Send one or both; with a quantity and no total, the
+     * total is the two multiplied (V152).
+     */
+    val ratePerUnit: BigDecimal? = null,
     val currency: String? = null,
     val quantity: BigDecimal? = null,
     val unit: String? = null,
@@ -81,6 +88,8 @@ data class InvestmentResponse(
     val color: String,
     val status: String,
     val investedAmount: BigDecimal?,
+    /** What one unit cost, when that is how it was entered (V152). */
+    val ratePerUnit: BigDecimal? = null,
     val quantity: BigDecimal?,
     val unit: String?,
     val currency: String,
@@ -162,7 +171,8 @@ class InvestmentController(private val service: InvestmentService) {
             householdId,
             CreateInvestment(
                 id = body.id, typeId = body.typeId, title = body.title,
-                investedAmount = body.investedAmount, currency = body.currency,
+                investedAmount = body.investedAmount, ratePerUnit = body.ratePerUnit,
+                currency = body.currency,
                 quantity = body.quantity, unit = body.unit,
                 startDate = body.startDate, maturityDate = body.maturityDate,
                 institutionId = body.institutionId, accountId = body.accountId,
@@ -302,7 +312,8 @@ class TrashController(private val service: InvestmentService) {
 internal fun InvestmentRow.toResponse() = InvestmentResponse(
     id = id, title = title, typeId = typeId, typeCode = typeCode, typeLabel = typeLabel,
     typeIcon = typeIcon, categoryCode = categoryCode, categoryLabel = categoryLabel,
-    color = color, status = status, investedAmount = investedAmount, quantity = quantity,
+    color = color, status = status, investedAmount = investedAmount, ratePerUnit = ratePerUnit,
+    quantity = quantity,
     unit = unit, currency = currency,
     value = effectiveValue,
     valueFormatted = effectiveValue?.let { IndianNumbers.money(it, currency) },

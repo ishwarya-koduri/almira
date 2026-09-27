@@ -34,6 +34,7 @@ data class InvestmentRow(
     val title: String,
     val status: String,
     val investedAmount: BigDecimal?,
+    val ratePerUnit: BigDecimal?,
     val currency: String,
     val quantity: BigDecimal?,
     val unit: String?,
@@ -124,6 +125,7 @@ class InvestmentRepository(
         typeId: UUID,
         title: String,
         investedAmount: BigDecimal?,
+        ratePerUnit: BigDecimal?,
         currency: String,
         quantity: BigDecimal?,
         unit: String?,
@@ -140,11 +142,11 @@ class InvestmentRepository(
         jdbc.update(
             """
             insert into investments
-              (id, household_id, type_id, title, invested_amount, currency, quantity, unit,
+              (id, household_id, type_id, title, invested_amount, rate_per_unit, currency, quantity, unit,
                start_date, maturity_date, institution_id, account_id,
                attributes, notes, visibility, is_in_continuity, created_by)
             values
-              (:id, :hid, :typeId, :title, :amount, :currency, :quantity, :unit,
+              (:id, :hid, :typeId, :title, :amount, :ratePerUnit, :currency, :quantity, :unit,
                :startDate, :maturityDate, :institutionId, :accountId,
                cast(:attributes as jsonb), :notes, :visibility, :continuity, :createdBy)
             """.trimIndent(),
@@ -154,6 +156,7 @@ class InvestmentRepository(
                 .addValue("typeId", typeId)
                 .addValue("title", title)
                 .addValue("amount", investedAmount)
+                .addValue("ratePerUnit", ratePerUnit)
                 .addValue("currency", currency)
                 .addValue("quantity", quantity)
                 .addValue("unit", unit)
@@ -218,6 +221,7 @@ class InvestmentRepository(
         version: Int,
         title: String?,
         investedAmount: BigDecimal?,
+        ratePerUnit: BigDecimal?,
         quantity: BigDecimal?,
         unit: String?,
         startDate: LocalDate?,
@@ -233,6 +237,7 @@ class InvestmentRepository(
         update investments set
           title            = coalesce(:title, title),
           invested_amount  = coalesce(:amount, invested_amount),
+          rate_per_unit    = coalesce(:ratePerUnit, rate_per_unit),
           quantity         = coalesce(:quantity, quantity),
           unit             = coalesce(:unit, unit),
           start_date       = coalesce(:startDate, start_date),
@@ -250,6 +255,7 @@ class InvestmentRepository(
             .addValue("version", version)
             .addValue("title", title)
             .addValue("amount", investedAmount)
+            .addValue("ratePerUnit", ratePerUnit)
             .addValue("quantity", quantity)
             .addValue("unit", unit)
             .addValue("startDate", startDate)
@@ -556,6 +562,7 @@ class InvestmentRepository(
             title = rs.getString("title"),
             status = rs.getString("status"),
             investedAmount = rs.getBigDecimal("invested_amount"),
+            ratePerUnit = rs.getBigDecimal("rate_per_unit"),
             currency = rs.getString("currency"),
             quantity = rs.getBigDecimal("quantity"),
             unit = rs.getString("unit"),
